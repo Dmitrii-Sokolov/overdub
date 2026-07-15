@@ -59,3 +59,45 @@ subtitle embedding, local-only pluggable TTS. They stay useful as reference
 implementations for stage wiring and edge cases:
 [pyVideoTrans](https://github.com/jianchang512/pyvideotrans),
 [Pandrator](https://github.com/lukaszliniewicz/Pandrator).
+
+## 2026-07-15 — PoC reframe and timing simplification
+
+**Project stage: research / proof of concept.** Goal is a turn-key pipeline
+(URL in → MKV out) proving feasibility; speed and quality must be acceptable,
+not production-grade. Kill criteria removed from PLAN — nothing gates; results
+are evaluated by ear at the end of Phase 1.
+
+**No tempo cap (supersedes founding x2 decision).** Segments are sped up as
+much as their slot requires, at assembly. The translation-shortening feedback
+loop is dropped entirely — a few audibly broken segments per video are
+acceptable losses for a PoC. Verification runs on raw audio before atempo, so
+speed-up never pollutes the verify loop. Per-segment speed factor is logged in
+the run report for triage (factor > ~1.8 ≈ candidate for "broken"). The
+keep-length prompt instruction stays — it keeps typical factors near 1.0–1.4
+for free.
+
+**Context-aware sentence translation.** Whisper segments are not translation
+units — they cut mid-thought and lose coreference. Word timestamps → sentence
+re-segmentation → sentences translated in order with a rolling context window
+(previous EN sentences + their RU translations). Rejected alternative:
+whole-transcript translation — better prose, but re-aligning free-form RU text
+to timestamps is a hard problem; 1:1 sentence mapping keeps sync trivial.
+
+**Two text fields per sentence.** `text_ru` (raw translation → subtitles) and
+`text_tts` (normalized: numbers/acronyms/Latin → Russian words → TTS input).
+ASR verification compares against `text_tts` with the same normalizer applied
+to both sides — comparing whisper output against raw text would loop forever
+on every normalized token ("джи-пи-ю" vs "GPU").
+
+**Per-video loop for PoC.** The stage runner processes one video through all
+stages (≈3 model load/unloads per video — minutes of overhead, noise next to
+synthesis time). Per-stage batching (one model load per stage per batch) is
+deferred to Phase 2; artifact-driven resumable stages make the switch a loop
+reorder, not a rewrite.
+
+**VRAM constraint amended.** whisper-small (~0.5 GB) is co-resident with the
+TTS engine during synthesis + verification; the one-heavy-model-at-a-time rule
+applies to whisper large-v3 / Qwen3-14B / TTS.
+
+**EN→RU fixed.** Source is always English, output always Russian. No language
+detection or multi-language handling anywhere in the pipeline.

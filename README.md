@@ -10,15 +10,21 @@ hundreds of hours of single-speaker content.
 
 1. **Download** — `yt-dlp` fetches the video.
 2. **Transcribe (STT)** — `faster-whisper` (large-v3) produces the English
-   transcript with segment timestamps. These timestamps drive all downstream sync.
-3. **Translate** — local LLM (Qwen3-14B via Ollama) translates EN→RU per segment,
-   prompted to keep length close to the original (it's dubbing, not prose).
+   transcript with word timestamps; words are re-assembled into sentences with
+   `[start, end]`. The sentence is the unit of translation, synthesis and sync.
+3. **Translate** — local LLM (Qwen3-14B via Ollama) translates sentence by
+   sentence with a rolling context window (previous EN sentences + their RU
+   translations), prompted to keep length close to the original (it's dubbing,
+   not prose). Output per sentence: raw RU for subtitles + normalized RU
+   (numbers, acronyms, Latin terms spelled out) for TTS.
 4. **Synthesize (TTS)** — Chatterbox Multilingual generates Russian audio per
-   segment. Segments longer than their time slot are compressed with
-   `ffmpeg atempo` (up to x2).
+   sentence, voice cloned from the original speaker.
 5. **Verify** — each synthesized segment is transcribed back with whisper (small)
-   and compared against the source text; mismatches trigger regeneration.
-6. **Mux** — `ffmpeg` assembles the final MKV. The original video stream is never
+   and compared against the normalized TTS text; mismatches trigger
+   regeneration with a new seed. Runs on raw audio, before any speed-up.
+6. **Mux** — `ffmpeg` fits each segment into its time slot (`atempo`, uncapped —
+   extreme speed factors are logged, not fixed), pads with silence, assembles
+   the RU track and muxes the final MKV. The original video stream is never
    re-encoded.
 
 ## Output layout (MKV)
@@ -47,9 +53,10 @@ embedded as subtitle tracks for free.
 
 ## Hardware targets
 
-- **Primary:** NVIDIA RTX 4080 Mobile, 12 GB VRAM. Stages run sequentially
-  (transcribe all → translate all → synthesize all) — heavy models don't fit
-  simultaneously.
+- **Primary:** NVIDIA RTX 4080 Mobile, 12 GB VRAM. Stages run sequentially per
+  video with explicit model unload between them — heavy models don't fit
+  simultaneously. (Per-stage batching across many videos — one model load per
+  stage — is a Phase 2 option.)
 - **Secondary (later):** Intel Arc B390 iGPU. whisper.cpp (SYCL/OpenVINO) and
   llama.cpp (SYCL) are proven there; Chatterbox on XPU is unproven — Silero on
   CPU is the fallback.
@@ -61,8 +68,11 @@ Chatterbox including verification.
 
 - Single speaker per video (covers ~95% of target content). No diarization.
 - Local only — no cloud STT, translation, or TTS.
-- Tempo compression up to x2 is acceptable (validated by ear).
+- Source is always English, output is always Russian.
+- No tempo compression cap — segments are sped up as much as their slot
+  requires; occasional broken segments are acceptable losses (PoC).
 
 ## Status
 
-Documentation phase. No code yet. See `.claude/PLAN.md`.
+Research / proof of concept. Documentation phase, no code yet.
+See `.claude/PLAN.md`.

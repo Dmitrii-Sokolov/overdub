@@ -3,6 +3,10 @@
 Local-first YouTube→Russian dubbing pipeline. Python. Every processing stage
 must run on local hardware.
 
+Current stage: research / proof of concept. The pipeline must run turn-key
+(URL in → final MKV out) with acceptable speed and quality; occasional broken
+segments are tolerated, silent failures are not.
+
 ## Host environment
 
 - Windows 11, PowerShell-first tooling.
@@ -20,11 +24,17 @@ must run on local hardware.
 
 - **Local only.** No cloud STT/translation/TTS. The Ollama endpoint is
   localhost, not a hosted API.
+- **EN→RU only.** Source audio is always English, the dub is always Russian.
+  No language detection, no multi-language handling.
 - **Single-speaker assumption.** No diarization in v1.
-- **12 GB VRAM budget.** Never load two heavy models at once; process in
-  sequential batch stages with explicit model unload between stages.
-- **Tempo compression cap: x2** (`atempo`). If a segment still doesn't fit,
-  shorten the translation — don't compress harder.
+- **12 GB VRAM budget.** Never load two heavy models (whisper large-v3,
+  Qwen3-14B, TTS) at once; explicit model unload between stages. Exception:
+  whisper-small (~0.5 GB) stays co-resident with the TTS engine during
+  synthesis + verification.
+- **No tempo cap.** `atempo` speeds segments up as much as their slot
+  requires, applied at assembly — always after verification, never before.
+  Per-segment speed factor goes to the run report; audibly broken segments
+  are acceptable losses, silent ones are not.
 - **Output is MKV** with original audio, RU dub, EN subs, RU subs. The original
   video stream is never re-encoded.
 
@@ -38,17 +48,25 @@ interface later. Don't hardcode Chatterbox specifics outside the engine adapter.
 ## Design rules
 
 - Every TTS segment goes through ASR verification (whisper-small round-trip +
-  normalized text similarity). Failed segments regenerate with a new seed,
-  max N retries, then get flagged for manual review — never silently kept.
+  normalized text similarity), always on raw audio — before atempo. Failed
+  segments regenerate with a new seed, max N retries, then the best-scoring
+  attempt is kept and flagged in the run report — the pipeline never blocks
+  on a bad segment and never hides one.
 - All intermediate artifacts (transcript, translation, per-segment audio) are
   persisted to the work dir. Every stage must be resumable and re-runnable in
   isolation — the pipeline is semi-automated by design.
-- The translation prompt must state that this is dubbing and ask to keep
-  length close to the original segment.
+- Translation unit is the sentence (rebuilt from word timestamps), never the
+  raw whisper segment: sentences are translated in order with a rolling
+  context window (previous EN sentences + their RU translations). The prompt
+  must state that this is dubbing and ask to keep length close to the
+  original — no tempo cap doesn't mean no effort.
 - TTS input must be normalized before synthesis: numbers, units, acronyms and
   Latin-script terms expanded to Russian words ("GPU" → "джи-пи-ю", "x2" →
   "в два раза") — neural TTS stumbles on raw digits and Latin tokens. Do it in
   the translation prompt or as a dedicated post-pass, but never feed raw text.
+  Keep both fields per sentence: `text_ru` (raw translation → subtitles) and
+  `text_tts` (normalized → synthesis); ASR verification compares against
+  `text_tts` with the same normalizer applied to both sides.
 
 ## Artifacts
 
