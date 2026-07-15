@@ -34,6 +34,9 @@ class WorkDir:
     def source_audio(self) -> Path: return self.root / "source.wav"      # 16k mono, for whisper
 
     @property
+    def words(self) -> Path: return self.root / "words.json"              # transcribe: raw flattened words (re-tuning)
+
+    @property
     def sentences(self) -> Path: return self.root / "sentences.json"      # transcribe
 
     @property
