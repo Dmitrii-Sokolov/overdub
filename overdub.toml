@@ -1,0 +1,24 @@
+# overdub pipeline config — flat keys override the defaults in overdub/config.py.
+# Uncomment and edit any key to override.
+
+# work_root = "work"
+
+# --- STT (faster-whisper) ---
+# whisper_model = "large-v3"
+# whisper_device = "cuda"
+# whisper_compute_type = "float16"
+
+# --- translation (Qwen3-14B via Ollama) ---
+# ollama_base_url = "http://localhost:11434/v1"
+# ollama_model = "qwen3:14b"
+# num_ctx = 4096
+# context_window = 4
+
+# --- TTS (Silero) ---
+tts_engine = "silero"
+tts_voice = "eugene"        # primary; "xenia" is the backup
+tts_sample_rate = 48000
+
+# --- verification (whisper-small round-trip) ---
+# verify_model = "small"
+# similarity_threshold = 0.8

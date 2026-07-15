@@ -1,0 +1,24 @@
+[project]
+name = "overdub"
+version = "0.0.1"
+description = "Local-first YouTube→Russian dubbing pipeline"
+requires-python = ">=3.12"
+# torch / torchaudio are installed separately from the CUDA wheel index (see SETUP.md),
+# so they are intentionally NOT listed here — pip must not pull a CPU build over them.
+dependencies = [
+    "yt-dlp",
+    "faster-whisper",
+    "openai",         # Ollama OpenAI-compatible client
+    "soundfile",      # wav I/O (version-stable, unlike torchaudio.save)
+    "omegaconf",      # required by silero via torch.hub
+]
+
+[project.scripts]
+overdub = "overdub.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["overdub*"]
