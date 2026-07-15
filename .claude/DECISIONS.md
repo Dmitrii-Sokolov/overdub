@@ -123,7 +123,9 @@ The per-segment ASR round-trip is exactly the safety net for this — it's why
 CONDITIONAL and not NO-GO.
 
 **Corrections that change implementation:**
-- Chatterbox default checkpoint is **V2** — must pass `t3_model="v3"` explicitly.
+- Chatterbox 0.1.7 `from_pretrained` takes only `device` — the researched
+  `t3_model="v3"` arg does NOT exist in this version (verified live via
+  inspect.signature; the research over-inferred it). Corrected in code + STACK.
 - Chatterbox hard-pins `torch==2.6.0` / `transformers==5.2.0` → isolated TTS
   venv (`.venv-tts`); ASR stack in `.venv-asr`. Forced by Chatterbox's pins,
   not by whisper (faster-whisper + torch can share one venv).

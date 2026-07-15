@@ -82,7 +82,7 @@ def synth(model, sentences, ref, cfg):
     t0 = time.perf_counter()
     for s in sentences:
         # VERIFIED signature: generate(text, language_id, audio_prompt_path=..., exaggeration,
-        #   cfg_weight, temperature, ...). t3_model="v3" set at load (shipped default is v2).
+        #   cfg_weight, temperature, ...). Signature verified live via inspect.signature.
         wav = model.generate(
             s,
             language_id="ru",
@@ -113,8 +113,8 @@ def main():
             sys.exit(1)
 
     t0 = time.perf_counter()
-    # t3_model="v3" is REQUIRED — the shipped default is v2, which silently loads a worse checkpoint.
-    model = ChatterboxMultilingualTTS.from_pretrained(device=device, t3_model="v3")
+    # chatterbox-tts 0.1.7 from_pretrained takes only (device) — no t3_model arg (verified live).
+    model = ChatterboxMultilingualTTS.from_pretrained(device=device)
     load_s = time.perf_counter() - t0
     sr = model.sr
     print(f"model load: {load_s:.1f}s  sr={sr}")

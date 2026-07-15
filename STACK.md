@@ -192,8 +192,8 @@ pip install chatterbox-tts        # latest 0.1.7 (2026-03-26); import as `chatte
 import torchaudio as ta
 from chatterbox.mtl_tts import ChatterboxMultilingualTTS
 
-# t3_model="v3" is REQUIRED — the shipped DEFAULT is v2, not v3. Omitting it silently gives V2.
-model = ChatterboxMultilingualTTS.from_pretrained(device="cuda", t3_model="v3")
+# chatterbox-tts 0.1.7 from_pretrained takes only device — NO t3_model arg (verified via inspect).
+model = ChatterboxMultilingualTTS.from_pretrained(device="cuda")
 
 # CROSS-LINGUAL: Russian text, timbre from an ENGLISH clip.
 # cfg_weight=0.0 = documented lever to MINIMIZE (not eliminate) reference-accent bleed.
@@ -205,13 +205,13 @@ wav = model.generate(
 )
 ta.save("out_ru.wav", wav, model.sr)
 ```
-Full signature (CONFIRMED): `generate(self, text, language_id, audio_prompt_path=None, exaggeration=0.5, cfg_weight=0.5, temperature=0.8, repetition_penalty=1.2, min_p=0.05, top_p=1.0)`.
+Full signature (verified live, 0.1.7): `generate(self, text, language_id, audio_prompt_path=None, exaggeration=0.5, cfg_weight=0.5, temperature=0.8, repetition_penalty=2.0, min_p=0.05, top_p=1.0)`.
 
 **VRAM:** 0.5B model, ~4–6 GB real-world at inference. Co-resident with whisper-small (~1–2 GB) fits under 12 GB — this is the one intentional two-model stage and it's SAFE. **No verified RTF for the full V3 multilingual on 4080 Mobile** — only datapoint is the 350M Turbo at RTF ~0.5 on a desktop 4090. Extrapolated ~0.8–1.5, UNVERIFIED — measure on host.
 
 **Gotchas (verified):**
 - **REFUTED: "EN reference sounds natively Russian, no accent."** Vendor docs: mismatched reference language → output "may inherit the accent of the reference clip's language"; `cfg_weight=0.0` only "minimizes"/"reduces" bleed. Issue #360: even a native RU reference drifts to English accent + broken stress after ~5 generations. **This is the project's core unproven assumption — see DECISIONS.md.**
-- **v3 not default** — pass `t3_model="v3"` explicitly (loads `t3_mtl23ls_v3.safetensors`, 2.14 GB, from `ResembleAI/chatterbox` — CONFIRMED present). `cfg_weight` gates CFG (`>0.0`); 0.0 disables guidance.
+- **No checkpoint-selection arg** in chatterbox-tts 0.1.7 — `from_pretrained(device)` only; the researched `t3_model="v3"` does NOT exist in this version (verified live via inspect.signature). Whatever checkpoint `from_pretrained` loads is what you get. `cfg_weight` gates CFG (`>0.0`); 0.0 disables guidance.
 - **Hard pins** `transformers==5.2.0`, `torch/torchaudio==2.6.0` — WILL collide with faster-whisper/Qwen tooling. Isolate this venv.
 - **Per-call length bounded** (~few hundred chars / ~40s before hallucination). overdub is per-segment — keep segments short, never feed paragraphs.
 - **No built-in RU normalizer** — the CLAUDE.md normalization (GPU→джи-пи-ю, x2→в два раза) is mandatory before `generate()`.

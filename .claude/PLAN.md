@@ -13,7 +13,7 @@
       × cfg_weight {0.0, 0.5}, one wav per config + printed RTF. Listen: is
       EN-ref RU natural enough to survive a whisper-small round-trip? If not →
       fall back to a fixed RU reference or another engine (see DECISIONS).
-      Load with t3_model="v3" — the shipped default is V2. (Verified API: STACK.md)
+      (API verified live against chatterbox-tts 0.1.7 — see STACK.md.)
 - [ ] yt-dlp download stage
 - [ ] faster-whisper large-v3 transcription with word timestamps
 - [ ] Sentence re-segmentation: words + punctuation → sentences with
