@@ -21,11 +21,21 @@ class Config:
     whisper_device: str = "cuda"
     whisper_compute_type: str = "float16"
 
-    # translation — Qwen3-14B via Ollama (OpenAI-compatible)
-    ollama_base_url: str = "http://localhost:11434/v1"
+    # translation — Qwen3-14B via Ollama native /api/chat (think:false; see stages/translate.py)
+    ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "qwen3:14b"
     num_ctx: int = 4096
-    context_window: int = 4  # previous sentence pairs fed as rolling context
+    context_window: int = 4          # previous OK sentence pairs fed as rolling context
+    ollama_timeout_s: float = 120.0
+    translate_temperature: float = 0.2
+    translate_top_p: float = 0.9
+    translate_seed: int = 42
+    translate_max_retries: int = 3
+    translate_max_tokens: int = 512  # ramble/echo guard
+    translate_max_len_ratio: float = 3.0   # runaway guard: text_ru chars vs source
+    latin_ratio_max: float = 0.30    # english-echo detector (Latin fraction of alpha chars)
+    translate_context_char_cap: int = 2400  # drop oldest ctx pairs beyond this (KV knife-edge)
+    translate_unload: bool = True    # POST keep_alive:0 after the stage to free VRAM
 
     # TTS — Silero
     tts_engine: str = "silero"

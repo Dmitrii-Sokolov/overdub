@@ -40,7 +40,10 @@ class WorkDir:
     def sentences(self) -> Path: return self.root / "sentences.json"      # transcribe
 
     @property
-    def translation(self) -> Path: return self.root / "translation.json"  # translate
+    def translation(self) -> Path: return self.root / "translation.json"  # translate (final)
+
+    @property
+    def translation_partial(self) -> Path: return self.root / "translation.jsonl"  # translate (append-only resume trail)
 
     @property
     def segments_dir(self) -> Path: return self.root / "segments"         # synthesize wavs

@@ -8,8 +8,8 @@
 # whisper_device = "cuda"
 # whisper_compute_type = "float16"
 
-# --- translation (Qwen3-14B via Ollama) ---
-# ollama_base_url = "http://localhost:11434/v1"
+# --- translation (Qwen3-14B via Ollama native /api/chat, think:false) ---
+# ollama_base_url = "http://localhost:11434"
 # ollama_model = "qwen3:14b"
 # num_ctx = 4096
 # context_window = 4
