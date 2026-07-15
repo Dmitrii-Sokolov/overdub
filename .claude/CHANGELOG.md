@@ -12,3 +12,10 @@
   cloning); Silero v4_ru adopted — voice eugene, xenia backup. Cross-lingual
   cloning dropped (same-voice premise abandoned). See DECISIONS engine bake-off.
 - Experiment scripts: scripts/{day1_smoke_test,no_ref_test,silero_test}.py
+
+## 2026-07-15 — Phase 0 skeleton
+- overdub package: CLI, flat-TOML config, per-video workdir, resumable stage
+  runner (skip-if-exists, --only/--force); 7 stages (download real, rest stubs)
+- TTS engine adapter + SileroEngine (torch.hub v4_ru/eugene, soundfile output)
+- Consolidated to one venv (.venv-asr); .venv-tts retired; `pip install -e .`
+- Verified end-to-end: `overdub <url> --only download` → source.mkv + source.wav

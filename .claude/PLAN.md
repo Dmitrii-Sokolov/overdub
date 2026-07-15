@@ -1,16 +1,13 @@
 # PLAN
 
-## Phase 0 — skeleton
-- [ ] CLI entry point (single video URL → final MKV), config file
-- [ ] Work-dir layout: per-video folder with stage artifacts (sentences.json,
-      translation.json, segments/, final.mkv)
-- [ ] Stage runner: per-video loop, stages sequential within a video, each
-      stage resumable, skippable if artifact exists
+## Phase 0 — skeleton ✅ done (see CHANGELOG)
+CLI + flat-TOML config + per-video workdir + resumable stage runner + download
+stage, all verified end-to-end. One venv (.venv-asr), `overdub` package.
 
 ## Phase 1 — MVP happy path (PoC target)
 - [x] Day-1 TTS bake-off — done. Chatterbox rejected, Silero v4_ru/eugene
       adopted (see CHANGELOG + DECISIONS). Scripts: scripts/*_test.py
-- [ ] yt-dlp download stage
+- [x] yt-dlp download stage (implemented in the Phase 0 skeleton)
 - [ ] faster-whisper large-v3 transcription with word timestamps
 - [ ] Sentence re-segmentation: words + punctuation → sentences with
       [start, end]; split overlong sentences (>~15 s) on clause boundaries
