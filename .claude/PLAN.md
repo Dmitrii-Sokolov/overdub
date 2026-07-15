@@ -12,9 +12,10 @@ stage, all verified end-to-end. One venv (.venv-asr), `overdub` package.
 - [x] Sentence re-segmentation → sentences.json (word-level, guarded split,
       duration-aware overlong split). Designed + adversarially reviewed via
       workflows; verified on the sample (see CHANGELOG/DECISIONS)
-- [ ] Translation stage (Qwen3-14B via Ollama): sentence-by-sentence with
-      rolling context window (previous EN+RU pairs), dubbing-aware prompt,
-      outputs text_ru (subtitles) + text_tts (normalized for synthesis)
+- [x] Translation stage (Qwen3-14B via Ollama): per-sentence, ok-only rolling
+      context, native /api/chat think:false; text_ru + normalized text_tts via
+      deterministic normalize.py. Design + review workflows; verified on sample
+      (see CHANGELOG/DECISIONS)
 - [ ] Silero per-sentence synthesis (v4_ru, fixed voice `eugene`) behind a thin
       TTS engine adapter so alternatives can be A/B'd later
 - [ ] Assembly: atempo fitting (uncapped), silence padding, RU track;

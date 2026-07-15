@@ -27,3 +27,18 @@
 - Shared asr.py: Windows cuDNN DLL discovery + whisper loader; cuDNN verified on host
 - 885 words → 50 sentences in 32s (RTF ~0.08); contract validated (ids contiguous,
   no zero-duration slots, monotone non-overlapping, no stutter/dangling artifacts)
+
+## 2026-07-15 — Translate stage (Phase 1)
+- sentences.json → Qwen3-14B (Ollama) → translation.json: per-sentence, id order,
+  rolling ok-only context window; text_ru (subtitles) + text_tts (normalized for TTS).
+  Design + adversarial review via two workflows (3-approach panel; 4-lens review+verify)
+- New overdub/normalize.py: deterministic digits/units/acronyms/Latin/symbols → spoken
+  Russian; idempotent, Cyrillic-only output; normalize_for_compare reused by verify.
+  num2words (ru) added; stdlib speller fallback. 9 unit tests (magnitude/range/collision)
+- Native Ollama /api/chat + think:false (not /v1 — /no_think left content empty on
+  truncated reasoning); ~5s/sentence, openai dependency dropped, stage now stdlib-only
+- Robustness: validate→reseed-retry→flagged EN fallback (never drop); append-only
+  translation.jsonl (fsync) resume keyed on src_en; contiguity enforced; atomic write
+- Verified on the 50-sentence sample: 50/50 ok, 0 flagged, RU/EN length ratios ≤1.67
+  (atempo-friendly), resume confirmed (47→50 in 19s). Review fixed 3 silent magnitude
+  bugs in the normalizer (grouped thousands, decimal ranges, Cyrillic х/с collisions)

@@ -200,3 +200,52 @@ and TTS are robust to it and no timing/id contract is touched.
 timings are monotone and NON-OVERLAPPING, but NOT gap-free — inter-sentence gaps are
 legitimate pause headroom for the RU dub. assemble must anchor each RU clip at its
 own `start`, NEVER butt-join clips, or it destroys sync and the pause budget.
+
+## 2026-07-15 — Translate stage: design panel + review (BUILD)
+
+Design settled by a 3-approach multi-agent panel (simplicity vs quality vs
+robustness biases) + lens judges + synthesis, then an adversarial review pass.
+
+**F1/F2 — LLM returns `text_ru` only; `text_tts = normalize_for_tts(text_ru)` in
+deterministic Python.** Rejected design B (LLM emits `text_tts` too, JSON/delimited):
+qwen's seed is not bit-exact, so an LLM-spelled `text_tts` would diverge from the
+Python normalizer the verify stage applies to the ASR hypothesis, silently depressing
+similarity on correct numeric dubs — the one silent-failure class the project forbids.
+The normalizer must exist as a pure Python function for verify regardless; reusing it
+as the sole `text_tts` source makes the round-trip exact *by construction*.
+
+**F3 — inlined CONTEXT block in a single user message, only `status=="ok"` pairs**
+(a failed English fallback never poisons the next sentence's context). Ollama `/v1`
+is stateless per request, so multi-turn buys no server cache for a sliding window;
+inlining gives exact, snapshot-testable control. One call per sentence, id order —
+NO batching (batching risks a silent sentence merge/drop).
+
+**F4 — validate → reseed+temp-bump retry → flagged English fallback, never drop.**
+Append-only `translation.jsonl` (flush+fsync) for crash resume; contiguity enforced
+(`raise`, not `assert` — a never-drop invariant must survive `python -O`); atomic
+`os.replace`. Each record carries `src_en` so a re-tuned `sentences.json` (same id,
+changed text) forces re-translation instead of reusing the stale RU.
+
+**Endpoint correction — native Ollama `/api/chat` with `think: false`, NOT OpenAI
+`/v1` + `/no_think`.** Empirically on the host: qwen3:14b ignores an in-prompt
+`/no_think` on many samples, and its reasoning (routed to a `reasoning` field) is
+truncated by `num_predict`, leaving `message.content` EMPTY (finish_reason=length).
+The native `think: false` toggle reliably disables thinking — ~3× faster (5s vs 16s
+per sentence, no wasted reasoning tokens) and cleaner output. This drops the `openai`
+dependency; the stage is now stdlib-only (urllib). STACK.md's `/v1` sketch is
+superseded for this stage.
+
+**Normalization is SAFETY-CRITICAL, not incidental.** Because verify normalizes both
+sides with the same code, a magnitude bug (a number voiced with the wrong value) is
+architecturally invisible to the round-trip — it self-agrees and passes unflagged. So
+the normalizer gets its own direct ground-truth tests, not only round-trip coverage.
+The review caught three real magnitude/mangling bugs, now fixed + regression-tested:
+grouped thousands read as decimals (`$1,999` → 1.999, ~1000× low; `10 000` → "десять
+ноль"), decimal ranges shredded (`3.5-4.5` → "три.от пять…"), and Cyrillic `х`/`с` in
+the multiplier/Celsius classes mangling ordinary Russian ("ось х 5", "90° севернее").
+
+**num2words (ru locale) approved as a dependency** for Russian cardinal/ordinal
+spelling (fiddly to hand-roll correctly); a stdlib 0..10⁹ speller stays as the
+import-fallback. Accepted PoC loss: num2words yields nominative case, so oblique
+numerals are occasionally voiced in the wrong case — self-consistent for verify, so
+never false-flagged; audibly-rough-but-not-silent.
