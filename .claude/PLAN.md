@@ -7,6 +7,8 @@
 - [ ] Stage runner: each stage resumable, skippable if artifact exists
 
 ## Phase 1 — MVP happy path
+- [ ] Day-1 ear test (before any pipeline code): standalone Chatterbox script,
+      2-minute Russian fragment with a cloned voice — kill-criteria checkpoint
 - [ ] yt-dlp download stage
 - [ ] faster-whisper large-v3 transcription (segment timestamps)
 - [ ] Ollama translation stage (Qwen3-14B, dubbing-aware prompt)
