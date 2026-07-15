@@ -19,3 +19,11 @@
 - TTS engine adapter + SileroEngine (torch.hub v4_ru/eugene, soundfile output)
 - Consolidated to one venv (.venv-asr); .venv-tts retired; `pip install -e .`
 - Verified end-to-end: `overdub <url> --only download` → source.mkv + source.wav
+
+## 2026-07-15 — Transcribe stage (Phase 1)
+- faster-whisper large-v3 → word timestamps → word-level sentence resegmentation
+  → sentences.json (+ words.json for re-tuning). Design + adversarial review via
+  two workflows (3-approach design panel; 4-lens review + verify)
+- Shared asr.py: Windows cuDNN DLL discovery + whisper loader; cuDNN verified on host
+- 885 words → 50 sentences in 32s (RTF ~0.08); contract validated (ids contiguous,
+  no zero-duration slots, monotone non-overlapping, no stutter/dangling artifacts)

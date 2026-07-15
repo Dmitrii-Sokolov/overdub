@@ -8,9 +8,10 @@ stage, all verified end-to-end. One venv (.venv-asr), `overdub` package.
 - [x] Day-1 TTS bake-off — done. Chatterbox rejected, Silero v4_ru/eugene
       adopted (see CHANGELOG + DECISIONS). Scripts: scripts/*_test.py
 - [x] yt-dlp download stage (implemented in the Phase 0 skeleton)
-- [ ] faster-whisper large-v3 transcription with word timestamps
-- [ ] Sentence re-segmentation: words + punctuation → sentences with
-      [start, end]; split overlong sentences (>~15 s) on clause boundaries
+- [x] faster-whisper large-v3 transcription with word timestamps
+- [x] Sentence re-segmentation → sentences.json (word-level, guarded split,
+      duration-aware overlong split). Designed + adversarially reviewed via
+      workflows; verified on the sample (see CHANGELOG/DECISIONS)
 - [ ] Translation stage (Qwen3-14B via Ollama): sentence-by-sentence with
       rolling context window (previous EN+RU pairs), dubbing-aware prompt,
       outputs text_ru (subtitles) + text_tts (normalized for synthesis)

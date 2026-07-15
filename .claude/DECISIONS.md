@@ -179,3 +179,24 @@ with built-in stress (put_accent/put_yo).
   can't be fixed by reseeding. Failed segments are flagged, not regenerated.
 - **VRAM budget eases.** With TTS on CPU, the only heavy-model contention is
   whisper-large ↔ Qwen; Stage 3 (Silero + whisper-small) barely touches VRAM.
+
+## 2026-07-15 — Transcribe: word-level sentence resegmentation (BUILD, stdlib)
+
+The sentence is the unit of translation/synthesis/timing. Chose a hand-rolled,
+stdlib-only word-level resegmenter over buying pysbd: pysbd returns char spans
+(forcing a fragile char→word remapping — the actually-hard part), is frozen since
+2021, and the input (whisper large-v3 on English speech) is well-punctuated, so the
+accuracy gap is small and a wrong boundary is bounded + recoverable (the overlong
+splitter caps length; Phase-2 ASR verify catches garbage). Whisper segment ends are
+demoted to a *pause prior*, used only to choose a good overlong-split cut point.
+
+Adversarial review (multi-agent) fixed three real defects: zero-duration slots
+(would divide-by-zero in atempo), 2–3× whisper stutters leaking into translation
+('and and', 'situations. situations.'), and overlong-split cuts stranding bare
+function words. Deferred as cosmetic: sub-word spacing ('decision -making') — Qwen
+and TTS are robust to it and no timing/id contract is touched.
+
+**Contract for the future assemble stage (surfaced by the review):** sentences.json
+timings are monotone and NON-OVERLAPPING, but NOT gap-free — inter-sentence gaps are
+legitimate pause headroom for the RU dub. assemble must anchor each RU clip at its
+own `start`, NEVER butt-join clips, or it destroys sync and the pause budget.
