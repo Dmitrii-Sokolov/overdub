@@ -101,3 +101,42 @@ applies to whisper large-v3 / Qwen3-14B / TTS.
 
 **EN→RU fixed.** Source is always English, output always Russian. No language
 detection or multi-language handling anywhere in the pipeline.
+
+## 2026-07-15 — Stack verification (pre-code multi-agent research pass)
+
+Verified the whole stack against primary sources before writing pipeline code
+(5 researchers + adversarial refutation of risky claims + synthesis, ~960k
+tokens). Full reference: STACK.md, SETUP.md. Decision-relevant outcomes:
+
+**Chatterbox EN-ref → RU: CONDITIONAL GO, not settled.** Mechanics verified —
+Russian is officially supported, `ChatterboxMultilingualTTS` + `generate()`
+signature confirmed, V3 checkpoint loads, 0.5B fits 12 GB. But the core value
+proposition — an English reference producing natural Russian — is REFUTED in
+its strong form: Resemble AI's own docs state a language-mismatched reference
+inherits its accent *by default*, and `cfg_weight=0.0` only *minimizes*, never
+eliminates, the bleed. Issue #360: even a native RU reference drifts to an
+English accent + broken stress after ~5 generations. No ear-test / round-trip
+evidence for EN-ref→RU exists. Day-1 is therefore a load-bearing A/B ear test
+(EN-ref vs RU-ref × cfg_weight 0.0/0.5), not a formality. Fallback if EN-ref
+fails: fixed RU reference (loses same-voice) or Silero/XTTS behind the adapter.
+The per-segment ASR round-trip is exactly the safety net for this — it's why
+CONDITIONAL and not NO-GO.
+
+**Corrections that change implementation:**
+- Chatterbox default checkpoint is **V2** — must pass `t3_model="v3"` explicitly.
+- Chatterbox hard-pins `torch==2.6.0` / `transformers==5.2.0` → isolated TTS
+  venv (`.venv-tts`); ASR stack in `.venv-asr`. Forced by Chatterbox's pins,
+  not by whisper (faster-whisper + torch can share one venv).
+- Qwen3-14B Q4_K_M in 12 GB is knife-edge: pin `num_ctx` ≤ 8K (4K per segment).
+  Ollama preallocates KV for the *full* num_ctx, and Windows sysmem fallback
+  turns overflow into a silent 5–30× slowdown, not a clean OOM.
+- faster-whisper does NOT "never OOM" — batching can hit 19 GB; keep batch/beam
+  conservative. Windows CTranslate2 needs `os.add_dll_directory` for cuDNN 9.
+
+**Refuted worries (safe to rely on):** Ollama `/v1` honors `seed`; `qwen3:14b`
+carries the think toggle (thinking goes to `message.thinking`, not `content`) —
+keep the regex strip only as a fallback; atempo equal-split keeps exact duration.
+
+**RTF is unmeasured** on the RTX 4080 Mobile for every GPU stage (only
+third-party / different-GPU numbers exist) — measure on host before trusting
+the x5 throughput budget.

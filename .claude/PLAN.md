@@ -8,10 +8,12 @@
       stage resumable, skippable if artifact exists
 
 ## Phase 1 — MVP happy path (PoC target)
-- [ ] Day-1 Chatterbox smoke test (before any pipeline code): standalone
-      script, 2-minute Russian fragment, voice cloned from an **English**
-      reference clip (prod condition); confirms the pinned checkpoint
-      actually supports Russian
+- [ ] Day-1 Chatterbox A/B ear test (before any pipeline code):
+      scripts/day1_smoke_test.py — ~2-min RU synthesis over {EN ref, RU ref}
+      × cfg_weight {0.0, 0.5}, one wav per config + printed RTF. Listen: is
+      EN-ref RU natural enough to survive a whisper-small round-trip? If not →
+      fall back to a fixed RU reference or another engine (see DECISIONS).
+      Load with t3_model="v3" — the shipped default is V2. (Verified API: STACK.md)
 - [ ] yt-dlp download stage
 - [ ] faster-whisper large-v3 transcription with word timestamps
 - [ ] Sentence re-segmentation: words + punctuation → sentences with
@@ -48,7 +50,11 @@
 - [ ] Silero-on-CPU as TTS; measure total throughput vs x5 budget
 
 ## Open questions
-- Chatterbox variant/checkpoint to pin (Multilingual release, exact version)
 - Similarity metric and threshold for ASR verification (WER? char-level?)
 - Reference-clip selection for cloning: how to auto-pick a clean 6–10 s sample
   (speech only, no music/noise) from the source audio
+- RTF unverified on the RTX 4080 Mobile for every GPU stage (only third-party /
+  different-GPU numbers exist) — measure on host before trusting the x5 budget
+
+Stack pins, verified APIs and setup: STACK.md + SETUP.md (checkpoint question
+resolved — chatterbox-tts 0.1.7, ChatterboxMultilingualTTS, t3_model="v3").
