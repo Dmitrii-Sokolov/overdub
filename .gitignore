@@ -2,7 +2,10 @@
 __pycache__/
 *.py[cod]
 .venv/
+.venv-asr/
+.venv-tts/
 venv/
+hf_home/
 *.egg-info/
 .pytest_cache/
 
