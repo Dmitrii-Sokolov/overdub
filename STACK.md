@@ -173,51 +173,56 @@ text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()  # defen
 
 ---
 
-## Stage 3 — TTS: Chatterbox Multilingual (EN reference → RU) + whisper-small verify
+## Stage 3 — TTS: Silero v4_ru (fixed voice) + whisper-small verify
 
-> **HIGHEST-RISK STAGE.** Mechanics verified; RU-from-EN-reference *quality* is REFUTED-as-guaranteed and must be ear-tested day 1. See DECISIONS.md go/no-go.
+> Engine chosen after the day-1 ear test **rejected Chatterbox** — its Russian
+> was unacceptable even without cloning (see DECISIONS.md). Silero: native
+> Russian, fixed speakers (no cloning), tiny, CPU-fast, built-in stress.
 
-**Install (ISOLATED venv — hard pins collide with the whisper/torch venv)**
+**Install** — no pip package required; `torch.hub` fetches the model. Silero
+needs only `torch` + `torchaudio` (+ `omegaconf`), so it can share the ASR venv
+— the separate `.venv-tts` existed only for Chatterbox and can be retired.
 ```powershell
-py -3.12 -m venv .venv-tts
-.venv-tts\Scripts\Activate.ps1
-# Install CUDA torch FIRST (chatterbox does NOT pull a CUDA build itself):
-pip install torch==2.6.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cu124
-pip install chatterbox-tts        # latest 0.1.7 (2026-03-26); import as `chatterbox`
-# git must be on PATH — resemble-perth installs from a git URL at build time.
+pip install omegaconf            # usually already present; torch/torchaudio already installed
+# model auto-downloads on first torch.hub.load (~38 MB, cached in ~/.cache/torch/hub)
 ```
 
-**Verified API**
+**Verified API** (working on host)
 ```python
-import torchaudio as ta
-from chatterbox.mtl_tts import ChatterboxMultilingualTTS
+import torch, torchaudio as ta
 
-# chatterbox-tts 0.1.7 from_pretrained takes only device — NO t3_model arg (verified via inspect).
-model = ChatterboxMultilingualTTS.from_pretrained(device="cuda")
+# CPU by design — 38 MB model, measured RTF ~0.02–0.3 on CPU; keeps the GPU free.
+model, _ = torch.hub.load("snakers4/silero-models", "silero_tts",
+                          language="ru", speaker="v4_ru", trust_repo=True)
+model.to(torch.device("cpu"))
 
-# CROSS-LINGUAL: Russian text, timbre from an ENGLISH clip.
-# cfg_weight=0.0 = documented lever to MINIMIZE (not eliminate) reference-accent bleed.
-wav = model.generate(
-    "Привет, это тест синтеза русской речи.",
-    language_id="ru",                         # REQUIRED for the multilingual class
-    audio_prompt_path="reference_en.wav",     # 10s+ mono clip of the EN source speaker
-    exaggeration=0.5, cfg_weight=0.0, temperature=0.8,
+audio = model.apply_tts(                      # returns a 1-D float tensor
+    text="Это тест синтеза русской речи.",
+    speaker="eugene",                         # primary voice; xenia = backup
+    sample_rate=48000,                        # 8000 / 24000 / 48000 — 48k is best
+    put_accent=True, put_yo=True,             # auto stress + ё
 )
-ta.save("out_ru.wav", wav, model.sr)
+ta.save("seg.wav", audio.unsqueeze(0), 48000)  # apply_tts is 1-D → unsqueeze for save
 ```
-Full signature (verified live, 0.1.7): `generate(self, text, language_id, audio_prompt_path=None, exaggeration=0.5, cfg_weight=0.5, temperature=0.8, repetition_penalty=2.0, min_p=0.05, top_p=1.0)`.
 
-**VRAM:** 0.5B model, ~4–6 GB real-world at inference. Co-resident with whisper-small (~1–2 GB) fits under 12 GB — this is the one intentional two-model stage and it's SAFE. **No verified RTF for the full V3 multilingual on 4080 Mobile** — only datapoint is the 350M Turbo at RTF ~0.5 on a desktop 4090. Extrapolated ~0.8–1.5, UNVERIFIED — measure on host.
+**Voices** (v4_ru, fixed set): `aidar`, `baya`, `kseniya`, `xenia`, `eugene`,
+`random`. Host ear-test verdict: **eugene = primary** (best balance), **xenia =
+backup**; aidar/kseniya poor, baya has a sibilant hiss. No cloning — every video
+gets the same chosen narrator voice (the same-voice premise was dropped).
 
-**Gotchas (verified):**
-- **REFUTED: "EN reference sounds natively Russian, no accent."** Vendor docs: mismatched reference language → output "may inherit the accent of the reference clip's language"; `cfg_weight=0.0` only "minimizes"/"reduces" bleed. Issue #360: even a native RU reference drifts to English accent + broken stress after ~5 generations. **This is the project's core unproven assumption — see DECISIONS.md.**
-- **No checkpoint-selection arg** in chatterbox-tts 0.1.7 — `from_pretrained(device)` only; the researched `t3_model="v3"` does NOT exist in this version (verified live via inspect.signature). Whatever checkpoint `from_pretrained` loads is what you get. `cfg_weight` gates CFG (`>0.0`); 0.0 disables guidance.
-- **Hard pins** `transformers==5.2.0`, `torch/torchaudio==2.6.0` — WILL collide with faster-whisper/Qwen tooling. Isolate this venv.
-- **Per-call length bounded** (~few hundred chars / ~40s before hallucination). overdub is per-segment — keep segments short, never feed paragraphs.
-- **No built-in RU normalizer** — the CLAUDE.md normalization (GPU→джи-пи-ю, x2→в два раза) is mandatory before `generate()`.
-- Every output carries an imperceptible **Perth watermark** (not optional in default path). First run downloads weights from HF (needs network, then cached under HF_HOME).
+**VRAM:** effectively **zero** — runs on CPU (model ~0.1–0.5 GB even on GPU).
+whisper-small verify (~1 GB) has the whole Stage-3 budget to itself. **Measured
+RTF ~0.02–0.3 on CPU** — TTS is no longer a throughput factor.
 
-**Sources:** github.com/resemble-ai/chatterbox (mtl_tts.py, README tips, issue #360), pypi.org/project/chatterbox-tts, huggingface.co/ResembleAI/chatterbox, replicate.com/resemble-ai/chatterbox-multilingual
+**Controls / gotchas:**
+- **Speech rate / pauses** via SSML (`<prosody rate="...">`, `<break time="400ms"/>`), but the pipeline fits timing with `atempo` at assembly anyway — SSML rate is secondary.
+- **Manual stress**: put `+` after the stressed vowel (`«зам+ок»`) to fix homographs / names; `put_accent=True` handles the common case automatically.
+- **Deterministic** — no temperature/seed; same text → same audio. Good for a reproducible verify gate, BUT a failed segment can't be "reseeded" — it gets flagged, not regenerated (differs from a neural cloner; changes the Phase 2 retry design).
+- **Per-call text length** bounded (~1000 chars) — per-sentence input is fine.
+- **Sibilant hiss** on some speakers (baya) — de-ess / `afftdn` post-pass if ever needed; eugene is clean.
+- Normalization (GPU→джи-пи-ю, x2→в два раза) still mandatory before synthesis.
+
+**Sources:** github.com/snakers4/silero-models, pytorch.org/hub/snakers4_silero-models_tts, models.silero.ai
 
 ---
 
@@ -236,4 +241,4 @@ def ollama_unload(model="qwen3:14b"):
     requests.post("http://localhost:11434/api/generate", json={"model": model, "keep_alive": 0})
     # then VERIFY release (ollama ps / nvidia-smi) before loading Stage-3 PyTorch models
 ```
-Order: Stage1 whisper → `unload` → Stage2 Ollama → `ollama_unload` + verify free VRAM → Stage3 Chatterbox+whisper-small.
+Order: Stage1 whisper → `unload` → Stage2 Ollama → `ollama_unload` + verify free VRAM → Stage3 Silero (CPU) + whisper-small. With Silero on CPU, Stage 3 barely touches VRAM — the only real juggling is whisper-large ↔ Qwen.

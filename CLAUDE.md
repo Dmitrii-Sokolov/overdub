@@ -40,18 +40,21 @@ segments are tolerated, silent failures are not.
 
 ## Stack (v1)
 
-yt-dlp → faster-whisper large-v3 → Qwen3-14B (Ollama) → Chatterbox Multilingual → ffmpeg.
+yt-dlp → faster-whisper large-v3 → Qwen3-14B (Ollama) → Silero v4_ru → ffmpeg.
 
-TTS engines are pluggable: Chatterbox first; Silero and XTTS-v2 behind the same
-interface later. Don't hardcode Chatterbox specifics outside the engine adapter.
+TTS engines are pluggable behind an adapter: Silero (voice `eugene`, `xenia`
+backup) is the chosen engine after Chatterbox was rejected in the day-1 ear test
+(see DECISIONS). No voice cloning — fixed narrator voice. Don't hardcode Silero
+specifics outside the engine adapter.
 
 ## Design rules
 
 - Every TTS segment goes through ASR verification (whisper-small round-trip +
   normalized text similarity), always on raw audio — before atempo. Failed
-  segments regenerate with a new seed, max N retries, then the best-scoring
-  attempt is kept and flagged in the run report — the pipeline never blocks
-  on a bad segment and never hides one.
+  segments are flagged in the run report; for engines with a random seed, retry
+  with a new seed up to N times first (Silero is deterministic — reseeding is a
+  no-op, so its failures are flagged directly). The pipeline never blocks on a
+  bad segment, never hides one.
 - All intermediate artifacts (transcript, translation, per-segment audio) are
   persisted to the work dir. Every stage must be resumable and re-runnable in
   isolation — the pipeline is semi-automated by design.

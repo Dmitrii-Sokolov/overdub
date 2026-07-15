@@ -8,12 +8,8 @@
       stage resumable, skippable if artifact exists
 
 ## Phase 1 — MVP happy path (PoC target)
-- [ ] Day-1 Chatterbox A/B ear test (before any pipeline code):
-      scripts/day1_smoke_test.py — ~2-min RU synthesis over {EN ref, RU ref}
-      × cfg_weight {0.0, 0.5}, one wav per config + printed RTF. Listen: is
-      EN-ref RU natural enough to survive a whisper-small round-trip? If not →
-      fall back to a fixed RU reference or another engine (see DECISIONS).
-      (API verified live against chatterbox-tts 0.1.7 — see STACK.md.)
+- [x] Day-1 TTS bake-off — done. Chatterbox rejected, Silero v4_ru/eugene
+      adopted (see CHANGELOG + DECISIONS). Scripts: scripts/*_test.py
 - [ ] yt-dlp download stage
 - [ ] faster-whisper large-v3 transcription with word timestamps
 - [ ] Sentence re-segmentation: words + punctuation → sentences with
@@ -21,8 +17,8 @@
 - [ ] Translation stage (Qwen3-14B via Ollama): sentence-by-sentence with
       rolling context window (previous EN+RU pairs), dubbing-aware prompt,
       outputs text_ru (subtitles) + text_tts (normalized for synthesis)
-- [ ] Chatterbox Multilingual per-sentence synthesis — voice cloned from the
-      original speaker (reference clip extracted from source audio)
+- [ ] Silero per-sentence synthesis (v4_ru, fixed voice `eugene`) behind a thin
+      TTS engine adapter so alternatives can be A/B'd later
 - [ ] Assembly: atempo fitting (uncapped), silence padding, RU track;
       per-segment speed factor logged
 - [ ] ffmpeg mux: MKV with original audio + RU dub + EN/RU SRT subs
@@ -38,11 +34,11 @@
 - [ ] Overnight-run ergonomics: progress log, summary report, flagged-segment
       list with speed factors
 
-## Phase 3 — TTS alternatives
-- [ ] TTS engine interface; move Chatterbox behind it
-- [ ] Silero adapter (CPU path)
-- [ ] XTTS-v2 adapter
-- [ ] A/B listening test on the same 2-minute fragment; pick default
+## Phase 3 — TTS alternatives (only if eugene proves insufficient)
+- [ ] Second engine behind the Phase-1 adapter
+- [ ] F5-TTS adapter (modern, alive) — the option if voice matching / expressiveness
+      is ever needed; NOT XTTS (dead, non-commercial, same cross-lingual accent risk)
+- [ ] A/B listening test on the same fragment; pick default
 
 ## Phase 4 — Arc B390 path (optional)
 - [ ] whisper.cpp SYCL/OpenVINO for STT
@@ -51,10 +47,9 @@
 
 ## Open questions
 - Similarity metric and threshold for ASR verification (WER? char-level?)
-- Reference-clip selection for cloning: how to auto-pick a clean 6–10 s sample
-  (speech only, no music/noise) from the source audio
-- RTF unverified on the RTX 4080 Mobile for every GPU stage (only third-party /
-  different-GPU numbers exist) — measure on host before trusting the x5 budget
+- Silero stress errors on names/homographs — worth a `+`-stress dictionary pass?
+- RTF unverified on the RTX 4080 Mobile for whisper + Qwen (TTS is CPU/near-free)
+  — measure end-to-end on host before trusting the x5 budget
 
-Stack pins, verified APIs and setup: STACK.md + SETUP.md (checkpoint question
-resolved — chatterbox-tts 0.1.7, ChatterboxMultilingualTTS, t3_model="v3").
+Stack pins, verified APIs and setup: STACK.md + SETUP.md. TTS engine settled:
+Silero v4_ru, voice eugene (xenia backup); Chatterbox rejected (day-1 ear test).

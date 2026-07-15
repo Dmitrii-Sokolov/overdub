@@ -142,3 +142,40 @@ keep the regex strip only as a fallback; atempo equal-split keeps exact duration
 **RTF is unmeasured** on the RTX 4080 Mobile for every GPU stage (only
 third-party / different-GPU numbers exist) — measure on host before trusting
 the x5 throughput budget.
+
+## 2026-07-15 — Day-1 engine bake-off: Chatterbox rejected, Silero adopted
+
+Ran the day-1 ear test on real audio before writing pipeline code. Outcome
+overturns two founding decisions.
+
+**Chatterbox REJECTED.** Cloning from an English reference produced unusable
+Russian (heavy accent + artifacts), as the vendor docs warned. Critically, even
+WITHOUT a reference (built-in voice, `audio_prompt_path=None`) the Russian was
+still bad — so it's the engine's ceiling, not just cross-lingual cloning. No
+point tuning it. RTF was fine (~0.76–0.83 on the 4080M), but quality gates, not
+speed. Incidental findings: the researched `t3_model="v3"` arg does not exist in
+chatterbox-tts 0.1.7 (from_pretrained takes only `device`); `russian_text_stresser`
+was unavailable so stress was skipped; several segments hit repetition/EOS-forcing.
+
+**Silero v4_ru ADOPTED (voice `eugene`, `xenia` backup).** Native Russian, clean
+and intelligible, deterministic, ~38 MB, runs on CPU at RTF ~0.02–0.3 (zero VRAM).
+Host ear test of all 5 voices: eugene best, xenia acceptable; aidar/kseniya poor,
+baya has sibilant hiss. Loaded via torch.hub (snakers4/silero-models), `apply_tts`
+with built-in stress (put_accent/put_yo).
+
+**Consequences (supersede founding decisions):**
+- **"Voice cloning first, fixed voice as rollback" is DEAD.** Cross-lingual
+  cloning on local models doesn't deliver clean Russian (Chatterbox failed; XTTS
+  is the same category and would fail the same way). Same-voice premise dropped:
+  every video gets one fixed narrator voice.
+- **"Chatterbox Multilingual as first TTS engine" is superseded** by Silero.
+- **XTTS rejected** without testing: dead project (Coqui folded), non-commercial
+  license, same cross-lingual accent risk. The modern cloner, if expressiveness
+  is ever needed, is F5-TTS — not XTTS.
+- **The two-venv split collapses.** `.venv-tts` existed only for Chatterbox's
+  torch==2.6.0 / transformers==5.2.0 pins. Silero needs only torch+torchaudio, so
+  it can share the ASR venv; `.venv-tts` can be retired.
+- **Verify-loop retry changes.** Silero is deterministic — a failed round-trip
+  can't be fixed by reseeding. Failed segments are flagged, not regenerated.
+- **VRAM budget eases.** With TTS on CPU, the only heavy-model contention is
+  whisper-large ↔ Qwen; Stage 3 (Silero + whisper-small) barely touches VRAM.

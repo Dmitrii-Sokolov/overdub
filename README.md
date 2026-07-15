@@ -17,8 +17,9 @@ hundreds of hours of single-speaker content.
    translations), prompted to keep length close to the original (it's dubbing,
    not prose). Output per sentence: raw RU for subtitles + normalized RU
    (numbers, acronyms, Latin terms spelled out) for TTS.
-4. **Synthesize (TTS)** — Chatterbox Multilingual generates Russian audio per
-   sentence, voice cloned from the original speaker.
+4. **Synthesize (TTS)** — Silero (v4_ru, native Russian, fixed voice `eugene`)
+   generates Russian audio per sentence. No voice cloning — a single narrator
+   voice for every video (cross-lingual cloning was dropped; see DECISIONS).
 5. **Verify** — each synthesized segment is transcribed back with whisper (small)
    and compared against the normalized TTS text; mismatches trigger
    regeneration with a new seed. Runs on raw audio, before any speed-up.
@@ -47,7 +48,7 @@ embedded as subtitle tracks for free.
 | Download | yt-dlp | |
 | STT | faster-whisper large-v3 | CUDA |
 | Translation | Qwen3-14B Q4 via Ollama | OpenAI-compatible endpoint — swap-friendly |
-| TTS | Chatterbox Multilingual | first engine; Silero and XTTS-v2 planned behind the same interface |
+| TTS | Silero v4_ru (CPU) | native RU, fixed voice `eugene`; pluggable engine adapter |
 | Verification | faster-whisper small | ASR round-trip check |
 | Mux | ffmpeg | atempo fitting, MKV output |
 
@@ -58,11 +59,11 @@ embedded as subtitle tracks for free.
   simultaneously. (Per-stage batching across many videos — one model load per
   stage — is a Phase 2 option.)
 - **Secondary (later):** Intel Arc B390 iGPU. whisper.cpp (SYCL/OpenVINO) and
-  llama.cpp (SYCL) are proven there; Chatterbox on XPU is unproven — Silero on
-  CPU is the fallback.
+  llama.cpp (SYCL) are proven there for STT/translation; Silero TTS already runs
+  on CPU, so the synthesis stage is GPU-independent.
 
-Throughput budget: ≤ x5 video duration. Expected on the 4080M: ~x1–1.5 with
-Chatterbox including verification.
+Throughput budget: ≤ x5 video duration. TTS is near-free (Silero on CPU, RTF
+~0.02–0.3); the real cost is transcription + translation. Measure end-to-end on host.
 
 ## Constraints / assumptions
 
@@ -71,6 +72,8 @@ Chatterbox including verification.
 - Source is always English, output is always Russian.
 - No tempo compression cap — segments are sped up as much as their slot
   requires; occasional broken segments are acceptable losses (PoC).
+- Fixed TTS voice (Silero `eugene`) — no voice cloning; "same voice as the
+  speaker" was dropped after the day-1 engine bake-off.
 
 ## Status
 
