@@ -249,3 +249,17 @@ spelling (fiddly to hand-roll correctly); a stdlib 0..10⁹ speller stays as the
 import-fallback. Accepted PoC loss: num2words yields nominative case, so oblique
 numerals are occasionally voiced in the wrong case — self-consistent for verify, so
 never false-flagged; audibly-rough-but-not-silent.
+
+**Contract for downstream stages (synthesize / verify — for whoever builds them next):**
+`translation.json` is a list of `{id, start, end, src_en, text_ru, text_tts,
+status ("ok"|"failed"), attempts, flag?}`, id-contiguous with `sentences.json`.
+- **synthesize** feeds `text_tts` (NEVER `text_ru`) to Silero — one wav per id, on RAW
+  audio before any atempo. `en.srt`/`ru.srt` come from `src_en`/`text_ru`.
+- **verify** MUST `from ..normalize import normalize_for_compare` and compare it applied to
+  `text_tts` vs the whisper-small RU hypothesis — the SAME function on both sides, or numeric
+  dubs false-flag. Silero is deterministic, so a failed round-trip is flagged, not reseeded.
+- `status:"failed"` records are already flagged by translate (bad/echoed translation, EN
+  fallback in `text_ru`); verify adds its own low-similarity flag on top, never overwrites.
+- The 245 s/50-sentence throughput (~0.8× realtime, translate alone) is the batch-scale
+  bottleneck created by the deliberate one-call-per-sentence (no-batching) safety choice —
+  revisit batching FIRST if overnight runs get time-bound, not the normalizer or context scheme.
