@@ -38,7 +38,7 @@ class Config:
     translate_unload: bool = True    # POST keep_alive:0 after the stage to free VRAM
 
     # TTS — engine selection + seed policy
-    tts_engine: str = "silero"       # "silero" | "f5"; flips to "f5" at Phase-3 closure
+    tts_engine: str = "f5"           # "f5" (production, Phase-3 ear check 2026-07-16) | "silero" (fallback)
     tts_voice: str = "eugene"        # silero-only
     tts_sample_rate: int = 48000     # silero-only (F5 sr is engine-owned: 24000)
     tts_seed: int = 42               # base seed (seed-capable engines); retries use seed+attempt
