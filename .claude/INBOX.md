@@ -37,3 +37,16 @@ Tags: `[bug] [feature] [chore] [?]` — one line per entry, processed weekly.
 - [?] nfe=32 vs 48: RTF 0.27 vs 0.39 — ear-check the quality delta once the engine is integrated
 - [chore] setup: fetch ref_espeech_demo (HF Space ref/example.mp3) + ESpeech checkpoint if missing — document in SETUP.md during integration
 - [chore] before ANY publication of dubs: replace narrator with a rights-clear reference + re-check ESpeech Apache provenance caveat (weights possibly derived from CC-BY-NC base)
+- [chore] female PD narrator reference for gender-matching: search the ESpeech community first — HF Space Den4ikAI/ESpeech-TTS discussions + the author's channels/forums (where example.mp3 lives) for shared female refs; fallback: re-scan LibriVox female readers with decent mics (xenium5 rejected: mic; chekhov01: timbre)
+
+## Ideas backlog (2026-07-16 session brainstorm; top-3 first — duplicated in PLAN roadmap/backlog)
+- [feature] babble detector in verify: expected-vs-actual duration heuristic + optional local MOS (UTMOS) — ASR round-trip PROVEN blind to babble (sim 0.93 on garbage audio)
+- [feature] per-segment NATIVE F5 speed from slot budget, atempo only on the residual — ×1.6 verified at ≤0.022 sim cost; part of F5Engine integration
+- [feature] morning triage HTML for batch runs: flagged segments (+2 s context) with audio players + one-command reseed — listen to 1–2% instead of 100%
+- [feature] sentence grouping for prosody: adjacent sentences with gap <0.4 s → one synth call (also mitigates the id43 ultra-short class)
+- [feature] --repair id,id --seed N: point re-synthesis + remux without a full rerun
+- [feature] per-run terminology glossary: pin the first translation of recurring terms (AI → один вариант на весь ролик)
+- [feature] singing/music detection (whisper no-speech prob) → keep original audio, don't dub songs
+- [chore] loudnorm/EQ pass on the dub track at assemble
+- [feature] --subs-only fast path: skip the TTS tail, emit MKV with original audio + both subtitle tracks
+- [?] cross-video stage pipelining (translate on GPU ∥ synth/verify of the previous video) — only if overnight batches get time-bound
