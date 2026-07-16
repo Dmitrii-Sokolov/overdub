@@ -263,3 +263,59 @@ status ("ok"|"failed"), attempts, flag?}`, id-contiguous with `sentences.json`.
 - The 245 s/50-sentence throughput (~0.8× realtime, translate alone) is the batch-scale
   bottleneck created by the deliberate one-call-per-sentence (no-batching) safety choice —
   revisit batching FIRST if overnight runs get time-bound, not the normalizer or context scheme.
+
+## 2026-07-15 — Pipeline tail (synthesize / verify / assemble / mux): design panel + review
+
+Settled by a 3-bias design panel (minimalist / robust / timing-correctness) + synthesis, then a
+4-lens adversarial review with per-finding refutation. The six load-bearing decisions:
+
+**atempo slot = `[start_i, start_{i+1})`, not `[start_i, end_i]`.** Every clip is anchored at its
+own absolute start, so consuming the following inter-sentence gap only delays the start of
+*silence*, never the next sentence (independently anchored). `[start, next.start)` therefore
+strictly dominates: it spends free pause before pitch-warping ("no tempo cap" ≠ "no effort").
+Last segment: unbounded, factor 1.0 (nothing follows to protect; the dub may outlast the video —
+MKV tolerates it). Shorter-than-slot clip → factor 1.0, place raw, remainder stays silent.
+
+**Timeline = pre-allocated int16 buffer, absolute-offset disjoint blit, single per-segment
+atempo.** Each clip written at `round(start*sr)` truncated to its slot → zero cumulative drift;
+disjoint slots make direct assignment lossless (Silero writes PCM_16). ffmpeg 7.1.1 atempo range
+is 0.5–100 as a *single* filter — no chaining ever. Rejected: streaming SoundFile writer (its
+"100 h = 69 GB" is a per-*batch* strawman; one video ≤ ~700 MB int16 and streaming reintroduces
+cursor-drift + butt-join complexity that absolute placement eliminates by construction);
+float32 buffer (2× memory, no gain — disjoint, no summing).
+
+**report.json is co-owned via `overdub/report.py` (merge-by-id), and `verify.done()` checks the
+`"verify"` marker key — NOT `report.exists()`.** The marker fix is the highest-value guard in the
+whole tail: with an existence gate, an `--only assemble` run (which creates report.json first)
+would make `verify.done()` True forever → verification silently never runs, the one forbidden
+failure. A single `upsert` preserving foreign keys stops verify/assemble clobbering each other;
+`prune` drops phantom records after a re-tune shrinks the sentence count.
+
+**verify similarity = char-level `SequenceMatcher(autojunk=False).ratio()`** on the two normalized
+strings. Char-level tolerates Russian inflectional endings (`фреймворк` vs `фреймворка` → 0.947,
+where a word-token metric gives 0.0 and false-flags every short segment), while gross skips still
+move enough chars to trip 0.8. `autojunk=False` is mandatory — the default treats common Cyrillic
+letters as junk on ≥200-char strings (sentences reach MAX_CHARS=240) and silently skews the score.
+
+**synthesize uses the existing `build_engine(cfg)`** (the factory already existed — the minimalist
+"hardcode Silero" was wrong); resume reuses a wav iff `text_tts` unchanged AND the prior flag is
+not `synth_error` (transient errors always retry; mirrors translate's src_en-unchanged guard).
+
+**mux dub codec = native `aac 128k` mono, RU dub as the DEFAULT track.** aac ships in every ffmpeg
+build; the "external binaries not guaranteed" contract forbids gambling on optional `libopus`
+(a one-flag post-PoC upgrade). Video is `-c:v copy`, non-negotiable. Atomic `.mkv.tmp` + os.replace
+so a killed ffmpeg can't leave a partial output that satisfies `done()`.
+
+**Review outcome:** 13 findings → 11 kept (ALL verified down to PLAUSIBLE/low, 0 CONFIRMED,
+0 critical), 2 refuted (one misread `.strip()`; one invented a non-monotone-timing scenario the
+transcribe contract provably forbids). 8 cheap robustness fixes applied — the seg_manifest guard
+in verify, `sf.info` wrapped so a corrupt wav flags instead of crashing the stage (never block on
+a bad segment), a loud RuntimeError on a zero-segment (speech-free) source, uncapped speed-factor
+logging (the ≤100 clamp applies only to the ffmpeg arg), resume flag-carry, report.prune, a
+report.load corruption warning, and a `missing_audio` flag. Deferred: download.py has no
+`shutil.which` preflight (pre-existing, out of scope) → INBOX.
+
+**Real bug found by *running* it, not by review:** `sf.write` cannot infer WAV format from an
+atomic `…/NNNNN.wav.tmp` path → every segment failed `synth_error` on the first run. Fixed by
+making SileroEngine write with explicit `format="WAV"`. Lesson: soundfile format inference keys on
+the file extension, so any caller passing a temp/suffixless path must pass `format=` explicitly.

@@ -1,5 +1,32 @@
 # CHANGELOG
 
+## 2026-07-16 — Phase 1 validated (user ear-test)
+- User inspected the assembled output on a real video: RU dub audio present, positioned at the
+  correct timestamps, translation correct. This is the Phase-1 quality gate — the pipeline is
+  proven turn-key (URL→MKV) on real content, not just mechanically on the sample. Phase 1 closed;
+  next up is Phase 2 (batch mode) after broader real-content passes + full-length RTF measurement
+
+## 2026-07-15 — Pipeline tail: synthesize + verify + assemble + mux (Phase 1 complete, turn-key)
+- Filled the last 4 stub stages → the pipeline now runs URL→MKV end-to-end. Design panel
+  (3-bias) + adversarial review (4-lens + per-finding verify) workflows, per the project rhythm
+- synthesize: build_engine (Silero eugene) renders text_tts → segments/NNNNN.wav + manifest.json;
+  atomic per-wav (tmp+os.replace), staleness-guarded resume (text_tts + flag), 0-frame honest
+  empty slot, sr-drift guard, never-drop contiguity
+- verify: whisper-small round-trip on RAW wavs; char-level SequenceMatcher(autojunk=False) of
+  normalize_for_compare(text_tts) vs RU hypothesis @ 0.8; deterministic → flag not reseed;
+  done() checks the "verify" marker key (NOT report.exists()) so an out-of-order run can't
+  silently disable verification; loud guard if run before synthesize
+- assemble: place each clip at absolute round(start*sr) in an int16 buffer, slot = [start,
+  next.start) (gap = pause headroom), atempo uncapped (ffmpeg single-filter 0.5–100), speed
+  factor logged UNCAPPED; dub_ru.wav + en.srt/ru.srt; atomic dub written last
+- mux: MKV = av1 video copy + orig aac + RU dub (aac 128k, DEFAULT track) + EN/RU SRT with
+  language metadata; explicit per-stream maps; atomic .mkv.tmp
+- new overdub/report.py: co-owned report.json (load/upsert/save/prune, merge-by-id) so verify
+  and assemble never clobber each other's fields; + workdir.seg_wav; silero.py explicit format="WAV"
+- Verified on the 50-sentence sample (each stage via --only): synth 50/0-flagged, verify mean
+  sim 0.988 / 0 flagged, assemble 3 sped max ×1.23, mux → 5-stream MKV (video not re-encoded).
+  Review: 13 findings → 11 kept (all PLAUSIBLE/low), 2 refuted; 8 cheap fixes applied, 1 → INBOX
+
 ## 2026-07-15 — Project founded
 - Repository initialized, documentation written (README, CLAUDE.md, artifact files)
 - Stack and constraints fixed: see DECISIONS.md founding entry
