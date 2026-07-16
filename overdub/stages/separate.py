@@ -19,6 +19,7 @@ import subprocess
 from pathlib import Path
 
 from ..pipeline import Context
+from ..workdir import replace_retry
 
 
 class SeparateStage:
