@@ -319,3 +319,71 @@ report.load corruption warning, and a `missing_audio` flag. Deferred: download.p
 atomic `…/NNNNN.wav.tmp` path → every segment failed `synth_error` on the first run. Fixed by
 making SileroEngine write with explicit `format="WAV"`. Lesson: soundfile format inference keys on
 the file extension, so any caller passing a temp/suffixless path must pass `format=` explicitly.
+
+## 2026-07-16 — TTS bake-off #2: ESpeech (F5-TTS RU) wins by ear; voice cloning explored, EN-clone dropped
+
+**Ear verdict (user, real pipeline output on 4szRHy_CT7s):** ESpeech-TTS-1_RL-V2 with the
+author's demo reference is the unambiguous leader over Silero v4 (current), Silero v5, Misha
+F5-RU v2 and every cloning variant. Objective metrics agree: mean sim 0.992, 0 verify flags,
+mean atempo ×1.03, 0 segments over ×1.8 — timing at Silero-v4 level with far better voice.
+Research trail: bakeoff/tts-research-2026-07.md (multi-agent sweep of ~20 engines + adversarial
+verification; only Silero/ESpeech/Misha credibly speak Russian — "supports Russian" in a language
+list is marketing, the Chatterbox lesson generalizes). Engine switch is finalized by the F5Engine
+adapter integration + a full-length control run (PLAN Phase 3).
+
+**Russian voice cloning WORKS and becomes the narrator mechanism.** F5 is a zero-shot cloner:
+the fixed narrator is now a config-level reference-clip choice, decoupled from the engine. A
+9.7 s phone-video clip of the user's own voice scored best-of-day similarity (0.994, 0 flags);
+timbre close but not identity-level — the expected zero-shot ceiling from a compressed 10 s
+reference. Reference recipe: fast, clear, neutral-prosody diction in a quiet room — the
+reference's pace transfers to the synthesis, so a brisk speaker buys free atempo headroom
+(this is exactly why the fast-talking ESpeech demo reference got mean ×1.03).
+
+**EN-reference cloning (the founding "same-voice" premise): possible, fixable — DROPPED by goal.**
+- Round-1 failure was NOT accent. F5 sizes its generation canvas by UTF-8 *byte* ratio
+  (`utils_infer.py`: `len(text.encode("utf-8"))`); a Latin reference (1 B/char) against Cyrillic
+  gen text (2 B/char) doubles the canvas and the model fills the surplus with babble that
+  whisper ignores (a verify blind spot) while atempo compresses ×2.11 (36/50 segments broken).
+- Both predicted fixes verified on the full video: exact Latin transcript + `speed≈1.7`
+  (byte-rate ratio) → mean sim 0.980, ×1.28, 1/50 over threshold; Cyrillic phonetic ref
+  transcript → 0.950 (hand-written phonetics add alignment noise — the speed fix is better).
+  Formula if ever revived: exact Latin ref transcript + `speed = ref_byte_rate / 0.045 s/B`
+  (measured RU rate), or per-segment `fix_duration`.
+- Residual defects by ear: end-of-sentence babble ("эр" at nearly every period — per-sentence
+  canvas slack lands at the tail), one mid-sentence artifact on a long sentence, and a
+  "1930s-recording" character: degraded-mic timbre + slightly off Russian pronunciation
+  inherited from the EN reference.
+- **Decision (user): the approach is workable and could be polished further, but the project
+  goal is a quality Russian dub, not speaker identity — the direction is dropped.**
+
+**Engine-integration note regardless of cloning:** ultra-short sentences garble/echo the
+reference tail (id43 "Решениям.", 0.6 s → "Together"); known F5 short-text class. Mitigate by
+merging ultra-short sentences upstream or reseed-retry when the F5Engine lands.
+
+## 2026-07-16 — Narrator voice: ESpeech demo reference adopted; voice experiments closed
+
+**Decision (user, ear, full-video runs):** the fixed narrator is the ESpeech author's demo
+reference (HF Space `Den4ikAI/ESpeech-TTS`, `ref/example.mp3`) — best across every audition round:
+mean sim 0.992, 0 flags, mean atempo ×1.03 on the sample video. Rights unclarified (a real
+person's voice, unknown provenance) → the clip is NOT committed; fetched from the Space at setup;
+outputs stay personal-use only (README "Voices, cloning and the law").
+
+**PD fallbacks, re-creatable with `scripts/lv_pick_refs.py` (refs deleted from disk, sources
+recorded here):** LibriVox readers, all Public Domain Mark — tovarisch
+(`obyknovennayaistorya_1912_librivox`; best PD result: 0.985 / 0 flags), Kazbek
+(`vekhi_2011_librivox`; bass ~109 Hz), Mark Chulsky (`carousel_2511_librivox`; 826 sections
+available via librivox.org/reader/8086).
+
+**Speed calibration validated as a config mechanism.** Slow narrators (Chulsky ×1.8 natural pace)
+compensated via F5 `speed` to mean atempo ×1.03–1.08 at ≤0.022 sim cost — reference pace is no
+longer a disqualifier; `speed` goes into the F5Engine config.
+
+**Celebrity-voice references (personal-use experiment) closed by the user — "сложно добиться
+качества".** Round-1 YouTube interview refs → artifacts/stutter across ALL ten voices: noise,
+room reverb, conversational fillers and garbled whisper transcripts of noisy speech all clone
+straight into the synthesis. Round-2 studio narrations improved but still under the bar.
+Repo policy unchanged: PD samples only, person-agnostic docs.
+
+**id43 confirmed a third time** (ultra-short "Решениям.", 0.6 s → hallucinated round-trips in 2 of
+4 narrator runs) — merge-ultra-short-sentences upstream + reseed-retry are REQUIRED F5Engine
+integration items, not nice-to-haves.

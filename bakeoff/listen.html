@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>overdub — TTS bake-off #2 (2026-07-16)</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 2rem; background: #14161a; color: #e8e8e8; }
+  h1 { font-size: 1.3rem; } h2 { font-size: 1rem; color: #9aa; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { border: 1px solid #333; padding: .5rem .6rem; vertical-align: top; }
+  th { background: #1e2a26; text-align: left; font-size: .85rem; }
+  td.text { max-width: 26rem; font-size: .85rem; color: #ccc; }
+  audio { width: 170px; height: 30px; }
+  .probe { background: #2a2118; }
+  .tag { font-size: .72rem; color: #888; display: block; margin-top: .2rem; }
+  .note { font-size: .8rem; color: #999; margin: .8rem 0 1.4rem; max-width: 60rem; }
+</style>
+</head>
+<body>
+<h1>TTS bake-off #2 — Silero v4 / v5 / ESpeech RL-V2 / Misha F5-RU v2</h1>
+<p class="note">
+  Фразы из реального прогона (x7DfiXqSEdM). Оранжевые строки — пробы на устойчивость:
+  там в тексте НАМЕРЕННО оставлен побуквенный мусор транслитерации («калл оф дутй») —
+  оцениваем не произношение этих слов, а то, насколько движок на них ломается.
+  F5-движки: клонирование с фиксированного референса (авторский example.mp3), seed 42.
+  Слушать лучше в наушниках; сравнивать колонки слева направо на одной строке.
+</p>
+<table>
+<thead>
+<tr>
+  <th>Фраза</th>
+  <th>Silero v4 eugene<br><span class="tag">текущий, CPU, детерм.</span></th>
+  <th>Silero v4 xenia<br><span class="tag">бэкап-голос</span></th>
+  <th>Silero v5 eugene<br><span class="tag">15-мин апгрейд, CPU, детерм.</span></th>
+  <th>ESpeech RL-V2<br><span class="tag">F5, Apache-2.0, GPU, seed</span></th>
+  <th>Misha F5-RU v2<br><span class="tag">F5, CC-BY-NC, GPU, seed</span></th>
+</tr>
+</thead>
+<tbody id="rows"></tbody>
+</table>
+<script>
+const items = [
+  ["ref_day1", "Референс-абзац из day-1 (преемственность с первым bake-off)"],
+  ["id014_short", "Наверное, так и получается, когда я ухожу от сценария."],
+  ["id038_medium", "Если вы играете только в одиночку, вы упускаете из виду все эти другие возможные интерпретации игры."],
+  ["id269_twosent", "Это другая история. Вместо того чтобы строить социальные игры вокруг самой игры, можно использовать другой подход — сосредоточиться на игре."],
+  ["id147_long", "очень агрессивными и враждебными, и тогда у них меньше удовольствия; это то, что они обнаружили — это те ситуации, где вы скорее всего будете испытывать наибольшее социальное давление."],
+  ["id126_percent", "возможное минимальное отклонение от пятьдесят процентов."],
+  ["id026_translit_probe", "ПРОБА: Как эпоха ксбокс триста шестьдесят, так что хало три, калл оф дутй четыре — эти игры так глубоко врезались в мою память."],
+  ["id171_numbers", "ПРОБА: Я помню, как делал это с титанфалл два, когда он был в продаже в две тысячи восемнадцать году…"],
+];
+const engines = ["silero_eugene", "silero_xenia", "silero_v5_eugene", "f5_espeech_rlv2", "f5_misha_v2"];
+const tbody = document.getElementById("rows");
+for (const [key, text] of items) {
+  const tr = document.createElement("tr");
+  if (key.includes("probe") || key.includes("numbers")) tr.className = "probe";
+  tr.innerHTML = `<td class="text"><b>${key}</b><br>${text}</td>` +
+    engines.map(e => `<td><audio controls preload="none" src="${e}/${key}.wav"></audio></td>`).join("");
+  tbody.appendChild(tr);
+}
+</script>
+</body>
+</html>

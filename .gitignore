@@ -4,6 +4,7 @@ __pycache__/
 .venv/
 .venv-asr/
 .venv-tts/
+.venv-f5tts/
 venv/
 hf_home/
 *.egg-info/
@@ -19,7 +20,10 @@ models/
 
 # Media and work artifacts
 work/
+work-exp/
 output/
+# personal-use voice audition page (repo policy: person-agnostic docs, PD samples only)
+bakeoff/narrators_personal.html
 *.mp4
 *.mkv
 *.webm

@@ -31,3 +31,9 @@ Tags: `[bug] [feature] [chore] [?]` — one line per entry, processed weekly.
 
 ## General
 - [chore] yt-dlp is 90+ days old (warning on run) — `pip install -U yt-dlp`
+
+## F5 engine integration backlog (2026-07-16; narrator + engine decisions → DECISIONS)
+- [chore] ruaccent 1.5.8.3 accent-model ONNX wants token_type_ids the lib doesn't feed — shim lives in scripts/{bakeoff2_f5,exp_clone_synth,bakeoff3_narrators}.py; move into F5Engine adapter, watch for upstream fix
+- [?] nfe=32 vs 48: RTF 0.27 vs 0.39 — ear-check the quality delta once the engine is integrated
+- [chore] setup: fetch ref_espeech_demo (HF Space ref/example.mp3) + ESpeech checkpoint if missing — document in SETUP.md during integration
+- [chore] before ANY publication of dubs: replace narrator with a rights-clear reference + re-check ESpeech Apache provenance caveat (weights possibly derived from CC-BY-NC base)

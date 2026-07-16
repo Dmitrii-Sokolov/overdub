@@ -75,7 +75,43 @@ Throughput budget: ≤ x5 video duration. TTS is near-free (Silero on CPU, RTF
 - Fixed TTS voice (Silero `eugene`) — no voice cloning; "same voice as the
   speaker" was dropped after the day-1 engine bake-off.
 
+## Voices, cloning and the law
+
+The TTS engine is a zero-shot voice cloner: the narrator voice is defined by a
+short reference clip (5–12 s + its exact transcript), not baked into the model.
+That flexibility comes with rules. This section is not legal advice.
+
+- **Every voice sample shipped in or referenced by this repository is public
+  domain** — cut from [LibriVox](https://librivox.org) recordings, which their
+  volunteer readers explicitly dedicate to the public domain. The same voices
+  have powered open TTS research datasets (LibriTTS, M-AILABS) for a decade.
+- **If you want to use anyone else's voice, study the law of your jurisdiction
+  first.** EU member states and Canada protect a person's voice from
+  unauthorized *public* use (personality rights in the EU, the appropriation
+  of personality tort and Quebec Civil Code art. 36 in Canada). From August
+  2026 the EU AI Act additionally requires published synthetic media that
+  resembles a real person to be labeled as AI-generated. Russia has a pending
+  bill (draft art. 152.3 of the Civil Code) to the same effect.
+- **Purely personal, private use is generally outside these regimes** (GDPR
+  household exemption, private-copying exceptions, publication-based torts) —
+  synthesizing a voice for your own local listening is broadly tolerated,
+  provided the reference clip comes from a lawful source. Publishing the
+  result is a different matter entirely: don't, unless the voice is yours,
+  licensed, or public domain.
+- **Default narrator reference:** the demo clip from the ESpeech author's HF
+  Space ([Den4ikAI/ESpeech-TTS](https://huggingface.co/spaces/Den4ikAI/ESpeech-TTS),
+  `ref/example.mp3`) — the best-sounding voice across our narrator auditions.
+  Its rights are **not clarified** (a real person's voice, unknown provenance),
+  so the clip is not committed to this repository: it is fetched from the Space
+  at setup time, and anything synthesized with it stays personal-use only.
+  Public-domain fallback narrators (LibriVox readers) are recorded in
+  `.claude/DECISIONS.md` and re-creatable with `scripts/lv_pick_refs.py`.
+- **Repository policy:** only public-domain reference samples are committed
+  here, and the documentation stays person-agnostic — no instructions for
+  cloning any specific individual's voice.
+
 ## Status
 
-Research / proof of concept. Documentation phase, no code yet.
-See `.claude/PLAN.md`.
+Research / proof of concept — Phase 1 complete: the pipeline runs turn-key
+(URL in → MKV out) on real videos. TTS engine migration (Silero → F5-TTS/ESpeech)
+in progress. See `.claude/PLAN.md`, `.claude/DECISIONS.md`.

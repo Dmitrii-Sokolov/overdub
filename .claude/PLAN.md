@@ -28,17 +28,18 @@ stage, all verified end-to-end. One venv (.venv-asr), `overdub` package.
       (URL→MKV, turn-key). Broaden to 2–3 more videos + edge content when convenient
 
 ## → Resume here (next session)
-Phase 1 is closed. All 7 stages work; `overdub <url>` runs URL→MKV turn-key. Sample kept at
-`work/4szRHy_CT7s/` (translation.json + all wavs + output.mkv). Re-run any stage in isolation:
-`python -m overdub "<url>" --only <stage> [--force]` (download/transcribe/translate skip if their
-artifacts exist, so an isolated tail run does NOT re-fetch/re-ASR). Report triage:
-`report.json` — flag any segment with translate_flag/verify_flag/assemble_flag or speed_factor>1.8.
-**Highest-value next work, in order:**
-1. Run 2–3 more real videos incl. number-heavy / acronym-heavy content — the normalizer is the
-   only silent-failure surface left; listen for magnitude/stress errors.
-2. Measure RTF end-to-end on a full-length (30–60 min) video against the x5 budget (whisper-large
-   + Qwen are the unknowns; TTS/assemble are near-free).
-3. Then Phase 2 batch mode (below). Process INBOX first (5 deferred items + download.py preflight).
+Phase 1 closed. RTF gate PASSED on a 39-min video (x7DfiXqSEdM): end-to-end ×0.75 realtime,
+translate = 80% of wall-clock, x5 budget cleared 6.7×. Sample workdirs: `work/4szRHy_CT7s/`,
+`work/x7DfiXqSEdM/`. Report triage: flag any segment with translate_flag/verify_flag/
+assemble_flag or speed_factor>1.8. **Agreed order of work:**
+1. Phase 3 below — F5Engine integration (ESpeech adopted by ear; DECISIONS 2026-07-16).
+2. Proper-noun phonetics for TTS (brand dictionary + phonetic translit fallback) — the one
+   systematic content defect: "но ман'с скй"-class garbage + english_echo false flags
+   (x7DfiXqSEdM id150/id189). Perpendicular to the engine work.
+3. Voice-over mix (ducked original under the dub) — dub covers ~68% of runtime, 744 s dead
+   silence on the 39-min video. Deferred BY DESIGN until the TTS layer is settled: masking
+   comes after the layers beneath are good.
+4. Then Phase 2 batch mode (below). Process INBOX (transcribe/translate deferred items).
 
 ## Phase 2 — reliability (batch-ready)
 - [x] ASR verification loop: whisper-small round-trip on raw (unsped) audio, compare
@@ -51,11 +52,20 @@ artifacts exist, so an isolated tail run does NOT re-fetch/re-ASR). Report triag
 - [ ] Overnight-run ergonomics: progress log, summary report, flagged-segment
       list with speed factors
 
-## Phase 3 — TTS alternatives (only if eugene proves insufficient)
-- [ ] Second engine behind the Phase-1 adapter
-- [ ] F5-TTS adapter (modern, alive) — the option if voice matching / expressiveness
-      is ever needed; NOT XTTS (dead, non-commercial, same cross-lingual accent risk)
-- [ ] A/B listening test on the same fragment; pick default
+## Phase 3 — TTS engine upgrade (bake-off #2 done; ESpeech adopted by ear)
+- [x] Research sweep + adversarial verify of the July-2026 local RU TTS landscape →
+      bakeoff/tts-research-2026-07.md (~20 engines; only Silero/ESpeech/Misha speak Russian)
+- [x] Bake-off #2: bakeoff/listen.html (8 phrases × 5 engines) + full-video runs.
+      ESpeech-TTS-1_RL-V2 unambiguous winner (mean sim 0.992, ×1.03, 0 flags on the sample
+      video); Silero v5 > v4 but below F5; Misha good but NC-licensed. EN-voice cloning
+      explored and dropped; RU-voice cloning works (DECISIONS 2026-07-16)
+- [ ] F5Engine behind the adapter: RUAccent inside the engine (+ token_type_ids shim),
+      seed + speed params, .venv strategy (try main venv, else worker process);
+      ultra-short-sentence mitigation (merge upstream or reseed)
+- [ ] Reseed-retry in verify — F5 is seed-controllable, the retry path finally goes live
+- [x] Narrator decided: ESpeech demo reference (0.992 / 0 flags / ×1.03; rights caveat —
+      fetch at setup, personal use only; PD fallbacks + speed-calibration in DECISIONS)
+- [ ] Control run on x7DfiXqSEdM (39 min): flag rate + RTF vs the Silero baseline
 
 ## Phase 4 — Arc B390 path (optional)
 - [ ] whisper.cpp SYCL/OpenVINO for STT
@@ -66,9 +76,10 @@ artifacts exist, so an isolated tail run does NOT re-fetch/re-ASR). Report triag
 - ~~Similarity metric/threshold for verify~~ RESOLVED: char-level SequenceMatcher(autojunk=False)
   @ 0.8; on the clean sample min 0.875 / mean 0.988 / 0 flagged. Re-tune threshold on real content
 - Silero stress errors on names/homographs — worth a `+`-stress dictionary pass?
-- RTF partial: on host, synth 50 seg/~14s (Silero CPU), verify 50 seg/~20–31s (whisper-small CUDA),
-  assemble+mux seconds. whisper-large + Qwen (translate ~0.8× realtime) remain the batch bottleneck
-  — still unmeasured end-to-end against the x5 budget on a full-length video
+- ~~RTF end-to-end~~ RESOLVED (2026-07-16, 39-min video): ×0.75 realtime total; translate 1404s
+  (80%, RTF 0.60), transcribe 156s, synth 43s (Silero) / ~10 min projected (F5 @ RTF 0.39),
+  verify 88s, rest seconds. x5 budget cleared 6.7× (Silero) / ~5× (F5). Bottleneck = translate;
+  revisit sentence batching first if overnight runs get time-bound
 
 Stack pins, verified APIs and setup: STACK.md + SETUP.md. TTS engine settled:
 Silero v4_ru, voice eugene (xenia backup); Chatterbox rejected (day-1 ear test).

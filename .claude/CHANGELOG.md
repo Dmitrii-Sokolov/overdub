@@ -1,5 +1,24 @@
 # CHANGELOG
 
+## 2026-07-16 — TTS bake-off #2: ESpeech adopted, narrator selected, cloning explored
+- RTF gate PASSED: 39-min real video end-to-end ×0.75 realtime (translate = 80% of wall-clock),
+  x5 budget cleared 6.7×. Real-content triage surfaced the proper-noun transliteration defect
+  ("но ман'с скй", english_echo false flag) → queued as work item 2 in PLAN
+- Multi-agent engine research (~20 engines, adversarial verify, ~940k tokens) →
+  bakeoff/tts-research-2026-07.md; only Silero/ESpeech/Misha credibly speak Russian. Bake-off #2
+  by ear (bakeoff/listen.html, 8 phrases × 5 engines incl. Silero v5): **ESpeech-TTS-1_RL-V2 wins**
+  — .venv-f5tts + ESpeech/Misha checkpoints installed, RTF 0.39 @ 0.8 GiB VRAM measured on host
+- Voice cloning explored on full-video runs: RU-ref WORKS (user's voice: 0.994 / 0 flags);
+  EN-ref (original-speaker premise) diagnosed — F5 sizes duration by UTF-8 *byte* ratio, Latin ref
+  → ×2 canvas → babble filler; two fixes verified (speed≈1.7 → 0.980), then DROPPED by project
+  goal. Famous-voice refs (personal-use) failed the quality bar (noisy refs clone their noise)
+- Narrator adopted: ESpeech demo reference (0.992 / 0 flags / ×1.03); rights caveat documented in
+  README ("Voices, cloning and the law" section); PD fallbacks (LibriVox: tovarisch/Kazbek/Chulsky)
+  recorded in DECISIONS; speed-calibration for slow narrators validated (×1.03–1.08 @ ≤0.022 sim)
+- New scripts: bakeoff2_silero/bakeoff2_f5/bakeoff3_narrators (auditions), lv_pick_refs
+  (PD reference cutting), exp_clone_synth (full-video F5 synth — the F5Engine prototype)
+- Intermediate voice artifacts pruned; kept work-exp/espeechvoice (chosen-voice run) + the ref clip
+
 ## 2026-07-16 — Phase 1 validated (user ear-test)
 - User inspected the assembled output on a real video: RU dub audio present, positioned at the
   correct timestamps, translation correct. This is the Phase-1 quality gate — the pipeline is
