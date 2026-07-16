@@ -30,7 +30,11 @@ Tags: `[bug] [feature] [chore] [?]` — one line per entry, processed weekly.
 - [chore] verify VRAM: whisper-small loads standalone (Silero is CPU) — the DECISIONS "whisper-small co-resident with TTS" note applied to a reseeding loop that no longer exists; harmless, but the co-residency exception is now moot
 
 ## General
-- [chore] yt-dlp is 90+ days old (warning on run) — `pip install -U yt-dlp`
+- ~~[chore] yt-dlp is 90+ days old~~ done 2026-07-16 (2026.07.04 is current)
+
+## Ear-check findings (2026-07-16, F5 control run)
+- [bug] translate: «причина» ×3 подряд (ids 134-137, ~17:00) — no repetition-avoidance in the rolling context; consider a variation hint in the prompt or the per-run glossary pass
+- [?] verify: id101 sim=1.0 but ear-bad (ultra-short garble ASR normalizes away) — real-content proof of the round-trip blind spot; duration heuristic (expected vs actual) is the cheap detector
 
 ## F5 engine integration backlog (2026-07-16; narrator + engine decisions → DECISIONS)
 - [?] nfe=32 vs 48: RTF 0.27 vs 0.39 — ear-check the quality delta; now doubly relevant: sustained-load synth RTF measured 0.60 vs cold 0.39 (thermal), nfe=32 would claw back ~30%

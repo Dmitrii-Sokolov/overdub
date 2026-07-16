@@ -1,5 +1,19 @@
 # CHANGELOG
 
+## Phase 3 — TTS engine upgrade ✅ (closed 2026-07-16)
+- [x] Research sweep + adversarial verify of the July-2026 local RU TTS landscape →
+      bakeoff/tts-research-2026-07.md (~20 engines; only Silero/ESpeech/Misha speak Russian)
+- [x] Bake-off #2: ESpeech-TTS-1_RL-V2 unambiguous winner by ear; RU-voice cloning works,
+      EN-cloning dropped by goal (DECISIONS 2026-07-16)
+- [x] F5Engine behind the adapter — worker in .venv-f5tts, synth_key resume guard, manifest v2
+- [x] Reseed-retry in synthesize (keep-best), proven on id43
+- [x] Ultra-short merge in transcribe, unit-tested
+- [x] Narrator: ESpeech demo reference (rights caveat; PD fallbacks in DECISIONS)
+- [x] Control run 39-min vs Silero baseline: flags 0 vs 1, sim 0.9943 vs 0.986, 0 retries;
+      RTF gate missed (×0.65 vs ≤0.5, thermal) — x5 budget still cleared ~3.8×
+- [x] User ear check passed (id101 ultra-short noted bad → feeds roadmap item 1); default
+      tts_engine flipped to "f5", Silero stays the fallback
+
 ## 2026-07-16 — F5Engine integrated: worker adapter, reseed-retry, ultra-short merge, control run
 - ESpeech (F5-TTS) is now a first-class engine behind the adapter: overdub/tts/f5.py drives a
   persistent worker (overdub/tts/f5_worker.py) in .venv-f5tts over JSONL stdio — venv merge was

@@ -454,6 +454,33 @@ regardless of engine. Gates are therefore ABSOLUTE (flag rate ≤ 2% of 315 afte
 pre-registered as expected-to-flag; baseline comparison advisory), plus mean sim ≥ 0.985,
 mean atempo ≤ 1.10, synth+verify RTF ≤ 0.5×, and the binding user ear check.
 
+## 2026-07-16 — Phase 3 closed by ear; roadmap reprioritized: dead air first
+
+**Ear verdict (user, 39-min F5 control run):** id26/id136/id200 fine, id150 almost fine
+("Minecraft, Valheim" good, "No Man's Sky" bad), id189 acceptable, id101 (ultra-short "Okay.")
+bad. Overall approved → default `tts_engine` flipped to "f5"; Silero stays the fallback.
+
+**id101 is a load-bearing data point:** its round-trip sim was 1.0 yet the ear says bad — the
+ASR-blindness of verify is now CONFIRMED on real content, not just on synthetic babble. The
+ultra-short class needs structural fixes (merge/grouping), not retry luck; and the babble
+detector (duration heuristic) moves up in relevance.
+
+**Dead-air decomposition (measured, control run):** 665 s of silence in a 2333 s dub =
+607 s RU-underfill (the fast ESpeech narrator finishes each sentence well before the EN span
+ends; the dub buffer is digital zero there) + 68 s inherited inter-sentence gaps (median
+0.14 s) + 6 s spill. The problem is NOT bad timings — it is systematic underfill plus a
+zero-noise-floor track. Consequence: the fix is three composable layers (slot-fill native F5
+speed incl. stretch, sentence grouping gap≤0.4 s, overlay mix duck/bed), not timing surgery.
+
+**Priority reorder (user):** dead-air first (simpler, bigger payoff), proper nouns second
+(harder, smaller payoff — F5 already softened it: id189 0.95 vs Silero's 0.661), everything
+else after those two. Cloud-translate note: after F5, translate is ~45% of wall-clock
+(co-bottleneck with synth), not 80% — the founding premise of roadmap item "cloud translate"
+weakened but the item stays.
+
+**Translate quality nit (ear):** ids 134–137 voice «причина» three times in a row — the
+rolling context window keeps terminology consistent but has no repetition-avoidance. INBOX.
+
 ## 2026-07-16 — Local-only constraint amended: optional cloud-translate mode approved
 
 **User decision:** an explicitly opt-in cloud translation mode (Anthropic API, Sonnet-class) is

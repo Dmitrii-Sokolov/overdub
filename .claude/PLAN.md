@@ -27,31 +27,29 @@ stage, all verified end-to-end. One venv (.venv-asr), `overdub` package.
       present, positioned at the right timestamps, translation correct. Phase 1 PoC proven
       (URL→MKV, turn-key). Broaden to 2–3 more videos + edge content when convenient
 
-## → Roadmap (consolidated 2026-07-16; user-confirmed order)
-Phase 1 closed; RTF gate PASSED (39-min video ×0.75 realtime, translate = 80% of wall-clock).
-Sample workdirs: `work/4szRHy_CT7s/`, `work/x7DfiXqSEdM/`. Report triage: any segment with
-*_flag or speed_factor>1.8.
-1. **F5Engine integration** — DONE except the default-engine flip (ear-check gated, Phase 3
-   below). Remainder moved here: per-segment NATIVE speed from the slot budget (F5 `speed`
-   instead of post-hoc atempo; ×1.6 verified at ≤0.022 sim cost) — deliberately out of the
-   integration session's scope
+## → Roadmap (reprioritized 2026-07-16 evening; user-confirmed after the F5 ear check)
+Sample workdirs: `work/4szRHy_CT7s/`, `work/x7DfiXqSEdM/` (Silero baselines, read-only),
+`work-exp/f5-control/x7DfiXqSEdM/` (F5). Report triage: any *_flag or speed_factor>1.8.
+1. **Dead-air elimination** (IN PROGRESS — design panel running): measured on the F5 control
+   run, 665 s of silence in a 39-min dub = 607 s RU-underfill (fast narrator ends before the
+   EN span) + 68 s inherited gaps (median 0.14 s). Three composable layers: per-segment
+   NATIVE F5 speed from the slot budget (stretch <1 to fill, compress ≤1.6 before atempo);
+   sentence grouping (gap ≤0.4 s → one synth call; dissolves the id101 ultra-short class);
+   overlay mix — BOTH duck and Demucs-bed variants behind one knob, user ear-compares three
+   outputs (replace / duck / bed)
 2. **Proper nouns** — detect Latin/brand tokens → pronunciation dictionary → phonetic translit
-   fallback → per-run cache ("но ман'с скй" garbage + english_echo false flags, id150/id189)
-3. **Dub as overlay mix, not replacement**: ideally vocal-separate the original (Demucs, local)
-   → ambience/music bed + RU dub; fallback — duck the full original track. Also dissolves the
-   inter-phrase dead air (744 s of silence measured on the 39-min dub). Optional prosody helper:
-   group adjacent sentences (gap <0.4 s) into one synth call
-4. **Batch queue**: a file with N URLs → sequential turn-key runs, per-video resume on crash
-5. **Stop switch**: a stop-file checked between stages/videos — overnight run halts cleanly by
-   morning; no mid-stage save needed (stages are already atomic + resumable)
-6. **Verify quality gap (babble detector)**: ASR round-trip is PROVEN blind to babble (0.93 sim
-   on garbage audio) — add expected-vs-actual duration heuristic + optional local MOS (UTMOS)
-7. **Optional cloud translation (Anthropic Sonnet)** — explicit opt-in flag, OFF by default;
-   a deliberate exception to local-only (DECISIONS); translate is 80% of wall-clock, expect the
-   largest single speed win + quality bump
-8. **Gender-matched narrator** — median-F0 of source speech (~165 Hz threshold; the exact
-   method used in the narrator bake-off) → pick M/F reference per video; needs a good female
-   PD reference (not found yet); edge cases → default voice + report flag
+   fallback → per-run cache. F5 softened the class (id189: 0.95 vs Silero 0.661) but ear says
+   "No Man's Sky" is still bad (id150); all worst control-run sims are this class
+3. **Batch queue**: a file with N URLs → sequential turn-key runs, per-video resume on crash
+4. **Stop switch**: a stop-file checked between stages/videos — overnight run halts cleanly
+5. **Verify quality gap (babble detector)**: ASR round-trip blindness now CONFIRMED on real
+   content by ear — id101 scored sim 1.0 yet sounds bad. Expected-vs-actual duration heuristic
+   + optional local MOS (UTMOS)
+6. **Optional cloud translation (Anthropic Sonnet)** — explicit opt-in flag, OFF by default
+   (DECISIONS). Note: translate is no longer 80% of wall-clock — F5 synth grew it to a
+   ~45/45 co-bottleneck; the win is smaller but still the largest single one
+7. **Gender-matched narrator** — median-F0 of source speech (~165 Hz) → M/F reference per
+   video; needs a good female PD reference (not found yet); edge cases → default voice + flag
 
 Backlog (second tier): `--repair id,id --seed N` (point re-synth + remux); per-run terminology
 glossary; singing/music detection → keep original (no robot singing); loudnorm/EQ on the dub;
@@ -70,29 +68,7 @@ cross-video stage pipelining (translate GPU ∥ synth/verify) if nights get tigh
 - [ ] Overnight-run ergonomics: progress log, summary report, morning triage
       HTML (flagged segments with audio players)
 
-## Phase 3 — TTS engine upgrade (bake-off #2 done; ESpeech adopted by ear)
-- [x] Research sweep + adversarial verify of the July-2026 local RU TTS landscape →
-      bakeoff/tts-research-2026-07.md (~20 engines; only Silero/ESpeech/Misha speak Russian)
-- [x] Bake-off #2: bakeoff/listen.html (8 phrases × 5 engines) + full-video runs.
-      ESpeech-TTS-1_RL-V2 unambiguous winner (mean sim 0.992, ×1.03, 0 flags on the sample
-      video); Silero v5 > v4 but below F5; Misha good but NC-licensed. EN-voice cloning
-      explored and dropped; RU-voice cloning works (DECISIONS 2026-07-16)
-- [x] F5Engine behind the adapter — worker process in .venv-f5tts (venvs incompatible,
-      measured), RUAccent + shim in the worker, seed/speed/nfe params, synth_key resume
-      guard, manifest v2 (complete-marker + periodic flush). Design panel + adversarial
-      review + smoke (DECISIONS 2026-07-16)
-- [x] Reseed-retry — lives in SYNTHESIZE (manifest single-writer), keep-best by
-      round-trip sim; mechanics proven on id43 (4 attempts, honest flag)
-- [x] Ultra-short merge in transcribe (MIN_SENT_CHARS=15, gap ≤0.6 s, cumulative ≤1.5 s);
-      unit-tested; validates on the next fresh video (control reuses frozen sentences)
-- [x] Narrator decided: ESpeech demo reference (0.992 / 0 flags / ×1.03; rights caveat —
-      fetch at setup, personal use only; PD fallbacks + speed-calibration in DECISIONS)
-- [x] Control run on x7DfiXqSEdM (39 min) vs Silero baseline: flags 0 vs 1, sim mean
-      0.9943 vs 0.986, atempo mean ×1.014 vs ×1.018, 0 retries. RTF gate MISSED:
-      synth+verify ×0.65 vs ≤0.5 target (thermal-loaded; cold bake-off was 0.39);
-      x5 budget still cleared ~3.8× full-pipeline
-- [ ] Flip default tts_engine to "f5" (config.py + overdub.toml, own commit) — gated on
-      the user ear check of work-exp/f5-control/x7DfiXqSEdM/output.mkv
+## Phase 3 — TTS engine upgrade ✅ done (closed 2026-07-16, see CHANGELOG)
 
 ## Phase 4 — Arc B390 path (optional)
 - [ ] whisper.cpp SYCL/OpenVINO for STT
