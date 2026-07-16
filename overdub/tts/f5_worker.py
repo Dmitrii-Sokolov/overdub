@@ -95,7 +95,13 @@ def main() -> None:
     ref_text_raw = open(args.ref_text, encoding="utf-8").read().strip()
     ref_audio_proc, ref_text_final = preprocess_ref_audio_text(args.ref_audio, accentize(ref_text_raw))
 
-    _send({"event": "ready", "sample_rate": SAMPLE_RATE})
+    # slot-fill inputs for the parent's plan_speed: duration of the PROCESSED ref clip
+    # (preprocess may trim/pad) and RAW pre-accent transcript bytes (the parent measures
+    # gen text pre-accent too, so the stress-mark byte inflation cancels)
+    ref_info = sf.info(ref_audio_proc) if isinstance(ref_audio_proc, str) else None
+    ref_sec = (ref_info.frames / ref_info.samplerate) if ref_info else 0.0
+    _send({"event": "ready", "sample_rate": SAMPLE_RATE,
+           "ref_sec": round(ref_sec, 3), "ref_bytes": len(ref_text_raw.encode("utf-8"))})
 
     try:
         for line in sys.stdin:
@@ -106,14 +112,20 @@ def main() -> None:
             rid = req.get("id")
             try:
                 torch.manual_seed(int(req["seed"]))
+                gen = accentize(req["text"])
+                speed = float(req["speed"])
                 wave, sr, _ = infer_process(
-                    ref_audio_proc, ref_text_final, accentize(req["text"]), model, vocoder,
-                    nfe_step=args.nfe, cross_fade_duration=CROSS_FADE, speed=float(req["speed"]),
+                    ref_audio_proc, ref_text_final, gen, model, vocoder,
+                    nfe_step=args.nfe, cross_fade_duration=CROSS_FADE, speed=speed,
                 )
                 # explicit format="WAV": out is usually an atomic .wav.tmp path soundfile
                 # cannot infer a container from
                 sf.write(req["out"], wave, sr, format="WAV", subtype="PCM_16")
-                _send({"id": rid, "ok": True, "sr": int(sr), "frames": int(len(wave))})
+                # EFFECTIVE speed: utils_infer forces local_speed=0.3 for gen texts under
+                # 10 UTF-8 bytes — report reality, not the request
+                eff = 0.3 if len(gen.encode("utf-8")) < 10 else speed
+                _send({"id": rid, "ok": True, "sr": int(sr), "frames": int(len(wave)),
+                       "speed_eff": eff})
             except Exception as e:         # per-request failure never kills the worker
                 _send({"id": rid, "ok": False, "error": f"{type(e).__name__}: {e}"})
     except KeyboardInterrupt:              # shared console Ctrl+C: exit quietly, parent handles it

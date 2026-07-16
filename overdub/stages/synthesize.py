@@ -1,34 +1,35 @@
-"""Synthesize stage: the TTS engine renders each sentence to segments/*.wav.
+"""Synthesize stage: the TTS engine renders each RENDER UNIT to segments/*.wav.
 
-Feeds text_tts (NEVER text_ru — the normalized, TTS-safe field) through the TTS engine
-adapter (overdub.tts.build_engine). One wav per id, on RAW audio before any atempo.
-status:"failed" records are synthesized like any other (their text_tts is a real
-EN-fallback transliteration; the translate flag persists in translation.json).
+A render unit is one or more adjacent sentences from translation.json grouped for natural
+prosody (dead-air design, DECISIONS 2026-07-16): consecutive sentences join while the
+inter-sentence gap is ≤ cfg.group_gap_max, the unit's source span stays ≤ _GROUP_MAX_SPAN
+and its joined text_tts ≤ _GROUP_MAX_CHARS. Empty-text sentences form singleton units and
+break chains. The unit wav lives at seg_wav(first_id); translation ids stay the reporting
+grain everywhere downstream (verify/assemble fan unit facts out per sentence id).
 
-Reseed-retry (seed-capable engines only, i.e. F5): every fresh segment gets an in-stage
-whisper-small round-trip (asr.roundtrip_similarity — the SAME function verify uses);
-below cfg.similarity_threshold it is re-synthesized with seeds tts_seed+1..+tts_max_retries,
-keeping the best attempt by similarity. The retry lives HERE and not in verify so that
-segments/manifest.json stays single-writer: assemble derives atempo factors from manifest
-`samples`, and a wav/manifest divergence is silent timing corruption. verify remains the
-independent judge and the sole flagging authority for similarity. Silero (deterministic)
-skips all of this — behavior identical to Phase 1.
+Slot-fill: engines with supports_target (F5) receive target_sec = the unit's SOURCE SPAN
+and max_sec = its slot [start, next_unit.start) and pick a native speed (stretch to fill
+the span / neutral when the free gap absorbs the spill / mild compress before atempo tops
+up — see tts.f5.plan_speed). The chosen speed is recorded per unit.
 
-Resumable: a wav is reused ONLY if the manifest-level synth_key matches the current config
-(engine/voice/ref-content/model/nfe/speed/base-seed — everything that changes rendered
-audio) AND its manifest text_tts matches the current one, so an engine switch or
-re-translation re-synthesizes instead of serving stale audio. Atomic per-wav write
-(tmp + os.replace) means a wav that exists is always complete. Before any wav mutates,
-the on-disk manifest is downgraded to "complete": false (a crash mid-resynthesis must
-not leave a complete:true manifest over divergent wavs); it is re-flushed atomically
-after every _FLUSH_EVERY freshly synthesized segments (an interrupted overnight run
-resumes from the last flush) and written "complete": true at the end — done() checks
-that marker, and warns loudly if the artifact exists but synth_key changed.
+Reseed-retry (seed-capable engines): in-stage whisper-small round-trip of the unit wav vs
+the joined text_tts (asr.roundtrip_similarity — the SAME function verify uses); below
+cfg.similarity_threshold, retry with seeds tts_seed+1..+tts_max_retries keeping the best.
+The retry lives HERE so segments/manifest.json stays single-writer (assemble derives
+atempo from manifest samples). verify remains the independent judge.
+
+Resumable: a unit wav is reused ONLY if the manifest synth_key matches the current config
+AND the prior unit has the same member ids, the same joined text_tts, no synth_error flag,
+and (for supports_target engines) the same span/slot to 3 dp — so an engine/knob switch, a
+re-translation of any member, or a timing shift re-renders exactly the affected units.
+Manifest schema: doc has "units" (legacy per-sentence "segments" docs are adapted read-side
+as singleton units by units_of()); "complete" marker + periodic flush semantics unchanged.
 """
 
 from __future__ import annotations
 
 import gc
+import hashlib
 import json
 import os
 import sys
@@ -42,33 +43,52 @@ from ..normalize import normalize_for_compare
 from ..pipeline import Context
 from ..tts import build_engine, engine_sample_rate, synth_key
 from ..tts.base import TtsFatalError
+from ..workdir import replace_retry
 
-_FLUSH_EVERY = 25
+_FLUSH_EVERY = 25          # fresh units between mid-run manifest flushes (crash resume)
+_GROUP_MAX_SPAN = 12.0     # unit source-span cap (s): ~10 s ref + gen stays inside F5's
+                           # trained ≤30 s regime and mostly single-chunk
+_GROUP_MAX_CHARS = 300     # joined text_tts cap: internal-chunking insurance
+
+
+def build_units(segs: list[dict], gap_max: float) -> list[dict]:
+    """Group adjacent sentences into render units. Pure, deterministic, unit-tested.
+    Returns [{ids, start, end, text}] covering every sentence id exactly once, in order."""
+    units: list[dict] = []
+    for s in segs:
+        text = (s.get("text_tts") or "").strip()
+        u = units[-1] if units else None
+        if (gap_max > 0 and text and u is not None and u["text"]
+                and s["start"] - u["end"] <= gap_max
+                and s["end"] - u["start"] <= _GROUP_MAX_SPAN
+                and len(u["text"]) + 1 + len(text) <= _GROUP_MAX_CHARS):
+            u["ids"].append(s["id"])
+            u["end"] = s["end"]
+            u["text"] = f"{u['text']} {text}"
+        else:
+            units.append({"ids": [s["id"]], "start": s["start"], "end": s["end"], "text": text})
+    return units
+
+
+def units_of(doc: dict) -> list[dict]:
+    """Units from a manifest doc; legacy per-sentence "segments" docs adapt to singleton
+    units so old workdirs stay readable by verify/assemble without migration."""
+    if "units" in doc:
+        return doc["units"]
+    return [{**e, "ids": [e["id"]], "text_tts": e.get("text_tts")}
+            for e in doc.get("segments", [])]
 
 
 def _legacy_key(doc: dict) -> str:
-    """Reconstruct synth_key for a pre-synth_key (Silero-era) manifest — reproduces the
-    current silero key format exactly, so existing workdirs resume untouched."""
+    """Reconstruct synth_key for a pre-synth_key (Silero-era) manifest."""
     return f"{doc.get('engine')}|{doc.get('voice')}|sr={doc.get('sample_rate')}"
 
 
-def _replace(src, dst) -> None:
-    """os.replace with a short bounded retry: the worker (another process) has just
-    closed the file, and Windows real-time AV can hold it for a moment."""
-    for attempt in range(3):
-        try:
-            os.replace(src, dst)
-            return
-        except PermissionError:
-            if attempt == 2:
-                raise
-            time.sleep(0.1)
+_replace = replace_retry             # shared AV-tolerant atomic flip (workdir.replace_retry)
 
 
-def _stat_wav(wav) -> "sf._SoundFileInfo":
-    """sf.info with the same bounded AV-tolerance as _replace — the wav was just written
-    by another process, and a transient read failure here must not diverge disk from
-    manifest (a real wav recorded as samples=0 silently truncates in assemble)."""
+def _stat_wav(wav):
+    """sf.info with the same bounded AV-tolerance as _replace."""
     for attempt in range(3):
         try:
             return sf.info(str(wav))
@@ -88,15 +108,19 @@ class SynthesizeStage:
             doc = json.loads(ctx.work.seg_manifest.read_text(encoding="utf-8"))
         except Exception:
             return False                                   # torn manifest → re-run
-        if not doc.get("complete", True):                  # legacy manifests: only written complete
+        if not doc.get("complete", True):
             return False
-        try:                                               # best-effort staleness warning: done()
-            key = synth_key(ctx.cfg)                       # must never crash the skip path
+        try:                                               # best-effort staleness warnings —
+            key = synth_key(ctx.cfg)                       # done() must never crash the skip path
             prior_key = doc.get("synth_key") or _legacy_key(doc)
             if prior_key != key:
                 print(f"       [warn] synthesize: artifact exists but synth key changed\n"
                       f"              ({prior_key} → {key}) — rerun with --force to resynthesize",
                       file=sys.stderr)
+            elif doc.get("group_gap_max", 0.0) != ctx.cfg.group_gap_max:   # legacy docs = per-sentence
+                print(f"       [warn] synthesize: group_gap_max changed "
+                      f"({doc.get('group_gap_max')} → {ctx.cfg.group_gap_max}) — "
+                      "rerun with --force to regroup", file=sys.stderr)
         except Exception:
             pass
         return True
@@ -109,41 +133,54 @@ class SynthesizeStage:
 
         key = synth_key(cfg)
         sr = engine_sample_rate(cfg)
+        units = build_units(segs, cfg.group_gap_max)
+        if sorted(i for u in units for i in u["ids"]) != list(range(len(segs))):
+            raise RuntimeError("units do not cover translation ids (synthesize never-drop)")
 
-        # prior manifest → per-id entries, reusable ONLY under an identical synth_key —
-        # an engine/voice/ref/knob switch must never serve stale audio
-        prior: dict[int, dict] = {}
+        # prior manifest → reusable units, gated by synth_key
+        prior: dict[tuple, dict] = {}
         if ctx.work.seg_manifest.exists():
             try:
                 doc = json.loads(ctx.work.seg_manifest.read_text(encoding="utf-8"))
                 prior_key = doc.get("synth_key") or _legacy_key(doc)
                 if prior_key == key:
-                    prior = {e["id"]: e for e in doc.get("segments", [])}
+                    prior = {tuple(u["ids"]): u for u in units_of(doc)}
                 else:
                     print(f"       [info] synth key changed ({prior_key} → {key}) — full resynthesis")
             except Exception:
                 pass                                       # torn manifest → rebuild from wavs
 
-        def reusable(s: dict) -> bool:
-            e = prior.get(s["id"])
-            return (ctx.work.seg_wav(s["id"]).exists() and e is not None
-                    and e.get("text_tts") == s.get("text_tts") and e.get("flag") != "synth_error")
+        supports_target = cfg.tts_engine == "f5"           # engine fact, known without loading
 
-        need = [s for s in segs if not reusable(s) and (s.get("text_tts") or "").strip()]
+        def slot_of(i: int) -> float | None:
+            return (units[i + 1]["start"] - units[i]["start"]) if i + 1 < len(units) else None
 
-        # wavs are about to mutate: a complete:true manifest must not stay live over them —
-        # a crash mid-resynthesis would otherwise resume as done() with divergent pairing.
-        # The downgraded manifest keeps the key-validated reusable entries so resume survives.
+        def reusable(i: int) -> bool:
+            u = units[i]
+            p = prior.get(tuple(u["ids"]))
+            if (p is None or not ctx.work.seg_wav(u["ids"][0]).exists()
+                    or p.get("text_tts") != u["text"] or p.get("flag") == "synth_error"):
+                return False
+            if supports_target and u["text"]:
+                slot = slot_of(i)
+                if (round(p.get("target_sec") or -1, 3) != round(u["end"] - u["start"], 3)
+                        or round(p.get("max_sec") or -1, 3) != round(slot if slot is not None else -1, 3)):
+                    return False
+            return True
+
+        need = [i for i, u in enumerate(units) if not reusable(i) and u["text"]]
+
+        # wavs are about to mutate: downgrade the on-disk manifest to complete:false first,
+        # keeping the reusable units so a crash mid-resynthesis still resumes from them
         if need and ctx.work.seg_manifest.exists():
             self._write_manifest(ctx, cfg, key, sr,
-                                 [prior[s["id"]] for s in segs if reusable(s)], complete=False)
+                                 [prior[tuple(units[i]["ids"])] for i, u in enumerate(units)
+                                  if reusable(i)], complete=False)
 
-        # engine + verifier are built OUTSIDE the per-segment try: a worker that cannot
-        # start must fail the stage in one loud error, never as N synth_error flags
         engine = None
         verifier = None
         if need:
-            engine = build_engine(cfg)
+            engine = build_engine(cfg)                     # outside the per-unit try: fail LOUD
             if engine.sample_rate != sr:
                 raise RuntimeError(f"engine sr {engine.sample_rate} != expected {sr}")
             if engine.supports_seed:
@@ -153,40 +190,44 @@ class SynthesizeStage:
         out: list[dict] = []
         fresh_since_flush = 0
         try:
-            for s in segs:
-                sid = s["id"]
-                wav = ctx.work.seg_wav(sid)
-                text = (s.get("text_tts") or "").strip()
+            for i, u in enumerate(units):
+                lead = u["ids"][0]
+                wav = ctx.work.seg_wav(lead)
+                slot = slot_of(i)
+                target = u["end"] - u["start"]
                 flag: str | None = None
                 seed_used: int | None = None
+                speed_used: float | None = None
                 attempts = 0
                 synth_sim: float | None = None
 
-                prev = prior.get(sid)
-                if reusable(s):
-                    flag = prev.get("flag")                # resume: carry flag + retry bookkeeping
+                prev = prior.get(tuple(u["ids"]))
+                if reusable(i):
+                    flag = prev.get("flag")
                     seed_used = prev.get("seed")
+                    speed_used = prev.get("speed")
                     attempts = prev.get("attempts") or 0
                     synth_sim = prev.get("synth_sim")
-                elif not text:
+                elif not u["text"]:
                     sf.write(str(wav), np.zeros(0, dtype="float32"), sr)   # honest empty slot
                     flag = "empty_tts"
                     fresh_since_flush += 1
                 else:
                     fresh_since_flush += 1
+                    kw = {"target_sec": target, "max_sec": slot} if supports_target else {}
                     try:
                         tmp = wav.with_suffix(".wav.tmp")
-                        engine.synthesize(text, tmp, seed=cfg.tts_seed)
+                        speed_used = engine.synthesize(u["text"], tmp, seed=cfg.tts_seed, **kw)
                         seed_used, attempts = (cfg.tts_seed if engine.supports_seed else None), 1
                         if verifier is not None:
-                            ref_norm = normalize_for_compare(text)
+                            ref_norm = normalize_for_compare(u["text"])
                             best: float | None = None
                             if ref_norm:
                                 try:
                                     best, _hyp, _hn = roundtrip_similarity(
                                         verifier, tmp, ref_norm, cfg.target_lang)
-                                except Exception as e:     # round-trip broke, audio didn't:
-                                    print(f"       [warn] id{sid}: round-trip failed ({e}) — "
+                                except Exception as e:     # round-trip broke, audio didn't
+                                    print(f"       [warn] u{lead}: round-trip failed ({e}) — "
                                           "keeping audio, verify will judge", file=sys.stderr)
                             if best is not None:
                                 for k in range(1, cfg.tts_max_retries + 1):
@@ -194,14 +235,15 @@ class SynthesizeStage:
                                         break
                                     retry_tmp = wav.with_suffix(".wav.retry")
                                     try:
-                                        engine.synthesize(text, retry_tmp, seed=cfg.tts_seed + k)
+                                        engine.synthesize(u["text"], retry_tmp,
+                                                          seed=cfg.tts_seed + k, **kw)
                                         sim_k, _h, _n = roundtrip_similarity(
                                             verifier, retry_tmp, ref_norm, cfg.target_lang)
                                     except TtsFatalError:
                                         raise
-                                    except Exception as e:  # failed attempt: keep current best
-                                        print(f"       [warn] id{sid}: retry seed {cfg.tts_seed + k}"
-                                              f" failed ({e})", file=sys.stderr)
+                                    except Exception as e:
+                                        print(f"       [warn] u{lead}: retry seed "
+                                              f"{cfg.tts_seed + k} failed ({e})", file=sys.stderr)
                                         attempts += 1
                                         continue
                                     attempts += 1
@@ -214,39 +256,41 @@ class SynthesizeStage:
                                 if attempts > 1:
                                     tail = ("ok" if best >= cfg.similarity_threshold
                                             else "still low")
-                                    print(f"       [retry] id{sid}: {attempts} attempts, "
+                                    print(f"       [retry] u{lead}: {attempts} attempts, "
                                           f"best {best:.3f} (seed {seed_used}) — {tail}")
-                        _replace(tmp, wav)                 # atomic: a wav that exists is complete
+                        _replace(tmp, wav)
                     except TtsFatalError:
-                        raise                              # engine/driver is down — fail the stage
+                        raise
                     except Exception as e:
-                        print(f"       [flag] id{sid}: synth_error {e}", file=sys.stderr)
+                        print(f"       [flag] u{lead}: synth_error {e}", file=sys.stderr)
                         sf.write(str(wav), np.zeros(0, dtype="float32"), sr)
                         flag = "synth_error"
-                        seed_used, synth_sim = None, None
+                        seed_used = speed_used = synth_sim = None
 
                 try:
                     info = _stat_wav(wav)
                     frames, srate = info.frames, info.samplerate
                 except Exception as e:                     # unreadable wav → flag AND zero it so
-                    if flag is None:                       # disk and manifest agree (a real wav
-                        print(f"       [flag] id{sid}: synth_error {e}", file=sys.stderr)
-                        flag = "synth_error"               # recorded as samples=0 would silently
-                    try:                                   # truncate mid-sentence in assemble)
+                    if flag is None:                       # disk and manifest agree
+                        print(f"       [flag] u{lead}: synth_error {e}", file=sys.stderr)
+                        flag = "synth_error"
+                    try:
                         sf.write(str(wav), np.zeros(0, dtype="float32"), sr)
                     except Exception:
-                        wav.unlink(missing_ok=True)        # missing beats divergent: verify flags it
+                        wav.unlink(missing_ok=True)        # missing beats divergent
                     frames, srate = 0, sr
-                if frames and srate != sr:                 # silent sample-rate drift guard
-                    raise RuntimeError(f"id{sid} wav sr {srate} != engine sr {sr}")
+                if frames and srate != sr:
+                    raise RuntimeError(f"u{lead} wav sr {srate} != engine sr {sr}")
                 out.append({
-                    "id": sid, "path": f"segments/{sid:05d}.wav",
+                    "ids": u["ids"], "path": f"segments/{lead:05d}.wav",
                     "samples": frames, "duration": round(frames / sr, 3),
-                    "sample_rate": srate, "start": s["start"], "end": s["end"],
-                    "text_tts": s.get("text_tts"), "flag": flag,
+                    "sample_rate": srate, "start": u["start"], "end": u["end"],
+                    "target_sec": (round(target, 3) if u["text"] else None),
+                    "max_sec": (round(slot, 3) if slot is not None else None),
+                    "text_tts": u["text"], "flag": flag, "speed": speed_used,
                     "seed": seed_used, "attempts": attempts, "synth_sim": synth_sim,
                 })
-                if fresh_since_flush >= _FLUSH_EVERY:      # crash resume: F5 makes this stage ~20×
+                if fresh_since_flush >= _FLUSH_EVERY:
                     self._write_manifest(ctx, cfg, key, sr, out, complete=False)
                     fresh_since_flush = 0
         finally:
@@ -260,22 +304,34 @@ class SynthesizeStage:
             except Exception:
                 pass
 
-        if [e["id"] for e in out] != list(range(len(segs))):
-            raise RuntimeError("segment ids not contiguous (synthesize never-drop)")
+        if sorted(i for e in out for i in e["ids"]) != list(range(len(segs))):
+            raise RuntimeError("unit ids not contiguous (synthesize never-drop)")
         n_flag, n_retried = self._write_manifest(ctx, cfg, key, sr, out, complete=True)
-        print(f"       {len(out)} segments → manifest.json ({n_flag} flagged, {n_retried} retried)")
+        # regrouping moves unit leaders: unlink stale NNNNN.wav files whose id is no longer
+        # a lead, or a later --only verify/assemble could pick up orphan audio
+        leads = {e["ids"][0] for e in out}
+        for p in ctx.work.segments_dir.glob("[0-9][0-9][0-9][0-9][0-9].wav"):
+            if int(p.stem) not in leads:
+                p.unlink(missing_ok=True)
+        print(f"       {len(segs)} sentences → {len(out)} units → manifest.json "
+              f"({n_flag} flagged, {n_retried} retried)")
 
     @staticmethod
     def _write_manifest(ctx, cfg, key, sr, out, *, complete: bool) -> tuple[int, int]:
-        # summary counters derived from the entries (never incremental state): a resume
-        # that reuses retried segments must not report n_retried=0 over attempts>1 entries
         n_flag = sum(1 for e in out if e.get("flag"))
         n_retried = sum(1 for e in out if (e.get("attempts") or 0) > 1)
+        # units_key: content fingerprint of what was actually rendered — a SAME-synth_key
+        # resynthesis (e.g. --force) still changes it, so the downstream self-heal gates
+        # (verify/assemble) can never skip over refreshed wavs
+        uk = hashlib.sha1(json.dumps(
+            [(e["ids"], e.get("text_tts"), e.get("samples")) for e in out],
+            ensure_ascii=False).encode("utf-8")).hexdigest()[:12]
         doc = {
             "sample_rate": sr, "engine": cfg.tts_engine,
             "voice": cfg.f5_ref_audio.stem if cfg.tts_engine == "f5" else cfg.tts_voice,
-            "synth_key": key, "complete": complete,
-            "count": len(out), "n_flagged": n_flag, "n_retried": n_retried, "segments": out,
+            "synth_key": key, "units_key": uk, "complete": complete,
+            "group_gap_max": cfg.group_gap_max, "base_speed": cfg.f5_speed,
+            "n_units": len(out), "n_flagged": n_flag, "n_retried": n_retried, "units": out,
         }
         tmp = ctx.work.seg_manifest.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(doc, ensure_ascii=False, indent=2), encoding="utf-8")

@@ -51,7 +51,17 @@ class Config:
     f5_ref_audio: Path = Path("models/refs/ref_espeech_demo.wav")
     f5_ref_text: Path = Path("models/refs/ref_espeech_demo.txt")
     f5_nfe: int = 48                 # 32 is ~30% faster; quality delta not ear-checked yet
-    f5_speed: float = 1.0            # F5 canvas speed (narrator pace calibration, DECISIONS)
+    f5_speed: float = 1.0            # base narrator pace (narrator calibration, DECISIONS)
+    f5_speed_floor: float = 0.75     # max stretch: min per-unit speed as a MULTIPLIER of
+                                     # f5_speed (slot-fill; 1.0 disables stretching)
+    f5_speed_ceil: float = 1.6       # max native compression multiplier before atempo tops
+                                     # up (×1.6 verified at ≤0.022 sim cost; 1.0 disables)
+
+    # dead-air / mix (see DECISIONS 2026-07-16 dead-air entry)
+    group_gap_max: float = 0.4       # join adjacent sentences into one render unit when the
+                                     # inter-sentence gap ≤ this (s); 0.0 disables grouping
+    dub_mix: str = "replace"         # "replace" | "duck" (VO-style envelope) | "bed" (Demucs)
+    demucs_python: Path = Path(".venv-demucs/Scripts/python.exe")  # bed mode only
 
     # verification — whisper-small round-trip
     verify_model: str = "small"

@@ -3,9 +3,25 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import re
+import time
 from dataclasses import dataclass
 from pathlib import Path
+
+
+def replace_retry(src, dst) -> None:
+    """os.replace with a short bounded retry: Windows real-time AV holds freshly written
+    files for a moment (the documented host failure mode). Shared by every stage that
+    atomically flips a large artifact (segment wavs, dub_ru.wav, output.mkv, source_bed)."""
+    for attempt in range(3):
+        try:
+            os.replace(src, dst)
+            return
+        except PermissionError:
+            if attempt == 2:
+                raise
+            time.sleep(0.1)
 
 _YT_ID = re.compile(r"(?:v=|/shorts/|youtu\.be/|/embed/)([A-Za-z0-9_-]{11})")
 
@@ -55,6 +71,9 @@ class WorkDir:
         """Canonical per-segment wav path — single source of truth for synthesize / verify /
         assemble, so a naming drift can never silently produce missing-wav flags."""
         return self.root / "segments" / f"{sid:05d}.wav"
+
+    @property
+    def source_bed(self) -> Path: return self.root / "source_bed.wav"    # separate (Demucs no-vocals bed)
 
     @property
     def report(self) -> Path: return self.root / "report.json"           # verify flags + speed factors

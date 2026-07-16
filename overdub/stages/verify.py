@@ -1,17 +1,19 @@
-"""Verify stage (Phase 2): whisper-small round-trip on raw (unsped) audio.
+"""Verify stage: whisper-small round-trip of every render unit on raw (unsped) audio.
 
-Transcribe each generated segment back to Russian and compare against text_tts with the SAME
-normalizer on both sides (asr.roundtrip_similarity — shared with synthesize's reseed loop so
-the two scores can never drift apart). Runs on RAW wavs, BEFORE any atempo, so speed-up never
-pollutes the round-trip.
+Units come FROM THE MANIFEST (the record of what was actually rendered; legacy per-sentence
+manifests adapt as singleton units), but the reference text is joined from the CURRENT
+translation.json member sentences — never from the manifest — so a stale unit wav rendered
+from an older translation self-flags as low_similarity instead of silently passing against
+the artifact under test (the stale-translation safety net).
 
-Verify is a pure, independent judge: it never re-synthesizes. Reseed-retry lives in the
-synthesize stage (manifest single-writer — see synthesize.py); verify re-checks the winning
-wav and remains the sole flagging authority for similarity. It surfaces the retry bookkeeping
-(seed/attempts/synth_sim from the manifest) into report.json for triage and `--repair`.
+One ASR round-trip per unit (asr.roundtrip_similarity — shared with synthesize's reseed
+loop), fanned out to a report record per SENTENCE id (never-drop): members carry group_id
+(= the unit's first id) and the unit's similarity/flag; the hypothesis lands on the leader
+only. verify never re-synthesizes — it is the pure, independent judge.
 
-verify ADDS its own flag; it never overwrites the translate flag (carried read-only as
-translate_flag). report.json is co-owned with assemble via overdub.report (merge by id).
+done(): the report marker must exist AND its stamped synth_key must match the manifest's —
+a resynthesis under a new key auto-invalidates verification (self-healing re-verify) instead
+of silently shipping a stale report over new wavs.
 """
 
 from __future__ import annotations
@@ -26,12 +28,10 @@ from .. import report
 from ..asr import load_whisper, roundtrip_similarity
 from ..normalize import normalize_for_compare
 from ..pipeline import Context
+from .synthesize import units_of
 
 
 def _frames(wav) -> int:
-    """Frame count of a wav, or 0 if it is missing or has an unreadable/torn header — so one
-    corrupt segment is flagged (missing_wav), never crashes the whole verify stage. The pipeline
-    never blocks on a bad segment."""
     try:
         return sf.info(str(wav)).frames
     except Exception:
@@ -42,46 +42,55 @@ class VerifyStage:
     name = "verify"
 
     def done(self, ctx: Context) -> bool:
-        # marker key, NOT report.exists() — assemble also writes report.json, and an existence
-        # gate would make verify believe it had run and silently skip verification forever.
         p = ctx.work.report
         if not p.exists():
             return False
         try:
-            return bool(json.loads(p.read_text(encoding="utf-8")).get("verify"))
+            rep = json.loads(p.read_text(encoding="utf-8"))
+            marker = rep.get("verify")
+            if not marker:
+                return False
+            man = json.loads(ctx.work.seg_manifest.read_text(encoding="utf-8"))
+            # absent stamp counts as mismatch: a legacy report must re-verify ONCE (writing
+            # the stamp), or the transition itself becomes the silent-staleness hole.
+            # units_key catches SAME-synth_key resynthesis (--force) — content, not config.
+            if (marker.get("synth_key") != man.get("synth_key")
+                    or marker.get("units_key") != man.get("units_key")):
+                print("       [info] verify: manifest synth/units key changed — re-verifying",
+                      file=sys.stderr)
+                return False
+            return True
         except Exception:
-            return False                                   # torn/foreign report → re-run
+            return False                                   # torn report/manifest → re-run
 
     def run(self, ctx: Context) -> None:
         cfg = ctx.cfg
         segs = json.loads(ctx.work.translation.read_text(encoding="utf-8"))
         if [s["id"] for s in segs] != list(range(len(segs))):
             raise RuntimeError("translation ids not contiguous (verify never-drop)")
-        # fail LOUD if run out of order (e.g. --only verify before synthesize): otherwise every
-        # segment flags missing_wav, the "verify" marker is written, and done() then skips
-        # verification forever — silently disabling the safety net. Mirrors assemble's guard.
         if not ctx.work.seg_manifest.exists():
             raise RuntimeError("segments/manifest.json missing — run synthesize before verify")
-        try:
-            man = {e["id"]: e for e in
-                   json.loads(ctx.work.seg_manifest.read_text(encoding="utf-8")).get("segments", [])}
-        except Exception:
-            man = {}                                       # torn manifest: verify still judges wavs
+        man = json.loads(ctx.work.seg_manifest.read_text(encoding="utf-8"))
+        units = units_of(man)
+        if sorted(i for u in units for i in u["ids"]) != list(range(len(segs))):
+            raise RuntimeError("manifest units do not cover translation ids (verify never-drop)")
 
         model = load_whisper(cfg.verify_model, cfg.whisper_device, cfg.whisper_compute_type)
         rep = report.load(ctx.work.report)                 # preserve any assemble fields
         n_flag = n_retried = n_repaired = 0
         try:
-            for s in segs:
-                sid = s["id"]
-                wav = ctx.work.seg_wav(sid)
-                ref = normalize_for_compare(s.get("text_tts") or "")
+            for u in units:
+                lead = u["ids"][0]
+                wav = ctx.work.seg_wav(lead)
+                # reference from CURRENT translation — the stale-translation net
+                ref = normalize_for_compare(" ".join(
+                    (segs[i].get("text_tts") or "").strip() for i in u["ids"]).strip())
                 sim: float | None = None
                 vflag: str | None = None
                 hyp = ""
 
                 if not ref:
-                    vflag = "empty_ref"                    # blocks the empty-vs-empty ratio==1.0 pass
+                    vflag = "empty_ref"
                 elif not wav.exists() or _frames(wav) == 0:
                     vflag = "missing_wav"
                 else:
@@ -89,30 +98,31 @@ class VerifyStage:
                         sim, hyp, hyp_n = roundtrip_similarity(model, wav, ref, cfg.target_lang)
                     except Exception as e:
                         vflag = "unreadable_wav"
-                        print(f"       [flag] id{sid}: unreadable_wav {e}", file=sys.stderr)
+                        print(f"       [flag] u{lead}: unreadable_wav {e}", file=sys.stderr)
                     else:
                         if not hyp_n:
                             vflag = "empty_hyp"
                         else:
                             vflag = None if sim >= cfg.similarity_threshold else "low_similarity"
 
-                m = man.get(sid) or {}
-                attempts = m.get("attempts") or 0
+                attempts = u.get("attempts") or 0
                 if attempts > 1:
                     n_retried += 1
                     if vflag is None:
                         n_repaired += 1
-                report.upsert(
-                    rep, sid, status=s["status"], translate_flag=s.get("flag"),
-                    similarity=(round(sim, 4) if sim is not None else None),
-                    verify_flag=vflag, hypothesis=hyp,
-                    tts_seed=m.get("seed"), tts_attempts=(attempts or None),
-                    synth_sim=m.get("synth_sim"),
-                )
+                for sid in u["ids"]:
+                    report.upsert(
+                        rep, sid, status=segs[sid]["status"], translate_flag=segs[sid].get("flag"),
+                        group_id=lead,
+                        similarity=(round(sim, 4) if sim is not None else None),
+                        verify_flag=vflag, hypothesis=(hyp if sid == lead else None),
+                        tts_seed=u.get("seed"), tts_attempts=(attempts or None),
+                        tts_speed=u.get("speed"), synth_sim=u.get("synth_sim"),
+                    )
                 if vflag:
                     n_flag += 1
                     tail = "" if sim is None else f" ({sim:.2f})"
-                    print(f"       [flag] id{sid}: {vflag}{tail}", file=sys.stderr)
+                    print(f"       [flag] u{lead} (ids {u['ids']}): {vflag}{tail}", file=sys.stderr)
         finally:
             del model
             gc.collect()
@@ -122,11 +132,13 @@ class VerifyStage:
             except Exception:
                 pass
 
-        report.prune(rep, {s["id"] for s in segs})         # drop phantom records from a shrunk re-tune
+        report.prune(rep, {s["id"] for s in segs})
         rep["video_id"] = ctx.work.root.name
         rep["similarity_threshold"] = cfg.similarity_threshold
-        rep["verify"] = {"model": cfg.verify_model, "n_segments": len(segs), "n_flagged": n_flag,
+        rep["verify"] = {"model": cfg.verify_model, "synth_key": man.get("synth_key"),
+                         "units_key": man.get("units_key"),
+                         "n_units": len(units), "n_segments": len(segs), "n_flagged": n_flag,
                          "n_retried": n_retried, "n_repaired": n_repaired}
         report.save(ctx.work.report, rep)
-        print(f"       {len(segs)} segments verified ({n_flag} flagged, "
-              f"{n_retried} retried, {n_repaired} repaired)")
+        print(f"       {len(units)} units / {len(segs)} sentences verified "
+              f"({n_flag} flagged, {n_retried} retried, {n_repaired} repaired)")

@@ -19,7 +19,8 @@ def build_engine(cfg: Config) -> TtsEngine:
 
         return F5Engine(python=cfg.f5_python, ckpt=cfg.f5_ckpt, vocab=cfg.f5_vocab,
                         ref_audio=cfg.f5_ref_audio, ref_text=cfg.f5_ref_text,
-                        nfe=cfg.f5_nfe, speed=cfg.f5_speed, default_seed=cfg.tts_seed)
+                        nfe=cfg.f5_nfe, speed=cfg.f5_speed, default_seed=cfg.tts_seed,
+                        speed_floor=cfg.f5_speed_floor, speed_ceil=cfg.f5_speed_ceil)
     raise ValueError(f"unknown tts_engine: {cfg.tts_engine!r}")
 
 
@@ -55,5 +56,6 @@ def synth_key(cfg: Config) -> str:
         return (f"f5|{Path(cfg.f5_ref_audio).stem}:{h.hexdigest()[:8]}"
                 f"|ckpt={ckpt.stem}:{ckpt.stat().st_size}"     # model identity: name+size, not a
                 f"|vocab={vocab.stem}:{vocab.stat().st_size}"  # content hash of a 2.7 GB file
-                f"|sr=24000|nfe={cfg.f5_nfe}|speed={cfg.f5_speed}|seed={cfg.tts_seed}")
+                f"|sr=24000|nfe={cfg.f5_nfe}|speed={cfg.f5_speed}"
+                f"|floor={cfg.f5_speed_floor}|ceil={cfg.f5_speed_ceil}|seed={cfg.tts_seed}")
     return f"silero|{cfg.tts_voice}|sr={cfg.tts_sample_rate}"

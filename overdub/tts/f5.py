@@ -21,6 +21,7 @@ import json
 import os
 import queue
 import subprocess
+import sys
 import threading
 import time
 from pathlib import Path
@@ -37,12 +38,40 @@ class _WorkerCrash(Exception):
     """Internal: transport-level worker failure (timeout, EOF, protocol corruption)."""
 
 
+def plan_speed(gen_bytes: int, ref_sec: float, ref_bytes: int, base_speed: float,
+               floor: float, ceil: float,
+               target_sec: float | None, max_sec: float | None) -> float:
+    """Slot-fill policy: pick the native F5 speed for one render unit.
+
+    F5's duration canvas is deterministic: out_sec ≈ ref_sec * gen_bytes / ref_bytes / speed
+    (utils_infer's canvas line; raw pre-accent bytes on BOTH sides so the stress-mark byte
+    inflation cancels to first order). Three branches against the unit's SOURCE SPAN
+    (target_sec) and its slot cap (max_sec) — the span, not the slot, is the fill target so
+    real inter-sentence pauses stay pauses:
+      underfill  (nominal < span)          → stretch down to floor*base_speed
+      fits slot  (span ≤ nominal ≤ slot)   → base_speed (free gap absorbs the spill, as today)
+      overflows  (nominal > slot)          → compress up to ceil*base_speed; atempo tops up
+    floor/ceil are MULTIPLIERS of base_speed so a recalibrated narrator pace (DECISIONS
+    speed-calibration) shifts the whole window with it. Pure — unit-tested without GPU.
+    """
+    nominal = ref_sec * gen_bytes / ref_bytes / base_speed
+    if target_sec is None or nominal <= 0:
+        return base_speed
+    if nominal < target_sec:
+        return max(nominal * base_speed / target_sec, floor * base_speed)
+    if max_sec is not None and nominal > max_sec:
+        return min(nominal * base_speed / max_sec, ceil * base_speed)
+    return base_speed
+
+
 class F5Engine:
     sample_rate = 24000          # vocos-mel-24khz — asserted against the worker handshake
     supports_seed = True
+    supports_target = True
 
     def __init__(self, python: Path, ckpt: Path, vocab: Path, ref_audio: Path,
-                 ref_text: Path, nfe: int, speed: float, default_seed: int) -> None:
+                 ref_text: Path, nfe: int, speed: float, default_seed: int,
+                 speed_floor: float = 1.0, speed_ceil: float = 1.0) -> None:
         for p in (python, ckpt, vocab, ref_audio, ref_text):
             if not Path(p).exists():
                 raise RuntimeError(
@@ -58,6 +87,10 @@ class F5Engine:
             "--nfe", str(int(nfe)),
         ]
         self._speed = float(speed)
+        self._floor = float(speed_floor)
+        self._ceil = float(speed_ceil)
+        self._ref_sec: float | None = None       # from the ready handshake (slot-fill inputs)
+        self._ref_bytes: int | None = None
         self._default_seed = int(default_seed)
         self._proc: subprocess.Popen | None = None
         self._q: queue.Queue | None = None
@@ -102,6 +135,13 @@ class F5Engine:
             self._kill()                                   # rescale assemble's timing math
             raise TtsFatalError(
                 f"f5 worker sample_rate {msg.get('sample_rate')} != {self.sample_rate}")
+        self._ref_sec = float(msg.get("ref_sec") or 0) or None
+        self._ref_bytes = int(msg.get("ref_bytes") or 0) or None
+        if (self._ref_sec is None or self._ref_bytes is None) and (
+                self._floor != 1.0 or self._ceil != 1.0):
+            print(f"       [warn] f5 worker sent no usable ref stats "
+                  f"(ref_sec={msg.get('ref_sec')}, ref_bytes={msg.get('ref_bytes')}) — "
+                  "slot-fill DISABLED, all units render at base speed", file=sys.stderr)
 
     def _count_crash(self, why: str) -> None:
         self._crashes += 1
@@ -142,11 +182,16 @@ class F5Engine:
             self._proc = None
 
     # --- TtsEngine API ------------------------------------------------------------
-    def synthesize(self, text: str, out_path: Path, *, seed: int | None = None) -> None:
+    def synthesize(self, text: str, out_path: Path, *, seed: int | None = None,
+                   target_sec: float | None = None, max_sec: float | None = None) -> float:
+        speed = self._speed
+        if target_sec is not None and self._ref_sec and self._ref_bytes:
+            speed = plan_speed(len(text.encode("utf-8")), self._ref_sec, self._ref_bytes,
+                               self._speed, self._floor, self._ceil, target_sec, max_sec)
         self._rid += 1
         req = {"id": self._rid, "text": text, "out": str(Path(out_path).resolve()),
                "seed": self._default_seed if seed is None else int(seed),
-               "speed": self._speed}
+               "speed": round(speed, 4)}
         line = json.dumps(req, ensure_ascii=False) + "\n"
         for retry in (False, True):
             if self._proc is None or self._proc.poll() is not None:
@@ -170,7 +215,9 @@ class F5Engine:
                 self._count_crash(f"synth error: {msg.get('error')}")
                 raise TtsEngineError(f"f5 synth failed: {msg.get('error')}")
             self._crashes = 0
-            return
+            # prefer the worker-reported EFFECTIVE speed: F5 forces local_speed=0.3 for
+            # texts under 10 UTF-8 bytes, where echoing the request would record fiction
+            return float(msg.get("speed_eff", req["speed"]))
 
     def close(self) -> None:
         if self._proc is None:
