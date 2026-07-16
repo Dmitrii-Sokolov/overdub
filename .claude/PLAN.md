@@ -30,13 +30,12 @@ stage, all verified end-to-end. One venv (.venv-asr), `overdub` package.
 ## → Roadmap (reprioritized 2026-07-16 evening; user-confirmed after the F5 ear check)
 Sample workdirs: `work/4szRHy_CT7s/`, `work/x7DfiXqSEdM/` (Silero baselines, read-only),
 `work-exp/f5-control/x7DfiXqSEdM/` (F5). Report triage: any *_flag or speed_factor>1.8.
-1. **Dead-air elimination** (IN PROGRESS — design panel running): measured on the F5 control
-   run, 665 s of silence in a 39-min dub = 607 s RU-underfill (fast narrator ends before the
-   EN span) + 68 s inherited gaps (median 0.14 s). Three composable layers: per-segment
-   NATIVE F5 speed from the slot budget (stretch <1 to fill, compress ≤1.6 before atempo);
-   sentence grouping (gap ≤0.4 s → one synth call; dissolves the id101 ultra-short class);
-   overlay mix — BOTH duck and Demucs-bed variants behind one knob, user ear-compares three
-   outputs (replace / duck / bed)
+1. **Dead-air elimination** — IMPLEMENTED, awaiting the user ear verdict on three control
+   outputs (work-exp/f5-control/x7DfiXqSEdM/output_{replace,duck,bed}.mkv). Measured:
+   in-span silence 607 s → 204 s (L1 slot-fill + L2 units), atempo unused (0 sped), 0 verify
+   flags, unit sim mean 0.9939, synth RTF improved to 0.43 (256 units vs 315 calls). 123/256
+   units sit at floor 0.75 — if pacing still feels slow-gapped, floor 0.7 recoups more
+   (bench says quality holds). Ear verdict picks the default dub_mix (own commit)
 2. **Proper nouns** — detect Latin/brand tokens → pronunciation dictionary → phonetic translit
    fallback → per-run cache. F5 softened the class (id189: 0.95 vs Silero 0.661) but ear says
    "No Man's Sky" is still bad (id150); all worst control-run sims are this class

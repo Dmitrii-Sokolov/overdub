@@ -1,5 +1,27 @@
 # CHANGELOG
 
+## 2026-07-16 — Dead-air elimination: slot-fill speed + render units + duck/bed mix
+- Measured root cause first: 665 s silence on the 39-min F5 dub = 607 s RU-underfill (fast
+  narrator ends before the EN span) + only 68 s real gaps (median 0.14 s) — not a timing bug
+- L1 slot-fill: per-unit native F5 speed from the span budget (plan_speed, pure, 16 tests);
+  stretch floor 0.75 fixed by a pre-registered bench rule (canvas formula err ≤1.5% incl.
+  group-shaped texts, sims stable to 0.7); compress ceil 1.6 before atempo. Caps are
+  multipliers of the narrator base pace and enter synth_key
+- L2 render units: sentences grouped at synthesis (gap ≤0.4 s, span ≤12 s, ≤300 chars) —
+  natural prosody, ultra-shorts dissolve; manifest v3 "units" + units_key fingerprint;
+  per-sentence report records with group_id; verify refs CURRENT translation
+- L3 dub_mix: replace | duck (sample-exact −15 dB envelope over spans extended to placed
+  audio, merged <1 s) | bed (htdemucs no-vocals −6 dB, new separate stage in .venv-demucs,
+  45 s for a 39-min video); all modes RMS-align dub loudness to the original (+4.0 dB here)
+- Self-healing done() chain: synth/units key stamps in verify/assemble, dub_mix/mtime deps
+  in mux — flipping dub_mix re-runs exactly mux (the 3-output A/B costs seconds per mode);
+  artifact-flips-before-stamp discipline everywhere (review catch: stamp-first + failed
+  replace = silently served stale audio)
+- Process: design panel (3+3, 651k tok) → impl → 4-lens adversarial review (25 agents,
+  1.51M tok): 20 findings, 1 refuted, all fixed. Control result: in-span silence 204 s
+  (−66%), 0 flags, 0 atempo, unit sim mean 0.9939, synth 996 s (was 1409 — fewer calls);
+  three outputs produced for the ear verdict, dub_mix default flip pending it
+
 ## Phase 3 — TTS engine upgrade ✅ (closed 2026-07-16)
 - [x] Research sweep + adversarial verify of the July-2026 local RU TTS landscape →
       bakeoff/tts-research-2026-07.md (~20 engines; only Silero/ESpeech/Misha speak Russian)

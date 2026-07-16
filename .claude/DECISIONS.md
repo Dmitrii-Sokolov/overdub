@@ -454,6 +454,54 @@ regardless of engine. Gates are therefore ABSOLUTE (flag rate ≤ 2% of 315 afte
 pre-registered as expected-to-flag; baseline comparison advisory), plus mean sim ≥ 0.985,
 mean atempo ≤ 1.10, synth+verify RTF ≤ 0.5×, and the binding user ear check.
 
+## 2026-07-16 — Dead-air elimination: design panel + review (BUILD)
+
+Panel (minimalist/contracts/audio + 3 judges) + 4-lens adversarial review (20 findings,
+1 refuted, all fixed). Three composable layers against the measured 607-s underfill:
+
+**L1 slot-fill native speed — parent-side pure `plan_speed()` (2/3 judges).** F5's duration
+canvas is deterministic (`out ≈ ref_sec·gen_bytes/ref_bytes/speed`, raw pre-accent bytes both
+sides — stress-mark inflation cancels; bench: |err| ≤ 1.5% even on group-shaped 300-char
+texts). Three branches: stretch to the SPAN (never the slot — real pauses stay pauses),
+neutral when the free gap absorbs the spill (the DECISIONS gap-headroom principle), native
+compress ≤ ceil before atempo tops up. Caps are MULTIPLIERS of f5_speed (narrator-pace
+recalibration shifts the window); floor 0.75 by the pre-registered bench rule (0.7 passed
+sims down to 0.95+, ship +0.05 margin). Retries reuse the same speed — keep-best compares
+identical canvases. Worker reports EFFECTIVE speed (F5 forces 0.3 under 10 UTF-8 bytes).
+
+**L2 render units — group at SYNTHESIS, not transcribe (unanimous rejection of widening the
+transcribe merge: per-sentence subtitles are binding, and re-segmentation would cascade into
+full re-translation).** build_units: gap ≤ 0.4 s, span ≤ 12 s (F5 trained regime, judges'
+correction of the 18–24 s drafts), joined ≤ 300 chars; empty-text singletons break chains.
+Manifest v3 "units" as the single structural truth; verify/assemble read units, never
+recompute. Non-negotiable correction from the contracts judge: verify's reference text joins
+from CURRENT translation.json — referencing the manifest would kill the stale-translation
+net. Per-sentence report records with group_id keep translation-id contiguity verbatim.
+
+**L3 dub_mix knob (replace/duck/bed), mixing in MUX.** Duck = explicit sample-exact numpy
+envelope (−15 dB, ramps 50/300 ms, intervals merged < 1 s) — beats sidechaincompress on
+determinism (no program-dependent pumping, no compressor keyed by F5 breaths); the
+cmdline-length argument against envelopes was factually void (-filter_complex_script), the
+decision is purely perceptual. Duck intervals = unit spans EXTENDED to placed audio (review:
+the slot-fill neutral branch deliberately spills RU past the span — that tail must not ride
+over full-level EN). Bed = htdemucs no-vocals at −6 dB, own .venv-demucs, CLI subprocess,
+44.1 k stereo extract (the 16 k mono STT wav is unusable). ALL modes RMS-align the dub to
+the original's speech loudness (±6 dB cap) — otherwise the A/B measures loudness, not
+mechanism. Empty/failed units are deliberately NOT ducked: full-level EN there is the
+honest fallback (on the ear checklist).
+
+**Self-healing done() chain (review-driven).** verify/assemble gate on synth_key AND
+units_key (content fingerprint — same-key --force resynthesis is otherwise invisible);
+mux gates on dub_mix/synth_key stamps plus make-style mtime deps (re-assembled dub → re-mux).
+Ordering discipline: the ARTIFACT flips before the stamp, everywhere — review confirmed
+stamp-first turns a failed os.replace (the documented AV hold) into permanently-served
+stale audio. Ear-loop consequence: flipping dub_mix in the TOML re-runs exactly mux.
+
+**Known accepted losses (named, not hidden):** group-level similarity dilutes per-sentence
+sensitivity at the same 0.8 threshold (re-tune queued — PLAN open question); subtitle cues
+keep source timings while grouped audio renders continuously (drift bounded by the 12 s
+span cap; on the ear checklist); --repair granularity becomes the unit, not the sentence.
+
 ## 2026-07-16 — Phase 3 closed by ear; roadmap reprioritized: dead air first
 
 **Ear verdict (user, 39-min F5 control run):** id26/id136/id200 fine, id150 almost fine
