@@ -27,19 +27,35 @@ stage, all verified end-to-end. One venv (.venv-asr), `overdub` package.
       present, positioned at the right timestamps, translation correct. Phase 1 PoC proven
       (URL→MKV, turn-key). Broaden to 2–3 more videos + edge content when convenient
 
-## → Resume here (next session)
-Phase 1 closed. RTF gate PASSED on a 39-min video (x7DfiXqSEdM): end-to-end ×0.75 realtime,
-translate = 80% of wall-clock, x5 budget cleared 6.7×. Sample workdirs: `work/4szRHy_CT7s/`,
-`work/x7DfiXqSEdM/`. Report triage: flag any segment with translate_flag/verify_flag/
-assemble_flag or speed_factor>1.8. **Agreed order of work:**
-1. Phase 3 below — F5Engine integration (ESpeech adopted by ear; DECISIONS 2026-07-16).
-2. Proper-noun phonetics for TTS (brand dictionary + phonetic translit fallback) — the one
-   systematic content defect: "но ман'с скй"-class garbage + english_echo false flags
-   (x7DfiXqSEdM id150/id189). Perpendicular to the engine work.
-3. Voice-over mix (ducked original under the dub) — dub covers ~68% of runtime, 744 s dead
-   silence on the 39-min video. Deferred BY DESIGN until the TTS layer is settled: masking
-   comes after the layers beneath are good.
-4. Then Phase 2 batch mode (below). Process INBOX (transcribe/translate deferred items).
+## → Roadmap (consolidated 2026-07-16; user-confirmed order)
+Phase 1 closed; RTF gate PASSED (39-min video ×0.75 realtime, translate = 80% of wall-clock).
+Sample workdirs: `work/4szRHy_CT7s/`, `work/x7DfiXqSEdM/`. Report triage: any segment with
+*_flag or speed_factor>1.8.
+1. **F5Engine integration** (Phase 3 checklist below) — incl. per-segment NATIVE speed from the
+   slot budget (F5 `speed` instead of post-hoc atempo; ×1.6 verified at ≤0.022 sim cost) and
+   ultra-short-sentence merging (id43 failed 3×)
+2. **Proper nouns** — detect Latin/brand tokens → pronunciation dictionary → phonetic translit
+   fallback → per-run cache ("но ман'с скй" garbage + english_echo false flags, id150/id189)
+3. **Dub as overlay mix, not replacement**: ideally vocal-separate the original (Demucs, local)
+   → ambience/music bed + RU dub; fallback — duck the full original track. Also dissolves the
+   inter-phrase dead air (744 s of silence measured on the 39-min dub). Optional prosody helper:
+   group adjacent sentences (gap <0.4 s) into one synth call
+4. **Batch queue**: a file with N URLs → sequential turn-key runs, per-video resume on crash
+5. **Stop switch**: a stop-file checked between stages/videos — overnight run halts cleanly by
+   morning; no mid-stage save needed (stages are already atomic + resumable)
+6. **Verify quality gap (babble detector)**: ASR round-trip is PROVEN blind to babble (0.93 sim
+   on garbage audio) — add expected-vs-actual duration heuristic + optional local MOS (UTMOS)
+7. **Optional cloud translation (Anthropic Sonnet)** — explicit opt-in flag, OFF by default;
+   a deliberate exception to local-only (DECISIONS); translate is 80% of wall-clock, expect the
+   largest single speed win + quality bump
+8. **Gender-matched narrator** — median-F0 of source speech (~165 Hz threshold; the exact
+   method used in the narrator bake-off) → pick M/F reference per video; needs a good female
+   PD reference (not found yet); edge cases → default voice + report flag
+
+Backlog (second tier): `--repair id,id --seed N` (point re-synth + remux); per-run terminology
+glossary; singing/music detection → keep original (no robot singing); loudnorm/EQ on the dub;
+`--subs-only` fast path; morning triage HTML for batches (flagged segments with players);
+cross-video stage pipelining (translate GPU ∥ synth/verify) if nights get tight.
 
 ## Phase 2 — reliability (batch-ready)
 - [x] ASR verification loop: whisper-small round-trip on raw (unsped) audio, compare
@@ -49,8 +65,9 @@ assemble_flag or speed_factor>1.8. **Agreed order of work:**
 - [ ] Batch mode: list of URLs, resume on crash; decide whether to switch the
       outer loop to per-stage batching (one model load per stage per batch) —
       only if per-video reload overhead actually matters
-- [ ] Overnight-run ergonomics: progress log, summary report, flagged-segment
-      list with speed factors
+- [ ] Stop switch: stop-file checked between stages/videos (roadmap item 5)
+- [ ] Overnight-run ergonomics: progress log, summary report, morning triage
+      HTML (flagged segments with audio players)
 
 ## Phase 3 — TTS engine upgrade (bake-off #2 done; ESpeech adopted by ear)
 - [x] Research sweep + adversarial verify of the July-2026 local RU TTS landscape →
@@ -81,5 +98,6 @@ assemble_flag or speed_factor>1.8. **Agreed order of work:**
   verify 88s, rest seconds. x5 budget cleared 6.7× (Silero) / ~5× (F5). Bottleneck = translate;
   revisit sentence batching first if overnight runs get time-bound
 
-Stack pins, verified APIs and setup: STACK.md + SETUP.md. TTS engine settled:
-Silero v4_ru, voice eugene (xenia backup); Chatterbox rejected (day-1 ear test).
+Stack pins, verified APIs and setup: STACK.md + SETUP.md. TTS engine: ESpeech-TTS-1_RL-V2
+(F5-TTS, .venv-f5tts) adopted by ear 2026-07-16, integration pending; narrator = ESpeech demo
+reference (rights caveat in README). Silero v4/v5 = fallback; Chatterbox rejected day-1.

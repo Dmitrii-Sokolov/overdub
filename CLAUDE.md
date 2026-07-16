@@ -22,8 +22,11 @@ segments are tolerated, silent failures are not.
 
 ## Hard constraints
 
-- **Local only.** No cloud STT/translation/TTS. The Ollama endpoint is
-  localhost, not a hosted API.
+- **Local by default.** No cloud STT or TTS, ever. The Ollama endpoint is
+  localhost, not a hosted API. One approved exception (DECISIONS 2026-07-16):
+  an explicitly opt-in cloud-translate mode (Anthropic API) — OFF by default,
+  never a silent fallback; the local Qwen path remains the default and must
+  keep working.
 - **EN→RU only.** Source audio is always English, the dub is always Russian.
   No language detection, no multi-language handling.
 - **Single-speaker assumption.** No diarization in v1.

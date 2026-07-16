@@ -387,3 +387,12 @@ Repo policy unchanged: PD samples only, person-agnostic docs.
 **id43 confirmed a third time** (ultra-short "Решениям.", 0.6 s → hallucinated round-trips in 2 of
 4 narrator runs) — merge-ultra-short-sentences upstream + reseed-retry are REQUIRED F5Engine
 integration items, not nice-to-haves.
+
+## 2026-07-16 — Local-only constraint amended: optional cloud-translate mode approved
+
+**User decision:** an explicitly opt-in cloud translation mode (Anthropic API, Sonnet-class) is
+a permitted exception to the founding local-only constraint. Rationale: translate is 80% of
+wall-clock (RTF 0.60, the only real bottleneck) and the likeliest quality ceiling; a cloud pass
+would give the largest single speed win while keeping quality. Boundaries: OFF by default, a
+deliberate flag (no silent fallback to cloud), local Qwen path remains the default and must keep
+working; STT/TTS stay local unconditionally. CLAUDE.md hard-constraints section amended to match.
