@@ -35,4 +35,6 @@ class SileroEngine:
             put_accent=True,
             put_yo=True,
         )
-        sf.write(str(out_path), audio.cpu().numpy(), self.sample_rate)
+        # explicit format="WAV": callers pass atomic temp paths (…/00007.wav.tmp) whose
+        # extension soundfile cannot infer a container from, so never rely on the suffix.
+        sf.write(str(out_path), audio.cpu().numpy(), self.sample_rate, format="WAV", subtype="PCM_16")

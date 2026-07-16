@@ -51,6 +51,11 @@ class WorkDir:
     @property
     def seg_manifest(self) -> Path: return self.root / "segments" / "manifest.json"
 
+    def seg_wav(self, sid: int) -> Path:
+        """Canonical per-segment wav path — single source of truth for synthesize / verify /
+        assemble, so a naming drift can never silently produce missing-wav flags."""
+        return self.root / "segments" / f"{sid:05d}.wav"
+
     @property
     def report(self) -> Path: return self.root / "report.json"           # verify flags + speed factors
 
