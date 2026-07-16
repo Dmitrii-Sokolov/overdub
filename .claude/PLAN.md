@@ -31,9 +31,10 @@ stage, all verified end-to-end. One venv (.venv-asr), `overdub` package.
 Phase 1 closed; RTF gate PASSED (39-min video ×0.75 realtime, translate = 80% of wall-clock).
 Sample workdirs: `work/4szRHy_CT7s/`, `work/x7DfiXqSEdM/`. Report triage: any segment with
 *_flag or speed_factor>1.8.
-1. **F5Engine integration** (Phase 3 checklist below) — incl. per-segment NATIVE speed from the
-   slot budget (F5 `speed` instead of post-hoc atempo; ×1.6 verified at ≤0.022 sim cost) and
-   ultra-short-sentence merging (id43 failed 3×)
+1. **F5Engine integration** — DONE except the default-engine flip (ear-check gated, Phase 3
+   below). Remainder moved here: per-segment NATIVE speed from the slot budget (F5 `speed`
+   instead of post-hoc atempo; ×1.6 verified at ≤0.022 sim cost) — deliberately out of the
+   integration session's scope
 2. **Proper nouns** — detect Latin/brand tokens → pronunciation dictionary → phonetic translit
    fallback → per-run cache ("но ман'с скй" garbage + english_echo false flags, id150/id189)
 3. **Dub as overlay mix, not replacement**: ideally vocal-separate the original (Demucs, local)
@@ -76,13 +77,22 @@ cross-video stage pipelining (translate GPU ∥ synth/verify) if nights get tigh
       ESpeech-TTS-1_RL-V2 unambiguous winner (mean sim 0.992, ×1.03, 0 flags on the sample
       video); Silero v5 > v4 but below F5; Misha good but NC-licensed. EN-voice cloning
       explored and dropped; RU-voice cloning works (DECISIONS 2026-07-16)
-- [ ] F5Engine behind the adapter: RUAccent inside the engine (+ token_type_ids shim),
-      seed + speed params, .venv strategy (try main venv, else worker process);
-      ultra-short-sentence mitigation (merge upstream or reseed)
-- [ ] Reseed-retry in verify — F5 is seed-controllable, the retry path finally goes live
+- [x] F5Engine behind the adapter — worker process in .venv-f5tts (venvs incompatible,
+      measured), RUAccent + shim in the worker, seed/speed/nfe params, synth_key resume
+      guard, manifest v2 (complete-marker + periodic flush). Design panel + adversarial
+      review + smoke (DECISIONS 2026-07-16)
+- [x] Reseed-retry — lives in SYNTHESIZE (manifest single-writer), keep-best by
+      round-trip sim; mechanics proven on id43 (4 attempts, honest flag)
+- [x] Ultra-short merge in transcribe (MIN_SENT_CHARS=15, gap ≤0.6 s, cumulative ≤1.5 s);
+      unit-tested; validates on the next fresh video (control reuses frozen sentences)
 - [x] Narrator decided: ESpeech demo reference (0.992 / 0 flags / ×1.03; rights caveat —
       fetch at setup, personal use only; PD fallbacks + speed-calibration in DECISIONS)
-- [ ] Control run on x7DfiXqSEdM (39 min): flag rate + RTF vs the Silero baseline
+- [x] Control run on x7DfiXqSEdM (39 min) vs Silero baseline: flags 0 vs 1, sim mean
+      0.9943 vs 0.986, atempo mean ×1.014 vs ×1.018, 0 retries. RTF gate MISSED:
+      synth+verify ×0.65 vs ≤0.5 target (thermal-loaded; cold bake-off was 0.39);
+      x5 budget still cleared ~3.8× full-pipeline
+- [ ] Flip default tts_engine to "f5" (config.py + overdub.toml, own commit) — gated on
+      the user ear check of work-exp/f5-control/x7DfiXqSEdM/output.mkv
 
 ## Phase 4 — Arc B390 path (optional)
 - [ ] whisper.cpp SYCL/OpenVINO for STT

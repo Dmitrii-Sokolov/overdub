@@ -1,16 +1,41 @@
 # SETUP.md — Windows 11 + RTX 4080 Mobile (12 GB) runtime for overdub
 
-## Strategy: ONE Python venv + Ollama as a separate OS process
+## Strategy: pipeline venv + F5 worker venv + Ollama as a separate OS process
 
-The two-venv split existed only for Chatterbox's `torch==2.6.0` / `transformers==5.2.0` pins.
-Chatterbox was rejected in the day-1 ear test (see DECISIONS), so that constraint is gone. The
-chosen TTS engine — **Silero** — needs only `torch` + `torchaudio` + `soundfile` + `omegaconf`
-and loads via `torch.hub`, so everything runs in **one venv**:
-
-1. **`.venv-asr`** — the single pipeline venv: faster-whisper (STT + verify), Silero (TTS via
-   torch.hub), the `openai` client (Ollama), the `overdub` package itself. torch cu128 line.
-2. **Ollama** — standalone Windows app/service, its own bundled CUDA; NOT a pip package, never in a
+1. **`.venv-asr`** — the pipeline venv: faster-whisper (STT + verify), Silero (fallback TTS via
+   torch.hub), the `overdub` package itself. torch cu128 line.
+2. **`.venv-f5tts`** — the F5/ESpeech TTS venv (torch 2.8 cu128). The production engine runs
+   here as a worker subprocess (`overdub/tts/f5_worker.py`) driven over stdio — f5-tts is
+   dependency-incompatible with `.venv-asr` (torch 2.11 vs 2.8, numpy downgrade, torchcodec ABI,
+   ~110 extra packages; measured via pip dry-run, see DECISIONS 2026-07-16). Never merge them.
+3. **Ollama** — standalone Windows app/service, its own bundled CUDA; NOT a pip package, never in a
    venv. Treat as a black-box localhost service.
+
+## F5/ESpeech TTS venv + assets (production engine)
+
+```powershell
+py -3.12 -m venv .venv-f5tts ; .venv-f5tts\Scripts\Activate.ps1
+pip install torch==2.8.0 torchaudio==2.8.0 --index-url https://download.pytorch.org/whl/cu128
+pip install f5-tts ruaccent soundfile huggingface_hub
+
+# ESpeech RL-V2 checkpoint + vocab (~2.7 GB) -> models/espeech-rlv2/
+hf download ESpeech/ESpeech-TTS-1_RL-V2 --local-dir models\espeech-rlv2
+
+# Narrator reference: HF Space Den4ikAI/ESpeech-TTS, file ref/example.mp3 -> convert to wav +
+# write the exact transcript next to it (rights caveat — personal use only, NOT committed;
+# see README "Voices, cloning and the law"):
+#   models/refs/ref_espeech_demo.wav + models/refs/ref_espeech_demo.txt
+
+# Vocos vocoder prefetch (load_vocoder() pulls charactr/vocos-mel-24khz from the HF hub on
+# first use — on a clean machine do it NOW, not inside the worker's startup timeout):
+python -c "from f5_tts.infer.utils_infer import load_vocoder; load_vocoder()"
+# RUAccent models (turbo3.1 + dictionary) auto-download on first load the same way.
+```
+
+The pipeline needs only `f5_python = ".venv-f5tts/Scripts/python.exe"` (config default) — the
+worker is spawned per synthesize run, loads the model once (~30 s), and is closed at stage end.
+Run the pipeline itself with `python -X utf8 -m overdub ...` — the worker's stderr is UTF-8 and
+a cp1251 parent console would mojibake the overnight log lines morning triage reads.
 
 > Verified on host: Silero loads and synthesizes fine on torch 2.11 (cu128). The one catch is that
 > torchaudio 2.11 routes `torchaudio.save` through TorchCodec — so the SileroEngine writes wavs with

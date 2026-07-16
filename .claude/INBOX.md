@@ -33,9 +33,8 @@ Tags: `[bug] [feature] [chore] [?]` — one line per entry, processed weekly.
 - [chore] yt-dlp is 90+ days old (warning on run) — `pip install -U yt-dlp`
 
 ## F5 engine integration backlog (2026-07-16; narrator + engine decisions → DECISIONS)
-- [chore] ruaccent 1.5.8.3 accent-model ONNX wants token_type_ids the lib doesn't feed — shim lives in scripts/{bakeoff2_f5,exp_clone_synth,bakeoff3_narrators}.py; move into F5Engine adapter, watch for upstream fix
-- [?] nfe=32 vs 48: RTF 0.27 vs 0.39 — ear-check the quality delta once the engine is integrated
-- [chore] setup: fetch ref_espeech_demo (HF Space ref/example.mp3) + ESpeech checkpoint if missing — document in SETUP.md during integration
+- [?] nfe=32 vs 48: RTF 0.27 vs 0.39 — ear-check the quality delta; now doubly relevant: sustained-load synth RTF measured 0.60 vs cold 0.39 (thermal), nfe=32 would claw back ~30%
+- [chore] f5: worker keep-alive across videos for batch mode — startup ~30 s × N videos/night adds up (Phase 2 batching decision)
 - [chore] before ANY publication of dubs: replace narrator with a rights-clear reference + re-check ESpeech Apache provenance caveat (weights possibly derived from CC-BY-NC base)
 - [chore] female PD narrator reference for gender-matching: search the ESpeech community first — HF Space Den4ikAI/ESpeech-TTS discussions + the author's channels/forums (where example.mp3 lives) for shared female refs; fallback: re-scan LibriVox female readers with decent mics (xenium5 rejected: mic; chekhov01: timbre)
 

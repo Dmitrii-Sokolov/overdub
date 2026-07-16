@@ -388,6 +388,72 @@ Repo policy unchanged: PD samples only, person-agnostic docs.
 4 narrator runs) — merge-ultra-short-sentences upstream + reseed-retry are REQUIRED F5Engine
 integration items, not nice-to-haves.
 
+## 2026-07-16 — F5Engine integration: design panel + adversarial review (BUILD)
+
+Settled by a 3-bias design panel (minimalist / operability / quality) + 3 lens judges
+(contracts / windows-ops / scope), synthesis by the main session; then a 4-lens adversarial
+review with per-finding refutation (16 findings kept, 0 refuted, all fixed). Load-bearing calls:
+
+**Worker process in `.venv-f5tts`, never f5-tts into `.venv-asr` (unanimous).** pip dry-run
+evidence: resolver keeps torch 2.11 but downgrades numpy 2.5.1→2.4.6 under working
+ctranslate2/onnxruntime, adds ~110 packages (gradio, wandb, datasets), and pulls torchcodec
+0.15 built against torch 2.8 — an ABI gamble inside the venv every stage depends on.
+Worker mechanics: JSONL over stdio; the worker's FIRST act is fd-level
+`os.dup(1)` + `os.dup2(2,1)` BEFORE heavy imports (Python-level sys.stdout rebinding does not
+survive native fd-1 writers); stderr inherited (live progress, no pipe deadlock class); config
+via argv (Task-Manager-visible); reader-thread + Queue timeouts (the only sane Windows pipe
+timeout; constants in f5.py, not config); per-request id echo (protocol corruption == crash);
+respawn+resend once per request; EVERY consecutive failure — transport, respawn handshake, or
+an ok:false reply (sticky CUDA context dies per-request while the process lives — review
+finding) — counts toward a 3-strike TtsFatalError that escapes the per-segment catch. Startup
+~30 s measured (imports 17 s + RUAccent 6 s + model 3 s); warm synth ~×1.1 of audio duration;
+0.7 GiB VRAM.
+
+**Reseed-retry lives in SYNTHESIZE, not verify (2 of 3 judges, over the scope judge's
+objection).** Deciding invariant: segments/manifest.json stays single-writer — assemble derives
+atempo factors from manifest `samples`, so a verify-side wav replacement with a stale manifest
+is silent timing desync, the forbidden class; ordering discipline can only narrow that window,
+single-writer eliminates it. Every fresh F5 segment gets an in-stage whisper-small round-trip
+via `asr.roundtrip_similarity` (ONE function shared with verify — same-transform-both-sides,
+the normalize.py precedent); < threshold → seeds tts_seed+1..+3, keep-best by similarity.
+Accepted costs: double ASR round-trip (~+90 s / 39-min video), whisper-small coupled into
+synthesize (loud failure, co-residency pre-blessed). Verify stays a pure judge — sole
+similarity-flagging authority, byte-identical Silero path. Proven mechanics (micro-test,
+threshold 0.9 / seed 7): id43 retried 4 attempts, best 0.875 kept (seed 9), honestly flagged.
+
+**synth_key gates all wav reuse.** Everything that changes rendered audio enters one canonical
+string: engine | ref-stem:content-sha1[:8] (the narrator ref is fetched-at-setup and mutable at
+a stable path — stems lie) | ckpt+vocab name:size (review catch: a checkpoint swap must not
+serve stale wavs) | sr | nfe | speed | base seed. Legacy Silero manifests reconstruct their key
+read-side (zero migration). Manifest v2 adds per-segment seed/attempts/synth_sim and a
+"complete" marker: the manifest is downgraded to complete:false BEFORE any wav mutates and
+flushed every 25 fresh segments (review catch: a crash mid-resynthesis must not leave a
+complete:true manifest over divergent wavs; F5 makes the stage ~20× longer than Silero, so
+mid-stage interruption is now a real overnight event).
+
+**Ultra-short mitigation = merge upstream in transcribe (char-criterion) + reseed as the net.**
+MIN_SENT_CHARS=15 on EN chars — the failure mechanism is F5's UTF-8-byte duration canvas, so
+chars, not seconds, are causal; MERGE_GAP_MAX=0.6 s; cumulative absorption of a merge chain
+capped at 1.5 s (review catch); merged range must pass the existing _too_long. Pure pass
+between _split_overlong and id assignment; unit-tested with synthetic word lists. Existing
+workdirs keep their segmentation (done() gates on sentences.json); a --force transcribe on an
+old workdir shifts ids after the first merge → src_en mismatches cascade into near-full Qwen
+re-translation (~23 min on a 39-min video) — correct (stale RU must die) but expensive, don't
+--force transcribe casually.
+
+**Config surface minimal.** Engine-agnostic tts_seed/tts_max_retries + 7 f5_* keys; no
+device/timeout knobs; the retry gate reuses similarity_threshold (no second threshold to
+drift). `tts_engine` default stays "silero" until the Phase-3 control run + user ear check
+pass; the flip is its own commit.
+
+**Control-run gates fixed by the judges' fact-check (all three designers were wrong twice).**
+The ultra-short "Решениям." is id43 of the SAMPLE video (4szRHy_CT7s), not the control video
+(its ultra-short is id101 "Хорошо.", 0.22 s); and the Silero baseline's single flag is id189 —
+a proper-noun-class failure whose text_tts is identical under F5, so it will likely flag again
+regardless of engine. Gates are therefore ABSOLUTE (flag rate ≤ 2% of 315 after retries, id189
+pre-registered as expected-to-flag; baseline comparison advisory), plus mean sim ≥ 0.985,
+mean atempo ≤ 1.10, synth+verify RTF ≤ 0.5×, and the binding user ear check.
+
 ## 2026-07-16 — Local-only constraint amended: optional cloud-translate mode approved
 
 **User decision:** an explicitly opt-in cloud translation mode (Anthropic API, Sonnet-class) is

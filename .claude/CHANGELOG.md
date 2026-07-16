@@ -1,5 +1,32 @@
 # CHANGELOG
 
+## 2026-07-16 — F5Engine integrated: worker adapter, reseed-retry, ultra-short merge, control run
+- ESpeech (F5-TTS) is now a first-class engine behind the adapter: overdub/tts/f5.py drives a
+  persistent worker (overdub/tts/f5_worker.py) in .venv-f5tts over JSONL stdio — venv merge was
+  killed by measured evidence (torch 2.11 vs 2.8, numpy downgrade, ~110 packages, torchcodec ABI).
+  fd-level stdout isolation, reader-thread timeouts, id-echo, respawn-once + 3-strike TtsFatalError
+  (ok:false counts too — sticky CUDA context). Startup ~30 s, warm synth ~×1.1 audio, 0.7 GiB VRAM
+- Reseed-retry in SYNTHESIZE (manifest single-writer; verify stays the pure judge): in-stage
+  whisper-small round-trip via shared asr.roundtrip_similarity, seeds base+1..+3, keep-best.
+  Proven on id43: 4 attempts, best kept, honestly flagged when still low
+- synth_key resume guard: engine|ref-content-hash|ckpt|nfe|speed|seed gates ALL wav reuse (engine
+  switch / ref swap / knob change → full resynth, loud [info]); manifest v2 with complete-marker,
+  downgraded before wavs mutate, flushed every 25 fresh segments (overnight interrupt-resume)
+- Ultra-short sentence merge in transcribe (chars<15 → merge into neighbor, gap ≤0.6 s, chain
+  absorption ≤1.5 s) + 8 unit tests — kills the id43 class at the source for fresh videos
+- Process: design panel (3 biases + 3 lens judges, 610k tok) → implementation → adversarial review
+  (4 lenses, per-finding refutation, 1.25M tok): 16 findings, 0 refuted, ALL fixed — incl. 5 major
+  (poisoned-CUDA grind cap, sf.info wav/manifest divergence, stale complete:true during resynth,
+  ckpt identity missing from synth_key, first-round-trip failure destroying good audio). Judges
+  also caught two factual errors by all designers (id43 is in the SAMPLE video; baseline's only
+  flag id189 is engine-independent) → control gates made absolute, not baseline-relative
+- Control run (39-min x7DfiXqSEdM, frozen transcript/translation, baseline untouched): F5 beats
+  Silero on every quality metric — flags 0 vs 1 (id189 proper-noun: F5 0.95 unflagged vs Silero
+  0.661), sim mean 0.9943 vs 0.986, min 0.837 vs 0.661, atempo ×1.014/max 1.87 vs ×1.018/max 2.08,
+  0 retries. RTF gate missed: synth+verify ×0.65 vs ≤0.5 target (thermal-loaded vs cold 0.39);
+  full pipeline ~×1.33 realtime, x5 budget cleared ~3.8×. Default engine flip awaits the user ear
+  check (Phase 3 stays open on that one item)
+
 ## 2026-07-16 — TTS bake-off #2: ESpeech adopted, narrator selected, cloning explored
 - RTF gate PASSED: 39-min real video end-to-end ×0.75 realtime (translate = 80% of wall-clock),
   x5 budget cleared 6.7×. Real-content triage surfaced the proper-noun transliteration defect
