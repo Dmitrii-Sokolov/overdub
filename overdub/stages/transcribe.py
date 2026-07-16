@@ -25,6 +25,13 @@ MAX_SEC = 15.0          # audio-span cap before an overlong sentence is clause-s
 MAX_CHARS = 240         # char cap before clause-split
 HALLUC_RUN = 4          # >=N identical consecutive tokens => whisper hallucination
 MIN_WORD_DUR = 0.02     # floor for a synthesized pseudo-word duration
+MIN_SENT_CHARS = 15     # EN chars below which a sentence is "ultra-short" and merged into a
+                        # neighbor: F5 sizes its duration canvas by text byte count, so tiny
+                        # texts garble/echo the reference tail (the id43 "Решениям." class)
+MERGE_GAP_MAX = 0.6     # never merge across a pause longer than this (seconds) — the gap
+                        # becomes continuous synthesized speech, i.e. deliberate sync drift
+MERGE_TOTAL_GAP_MAX = 1.5   # cap on the CUMULATIVE silence a chain of merges may absorb
+                            # into one sentence (bounds worst-case drift of its tail words)
 
 TERMINATORS = ".!?…"
 _OPEN = set("\"'“‘«([")
@@ -201,6 +208,53 @@ def _split_overlong(flat: list[W], lo: int, hi: int) -> list[tuple[int, int]]:
     return _split_overlong(flat, lo, cut) + _split_overlong(flat, cut + 1, hi)
 
 
+# ---- 3b. ultra-short sentence merge (F5 short-text failure class) --------------
+def _chars(flat: list[W], a: int, b: int) -> int:
+    return sum(len(flat[k].text) + 1 for k in range(a, b + 1)) - 1
+
+
+def _merge_short(flat: list[W], spans: list[tuple[int, int]]) -> list[tuple[int, int]]:
+    """Merge ultra-short sentences (< MIN_SENT_CHARS) into an adjacent one. Neighbor with
+    the smaller inter-sentence gap wins, tie → previous (short fragments usually append to
+    the preceding thought); a merge never crosses MERGE_GAP_MAX, never violates _too_long
+    (the overlong splitter's work must not be undone), and a CHAIN of merges never absorbs
+    more than MERGE_TOTAL_GAP_MAX of internal silence in one sentence (absorbed gaps become
+    continuous synthesized speech, i.e. cumulative sync drift). Isolated shorts across long
+    pauses stay — the synthesize reseed-retry is their net. Fixpoint: a merged result that
+    is still short is re-examined, so chains of fragments collapse fully."""
+    spans = list(spans)
+    absorbed = [0.0] * len(spans)                        # internal gap already swallowed per span
+    i = 0
+    while i < len(spans):
+        a, b = spans[i]
+        if _chars(flat, a, b) >= MIN_SENT_CHARS:
+            i += 1
+            continue
+        gap_prev = flat[a].start - flat[spans[i - 1][1]].end if i > 0 else None
+        gap_next = flat[spans[i + 1][0]].start - flat[b].end if i + 1 < len(spans) else None
+        ok_prev = (gap_prev is not None and gap_prev <= MERGE_GAP_MAX
+                   and absorbed[i - 1] + gap_prev + absorbed[i] <= MERGE_TOTAL_GAP_MAX
+                   and not _too_long(flat, spans[i - 1][0], b))
+        ok_next = (gap_next is not None and gap_next <= MERGE_GAP_MAX
+                   and absorbed[i] + gap_next + absorbed[i + 1] <= MERGE_TOTAL_GAP_MAX
+                   and not _too_long(flat, a, spans[i + 1][1]))
+        if ok_prev and ok_next:                          # both fit: smaller gap, tie → prev
+            ok_next = gap_next < gap_prev
+            ok_prev = not ok_next
+        if ok_prev:
+            spans[i - 1] = (spans[i - 1][0], b)
+            absorbed[i - 1] += gap_prev + absorbed[i]
+            del spans[i], absorbed[i]
+            i -= 1                                       # re-examine the merged result
+        elif ok_next:
+            spans[i] = (a, spans[i + 1][1])
+            absorbed[i] += gap_next + absorbed[i + 1]
+            del spans[i + 1], absorbed[i + 1]            # stay at i: re-examine
+        else:
+            i += 1
+    return spans
+
+
 # ---- 4. assemble sentence dicts ----------------------------------------------
 def resegment(flat: list[W]) -> list[dict]:
     """Clean word list → list of sentence dicts. Pure, deterministic, no I/O."""
@@ -216,18 +270,20 @@ def resegment(flat: list[W]) -> list[dict]:
     if start < len(flat):                               # unterminated tail
         ranges.append((start, len(flat) - 1))
 
+    spans = [ab for lo, hi in ranges for ab in _split_overlong(flat, lo, hi)]
+    spans = _merge_short(flat, spans)
+
     out: list[dict] = []
-    for lo, hi in ranges:
-        for a, b in _split_overlong(flat, lo, hi):
-            text = " ".join(flat[k].text for k in range(a, b + 1)).strip()
-            if not text:
-                continue
-            out.append({
-                "id": len(out),                         # assigned last → always contiguous
-                "text": text,
-                "start": round(flat[a].start, 3),
-                "end": round(flat[b].end, 3),
-            })
+    for a, b in spans:
+        text = " ".join(flat[k].text for k in range(a, b + 1)).strip()
+        if not text:
+            continue
+        out.append({
+            "id": len(out),                             # assigned last → always contiguous
+            "text": text,
+            "start": round(flat[a].start, 3),
+            "end": round(flat[b].end, 3),
+        })
     return out
 
 

@@ -14,10 +14,21 @@
 # num_ctx = 4096
 # context_window = 4
 
-# --- TTS (Silero) ---
-tts_engine = "silero"
-tts_voice = "eugene"        # primary; "xenia" is the backup
-tts_sample_rate = 48000
+# --- TTS engine selection ---
+tts_engine = "silero"       # "silero" | "f5"; flips to "f5" at Phase-3 closure (control run + ear)
+tts_voice = "eugene"        # silero-only; primary voice, "xenia" is the backup
+tts_sample_rate = 48000     # silero-only (F5 sr is engine-owned: 24000)
+# tts_seed = 42             # base seed for seed-capable engines; retries use seed+attempt
+# tts_max_retries = 3       # reseed attempts after the first try (seed-capable engines only)
+
+# --- TTS F5/ESpeech (worker process in .venv-f5tts) ---
+# f5_python = ".venv-f5tts/Scripts/python.exe"
+# f5_ckpt = "models/espeech-rlv2/espeech_tts_rlv2.pt"
+# f5_vocab = "models/espeech-rlv2/vocab.txt"
+# f5_ref_audio = "models/refs/ref_espeech_demo.wav"    # narrator = reference clip (fetched at setup)
+# f5_ref_text = "models/refs/ref_espeech_demo.txt"     # exact transcript of the reference
+# f5_nfe = 48                # 32 is ~30% faster; quality delta not ear-checked yet
+# f5_speed = 1.0             # F5 canvas speed (narrator pace calibration)
 
 # --- verification (whisper-small round-trip) ---
 # verify_model = "small"

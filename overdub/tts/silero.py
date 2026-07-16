@@ -16,6 +16,7 @@ import torch
 class SileroEngine:
     LANGUAGE = "ru"
     MODEL_ID = "v4_ru"
+    supports_seed = False            # deterministic: same text → same audio, reseed is a no-op
 
     def __init__(self, voice: str = "eugene", sample_rate: int = 48000, device: str = "cpu") -> None:
         self.voice = voice
@@ -27,7 +28,7 @@ class SileroEngine:
         model.to(torch.device(device))
         self._model = model
 
-    def synthesize(self, text: str, out_path: Path) -> None:
+    def synthesize(self, text: str, out_path: Path, *, seed: int | None = None) -> None:
         audio = self._model.apply_tts(
             text=text,
             speaker=self.voice,
@@ -38,3 +39,6 @@ class SileroEngine:
         # explicit format="WAV": callers pass atomic temp paths (…/00007.wav.tmp) whose
         # extension soundfile cannot infer a container from, so never rely on the suffix.
         sf.write(str(out_path), audio.cpu().numpy(), self.sample_rate, format="WAV", subtype="PCM_16")
+
+    def close(self) -> None:
+        pass

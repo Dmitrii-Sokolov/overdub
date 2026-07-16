@@ -217,8 +217,10 @@ class TranslateStage:
                 for s in sentences:
                     sid = s["id"]
                     if sid in done and done[sid].get("src_en") == s["text"]:  # done for THIS source
-                        obj = done[sid]                               # resume: skip, keep context
-                        if obj.get("status") == "ok":
+                        # timings follow the CURRENT sentence: a re-transcribe (e.g. the ultra-short
+                        # merge) can shift start/end at an id whose text happens to match
+                        done[sid] = obj = {**done[sid], "start": s["start"], "end": s["end"]}
+                        if obj.get("status") == "ok":                 # resume: skip, keep context
                             window = (window + [(s["text"], obj["text_ru"])])[-cfg.context_window:]
                         continue                                      # source changed -> re-translate
                     user = _build_user(s["text"], window[-cfg.context_window:],

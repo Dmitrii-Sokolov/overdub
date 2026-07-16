@@ -37,10 +37,21 @@ class Config:
     translate_context_char_cap: int = 2400  # drop oldest ctx pairs beyond this (KV knife-edge)
     translate_unload: bool = True    # POST keep_alive:0 after the stage to free VRAM
 
-    # TTS — Silero
-    tts_engine: str = "silero"
-    tts_voice: str = "eugene"
-    tts_sample_rate: int = 48000
+    # TTS — engine selection + seed policy
+    tts_engine: str = "silero"       # "silero" | "f5"; flips to "f5" at Phase-3 closure
+    tts_voice: str = "eugene"        # silero-only
+    tts_sample_rate: int = 48000     # silero-only (F5 sr is engine-owned: 24000)
+    tts_seed: int = 42               # base seed (seed-capable engines); retries use seed+attempt
+    tts_max_retries: int = 3         # reseed attempts after the first try (seed-capable engines)
+
+    # TTS — F5/ESpeech (worker process in .venv-f5tts; see overdub/tts/f5.py)
+    f5_python: Path = Path(".venv-f5tts/Scripts/python.exe")
+    f5_ckpt: Path = Path("models/espeech-rlv2/espeech_tts_rlv2.pt")
+    f5_vocab: Path = Path("models/espeech-rlv2/vocab.txt")
+    f5_ref_audio: Path = Path("models/refs/ref_espeech_demo.wav")
+    f5_ref_text: Path = Path("models/refs/ref_espeech_demo.txt")
+    f5_nfe: int = 48                 # 32 is ~30% faster; quality delta not ear-checked yet
+    f5_speed: float = 1.0            # F5 canvas speed (narrator pace calibration, DECISIONS)
 
     # verification — whisper-small round-trip
     verify_model: str = "small"

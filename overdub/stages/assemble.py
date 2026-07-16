@@ -26,6 +26,7 @@ import soundfile as sf
 
 from .. import report
 from ..pipeline import Context
+from ..tts import engine_sample_rate
 
 _BROKEN = 1.8   # speed factor at/above which a segment is a "candidate broken" in the report
 
@@ -67,9 +68,9 @@ class AssembleStage:
         doc = json.loads(ctx.work.seg_manifest.read_text(encoding="utf-8"))
         man = {e["id"]: e for e in doc["segments"]}
         sr = doc["sample_rate"]
-        if sr != cfg.tts_sample_rate:                      # sr drift → whole-track desync if wrong
-            print(f"       [warn] manifest sr {sr} != cfg {cfg.tts_sample_rate}; using manifest sr",
-                  file=sys.stderr)
+        if sr != engine_sample_rate(cfg):                  # sr drift → whole-track desync if wrong
+            print(f"       [warn] manifest sr {sr} != engine sr {engine_sample_rate(cfg)}; "
+                  "using manifest sr", file=sys.stderr)
         ids = [s["id"] for s in segs]
         if ids != list(range(len(segs))) or set(ids) != set(man):
             raise RuntimeError("assemble id mismatch (never-drop invariant)")
