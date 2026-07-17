@@ -67,7 +67,9 @@ class Config:
 
     # verification — whisper-small round-trip
     verify_model: str = "small"
-    similarity_threshold: float = 0.8
+    similarity_threshold: float = 0.9      # unit-level gate (0.8 → 0.9, 2026-07-17: units are
+                                           # long joined strings that dilute local defects —
+                                           # the 17:02 word-drop scored 0.836 and passed 0.8)
     similarity_threshold_compressed: float = 0.9   # stricter gate for natively compressed
                                                    # units (word-drop risk; unit_sim_threshold)
 
