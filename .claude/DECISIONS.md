@@ -454,6 +454,29 @@ regardless of engine. Gates are therefore ABSOLUTE (flag rate ≤ 2% of 315 afte
 pre-registered as expected-to-flag; baseline comparison advisory), plus mean sim ≥ 0.985,
 mean atempo ≤ 1.10, synth+verify RTF ≤ 0.5×, and the binding user ear check.
 
+## 2026-07-16 — Dead-air ear verdict (user): noticeably better overall; mix modes iterate
+
+**Overall: ощутимо лучше** — the dead-air mechanism (slot-fill + units) is validated by ear.
+id101 ("Хорошо.", the ultra-short that failed as a lone segment) is now PERFECT inside its
+group — L2 grouping confirmed as the structural fix for the ultra-short class.
+
+**Defect found (17:02, unit [135,136,137]):** three short sentences in a 2.76 s EN span,
+RU needed ~4 s → native compression ×1.327 → mid-word cutoff (first phrase truncated, next
+begins). synth_sim 0.8361 scraped past the 0.8 threshold — no retry, no flag. LESSON:
+post-hoc atempo compresses uniformly and never drops words; F5 NATIVE compression at
+≥~1.3 does drop them, and char-similarity on long joined strings under-penalizes the loss.
+Fix direction: native speed stays for STRETCHING only (safe direction, ear-validated);
+compression returns to atempo (f5_speed_ceil → ~1.0–1.15), plus a stricter sim gate for
+any compressed unit. The ×1.6-at-≤0.022-sim bake-off number measured ASR similarity, not
+word survival — it over-promised for compression.
+
+**Duck: mechanism right, depth wrong** — −15 dB leaves the EN original too audible. Retest
+at −22..−25 dB (module constant). **Bed: content-dependent, inapplicable here** — this
+video is nearly music-free, so the no-vocals stem is near-silence and the dead-air feel
+returns. Re-check on a music-heavy source before judging the mechanism; a bed-RMS census
+with automatic duck-fallback is the likely production shape. dub_mix default stays
+"replace" until the duck depth retest.
+
 ## 2026-07-16 — Dead-air elimination: design panel + review (BUILD)
 
 Panel (minimalist/contracts/audio + 3 judges) + 4-lens adversarial review (20 findings,

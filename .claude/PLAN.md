@@ -30,12 +30,16 @@ stage, all verified end-to-end. One venv (.venv-asr), `overdub` package.
 ## → Roadmap (reprioritized 2026-07-16 evening; user-confirmed after the F5 ear check)
 Sample workdirs: `work/4szRHy_CT7s/`, `work/x7DfiXqSEdM/` (Silero baselines, read-only),
 `work-exp/f5-control/x7DfiXqSEdM/` (F5). Report triage: any *_flag or speed_factor>1.8.
-1. **Dead-air elimination** — IMPLEMENTED, awaiting the user ear verdict on three control
-   outputs (work-exp/f5-control/x7DfiXqSEdM/output_{replace,duck,bed}.mkv). Measured:
-   in-span silence 607 s → 204 s (L1 slot-fill + L2 units), atempo unused (0 sped), 0 verify
-   flags, unit sim mean 0.9939, synth RTF improved to 0.43 (256 units vs 315 calls). 123/256
-   units sit at floor 0.75 — if pacing still feels slow-gapped, floor 0.7 recoups more
-   (bench says quality holds). Ear verdict picks the default dub_mix (own commit)
+1. **Dead-air: verdict "ощутимо лучше" — iterate the mix layer** (mechanism validated:
+   in-span silence 607→204 s, id101 perfect in its group, 0 flags, atempo unused).
+   Remaining, in order:
+   - [ ] compression back to atempo: f5_speed_ceil → ~1.0–1.15 (native compression ×1.33
+         drops words — the 17:02 mid-word cutoff, unit [135-137]) + stricter sim gate for
+         compressed units; point re-listen at 17:00–17:05 after resynth
+   - [ ] duck depth −15 → −22..−25 dB (mux constant), re-mux + re-listen (seconds per try)
+   - [ ] bed: re-check on a MUSIC-HEAVY video (this source is speech-only → bed ≈ silence);
+         likely production shape = bed-RMS census with automatic duck fallback
+   - [ ] then flip the dub_mix default (own commit)
 2. **Proper nouns** — detect Latin/brand tokens → pronunciation dictionary → phonetic translit
    fallback → per-run cache. F5 softened the class (id189: 0.95 vs Silero 0.661) but ear says
    "No Man's Sky" is still bad (id150); all worst control-run sims are this class

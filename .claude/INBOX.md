@@ -38,6 +38,11 @@ Tags: `[bug] [feature] [chore] [?]` — one line per entry, processed weekly.
 - [?] translate keep-length prompt now interacts with L1 stretch: relaxing the length pressure could attack underfill at the root (fuller RU, less stretching) — experiment post-ear-verdict
 - [?] mux duck/bed on multi-hour videos: numpy mix holds ~2-3 GB transient even after chunked RMS/peak — streamed mixing if hours-long sources become real
 
+## Ear verdict on the 3 mix outputs (2026-07-16, user)
+- [bug] native compression drops words: unit [135-137] (17:02) speed ×1.327 → mid-word cutoff; synth_sim 0.836 scraped past 0.8, no retry. FIX HYPOTHESIS: f5_speed_ceil ≤1.15 or 1.0 (atempo compresses uniformly, NEVER drops words — native compression does) + stricter sim gate for compressed units (speed>1.15 → require ≥0.9)
+- [balance] duck −15 dB too shallow — original EN interferes; retest −22..−25 dB (constant _DUCK_GAIN in mux.py)
+- [?] bed inapplicable on speech-only sources (this video has almost no music → no-vocals stem ≈ silence → dead air returns); re-check on a music-heavy video; consider a bed-RMS census that falls back to duck automatically
+
 ## Ear-check findings (2026-07-16, F5 control run)
 - [bug] translate: «причина» ×3 подряд (ids 134-137, ~17:00) — no repetition-avoidance in the rolling context; consider a variation hint in the prompt or the per-run glossary pass
 - [?] verify: id101 sim=1.0 but ear-bad (ultra-short garble ASR normalizes away) — real-content proof of the round-trip blind spot; duration heuristic (expected vs actual) is the cheap detector
