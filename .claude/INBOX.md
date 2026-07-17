@@ -68,3 +68,10 @@ Tags: `[bug] [feature] [chore] [?]` — one line per entry, processed weekly.
 ## 2026-07-17 session
 - [?] diagnostic: per-unit measured trailing silence in the placed dub (L1 fill honesty — complements the predicted-vs-actual duration heuristic; born from the "measure, don't predict" discussion)
 - [bug] synthesize.done() never compares manifest text_tts vs translation.json — a complete manifest skips the stage over stale wavs (bit the renorm A/B; also reachable via `--force --only translate` + plain rerun). Tool now writes complete:false as a workaround; consider a make-style congruence/mtime gate in done() itself
+
+## Ear findings on the pronounce A/B (2026-07-17, user; pronunciation itself PASSED)
+- [bug] transcribe: id149/150 hard split mid-list at the ~15 s cap ("...you have so >< exploration crafting") — no terminator, subs+translation+dub all wrong; joins the tolerance-band and run-on-recovery deferrals as one segmentation cluster
+- [bug] transcribe: id188/189 split mid-phrase "met through >< Xbox Live" at 11.6 s (NOT at the cap) — classify which boundary rule fired before fixing
+- [feature] translate: prompt must forbid self-transliteration of proper nouns («Ранескэпом» from lowercase "runescape") — keep names in Latin so the pronounce chain owns them (rules already give «рунескейп»)
+- [?] translate: «катфиш-мов» — anglicism calqued instead of translated ("total catfish move"); generic Qwen quality, glossary/prompt class
+- [ux] assemble: 47/315 ru.srt cues are >12 s (sentence-granularity cues read as text walls; NOT a proper-nouns regression — srt byte-identical to f5-control) — split long cues at _write_srt time, e.g. proportionally by chars at clause punctuation

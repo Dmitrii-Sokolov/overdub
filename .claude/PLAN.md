@@ -4,12 +4,7 @@
 Sample workdirs: `work/4szRHy_CT7s/`, `work/x7DfiXqSEdM/` (Silero baselines, read-only),
 `work-exp/f5-control/x7DfiXqSEdM/` (F5), `work-exp/bed-music/tJP6SKfo49c/` (bed check).
 Report triage: any *_flag or speed_factor>1.8.
-1. **Proper nouns — ear A/B** (hours, user-in-loop) — code shipped 2026-07-17 (CHANGELOG);
-   acceptance = ear. Steps: `tools/renorm_workdir.py` f5-control → new work-exp copy (31/315
-   records change) → pipeline run re-renders only changed units → listen to ids 150/189/26/
-   204/120. Expect verify flags to RISE (old low count was the round-trip masking bug).
-   Then triage `pronounce_audit.json` → promote frequent fallbacks to the WORDS dict
-2. **Babble duration heuristic** (~1 d) — expected (canvas formula) vs actual unit duration →
+1. **Babble duration heuristic** (~1 d) — expected (canvas formula) vs actual unit duration →
    report flag; ASR round-trip is proven blind to garbled-but-recognizable audio (id101 sim 1.0,
    ear-bad). Value activates at batch scale — batch mode is live, first overnight runs will
    supply the calibration data. MOS scoring (UTMOS) deliberately NOT included — see Deferred
@@ -41,8 +36,9 @@ re-tune (base raised to 0.9 — revisit only if production flags misbehave); Arc
 ## Closed phases (details in CHANGELOG)
 Phase 0 skeleton ✅ · Phase 1 MVP turn-key URL→MKV ✅ (ear-validated) · Phase 3 TTS engine
 upgrade → F5/ESpeech ✅ · Dead-air group ✅ (2026-07-17) · Batch queue + stop switch ✅
-(2026-07-17). Phase 2 (reliability/batch-ready) dissolved into the roadmap + backlog
-(triage HTML); its ASR-verification item shipped back with Phase 1.
+(2026-07-17) · Proper nouns ✅ (ear 2026-07-17; audit triage → weekly INBOX processing).
+Phase 2 (reliability/batch-ready) dissolved into the roadmap + backlog (triage HTML); its
+ASR-verification item shipped back with Phase 1.
 
 Stack pins, verified APIs and setup: STACK.md + SETUP.md. TTS engine: ESpeech-TTS-1_RL-V2
 (F5-TTS, .venv-f5tts) — production default by ear 2026-07-16; narrator = ESpeech demo

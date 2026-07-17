@@ -17,7 +17,13 @@
   → 2 designs → judge → impl → 4-lens review (16 findings, all confirmed incl. 2 majors:
   hardlinked wavs could corrupt read-only corpus; acronym-plural bypass) → fixes → smoke:
   4 suites green, 710-sentence sweep 0 violations, 72/710 text_tts improved
-- NOT yet ear-validated: A/B resynthesis + listen (ids 150/189/26/204/120) is PLAN item 1
+- Ear verdict (user, same day, A/B on renormed f5-control — 31 units re-rendered, verify
+  0 flags): pronunciation CORRECT on all five target ids — item CLOSED. The A/B also
+  surfaced upstream findings (transcribe mid-phrase splits, Qwen self-transliteration,
+  long subtitle cues) — reclassified to their own stages, INBOX 2026-07-17
+- Found live by the A/B: renorm tool bug — copied complete:true manifest made synthesize
+  skip over stale wavs (done() never compares text_tts); fixed same day, tool now writes
+  complete:false
 
 ## 2026-07-17 — Batch queue + stop switch (roadmap 2-3): overnight runs are turn-key
 - `--batch FILE`: one URL per line, `#` comments/blank lines skipped, BOM-safe (utf-8-sig),
