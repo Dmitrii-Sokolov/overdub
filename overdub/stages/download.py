@@ -21,6 +21,7 @@ class DownloadStage:
                 "yt-dlp",
                 "-f", "bv*[ext=mp4]+ba[ext=m4a]/bv*+ba/b",
                 "--merge-output-format", "mkv",
+                "--write-info-json",
                 "-o", str(w.source_video),
                 ctx.url,
             ],

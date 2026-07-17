@@ -11,6 +11,8 @@ from pathlib import Path
 class Config:
     # work dir
     work_root: Path = Path("work")
+    # export — title-named final MKVs: "<title> [<video id>].mkv" (hardlink/copy of output.mkv)
+    output_dir: Path = Path("out")
 
     # language (fixed EN->RU for v1)
     source_lang: str = "en"

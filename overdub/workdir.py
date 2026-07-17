@@ -32,6 +32,22 @@ def video_id(url: str) -> str:
     return m.group(1) if m else hashlib.sha1(url.encode("utf-8")).hexdigest()[:11]
 
 
+_FORBIDDEN = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+_RESERVED = {"CON", "PRN", "AUX", "NUL",
+             *(f"COM{i}" for i in range(1, 10)), *(f"LPT{i}" for i in range(1, 10))}
+
+
+def safe_filename(name: str, max_len: int = 120) -> str:
+    """Windows-safe file name component: forbidden/control chars → '_', length cap, no
+    trailing dot/space (cap first — truncation can expose one), reserved device stems
+    prefixed (defensive: the ' [<id>].mkv' suffix already breaks exact reserved names).
+    Cyrillic passes through untouched (the forbidden set is pure ASCII)."""
+    name = _FORBIDDEN.sub("_", name.strip())[:max_len].rstrip(" .")
+    if name.split(".")[0].upper() in _RESERVED:
+        name = "_" + name
+    return name
+
+
 @dataclass
 class WorkDir:
     root: Path
@@ -48,6 +64,9 @@ class WorkDir:
 
     @property
     def source_audio(self) -> Path: return self.root / "source.wav"      # 16k mono, for whisper
+
+    @property
+    def info_json(self) -> Path: return self.root / "source.info.json"   # yt-dlp metadata (title)
 
     @property
     def words(self) -> Path: return self.root / "words.json"              # transcribe: raw flattened words (re-tuning)

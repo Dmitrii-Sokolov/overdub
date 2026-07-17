@@ -2,6 +2,7 @@
 # Uncomment and edit any key to override.
 
 # work_root = "work"
+# output_dir = "out"        # named final MKVs: "<title> [<video id>].mkv"
 
 # --- STT (faster-whisper) ---
 # whisper_model = "large-v3"
