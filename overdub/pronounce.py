@@ -80,6 +80,8 @@ WORDS = {
     "fortnite": "фортнайт",  # (=)
     "titanfall": "титанфолл", "destiny": "дестини",  # destiny (=)
     "overcooked": "оверкукт",  # (=)
+    "runescape": "рунескейп",   # camelCase "RuneScape" rules to рюнскейп (magic-e on Rune);
+                                # the translate prompt now mandates exactly that casing
     "skyrim": "скайрим", "fallout": "фоллаут", "cyberpunk": "киберпанк",
     "warcraft": "варкрафт",  # (=)
     "steam": "стим",    # (=)

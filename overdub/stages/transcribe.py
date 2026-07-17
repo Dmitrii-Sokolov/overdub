@@ -2,8 +2,10 @@
 
 Word-level sentence resegmentation (design: transcribe-design workflow, see DECISIONS):
 boundaries land ON a word by construction, so there is no fuzzy char→word remapping.
-Whisper segment ends are carried as a `seg_end` pause-prior, used ONLY to pick a good
-cut point when an overlong sentence must be split. Pure/deterministic — no RNG.
+Whisper segment ends are carried as `seg_end`, a VAD/window artifact — NOT a pause (most
+carry a 0.000 s gap to the next word). It is a pause prior ONLY together with real silence
+(MIN_PAUSE_SEC, overlong-split branch 1), and a boundary signal after a period. Pure and
+deterministic — no RNG.
 
 Four passes: flatten (robustness) → sentence split (guarded) → duration-aware overlong
 split (pause > clause > midpoint) → emit. The sentence is the unit of translation,
@@ -32,6 +34,9 @@ MERGE_GAP_MAX = 0.6     # never merge across a pause longer than this (seconds) 
                         # becomes continuous synthesized speech, i.e. deliberate sync drift
 MERGE_TOTAL_GAP_MAX = 1.5   # cap on the CUMULATIVE silence a chain of merges may absorb
                             # into one sentence (bounds worst-case drift of its tail words)
+MIN_PAUSE_SEC = 0.20    # a seg_end is a REAL pause only if the next word starts this much
+                        # later: whisper ends segments mid-phrase (73% of corpus seg_ends
+                        # have a 0.000 s gap), so seg_end alone is a VAD artifact
 
 TERMINATORS = ".!?…"
 _OPEN = set("\"'“‘«([")
@@ -47,11 +52,15 @@ _ABBREV = {
     "am", "pm", "jan", "feb", "mar", "apr", "jun", "jul", "aug", "sep", "sept",
     "oct", "nov", "dec",
 }
-# Clause-boundary conjunctions, used ONLY when splitting an overlong sentence.
-_CONJ = {
-    "and", "but", "or", "nor", "so", "yet", "because", "although", "though",
-    "while", "whereas", "which", "that", "who", "when", "where", "since",
-    "if", "as", "after", "before", "however", "therefore",
+# Words an overlong sentence may be cut BEFORE (branch 2). ONLY unambiguous clause openers:
+# coordinating conjunctions + subordinators that cannot double as a determiner / preposition /
+# pronoun. "that/which/who/as/if/when/where/before/after/since/while" are DELIBERATELY absent —
+# once branch 1 is gap-gated this next-word test goes from ~11 to ~110 cuts, and cutting before
+# those severs a verb from its object ("feel | that satisfaction") or a relative clause from its
+# head, reproducing the id150 standalone-fragment cascade the whole cluster exists to kill.
+_CUT_BEFORE = {
+    "and", "but", "or", "nor", "so", "yet",
+    "because", "although", "though", "whereas", "however", "therefore",
 }
 # Bare function words we avoid stranding at the LEFT end of an overlong-split fragment.
 _STOP = {"the", "a", "an", "and", "or", "nor", "but", "so", "to", "of",
@@ -165,7 +174,11 @@ def _ends_sentence(cur: W, nxt: "W | None") -> bool:
             return False
         if nxt is None:
             return True
-        return next_char.isupper() or next_char.isdigit() or next_char in _OPEN
+        if next_char.isupper() or next_char.isdigit() or next_char in _OPEN:
+            return True
+        # whisper emitted a period AND ended its segment: a real boundary even though it
+        # lowercased the next word ("...isn't just a tool. it's a technology...")
+        return cur.seg_end
 
     return True                                         # '!' / '?' : strong terminators
 
@@ -183,8 +196,18 @@ def _bare(w: W) -> str:
     return m.group(0) if m else ""
 
 
+def _gap_after(flat: list[W], k: int) -> float:
+    return flat[k + 1].start - flat[k].end      # k < hi <= len-1 by caller construction
+
+
+def _ok_cut(flat: list[W], k: int) -> bool:
+    """Never end a fragment on a bare function word ('...games at' / '...see how the'), and
+    never cut INSIDE a hyphenated compound whisper split into two tokens ('shake' | '-up')."""
+    return _bare(flat[k]) not in _STOP and not flat[k + 1].text.lstrip().startswith("-")
+
+
 def _leading_conj(w: W) -> bool:
-    return _bare(w) in _CONJ
+    return _bare(w) in _CUT_BEFORE
 
 
 def _split_overlong(flat: list[W], lo: int, hi: int) -> list[tuple[int, int]]:
@@ -196,15 +219,18 @@ def _split_overlong(flat: list[W], lo: int, hi: int) -> list[tuple[int, int]]:
         return min(cands, key=lambda k: abs(flat[k].end - mid)) if cands else None
 
     interior = list(range(lo, hi))                      # cut AFTER word k (lo..hi-1)
-    # (1) real speaker pause, but never one that strands a bare function word on the left;
-    # if every pause would, skip to clause/midpoint rather than cut on 'the'/'to'/'and'.
-    cut = nearest([k for k in interior if flat[k].seg_end and _bare(flat[k]) not in _STOP])
+    # (1) a REAL speaker pause: seg_end ALONE is a whisper VAD artifact (most land mid-phrase
+    # with a 0.000 s gap — the id149/id188 ear bugs), so require measurable silence. No branch
+    # may strand a bare function word on the left.
+    cut = nearest([k for k in interior if flat[k].seg_end
+                   and _gap_after(flat, k) >= MIN_PAUSE_SEC and _ok_cut(flat, k)])
     if cut is None:                                                  # (2) clause seam
         cut = nearest([k for k in interior
-                       if _core(flat[k].text)[-1:] in {",", ";", ":"}
-                       or _leading_conj(flat[k + 1])])
-    if cut is None:                                                  # (3) hard midpoint
-        cut = min(interior, key=lambda k: abs(flat[k].end - mid))
+                       if (_core(flat[k].text)[-1:] in {",", ";", ":"}
+                           or _leading_conj(flat[k + 1])) and _ok_cut(flat, k)])
+    if cut is None:                                                  # (3) hard midpoint:
+        # _ok_cut is a sort PREFERENCE here, never a filter — branch (3) must always cut
+        cut = min(interior, key=lambda k: (not _ok_cut(flat, k), abs(flat[k].end - mid)))
     return _split_overlong(flat, lo, cut) + _split_overlong(flat, cut + 1, hi)
 
 

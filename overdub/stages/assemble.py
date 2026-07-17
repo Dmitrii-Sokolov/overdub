@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -35,6 +36,15 @@ from .synthesize import units_of
 
 _BROKEN = 1.8   # combined compression factor at/above which a unit is "candidate broken"
 _FADE_SEC = 0.010
+
+MAX_CUE_SEC = 6.0       # display-only cue caps: a sentence-granularity cue reads as a text
+MAX_CUE_CHARS = 84      # wall (47/315 ru cues ran >12 s). ~2 lines x 42 chars, ~14 cps
+MIN_CUE_SEC = 1.2       # never manufacture a flash-frame: a seam whose split would make one is
+                        # skipped, and the cue is left whole once every seam is exhausted
+# split AFTER clause punctuation only — NOT the em-dash ("X — это Y" is a RU zero-copula, not a
+# line end) and NOT bare word gaps (a gap split lands mid-clause, e.g. "AI | fluency"): a cue
+# with no interior clause seam is left whole rather than broken at an invented boundary.
+_CUE_SEAM = re.compile(r"(?<=[,;:.!?…])\s")
 
 
 def _fade(clip: np.ndarray, sr: int) -> np.ndarray:
@@ -57,13 +67,46 @@ def _ts(t: float) -> str:
     return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
 
 
+def _cue_seams(text: str) -> list[int]:
+    """Interior clause-seam split indices, ordered nearest the char midpoint first. The
+    0 < i < len-1 filter guarantees a non-empty side after .strip() on both halves, so
+    _split_cue needs no empty-side guard."""
+    mid = len(text) / 2.0
+    idx = [m.start() for m in _CUE_SEAM.finditer(text) if 0 < m.start() < len(text) - 1]
+    return sorted(idx, key=lambda i: abs(i - mid))
+
+
+def _split_cue(a: float, b: float, text: str) -> list[tuple[float, float, str]]:
+    """DISPLAY-ONLY recursive cue split (same shape as transcribe._split_overlong).
+    sentences.json / translation.json ids, text and timings are untouched — this decides
+    only how ONE sentence's span is PRESENTED. Sub-cue timings are proportional to char
+    count and the outer [a, b] is preserved exactly, so cue onsets stay sentence-synced.
+    Seams are tried nearest-midpoint first; one whose split would flash (< MIN_CUE_SEC) is
+    skipped, and the cue is left whole once every seam is exhausted (no seam is the same as
+    all-flash — there is no readable way to break it, so we don't)."""
+    text = (text or "").strip()
+    if (b - a) <= MAX_CUE_SEC and len(text) <= MAX_CUE_CHARS:
+        return [(a, b, text)]
+    for i in _cue_seams(text):
+        left, right = text[:i].strip(), text[i:].strip()
+        m = a + (b - a) * len(left) / (len(left) + len(right))
+        if m - a < MIN_CUE_SEC or b - m < MIN_CUE_SEC:   # would flash: try the next seam
+            continue
+        return _split_cue(a, m, left) + _split_cue(m, b, right)
+    return [(a, b, text)]                                 # no usable clause seam: leave whole
+
+
 def _write_srt(path, rows) -> None:
-    """rows: iterable of (start, end, text). end is floored to start+0.05 — a zero/negative
-    cue is silently dropped by most players."""
+    """rows: iterable of (start, end, text). Long cues are broken up for DISPLAY only (see
+    _split_cue). end is floored to start+0.05 — a zero/negative cue is silently dropped by
+    most players."""
     out: list[str] = []
-    for i, (a, b, text) in enumerate(rows, 1):
-        b = max(b, a + 0.05)
-        out += [str(i), f"{_ts(a)} --> {_ts(b)}", (text or "…").strip(), ""]
+    i = 0
+    for a0, b0, text0 in rows:
+        for a, b, text in _split_cue(a0, b0, text0):
+            i += 1
+            b = max(b, a + 0.05)
+            out += [str(i), f"{_ts(a)} --> {_ts(b)}", (text or "…").strip(), ""]
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text("\n".join(out), encoding="utf-8")
     os.replace(tmp, path)

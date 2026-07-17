@@ -40,10 +40,15 @@ SYSTEM = (
     "- Use the CONTEXT block (earlier sentences and their Russian translations) only to keep "
     "terminology, names and pronouns consistent. Never translate the CONTEXT. Never continue "
     "past SENTENCE.\n"
-    "- Preserve meaning, tone and register. Write proper names and common acronyms the way they "
-    "are normally written in Russian.\n"
-    '- Keep numbers as digits (e.g. "4080", "50%", "24/7") and keep well-known Latin names as '
-    "written. Do NOT spell numbers out in words — that is handled later.\n"
+    "- Preserve meaning, tone and register. Write common acronyms the way they are normally "
+    "written in Russian.\n"
+    "- Keep every proper NAME of a game, brand, platform or company in LATIN script, "
+    "capitalised the standard way, even when the English source is lowercase "
+    "(runescape -> RuneScape, minecraft -> Minecraft). Never respell such a name in Cyrillic — "
+    "pronunciation is handled later by a dedicated step. Personal names may be written the "
+    "usual Russian way.\n"
+    '- Keep numbers as digits (e.g. "4080", "50%", "24/7"). Do NOT spell numbers out in words '
+    "— that is handled later.\n"
     "- Output ONLY the Russian translation of SENTENCE — a single line. No quotes, no English, "
     "no labels, no notes, no explanations.\n"
     "/no_think"          # weak fallback; the load-bearing switch is native think:false in _chat
@@ -70,15 +75,23 @@ def _parse(raw: str | None) -> str:
 def _is_bad(text_ru: str, src_en: str, cfg) -> str | None:
     """Return a reason string if the translation is unusable, else None.
 
-    english_echo counts only LOWER/mixed-case Latin runs: ALL-CAPS runs (GPU, RTX, API) are
-    acronyms the prompt deliberately keeps, so they must not look like an untranslated echo.
+    english_echo counts only ALL-LOWERCASE Latin runs: ALL-CAPS (GPU, RTX) are acronyms and
+    Capitalised runs (Minecraft, RuneScape) are proper names the prompt deliberately keeps in
+    Latin so pronounce.py owns them — neither is an untranslated echo. A genuine echo is
+    running lowercase English and still scores >0.84 against a 0.30 limit.
+
+    no_cyrillic is gated the same way: under the Latin-name mandate a names-only line
+    ("Minecraft, Valheim, No Man's Sky") carries no Cyrillic yet is a valid translation the
+    pronounce chain voices — accept it when normalize_for_tts yields Cyrillic. A lowercase
+    English echo also transliterates to Cyrillic here but is caught by english_echo below; only
+    pure punctuation/garbage stays Cyrillic-free after normalization.
     """
     if not text_ru:
         return "empty"
-    if not _CYR.search(text_ru):
+    if not _CYR.search(text_ru) and not _CYR.search(normalize_for_tts(text_ru)):
         return "no_cyrillic"
     alpha = len(_ALPHA.findall(text_ru))
-    echo = sum(len(w) for w in _LATIN_RUN.findall(text_ru) if not w.isupper())
+    echo = sum(len(w) for w in _LATIN_RUN.findall(text_ru) if w.islower())
     if alpha and echo / alpha > cfg.latin_ratio_max:
         return "english_echo"
     if len(text_ru) > cfg.translate_max_len_ratio * max(len(src_en), 1):
