@@ -27,32 +27,22 @@ stage, all verified end-to-end. One venv (.venv-asr), `overdub` package.
       present, positioned at the right timestamps, translation correct. Phase 1 PoC proven
       (URL→MKV, turn-key). Broaden to 2–3 more videos + edge content when convenient
 
-## → Roadmap (reprioritized 2026-07-16 evening; user-confirmed after the F5 ear check)
+## → Roadmap (reprioritized 2026-07-16; dead-air closed by ear 2026-07-17 → CHANGELOG)
 Sample workdirs: `work/4szRHy_CT7s/`, `work/x7DfiXqSEdM/` (Silero baselines, read-only),
-`work-exp/f5-control/x7DfiXqSEdM/` (F5). Report triage: any *_flag or speed_factor>1.8.
-1. **Dead-air: verdict "ощутимо лучше" — iterate the mix layer** (mechanism validated:
-   in-span silence 607→204 s, id101 perfect in its group, 0 flags, atempo unused).
-   Remaining, in order:
-   - [x] 2026-07-17: f5_speed_ceil → 1.1 + stricter sim gate 0.9 for compressed units
-         (shared unit_sim_threshold in synthesize+verify); bed → 0 dB, dub_mix default →
-         "bed" (ear verdict: vocal removal at original level only; duck-depth retest and
-         bed-RMS census/auto-fallback CANCELLED — see DECISIONS 2026-07-17)
-   - [ ] point re-listen 17:00–17:05 (ex-cutoff unit [135-137]) + former gap spots on the
-         resynthesized control
-   - [ ] bed sanity-check on a MUSIC-HEAVY video (speech-only source: stem ≈ silence →
-         bed ≈ replace; residual in-span silence accepted)
-2. **Proper nouns** — detect Latin/brand tokens → pronunciation dictionary → phonetic translit
+`work-exp/f5-control/x7DfiXqSEdM/` (F5), `work-exp/bed-music/tJP6SKfo49c/` (bed check).
+Report triage: any *_flag or speed_factor>1.8.
+1. **Proper nouns** — detect Latin/brand tokens → pronunciation dictionary → phonetic translit
    fallback → per-run cache. F5 softened the class (id189: 0.95 vs Silero 0.661) but ear says
    "No Man's Sky" is still bad (id150); all worst control-run sims are this class
-3. **Batch queue**: a file with N URLs → sequential turn-key runs, per-video resume on crash
-4. **Stop switch**: a stop-file checked between stages/videos — overnight run halts cleanly
-5. **Verify quality gap (babble detector)**: ASR round-trip blindness now CONFIRMED on real
+2. **Batch queue**: a file with N URLs → sequential turn-key runs, per-video resume on crash
+3. **Stop switch**: a stop-file checked between stages/videos — overnight run halts cleanly
+4. **Verify quality gap (babble detector)**: ASR round-trip blindness now CONFIRMED on real
    content by ear — id101 scored sim 1.0 yet sounds bad. Expected-vs-actual duration heuristic
    + optional local MOS (UTMOS)
-6. **Optional cloud translation (Anthropic Sonnet)** — explicit opt-in flag, OFF by default
+5. **Optional cloud translation (Anthropic Sonnet)** — explicit opt-in flag, OFF by default
    (DECISIONS). Note: translate is no longer 80% of wall-clock — F5 synth grew it to a
    ~45/45 co-bottleneck; the win is smaller but still the largest single one
-7. **Gender-matched narrator** — median-F0 of source speech (~165 Hz) → M/F reference per
+6. **Gender-matched narrator** — median-F0 of source speech (~165 Hz) → M/F reference per
    video; needs a good female PD reference (not found yet); edge cases → default voice + flag
 
 Backlog (second tier): `--repair id,id --seed N` (point re-synth + remux); per-run terminology

@@ -1,5 +1,21 @@
 # CHANGELOG
 
+## 2026-07-17 — Dead-air CLOSED by ear: ceil→atempo fix + bed@0dB is the production mix
+- Final ear verdict (user): L3 bed on a music-heavy source works perfectly; the 17:02
+  mid-word cutoff is fixed acceptably; remaining artifacts roughly mirror the source's own
+  unusual intonations/stutters — the dead-air problem group is closed
+- Closing changes: f5_speed_ceil 1.6 → 1.1 (native F5 compression ≥~1.3 drops words; atempo
+  never does — it takes the top-up), stricter gate 0.9 for compressed units (ONE shared
+  unit_sim_threshold in synthesize + verify); _BED_GAIN −6 → 0 dB; dub_mix default → "bed".
+  Duck-depth retest and bed-RMS census/auto-fallback cancelled by the verdict
+- Control resynth (39-min): ex-defect unit [135-137] now native 1.1 + atempo ×1.20
+  (combined ×1.32) with roundtrip sim 1.0 verbatim; 0 flags, 0 retries, 9 compressed units
+  all ≥0.985; residual in-span silence 203.8 s accepted (speech-only source → bed ≈ replace)
+- Music-video check (tJP6SKfo49c, 3.6 min, bed stem −29 dBFS RMS / active 99%): full
+  turn-key on the flipped defaults incl. auto separate stage; 0 flags, atempo max ×1.18,
+  in-span silence 2.9 s — L3 validated on real music
+- Commits: 053b29a (fix ceil+gate), 87c31d9 (feat bed@0dB + default), 58831e3 + this (docs)
+
 ## 2026-07-16 — Dead-air elimination: slot-fill speed + render units + duck/bed mix
 - Measured root cause first: 665 s silence on the 39-min F5 dub = 607 s RU-underfill (fast
   narrator ends before the EN span) + only 68 s real gaps (median 0.14 s) — not a timing bug

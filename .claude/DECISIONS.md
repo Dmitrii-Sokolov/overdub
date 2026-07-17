@@ -587,3 +587,12 @@ where it can: atempo derives from actual wav samples, in_span_silence is reporte
 unit round-trips through ASR. The canvas prediction (err ≤1.5%) only picks the speed knob
 BEFORE synthesis; a synth-measure-resynth loop would ~double GPU time (242/256 units
 stretched) to correct a ≤1.5% error.
+
+## 2026-07-17 — Dead-air closed by ear (final verdict)
+
+**User verdict:** L3 bed on the music-heavy check (tJP6SKfo49c) works perfectly; the 17:02
+cutoff fix is acceptable; the remaining artifacts roughly correspond to the source's own
+unusual intonations and stutters — i.e. they mirror the original delivery, they are not
+pipeline defects. The dead-air problem group is CLOSED. Accepted residuals, named: 203.8 s
+in-span silence on the speech-only control (bed ≈ replace there — no stem to carry) and
+delivery-correlated artifacts. Roadmap top is now proper nouns (PLAN item 1).
