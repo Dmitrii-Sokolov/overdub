@@ -43,12 +43,16 @@ segments are tolerated, silent failures are not.
 
 ## Stack (v1)
 
-yt-dlp → faster-whisper large-v3 → Qwen3-14B (Ollama) → Silero v4_ru → ffmpeg.
+yt-dlp → faster-whisper large-v3 → Qwen3-14B (Ollama) → ESpeech/F5-TTS →
+htdemucs no-vocals bed (dub_mix="bed" default) → ffmpeg.
 
-TTS engines are pluggable behind an adapter: Silero (voice `eugene`, `xenia`
-backup) is the chosen engine after Chatterbox was rejected in the day-1 ear test
-(see DECISIONS). No voice cloning — fixed narrator voice. Don't hardcode Silero
-specifics outside the engine adapter.
+TTS engines are pluggable behind an adapter: ESpeech-TTS-1_RL-V2 (F5-TTS, worker
+process in `.venv-f5tts`) is the production engine (ear check 2026-07-16); Silero
+v4_ru (voice `eugene`, `xenia` backup) is the fallback; Chatterbox was rejected in
+the day-1 ear test (see DECISIONS). No voice cloning — fixed narrator voice. Don't
+hardcode engine specifics outside the engine adapter. Three venvs, never merge them:
+`.venv-asr` (pipeline), `.venv-f5tts` (F5 worker), `.venv-demucs` (separate stage);
+run the pipeline with `.venv-asr` python via `python -X utf8 -m overdub`.
 
 ## Design rules
 

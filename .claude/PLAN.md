@@ -4,17 +4,19 @@
 Sample workdirs: `work/4szRHy_CT7s/`, `work/x7DfiXqSEdM/` (Silero baselines, read-only),
 `work-exp/f5-control/x7DfiXqSEdM/` (F5), `work-exp/bed-music/tJP6SKfo49c/` (bed check).
 Report triage: any *_flag or speed_factor>1.8.
-1. **Proper nouns** — detect Latin/brand tokens → pronunciation dictionary → phonetic translit
-   fallback → per-run cache. F5 softened the class (id189: 0.95 vs Silero 0.661) but ear says
-   "No Man's Sky" is still bad (id150); all worst control-run sims are this class
-2. **Batch queue** — a file with N URLs → sequential turn-key runs, per-video resume on crash;
-   output files named "<original video title> [<video id>].mkv" (title from yt-dlp metadata);
-   per-stage batching (one model load per stage per batch) only if per-video reload overhead
-   actually matters
-3. **Stop switch** — a stop-file checked between stages/videos, overnight run halts cleanly
-4. **Babble duration heuristic** — expected (canvas formula) vs actual unit duration → report
-   flag; ASR round-trip is proven blind to garbled-but-recognizable audio (id101 sim 1.0,
-   ear-bad). MOS scoring (UTMOS) deliberately NOT included — see Deferred
+1. **Proper nouns** (~1-2 d) — detect Latin/brand tokens → pronunciation dictionary → phonetic
+   translit fallback → per-run cache. F5 softened the class (id189: 0.95 vs Silero 0.661) but
+   ear says "No Man's Sky" is still bad (id150); all worst control-run sims are this class.
+   Corpus starting point: worst-sim records of both current workdirs
+2. **Batch queue** (~0.5-1 d) — a file with N URLs → sequential turn-key runs, per-video resume
+   on crash; output files named "<original video title> [<video id>].mkv" (title from yt-dlp
+   metadata); per-stage batching (one model load per stage per batch) only if per-video reload
+   overhead actually matters
+3. **Stop switch** (hours) — a stop-file checked between stages/videos, overnight run halts cleanly
+4. **Babble duration heuristic** (~1 d) — expected (canvas formula) vs actual unit duration →
+   report flag; ASR round-trip is proven blind to garbled-but-recognizable audio (id101 sim 1.0,
+   ear-bad). Value activates at batch scale — pairs with items 2-3. MOS scoring (UTMOS)
+   deliberately NOT included — see Deferred
 
 Backlog (second tier): `--repair id,id --seed N` (point re-synth + remux); per-run terminology
 glossary; singing/music detection → keep original (no robot singing); loudnorm/EQ on the dub;
