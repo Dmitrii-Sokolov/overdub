@@ -67,3 +67,4 @@ Tags: `[bug] [feature] [chore] [?]` — one line per entry, processed weekly.
 
 ## 2026-07-17 session
 - [?] diagnostic: per-unit measured trailing silence in the placed dub (L1 fill honesty — complements the predicted-vs-actual duration heuristic; born from the "measure, don't predict" discussion)
+- [bug] synthesize.done() never compares manifest text_tts vs translation.json — a complete manifest skips the stage over stale wavs (bit the renorm A/B; also reachable via `--force --only translate` + plain rerun). Tool now writes complete:false as a workaround; consider a make-style congruence/mtime gate in done() itself

@@ -7,9 +7,11 @@ segments/*.wav are COPIED, never hardlinked: synthesize has in-place error/empty
 writes (sf.write straight to the final wav path, bypassing .tmp + os.replace) that would
 truncate a shared inode and corrupt the READ-ONLY source corpus. Downstream artifacts
 (report.json, translation.jsonl, dub_ru.wav, srt, output*.mkv) are NOT carried over —
-their done() gates fail and the next pipeline run self-heals verify -> assemble -> mux,
-while synthesize re-renders exactly the units whose text_tts changed (the manifest reuse
-gate compares text_tts).
+their done() gates fail and the next pipeline run self-heals verify -> assemble -> mux.
+The copied manifest is written with complete:false — synthesize.done() does NOT compare
+text_tts against translation.json, so a complete manifest would skip the stage entirely
+(stale wavs muxed); the downgrade forces run(), whose per-unit reuse gate re-renders
+exactly the changed units.
 
 Run: .venv-asr/Scripts/python.exe -X utf8 tools/renorm_workdir.py SRC_WORKDIR DST_WORKDIR
 """
@@ -67,7 +69,13 @@ def main(argv: list[str]) -> int:
         if (src / name).exists():
             shutil.copy2(src / name, dst / name)
     if (src / "segments" / "manifest.json").exists():
-        shutil.copy2(src / "segments" / "manifest.json", dst / "segments" / "manifest.json")
+        # complete:false forces synthesize.done() back into run(): done() never compares
+        # text_tts against translation.json (found the hard way — a complete manifest made
+        # the whole stage skip and the A/B muxed stale wavs); run()'s per-unit reuse gate
+        # then re-renders exactly the changed units
+        man = json.loads((src / "segments" / "manifest.json").read_text(encoding="utf-8"))
+        man["complete"] = False
+        _write_json(dst / "segments" / "manifest.json", man)
 
     records = json.loads((src / "translation.json").read_text(encoding="utf-8"))
     out, changed = [], []
