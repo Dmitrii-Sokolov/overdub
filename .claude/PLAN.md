@@ -9,7 +9,10 @@ Report triage: any *_flag or speed_factor>1.8.
    ear-bad). Value activates at batch scale — batch mode is live, first overnight runs will
    supply the calibration data. MOS scoring (UTMOS) deliberately NOT included — see Deferred
 
-Backlog (second tier): `--repair id,id --seed N` (point re-synth + remux); per-run terminology
+Backlog (second tier): whisper `condition_on_previous_text` re-enable / punctuation-restore
+pass (upstream root cause of the segmentation cluster — x7 had 6 terminator-free ranges >60 s,
+worst 206 s; the gap-gate only makes bisection defensible, not correct — measure hallucination
+risk vs the win); `--repair id,id --seed N` (point re-synth + remux); per-run terminology
 glossary; singing/music detection → keep original (no robot singing); loudnorm/EQ on the dub;
 `--subs-only` fast path; morning triage HTML for batches (flagged segments with players);
 cross-video stage pipelining (translate GPU ∥ synth/verify) if nights get tight.

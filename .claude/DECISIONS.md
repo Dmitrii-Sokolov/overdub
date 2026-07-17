@@ -680,3 +680,59 @@ verify's two sides, the forbidden silent class. A/B on a renormed copy of the f5
 (tools/renorm_workdir.py; 31/315 records changed) is the acceptance path; expect verify flag
 counts to RISE — the old low count was the masking bug (broken translit self-agreed in the
 round-trip at sim 0.93–0.97, only id189 ever flagged).
+
+## 2026-07-17 — Segmentation cluster (BUILD): the seg_end "pause" was a whisper VAD artifact
+
+**Root cause, measured not guessed.** The user ear-reported two mid-phrase splits; the
+Measure phase (running resegment() on the persisted words.json — the offline re-tune lever the
+stage was built for) disproved the obvious "it's the 15 s cap" reading: both emitted spans were
+recursion LEAVES with `_too_long`=False. The real defect: `_split_overlong` branch 1 treated
+`W.seg_end` (last word of a whisper segment) as a speaker pause, but 73% of corpus seg_ends
+carry a 0.000 s gap to the next word — whisper ends segments mid-phrase on a VAD/window
+boundary. Both bugs cut at gap 0.000, the point chosen purely by time-midpoint proximity
+('survival' beat 'games' by 0.030 s, severing "survival | exploration crafting games"). Branch 1
+made ~90% of all cuts and 95% were fake pauses.
+
+**Fix = a real-silence gate, not a bigger dictionary.** `MIN_PAUSE_SEC=0.20` on branch 1
+(measured plateau: any value 0.10–0.50 fixes both bugs, total spread one span — a plateau, not
+a fit); `_ok_cut` veto (no cut ends on a bare function word, none inside a hyphen-split
+compound) applied to ALL THREE branches — a filter in 1/2, a sort *preference* in 3 so branch 3
+always cuts and termination is preserved. `_CONJ`→`_CUT_BEFORE` drops the ambiguous
+subordinators (that/which/who/as/if/when/where/…): once branch 1 is gated, the next-word test
+jumps ~11→~110 cuts and cutting before "that" severs verb-from-object — the id150 cascade class
+(review finding, critical). Item E shipped ('.'+seg_end before a lowercase word is a boundary;
+11/11 genuine on corpus, decimals can't reach it).
+
+**C and D rejected on evidence, not deferred lightly.** Tolerance band (C): does not fix bug A
+(the cut is at depth 1 on a 70 s parent, far above any 16.5 s band), and it breaches F5's 12 s
+unit cap while letting `_merge_short` rebuild long sentences (it calls `_too_long`). Run-on
+recovery (D, Capital-after-lowercase): ~5% precision, cuts inside «Call of|Duty»; the only safe
+variant (seg_end AND gap≥0.2) fires once in 7,483 words — N=1 cannot calibrate a rule whose
+dangerous variants sit one predicate away. The ear reported A/B/F/G; C/D were our ideas.
+
+**Item F (names stay Latin) — accepted silent-loss class, named.** The translate prompt now
+mandates Latin script + canonical casing for game/brand/platform/company names so pronounce.py
+owns them; personal names stay Russian (Qwen renders Джонсон/Миямото well, the rule
+transliterator mangles them). ACCEPTED COST: an out-of-dict game/company name (Bungie→бунджи,
+Bethesda→бетесда) now hits the rule fallback and — per pronounce.py's own docstring — self-agrees
+through verify unflagged. The 3-video corpus (the dict was fit to it) cannot exercise this; the
+only detector is promoting `pronounce_audit.json` to a pre-batch operator gate (INBOX). This is
+the deliberate trade for making Qwen's previously-unrecoverable Cyrillic transliteration
+(«Ранескэпом») recoverable and auditable.
+
+**Item F residual (dangling verbs) accepted, not fixed.** `_ok_cut` still vetoes only the
+16-word `_STOP` set, so a cut can end on a bare verb/pronoun ("you have" / "i think"; ~9 corpus
+cuts). Accepted: a dangling verb → a dangling verb is strictly better than the fake-pause cut it
+replaced, and widening _STOP is a large unmeasured change that risks more midpoint fallbacks.
+
+**Upstream cause bigger than the whole cluster (both designs flagged it).** x7 has 6
+terminator-free ranges >60 s (worst 206 s / 2968 chars → ~19 bisected sentences) because the
+whisper call sets `condition_on_previous_text=False`. The gap-gate makes those bisections
+defensible, not correct; re-enabling context or a punctuation-restore pass would retire the
+class. → PLAN backlog + INBOX (measure the hallucination risk that turned it off).
+
+**Cascade cost restated (DP10).** Both transcribe id-shift and the prompt change invalidate all
+four corpus workdirs' translations (~23 min re-translate/video). assemble's cue split is
+display-only — it never touches sentences.json/ids/timings. After a fresh --force transcribe the
+ear-session ids shift by −2 past id102 (id149→147, id150→148, id188→186, id189→187): reason from
+text, not the old numbers.

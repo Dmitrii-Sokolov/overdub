@@ -1,5 +1,30 @@
 # CHANGELOG
 
+## 2026-07-17 — Segmentation cluster: the "pause" that wasn't (transcribe/translate/assemble)
+- Root cause (measured on stored words.json, not guessed): `_split_overlong` branch 1 treated
+  whisper `seg_end` as a speaker pause, but 73% of seg_ends carry a 0.000 s gap (VAD/window
+  artifact). Both ear-reported splits (id149/150 "survival | exploration", id188/189
+  "met through | Xbox Live") were cut at gap 0.000, chosen purely by time-midpoint proximity
+  ('survival' beat 'games' by 0.030 s). NOT the MAX_SEC cap — the emitted spans were recursion
+  leaves with _too_long=False
+- Fix: MIN_PAUSE_SEC=0.20 gate on branch 1 + `_ok_cut` veto applied to all three branches
+  (filter in 1/2, sort-preference in 3 so it always cuts); `_CONJ`→`_CUT_BEFORE` drops
+  ambiguous subordinators (that/which/who/as/if…) that severed verb-object pairs; item E
+  ('.'+seg_end before a lowercase word is a boundary, 11/11 genuine on corpus)
+- Item F (translate prompt): proper NAMES of games/brands stay Latin with canonical casing
+  (runescape→RuneScape) so pronounce.py owns them; `_is_bad` echo gate keys on `islower()`
+  and accepts a names-only line whose normalize_for_tts yields Cyrillic (retired id150 false
+  english_echo). Item G (assemble): display-only cue split at clause punctuation, ≤6 s/84 ch,
+  flash-guarded — sentences.json/ids/timings untouched
+- Items C (tolerance band) and D (Capital-after-lowercase run-on) REJECTED on corpus evidence:
+  C breaks F5's 12 s unit cap and lets merges rebuild long sentences; D ~5% precision (cuts
+  inside "Call of|Duty"). The ear reported A/B/F/G, not C/D
+- Process: ultracode workflow, 31 agents; Measure phase first (empirical, disproved my own
+  "it's the 15 s cap" diagnosis); 10 review findings all confirmed and fixed (incl. a critical:
+  clause branch cutting before "that"). Fix/Smoke re-run after a mid-flight 529. Smoke: 6 test
+  suites green, corpus A/B invariants hold, both ear bugs at defensible boundaries, corpus
+  SHA-identical (untouched). NOT yet ear-validated post --force re-transcribe
+
 ## 2026-07-17 — Proper nouns (roadmap 1, code): pronunciation chain replaces naive translit
 - New `overdub/pronounce.py`: PHRASES (multiword names, raw-text pass before numerics) →
   WORDS (~50 established RU spellings: ютуб, иксбокс, хейло, майнкрафт…) → plural tails →
