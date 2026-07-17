@@ -39,9 +39,9 @@ Tags: `[bug] [feature] [chore] [?]` — one line per entry, processed weekly.
 - [?] mux duck/bed on multi-hour videos: numpy mix holds ~2-3 GB transient even after chunked RMS/peak — streamed mixing if hours-long sources become real
 
 ## Ear verdict on the 3 mix outputs (2026-07-16, user)
-- [bug] native compression drops words: unit [135-137] (17:02) speed ×1.327 → mid-word cutoff; synth_sim 0.836 scraped past 0.8, no retry. FIX HYPOTHESIS: f5_speed_ceil ≤1.15 or 1.0 (atempo compresses uniformly, NEVER drops words — native compression does) + stricter sim gate for compressed units (speed>1.15 → require ≥0.9)
-- [balance] duck −15 dB too shallow — original EN interferes; retest −22..−25 dB (constant _DUCK_GAIN in mux.py)
-- [?] bed inapplicable on speech-only sources (this video has almost no music → no-vocals stem ≈ silence → dead air returns); re-check on a music-heavy video; consider a bed-RMS census that falls back to duck automatically
+- ~~[bug] native compression drops words: unit [135-137] (17:02) speed ×1.327 → mid-word cutoff~~ shipped 2026-07-17: ceil → 1.1 + compressed-unit gate 0.9 (DECISIONS)
+- ~~[balance] duck −15 dB too shallow — retest −22..−25 dB~~ cancelled 2026-07-17: ear verdict — bed@0dB only, duck dropped
+- ~~[?] bed inapplicable on speech-only sources; bed-RMS census + duck fallback~~ resolved 2026-07-17: bed@0dB is THE mode, census/fallback cancelled; music-heavy sanity-check moved to PLAN
 
 ## Ear-check findings (2026-07-16, F5 control run)
 - [bug] translate: «причина» ×3 подряд (ids 134-137, ~17:00) — no repetition-avoidance in the rolling context; consider a variation hint in the prompt or the per-run glossary pass
@@ -64,3 +64,6 @@ Tags: `[bug] [feature] [chore] [?]` — one line per entry, processed weekly.
 - [chore] loudnorm/EQ pass on the dub track at assemble
 - [feature] --subs-only fast path: skip the TTS tail, emit MKV with original audio + both subtitle tracks
 - [?] cross-video stage pipelining (translate on GPU ∥ synth/verify of the previous video) — only if overnight batches get time-bound
+
+## 2026-07-17 session
+- [?] diagnostic: per-unit measured trailing silence in the placed dub (L1 fill honesty — complements the predicted-vs-actual duration heuristic; born from the "measure, don't predict" discussion)

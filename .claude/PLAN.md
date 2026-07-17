@@ -33,13 +33,14 @@ Sample workdirs: `work/4szRHy_CT7s/`, `work/x7DfiXqSEdM/` (Silero baselines, rea
 1. **Dead-air: verdict "ощутимо лучше" — iterate the mix layer** (mechanism validated:
    in-span silence 607→204 s, id101 perfect in its group, 0 flags, atempo unused).
    Remaining, in order:
-   - [ ] compression back to atempo: f5_speed_ceil → ~1.0–1.15 (native compression ×1.33
-         drops words — the 17:02 mid-word cutoff, unit [135-137]) + stricter sim gate for
-         compressed units; point re-listen at 17:00–17:05 after resynth
-   - [ ] duck depth −15 → −22..−25 dB (mux constant), re-mux + re-listen (seconds per try)
-   - [ ] bed: re-check on a MUSIC-HEAVY video (this source is speech-only → bed ≈ silence);
-         likely production shape = bed-RMS census with automatic duck fallback
-   - [ ] then flip the dub_mix default (own commit)
+   - [x] 2026-07-17: f5_speed_ceil → 1.1 + stricter sim gate 0.9 for compressed units
+         (shared unit_sim_threshold in synthesize+verify); bed → 0 dB, dub_mix default →
+         "bed" (ear verdict: vocal removal at original level only; duck-depth retest and
+         bed-RMS census/auto-fallback CANCELLED — see DECISIONS 2026-07-17)
+   - [ ] point re-listen 17:00–17:05 (ex-cutoff unit [135-137]) + former gap spots on the
+         resynthesized control
+   - [ ] bed sanity-check on a MUSIC-HEAVY video (speech-only source: stem ≈ silence →
+         bed ≈ replace; residual in-span silence accepted)
 2. **Proper nouns** — detect Latin/brand tokens → pronunciation dictionary → phonetic translit
    fallback → per-run cache. F5 softened the class (id189: 0.95 vs Silero 0.661) but ear says
    "No Man's Sky" is still bad (id150); all worst control-run sims are this class

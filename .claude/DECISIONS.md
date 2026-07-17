@@ -560,3 +560,30 @@ wall-clock (RTF 0.60, the only real bottleneck) and the likeliest quality ceilin
 would give the largest single speed win while keeping quality. Boundaries: OFF by default, a
 deliberate flag (no silent fallback to cloud), local Qwen path remains the default and must keep
 working; STT/TTS stay local unconditionally. CLAUDE.md hard-constraints section amended to match.
+
+## 2026-07-17 — Compression back to atempo; bed at original level is THE mix mode (ear)
+
+**f5_speed_ceil 1.6 → 1.1 + stricter gate for compressed units.** The 17:02 defect (unit
+[135-137], native ×1.327, mid-word cutoff at synth_sim 0.836) confirmed the bake-off blind
+spot: ASR similarity measures character overlap, not word survival — F5 native compression
+≥~1.3 drops words outright, while atempo compresses uniformly and never drops any. Native
+compression is now capped at 1.1×base (mild pace-up, safely under the observed word-drop
+regime); everything above tops up via atempo at assembly. Any unit rendered above base pace
+must clear `similarity_threshold_compressed = 0.9` — ONE shared `unit_sim_threshold()` used
+by both synthesize's reseed loop and verify (same one-function discipline as
+`roundtrip_similarity`, so the two gates can never drift).
+
+**Mix mode (user ear, binding): bed WITHOUT attenuation; duck and replace are worse.**
+`_BED_GAIN` −6 dB → 0 dB; `dub_mix` default flips to "bed". The planned duck-depth retest
+(−22..−25 dB) and the bed-RMS-census/auto-duck-fallback idea are cancelled. Named accepted
+residual: on near-music-free sources the no-vocals stem is ≈silence, so bed degrades to
+replace and the remaining in-span silence (204 s on the control) stays silent — accepted,
+L1+L2 already removed two thirds. A sanity-check on a music-heavy video stays on the plan.
+
+**L1 "measure instead of predict" (user question, answered — rejected):** cutoffs leave no
+silence to measure — a compressed canvas is fully voiced with words missing; only content
+verification catches it (and did: 0.836, gate was just too lax). Measurement already sits
+where it can: atempo derives from actual wav samples, in_span_silence is reported, every
+unit round-trips through ASR. The canvas prediction (err ≤1.5%) only picks the speed knob
+BEFORE synthesis; a synth-measure-resynth loop would ~double GPU time (242/256 units
+stretched) to correct a ≤1.5% error.
