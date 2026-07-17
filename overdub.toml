@@ -8,6 +8,8 @@
 # whisper_model = "large-v3"
 # whisper_device = "cuda"
 # whisper_compute_type = "float16"
+# whisper_condition_on_previous = true   # context → proper punctuation; false only if a
+#                                        # source makes whisper loop on repeats
 
 # --- translation (Qwen3-14B via Ollama native /api/chat, think:false) ---
 # ollama_base_url = "http://localhost:11434"

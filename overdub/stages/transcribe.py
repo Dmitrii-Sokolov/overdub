@@ -7,6 +7,13 @@ carry a 0.000 s gap to the next word). It is a pause prior ONLY together with re
 (MIN_PAUSE_SEC, overlong-split branch 1), and a boundary signal after a period. Pure and
 deterministic — no RNG.
 
+Whisper runs with condition_on_previous_text=True (cfg.whisper_condition_on_previous) so it
+PUNCTUATES from context: without it, long stretches came back as one 60-206 s terminator-free
+block that the overlong-splitter had to bisect mid-phrase — the ROOT of the "period
+mid-sentence" class (DECISIONS 2026-07-17). With it, real sentence boundaries carry real
+periods and the overlong-splitter rarely fires. Measured safe (no repetition loop) on a music
+video; flip the flag off for a source that makes whisper loop.
+
 Four passes: flatten (robustness) → sentence split (guarded) → duration-aware overlong
 split (pause > clause > midpoint) → emit. The sentence is the unit of translation,
 synthesis and timing sync downstream.
@@ -328,7 +335,7 @@ class TranscribeStage:
                 language=cfg.source_lang, beam_size=5,
                 word_timestamps=True, vad_filter=True,
                 vad_parameters=dict(min_silence_duration_ms=500),
-                condition_on_previous_text=False,
+                condition_on_previous_text=cfg.whisper_condition_on_previous,
             )
             flat = flatten(segments)                    # consumes the lazy generator
         finally:

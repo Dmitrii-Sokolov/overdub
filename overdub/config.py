@@ -22,6 +22,13 @@ class Config:
     whisper_model: str = "large-v3"
     whisper_device: str = "cuda"
     whisper_compute_type: str = "float16"
+    whisper_condition_on_previous: bool = True   # feed prior text as context so whisper
+                                                 # PUNCTUATES properly. False left 60-206 s
+                                                 # terminator-free blocks that the resegmenter
+                                                 # bisected mid-phrase (the "period mid-sentence"
+                                                 # class, DECISIONS 2026-07-17). Measured safe:
+                                                 # no repetition-loop on the music video. Flip
+                                                 # to False only if a source makes whisper loop
 
     # translation — Qwen3-14B via Ollama native /api/chat (think:false; see stages/translate.py)
     ollama_base_url: str = "http://localhost:11434"
