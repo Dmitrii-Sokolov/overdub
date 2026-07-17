@@ -1,18 +1,21 @@
 # PLAN
 
-## → Roadmap (reprioritized 2026-07-17; dead-air, batch+stop, proper-nouns code → CHANGELOG)
+## → Roadmap (reprioritized 2026-07-17; dead-air, batch+stop, proper-nouns, segmentation → CHANGELOG)
 Sample workdirs: `work/4szRHy_CT7s/`, `work/x7DfiXqSEdM/` (Silero baselines, read-only),
-`work-exp/f5-control/x7DfiXqSEdM/` (F5), `work-exp/bed-music/tJP6SKfo49c/` (bed check).
+`work-exp/f5-control/x7DfiXqSEdM/` (F5), `work-exp/bed-music/tJP6SKfo49c/` (bed check),
+`work-exp/segfix/x7DfiXqSEdM/` (segmentation-cluster full run, condition=False — STALE once
+the flag default flips; the ear-check MKV must be re-run with the flag on).
 Report triage: any *_flag or speed_factor>1.8.
+0. **Ear-check the whisper-context fix** (~46 min run, user-in-loop) — full --force pass on a
+   fresh workdir with `whisper_condition_on_previous=True` (now the default) → confirm the
+   "period mid-sentence" class is gone on the ear cases (id shifts again; reason from text).
+   Code + experiment done (CHANGELOG/DECISIONS); only the binding ear verdict remains.
 1. **Babble duration heuristic** (~1 d) — expected (canvas formula) vs actual unit duration →
    report flag; ASR round-trip is proven blind to garbled-but-recognizable audio (id101 sim 1.0,
    ear-bad). Value activates at batch scale — batch mode is live, first overnight runs will
    supply the calibration data. MOS scoring (UTMOS) deliberately NOT included — see Deferred
 
-Backlog (second tier): whisper `condition_on_previous_text` re-enable / punctuation-restore
-pass (upstream root cause of the segmentation cluster — x7 had 6 terminator-free ranges >60 s,
-worst 206 s; the gap-gate only makes bisection defensible, not correct — measure hallucination
-risk vs the win); `--repair id,id --seed N` (point re-synth + remux); per-run terminology
+Backlog (second tier): `--repair id,id --seed N` (point re-synth + remux); per-run terminology
 glossary; singing/music detection → keep original (no robot singing); loudnorm/EQ on the dub;
 `--subs-only` fast path; morning triage HTML for batches (flagged segments with players);
 cross-video stage pipelining (translate GPU ∥ synth/verify) if nights get tight.

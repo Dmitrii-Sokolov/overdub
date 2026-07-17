@@ -736,3 +736,37 @@ four corpus workdirs' translations (~23 min re-translate/video). assemble's cue 
 display-only — it never touches sentences.json/ids/timings. After a fresh --force transcribe the
 ear-session ids shift by −2 past id102 (id149→147, id150→148, id188→186, id189→187): reason from
 text, not the old numbers.
+
+## 2026-07-17 — Whisper punctuation context: the segmentation ROOT fix (ear-driven, measured)
+
+**The cluster fix was damage control; this is the cause.** Ear check of the segfix run: the
+"period mid-sentence" defect the user heard was frequent (fragment-opening sentences 181/314).
+Layered trace of a single case (id148, condition=False): whisper's EN `sentences.json` text ends
+`...and then you have` — last char `e`, NO period; Qwen's `text_ru` ends `...у вас есть.` — with a
+period. So the FULL STOP is written by Qwen, but the BOUNDARY (where the phrase is severed) is
+`_split_overlong`'s, firing because whisper returned a 60-206 s terminator-free block. Qwen
+translates 1:1 and cannot merge across units — it inherits the break, it does not create it.
+
+**Root proven by a single-variable experiment.** Changed ONLY the whisper flag
+`condition_on_previous_text` False→True (Qwen and the splitter untouched) and re-ran ASR on the
+ear video: max terminator-free raw range 206.1 s → 27.2 s, sentences 314 → 427 (real
+boundaries), sents >15 s = 0, and both ear cases became whole in ONE sentence ("...met through
+Xbox Live or through... a forum or YouTube"; "...you have so many of these like survival
+exploration crafting... Minecraft, Valheim, No Man's Sky"). Since only whisper changed, the
+break was whisper's punctuation gap, not Qwen — a Qwen fix (e.g. "don't end a fragment with a
+period") would not help: the thought is still split into two synth units with a pause between.
+
+**Hallucination risk (why the flag was off) measured, not assumed.** condition=True is known to
+loop on low-signal audio; that is why it was False. A/B on the music video (the worst case for
+looping): longest identical-token run = 3 (ordinary words), zero nonsense loops, max sentence
+9.3 s. Safe on both poles measured (clean monologue + music, N=2). Shipped as a Config flag
+`whisper_condition_on_previous` (default True), NOT hardcoded — a future source that loops can
+set it False without a code change; the gap-gate/`_CUT_BEFORE` cluster stays as the fallback
+splitter for genuinely long single sentences.
+
+**Consequence for the cluster.** With context on, `_split_overlong` rarely fires (max sentence
+14.2 s on the ear video), so the 31-agent cluster is now second-order. It is NOT reverted (fake
+VAD-pause cuts were objectively worse and other videos will have real >15 s sentences), but the
+priority lesson stands: Measure surfaced the 206 s blocks and they were filed to backlog instead
+of tested first — the one-line flag outperformed the whole cluster. Test the root before
+polishing the symptom.

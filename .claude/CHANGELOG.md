@@ -1,5 +1,21 @@
 # CHANGELOG
 
+## 2026-07-17 — Whisper punctuation context: segmentation root fix (config flag)
+- Ear check of the segfix run found the "period mid-sentence" defect frequent (181/314
+  sentences open mid-thought). Layered trace: the full stop is Qwen's, but the BREAK is
+  `_split_overlong`'s, forced by whisper returning 60-206 s terminator-free blocks under
+  `condition_on_previous_text=False`. Qwen is 1:1 and only inherits the break
+- Single-variable experiment (flipped ONLY the whisper flag, re-ran ASR): max terminator-free
+  range 206→27 s, 314→427 real sentences, both ear cases whole in one sentence. Proves the
+  root is whisper punctuation, not Qwen
+- Hallucination risk (why the flag was off) measured on the music video: longest repeat run =
+  3 ordinary words, zero loops — safe. Shipped as Config `whisper_condition_on_previous`
+  (default True, not hardcoded — a looping source can flip it off without code)
+- The segmentation cluster (9ca7751) is now second-order (with context on, `_split_overlong`
+  rarely fires) but kept as the fallback splitter. Priority lesson in DECISIONS: test the root
+  before polishing the symptom
+- NOT yet re-run to MKV with the flag on — a full --force pass (~46 min) is the ear-check
+
 ## 2026-07-17 — Segmentation cluster: the "pause" that wasn't (transcribe/translate/assemble)
 - Root cause (measured on stored words.json, not guessed): `_split_overlong` branch 1 treated
   whisper `seg_end` as a speaker pause, but 73% of seg_ends carry a 0.000 s gap (VAD/window
