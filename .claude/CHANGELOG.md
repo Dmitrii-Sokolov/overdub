@@ -1,5 +1,24 @@
 # CHANGELOG
 
+## 2026-07-17 — Proper nouns (roadmap 1, code): pronunciation chain replaces naive translit
+- New `overdub/pronounce.py`: PHRASES (multiword names, raw-text pass before numerics) →
+  WORDS (~50 established RU spellings: ютуб, иксбокс, хейло, майнкрафт…) → plural tails →
+  case-gated acronyms (It/Ok no longer misread; GPUs via singular) → letter names →
+  ~74-rule left-to-right practical transcription (sky→скай; the vowel-less скй class is
+  structurally excluded — rule output without a vowel letter-spells instead)
+- normalize.py passes 0a (phrases) + 1b (PS5→пи-эс пять seam split; after pass 1 so
+  1920x1080 is not "в раз") + rewritten pass 6; purity/idempotency/Cyrillic-only intact,
+  verify inherits identical resolution via normalize_for_compare
+- "Per-run cache" reinterpreted (DECISIONS): audit-only `pronounce_audit.json` from
+  translate — dictionary-seeding material, never a resolution input
+- `tools/renorm_workdir.py` SRC DST: A/B copy with re-derived text_tts, no LLM re-run,
+  SRC untouched; downstream self-heals, only changed units re-render
+- Process: ultracode workflow, 43 agents / ~2.9M tok: corpus mine (55 tokens, 60 goldens)
+  → 2 designs → judge → impl → 4-lens review (16 findings, all confirmed incl. 2 majors:
+  hardlinked wavs could corrupt read-only corpus; acronym-plural bypass) → fixes → smoke:
+  4 suites green, 710-sentence sweep 0 violations, 72/710 text_tts improved
+- NOT yet ear-validated: A/B resynthesis + listen (ids 150/189/26/204/120) is PLAN item 1
+
 ## 2026-07-17 — Batch queue + stop switch (roadmap 2-3): overnight runs are turn-key
 - `--batch FILE`: one URL per line, `#` comments/blank lines skipped, BOM-safe (utf-8-sig),
   dedupe by video id first-wins; sequential turn-key runs. A failed video prints the full

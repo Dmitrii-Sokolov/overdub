@@ -662,3 +662,21 @@ str.strip() does not remove — read with utf-8-sig.
 120-char title cap and 30 s backfill timeout are constants — knobs without a demonstrated
 tuner are dead config surface. Per-stage batching (one model load per stage per batch)
 explicitly NOT built — revisit only if per-video model reload overhead is measured to matter.
+
+## 2026-07-17 — Proper nouns: pronunciation chain (BUILD)
+
+**Chain: PHRASES → WORDS → plural tail → case-gated acronyms → letter names → rule
+transliteration (`overdub/pronounce.py`), wired into normalize as passes 0a/0b + the pass-6
+resolver.** Phrases run FIRST on raw text (keys may contain digits/apostrophes, so they must
+precede every numeric pass); a phrase earns a slot only when word-by-word composition cannot
+produce the target ("no man's sky" — the id150 ear case). The fallback replaced the naive
+per-letter translit with an ordered left-to-right practical-transcription scanner (~74 rules),
+killing the sky→скй class structurally: every corpus output word ≥3 chars must contain a vowel
+(tested). Committed contested readings: хейло, энвидиа, пайтон, твитч, uh→э-э (EN hesitation
+as RU filler keeps slot timing). The roadmap's "per-run cache" is reinterpreted as the
+AUDIT-ONLY artifact `pronounce_audit.json` (written by translate, read by nobody):
+normalize_for_tts must stay pure/deterministic — a run-scoped resolution cache would desync
+verify's two sides, the forbidden silent class. A/B on a renormed copy of the f5-control run
+(tools/renorm_workdir.py; 31/315 records changed) is the acceptance path; expect verify flag
+counts to RISE — the old low count was the masking bug (broken translit self-agreed in the
+round-trip at sim 0.93–0.97, only id189 ever flagged).

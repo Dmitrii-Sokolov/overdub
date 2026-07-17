@@ -1,13 +1,14 @@
 # PLAN
 
-## → Roadmap (reprioritized 2026-07-17; dead-air closed by ear, batch+stop shipped → CHANGELOG)
+## → Roadmap (reprioritized 2026-07-17; dead-air, batch+stop, proper-nouns code → CHANGELOG)
 Sample workdirs: `work/4szRHy_CT7s/`, `work/x7DfiXqSEdM/` (Silero baselines, read-only),
 `work-exp/f5-control/x7DfiXqSEdM/` (F5), `work-exp/bed-music/tJP6SKfo49c/` (bed check).
 Report triage: any *_flag or speed_factor>1.8.
-1. **Proper nouns** (~1-2 d) — detect Latin/brand tokens → pronunciation dictionary → phonetic
-   translit fallback → per-run cache. F5 softened the class (id189: 0.95 vs Silero 0.661) but
-   ear says "No Man's Sky" is still bad (id150); all worst control-run sims are this class.
-   Corpus starting point: worst-sim records of both current workdirs
+1. **Proper nouns — ear A/B** (hours, user-in-loop) — code shipped 2026-07-17 (CHANGELOG);
+   acceptance = ear. Steps: `tools/renorm_workdir.py` f5-control → new work-exp copy (31/315
+   records change) → pipeline run re-renders only changed units → listen to ids 150/189/26/
+   204/120. Expect verify flags to RISE (old low count was the round-trip masking bug).
+   Then triage `pronounce_audit.json` → promote frequent fallbacks to the WORDS dict
 2. **Babble duration heuristic** (~1 d) — expected (canvas formula) vs actual unit duration →
    report flag; ASR round-trip is proven blind to garbled-but-recognizable audio (id101 sim 1.0,
    ear-bad). Value activates at batch scale — batch mode is live, first overnight runs will
