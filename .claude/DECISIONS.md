@@ -596,3 +596,26 @@ unusual intonations and stutters — i.e. they mirror the original delivery, the
 pipeline defects. The dead-air problem group is CLOSED. Accepted residuals, named: 203.8 s
 in-span silence on the speech-only control (bed ≈ replace there — no stem to carry) and
 delivery-correlated artifacts. Roadmap top is now proper nouns (PLAN item 1).
+
+## 2026-07-17 — Priorities set; base sim gate → 0.9; UTMOS and four items demoted
+
+**Near-term roadmap (user):** proper nouns → batch queue → stop switch → babble duration
+heuristic. New batch-queue requirement: output files named by original video title + video id
+(yt-dlp metadata).
+
+**Base similarity_threshold 0.8 → 0.9 (user).** Units are long joined strings that dilute
+local defects — the 17:02 word-drop scored 0.836 and passed the per-sentence-calibrated 0.8;
+both current runs sit comfortably above 0.9 (unit min 0.926 / 0.9415). Further tuning
+deferred entirely until production flags misbehave. Known side effect, accepted: Silero
+fallback runs will flag more (its per-sentence sample min was 0.875) — flags are warnings,
+the pipeline never blocks.
+
+**UTMOS (4b) judged high-cost/low-effect for now:** the duration heuristic covers the cheap
+majority of the babble class; MOS adds a model integration plus calibration data that only
+batch runs will produce. Revisit only if the heuristic provably misses defects.
+
+**Demoted to PLAN Deferred (not near-term, user):** cloud translate, gender-matched narrator,
+multi-speaker violation detector, sim-threshold re-tune analysis, Arc B390 path (Phase 4
+section removed from PLAN; Silero-on-CPU remains the safe TTS there, F5-on-XPU is an
+unproven spike). Phase 2 section dissolved into roadmap items 2-4 — PLAN now holds one
+roadmap, one backlog, one deferred list.

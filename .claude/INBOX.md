@@ -33,7 +33,7 @@ Tags: `[bug] [feature] [chore] [?]` — one line per entry, processed weekly.
 - ~~[chore] yt-dlp is 90+ days old~~ done 2026-07-16 (2026.07.04 is current)
 
 ## Dead-air review deferrals (2026-07-16)
-- [chore] similarity_threshold=0.8 was tuned per-sentence; unit-level joined strings score systematically higher — measure the unit sim distribution on the control run, re-tune (also PLAN open question)
+- ~~[chore] similarity_threshold=0.8 was tuned per-sentence; unit-level joined strings score systematically higher — re-tune~~ resolved 2026-07-17: base raised to 0.9 (user); further tuning deferred until production flags misbehave
 - [chore] --repair id,id contract: after units the atomic re-render grain is the GROUP — update the backlog item's wording when it lands
 - [?] translate keep-length prompt now interacts with L1 stretch: relaxing the length pressure could attack underfill at the root (fuller RU, less stretching) — experiment post-ear-verdict
 - [?] mux duck/bed on multi-hour videos: numpy mix holds ~2-3 GB transient even after chunked RMS/peak — streamed mixing if hours-long sources become real
