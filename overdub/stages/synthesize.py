@@ -70,6 +70,17 @@ def build_units(segs: list[dict], gap_max: float) -> list[dict]:
     return units
 
 
+def unit_sim_threshold(cfg, speed: float | None) -> float:
+    """Per-unit similarity gate — ONE function for synthesize's reseed loop AND verify
+    (same discipline as roundtrip_similarity: the two sides can never drift). Natively
+    compressed units (speed above the base narrator pace) must clear the stricter bar:
+    F5 compression ≥~1.3 DROPS words outright while ASR sim can still scrape past the
+    base threshold (the 17:02 mid-word cutoff shipped at 0.836 vs gate 0.8)."""
+    if speed is not None and speed > cfg.f5_speed + 1e-6:
+        return max(cfg.similarity_threshold, cfg.similarity_threshold_compressed)
+    return cfg.similarity_threshold
+
+
 def units_of(doc: dict) -> list[dict]:
     """Units from a manifest doc; legacy per-sentence "segments" docs adapt to singleton
     units so old workdirs stay readable by verify/assemble without migration."""
@@ -230,8 +241,9 @@ class SynthesizeStage:
                                     print(f"       [warn] u{lead}: round-trip failed ({e}) — "
                                           "keeping audio, verify will judge", file=sys.stderr)
                             if best is not None:
+                                need_sim = unit_sim_threshold(cfg, speed_used)
                                 for k in range(1, cfg.tts_max_retries + 1):
-                                    if best >= cfg.similarity_threshold:
+                                    if best >= need_sim:
                                         break
                                     retry_tmp = wav.with_suffix(".wav.retry")
                                     try:
@@ -254,7 +266,7 @@ class SynthesizeStage:
                                         retry_tmp.unlink(missing_ok=True)
                                 synth_sim = round(best, 4)
                                 if attempts > 1:
-                                    tail = ("ok" if best >= cfg.similarity_threshold
+                                    tail = ("ok" if best >= need_sim
                                             else "still low")
                                     print(f"       [retry] u{lead}: {attempts} attempts, "
                                           f"best {best:.3f} (seed {seed_used}) — {tail}")

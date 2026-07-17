@@ -11,7 +11,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from overdub.stages.synthesize import _GROUP_MAX_CHARS, _GROUP_MAX_SPAN, build_units, units_of  # noqa: E402
+from overdub.config import Config  # noqa: E402
+from overdub.stages.synthesize import (  # noqa: E402
+    _GROUP_MAX_CHARS, _GROUP_MAX_SPAN, build_units, unit_sim_threshold, units_of)
 from overdub.tts.f5 import plan_speed  # noqa: E402
 
 
@@ -121,6 +123,23 @@ def test_base_speed_scales_window() -> None:
     s = plan_speed(100, 10.0, 200, 1.2, 0.75, 1.6, 10.0, None)
     # nominal at base = 5/1.2 ≈ 4.17 s < 10 → stretch: 100*10/200 * 1.2 / 10 = 0.6 < 0.9 floor → 0.9
     assert abs(s - 0.75 * 1.2) < 1e-9
+
+
+# ---- unit_sim_threshold ----------------------------------------------------------
+def test_sim_threshold_stricter_for_compressed_units() -> None:
+    cfg = Config()                                                   # f5_speed=1.0, 0.8/0.9
+    assert unit_sim_threshold(cfg, None) == cfg.similarity_threshold           # silero/legacy
+    assert unit_sim_threshold(cfg, cfg.f5_speed) == cfg.similarity_threshold   # neutral
+    assert unit_sim_threshold(cfg, cfg.f5_speed * 0.8) == cfg.similarity_threshold  # stretched
+    assert unit_sim_threshold(cfg, cfg.f5_speed * 1.05) == cfg.similarity_threshold_compressed
+
+
+def test_sim_threshold_never_relaxes() -> None:
+    # a compressed gate below the base threshold must not weaken the base gate
+    cfg = Config()
+    cfg.similarity_threshold = 0.95
+    cfg.similarity_threshold_compressed = 0.9
+    assert unit_sim_threshold(cfg, cfg.f5_speed * 1.05) == 0.95
 
 
 if __name__ == "__main__":

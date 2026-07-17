@@ -28,7 +28,7 @@ from .. import report
 from ..asr import load_whisper, roundtrip_similarity
 from ..normalize import normalize_for_compare
 from ..pipeline import Context
-from .synthesize import units_of
+from .synthesize import unit_sim_threshold, units_of
 
 
 def _frames(wav) -> int:
@@ -102,8 +102,9 @@ class VerifyStage:
                     else:
                         if not hyp_n:
                             vflag = "empty_hyp"
-                        else:
-                            vflag = None if sim >= cfg.similarity_threshold else "low_similarity"
+                        else:                              # compressed units → stricter gate
+                            need_sim = unit_sim_threshold(cfg, u.get("speed"))
+                            vflag = None if sim >= need_sim else "low_similarity"
 
                 attempts = u.get("attempts") or 0
                 if attempts > 1:
@@ -135,6 +136,7 @@ class VerifyStage:
         report.prune(rep, {s["id"] for s in segs})
         rep["video_id"] = ctx.work.root.name
         rep["similarity_threshold"] = cfg.similarity_threshold
+        rep["similarity_threshold_compressed"] = cfg.similarity_threshold_compressed
         rep["verify"] = {"model": cfg.verify_model, "synth_key": man.get("synth_key"),
                          "units_key": man.get("units_key"),
                          "n_units": len(units), "n_segments": len(segs), "n_flagged": n_flag,

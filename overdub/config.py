@@ -54,8 +54,9 @@ class Config:
     f5_speed: float = 1.0            # base narrator pace (narrator calibration, DECISIONS)
     f5_speed_floor: float = 0.75     # max stretch: min per-unit speed as a MULTIPLIER of
                                      # f5_speed (slot-fill; 1.0 disables stretching)
-    f5_speed_ceil: float = 1.6       # max native compression multiplier before atempo tops
-                                     # up (×1.6 verified at ≤0.022 sim cost; 1.0 disables)
+    f5_speed_ceil: float = 1.1       # max native compression multiplier before atempo tops
+                                     # up. Ear 2026-07-16: native ≥~1.3 DROPS words mid-word
+                                     # (atempo never does) — keep ≲1.15; 1.0 disables
 
     # dead-air / mix (see DECISIONS 2026-07-16 dead-air entry)
     group_gap_max: float = 0.4       # join adjacent sentences into one render unit when the
@@ -66,6 +67,8 @@ class Config:
     # verification — whisper-small round-trip
     verify_model: str = "small"
     similarity_threshold: float = 0.8
+    similarity_threshold_compressed: float = 0.9   # stricter gate for natively compressed
+                                                   # units (word-drop risk; unit_sim_threshold)
 
     @classmethod
     def load(cls, path: Path | None) -> "Config":
