@@ -1,5 +1,23 @@
 # CHANGELOG
 
+## 2026-07-17 — Batch queue + stop switch (roadmap 2-3): overnight runs are turn-key
+- `--batch FILE`: one URL per line, `#` comments/blank lines skipped, BOM-safe (utf-8-sig),
+  dedupe by video id first-wins; sequential turn-key runs. A failed video prints the full
+  traceback and the batch CONTINUES; summary rows [ok/FAIL/stop/not run] + counts; exit codes
+  0 ok / 1 any fail / 2 usage / 3 stop-halt. `--force`/`--only` pass through per video
+- Stop switch: `work_root/STOP` checked before EVERY stage boundary (hence also between
+  videos), consumed at honor time; stale file swept at startup (unremovable → loud abort).
+  Halt prints where it stopped; a plain re-run resumes (artifact-driven skip)
+- Export: final MKV hardlinked (copy fallback) into `output_dir` (new key, default `out/`)
+  as `"<title> [<video id>].mkv"` — atomic .tmp flip, mtime-based refresh on re-mux,
+  stale-export cleanup; `work/<id>/output.mkv` never moves. Title persisted at download
+  (`--write-info-json`) with a one-shot metadata-only backfill for pre-change workdirs;
+  offline → loud id-only fallback. `safe_filename()` in workdir.py (Windows reserved names,
+  forbidden chars, 120-char cap, Cyrillic preserved)
+- Process: ultracode workflow, 34 agents / ~2.0M tok: 2 design biases → judge spec → impl →
+  4-lens adversarial review (13 findings → 11 confirmed by 2-skeptic verify, all fixed) →
+  smoke 52/52 (stubbed batch/stop/export/sanitizer, no network). Not yet run on real videos
+
 ## 2026-07-17 — Dead-air CLOSED by ear: ceil→atempo fix + bed@0dB is the production mix
 - Final ear verdict (user): L3 bed on a music-heavy source works perfectly; the 17:02
   mid-word cutoff is fixed acceptably; remaining artifacts roughly mirror the source's own

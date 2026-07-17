@@ -619,3 +619,46 @@ multi-speaker violation detector, sim-threshold re-tune analysis, Arc B390 path 
 section removed from PLAN; Silero-on-CPU remains the safe TTS there, F5-on-XPU is an
 unproven spike). Phase 2 section dissolved into roadmap items 2-4 — PLAN now holds one
 roadmap, one backlog, one deferred list.
+
+## 2026-07-17 — Batch queue + stop switch (BUILD)
+
+Settled by a 2-bias design panel (minimal-diff / overnight-operability) + judge, then 4-lens
+adversarial review with 2-skeptic per-finding verification (13 findings, 11 confirmed, all
+fixed). Load-bearing calls:
+
+**Exit codes are the batch API: 0 ok / 1 any fail / 2 usage / 3 stop-halt.** An overnight
+wrapper must distinguish "stopped" from "broke" without parsing stdout; fail wins over halt.
+KeyboardInterrupt is deliberately caught nowhere — the operator pressing Ctrl+C is at the
+console; a partial-summary handler is 4 lines for near-zero value.
+
+**STOP is consumed at honor time, not at catch site.** `check_stop(work_root, where)` in
+pipeline.py unlinks then raises — a plain re-run always resumes. The startup sweep in cli.main
+reuses the same helper (a stale file can never silently no-op the run); if the unlink fails
+persistently (AV hold / open handle), startup aborts loudly instead of re-halting at the first
+boundary with a misleading message. Checkpoint sits BEFORE the only/done filters — a stop
+halts at the next stage boundary even through a run of [skip] lines. The between-videos
+checkpoint was removed by review: run_pipeline's "before stage 'download'" check fires first
+thing for every video and covers the same gap (accepted observable change: a between-videos
+stop prints the next video's header and reports as its "stop" row).
+
+**Export = hardlink with copy fallback; persisted title is never refreshed.** Same-volume
+hardlink is free at MKV sizes; .tmp + replace_retry keeps the flip atomic in both paths.
+Naming stability beats freshness for an archive dir; stale exports of the same video id are
+glob-cleaned (the offline-fallback→online-backfill rename case). Named accepted residual:
+an export left open in a player without FILE_SHARE_DELETE can block a later re-mux's
+os.replace of output.mkv (loud FAIL, batch continues) — documented in the code, not worked
+around with always-copy.
+
+**Review catches worth remembering:** yt-dlp encodes piped stdout in the locale ANSI codepage,
+not UTF-8 — the title backfill runs with PYTHONUTF8=1 in the child env or Cyrillic titles
+mangle on stock Windows (this host works only because ACP=65001); with `-o source.mkv` the
+info-json sidecar is `source.info.json` on the mkv merge path but `source.mkv.info.json` on
+the single-format `/b` fallback — both probed; UnicodeDecodeError from a torn info.json is a
+ValueError, NOT an OSError/JSONDecodeError — the guard catches (OSError, ValueError) or a
+torn file blocks the backfill forever; queue files from PowerShell 5.1 carry a BOM that
+str.strip() does not remove — read with utf-8-sig.
+
+**Config surface: exactly one new key (`output_dir`, default `out/`).** Stop-file name,
+120-char title cap and 30 s backfill timeout are constants — knobs without a demonstrated
+tuner are dead config surface. Per-stage batching (one model load per stage per batch)
+explicitly NOT built — revisit only if per-video model reload overhead is measured to matter.
