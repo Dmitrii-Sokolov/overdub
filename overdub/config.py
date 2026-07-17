@@ -58,10 +58,11 @@ class Config:
                                      # up. Ear 2026-07-16: native ≥~1.3 DROPS words mid-word
                                      # (atempo never does) — keep ≲1.15; 1.0 disables
 
-    # dead-air / mix (see DECISIONS 2026-07-16 dead-air entry)
+    # dead-air / mix (see DECISIONS 2026-07-16 dead-air entry + 2026-07-17 ear verdict)
     group_gap_max: float = 0.4       # join adjacent sentences into one render unit when the
                                      # inter-sentence gap ≤ this (s); 0.0 disables grouping
-    dub_mix: str = "replace"         # "replace" | "duck" (VO-style envelope) | "bed" (Demucs)
+    dub_mix: str = "bed"             # "replace" | "duck" | "bed" (no-vocals stem at original
+                                     # level under the dub — production default by ear)
     demucs_python: Path = Path(".venv-demucs/Scripts/python.exe")  # bed mode only
 
     # verification — whisper-small round-trip

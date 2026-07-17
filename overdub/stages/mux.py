@@ -6,7 +6,8 @@ Modes (dead-air design, DECISIONS 2026-07-16):
             audio: cap-clamped underfill must not let full-level EN pop through mid-span)
             via an explicit sample-exact gain envelope — deterministic depth, no compressor
             pumping, intervals merged when gaps < 1 s so the original doesn't "breathe";
-  bed     — Demucs no-vocals bed (separate stage) at −6 dB under the dub.
+  bed     — Demucs no-vocals bed (separate stage) at ORIGINAL level under the dub
+            (ear 2026-07-17: attenuating the bed is worse; production default).
 
 All modes align the dub's RMS to the original speech loudness (one static gain, ±6 dB cap)
 so an A/B between modes compares MECHANISMS, not loudness. Units whose wav is empty
@@ -33,7 +34,7 @@ from .synthesize import units_of
 
 _MIX_SR = 48000
 _DUCK_GAIN = 10 ** (-15 / 20)     # −15 dB under RU speech (VO standard)
-_BED_GAIN = 10 ** (-6 / 20)       # bed sits −6 dB under the dub
+_BED_GAIN = 1.0                   # bed at original level (ear 2026-07-17: no attenuation)
 _ATTACK_S = 0.05                  # duck edge ramps
 _RELEASE_S = 0.30
 _MERGE_GAP_S = 1.0                # merge duck intervals closer than this (no phrase-rate pumping)

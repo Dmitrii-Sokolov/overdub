@@ -5,6 +5,7 @@ __pycache__/
 .venv-asr/
 .venv-tts/
 .venv-f5tts/
+.venv-demucs/
 venv/
 hf_home/
 *.egg-info/

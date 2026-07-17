@@ -35,7 +35,8 @@ tts_sample_rate = 48000     # silero-only (F5 sr is engine-owned: 24000)
 
 # --- dead-air / mix ---
 # group_gap_max = 0.4        # join adjacent sentences into one render unit (s); 0.0 disables
-# dub_mix = "replace"        # "replace" | "duck" (VO envelope) | "bed" (Demucs ambience bed)
+# dub_mix = "bed"            # "replace" | "duck" | "bed" — production default: bed (no-vocals
+                              # stem at original level under the dub; ear 2026-07-17)
 # demucs_python = ".venv-demucs/Scripts/python.exe"
 
 # --- verification (whisper-small round-trip) ---
