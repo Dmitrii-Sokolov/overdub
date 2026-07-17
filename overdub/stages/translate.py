@@ -26,6 +26,7 @@ import re
 import sys
 import urllib.request
 
+from .. import pronounce
 from ..normalize import normalize_for_tts
 from ..pipeline import Context
 
@@ -254,5 +255,14 @@ class TranslateStage:
         tmp = ctx.work.translation.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
         os.replace(tmp, ctx.work.translation)
+
+        # pronounce audit (AUDIT-ONLY artifact — written, never read back: resolution must
+        # stay pure/deterministic or verify's two sides desync): what the pipeline invented
+        # for Latin tokens — operator triage + weekly dictionary-seeding material
+        audit = pronounce.audit_summary(ctx.work.root.name, out)
+        atmp = ctx.work.pronounce_audit.with_suffix(".json.tmp")
+        atmp.write_text(json.dumps(audit, ensure_ascii=False, indent=2), encoding="utf-8")
+        os.replace(atmp, ctx.work.pronounce_audit)
+
         n_fail = sum(1 for o in out if o.get("status") != "ok")
         print(f"       {len(out)} sentences → translation.json ({n_fail} flagged)")

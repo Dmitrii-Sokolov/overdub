@@ -81,6 +81,9 @@ class WorkDir:
     def translation_partial(self) -> Path: return self.root / "translation.jsonl"  # translate (append-only resume trail)
 
     @property
+    def pronounce_audit(self) -> Path: return self.root / "pronounce_audit.json"  # translate (audit-only)
+
+    @property
     def segments_dir(self) -> Path: return self.root / "segments"         # synthesize wavs
 
     @property

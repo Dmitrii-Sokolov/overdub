@@ -31,6 +31,10 @@ SNAPSHOTS = {
     "2021": "две тысячи двадцать один",
     "$5": "пять долларов",
     "1 доллар": "один доллар",
+    # NxM must NOT read as a multiplier ("в 1080 раз"): 0b splits AFTER pass 1, so the
+    # multiplier's own digit guards reject the glued shape (Latin goldens live in
+    # test_pronounce.py — this row pins the normalize-level pass ordering)
+    "1920x1080": "одна тысяча девятьсот двадцать экс одна тысяча восемьдесят",
 }
 
 IDEMPOTENT_INPUTS = [
