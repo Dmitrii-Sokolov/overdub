@@ -204,7 +204,13 @@ text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()  # defen
 - **Short-text class:** gen texts <10 UTF-8 bytes force local speed 0.3 and
   garble — mitigated upstream (ultra-short merge in transcribe + unit grouping).
 
-### Fallback: Silero v4_ru (fixed voice, CPU)
+### Fallback: Silero (fixed voice, CPU, no reference clip)
+
+> Slightly below F5/ESpeech on quality, but needs NO voice sample — the
+> zero-setup, zero-rights-questions option (user verdict 2026-07-18). The
+> adapter loads **v4_ru** today; **v5** (`v5_5_ru`, same voices) is also good —
+> bumping is one torch.hub id, but v5 REJECTS Latin script (text_tts is already
+> Cyrillic-only by the normalize contract; add an out-of-alphabet filter, #317).
 
 **Install** — no pip package required; `torch.hub` fetches the model. Silero
 needs only `torch` + `torchaudio` (+ `omegaconf`), so it shares the ASR venv

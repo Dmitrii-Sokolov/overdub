@@ -798,6 +798,18 @@ Qwen's native `think:false` + separate system message. It was built first as two
 byte-identical (proven); once Gemma won, the flags AND the Qwen branch were removed (YAGNI). Default
 `ollama_model` qwen3:14b → gemma3:12b (~7.5 GB VRAM loaded, was ~8.6 GB).
 
+## 2026-07-18 — Silero v5 acknowledged: the good no-sample TTS option
+
+**User verdict:** Silero v5 is also good as TTS — quality slightly below F5/ESpeech, but it
+needs NO narrator reference clip: zero voice-sample setup, zero rights questions (the F5
+narrator carries the README rights caveat). Recorded as a first-class alternative, not just
+a legacy fallback; the engine choice is now: F5/ESpeech = best quality + needs a reference,
+Silero = slightly lower quality + no sample. The in-code adapter still loads v4_ru — bumping
+to v5 (`v5_5_ru` via torch.hub) is a small change with one caveat: v5 rejects Latin script
+(text_tts is Cyrillic-only by the normalize contract already; add an out-of-alphabet filter
+per the bake-off note). → INBOX chore. Bake-off history unchanged: ESpeech led v5 by ear
+(2026-07-16); this verdict upgrades v5's standing as the no-sample option.
+
 ## 2026-07-18 — Sonnet verdict (user read-through): both translation routes stay; Sonnet semi-automatic is the PRIMARY route
 
 **User verdict on the 508-sentence A/B read-through:** Sonnet's quality is noticeably

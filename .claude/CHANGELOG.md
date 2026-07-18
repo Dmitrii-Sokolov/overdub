@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## 2026-07-18 — Silero v5 recorded as the good no-sample TTS option
+- User verdict: quality slightly below F5/ESpeech, but no narrator reference clip needed —
+  zero voice-sample setup and zero rights questions. Documented in README (pipeline, stack
+  table, Voices), STACK Stage 3, CLAUDE.md. Adapter still loads v4_ru → INBOX chore to bump
+  (`v5_5_ru`; v5 rejects Latin script — needs an out-of-alphabet filter). DECISIONS 2026-07-18
+
 ## 2026-07-18 — Sonnet verdict: semi-automatic cloud translate is the primary route
 - User read-through verdict on the A/B: Sonnet noticeably better and much faster; both routes
   declared good — Gemma = good quality, local, slow (in-pipeline default); Sonnet = subscription,

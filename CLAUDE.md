@@ -50,8 +50,9 @@ htdemucs no-vocals bed (dub_mix="bed" default) → ffmpeg.
 
 TTS engines are pluggable behind an adapter: ESpeech-TTS-1_RL-V2 (F5-TTS, worker
 process in `.venv-f5tts`) is the production engine (ear check 2026-07-16); Silero
-v4_ru (voice `eugene`, `xenia` backup) is the fallback; Chatterbox was rejected in
-the day-1 ear test (see DECISIONS). No voice cloning — fixed narrator voice. Don't
+(voice `eugene`, `xenia` backup) is the fallback — slightly lower quality but needs
+no voice sample (adapter runs v4_ru; v5 also validated, DECISIONS 2026-07-18);
+Chatterbox was rejected in the day-1 ear test (see DECISIONS). No voice cloning — fixed narrator voice. Don't
 hardcode engine specifics outside the engine adapter. Three venvs, never merge them:
 `.venv-asr` (pipeline), `.venv-f5tts` (F5 worker), `.venv-demucs` (separate stage);
 run the pipeline with `.venv-asr` python via `python -X utf8 -m overdub`.

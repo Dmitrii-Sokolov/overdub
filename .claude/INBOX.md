@@ -65,6 +65,11 @@ Tags: `[bug] [feature] [chore] [?]` — one line per entry, processed weekly.
 - [bug] translate/pronounce: OUT-OF-DICT game/company names now hit the pronounce rule fallback and self-agree through verify UNFLAGGED (Bungie→бунджи, Bethesda→бетесда, Terraria→террариа) — silent-loss class, invisible to the 3-video corpus. Only detector: promote pronounce_audit.json to a pre-batch operator gate (fallback-via entries are the candidate WORDS additions)
 - [?] transcribe: _ok_cut vetoes only the 16-word _STOP set, so ~9 corpus cuts still end on a bare verb/pronoun ("you have"/"i think") — accepted (dangling verb ≫ fake-pause cut); widening _STOP is a large unmeasured change, revisit only if the ear flags it. _STOP also still lacks through/from/about (bug B's dangling preposition, now moot since branch 1 is gap-gated)
 
+## 2026-07-18 session (docs audit + verdicts)
+- [chore] tts: SileroEngine hardcodes v4_ru; v5 (`v5_5_ru`) validated as the no-sample option
+  (DECISIONS 2026-07-18) — bump the hub id when next touching the fallback; v5 rejects Latin
+  script, so add an out-of-alphabet char filter in the adapter (bakeoff #317 crash class)
+
 ## 2026-07-18 session (Gemma migration + item-0 close)
 - [?] verify: translation COMPLETENESS unmeasured — the ASR round-trip proves TTS↔text_ru, not
   text_ru↔EN. Gemma's tightness drops a word unflagged (Dmgujo id1: 3 of 4 adverbs). Now the top
