@@ -1,6 +1,6 @@
 # SETUP.md — Windows 11 + RTX 4080 Mobile (12 GB) runtime for overdub
 
-## Strategy: pipeline venv + F5 worker venv + Ollama as a separate OS process
+## Strategy: pipeline venv + F5 worker venv + demucs venv + Ollama as a separate OS process
 
 1. **`.venv-asr`** — the pipeline venv: faster-whisper (STT + verify), Silero (fallback TTS via
    torch.hub), the `overdub` package itself. torch cu128 line.
@@ -8,7 +8,10 @@
    here as a worker subprocess (`overdub/tts/f5_worker.py`) driven over stdio — f5-tts is
    dependency-incompatible with `.venv-asr` (torch 2.11 vs 2.8, numpy downgrade, torchcodec ABI,
    ~110 extra packages; measured via pip dry-run, see DECISIONS 2026-07-16). Never merge them.
-3. **Ollama** — standalone Windows app/service, its own bundled CUDA; NOT a pip package, never in a
+3. **`.venv-demucs`** — the Demucs separation venv. The `separate` stage calls it as a CLI
+   subprocess to build the no-vocals bed for `dub_mix = "bed"` (the production default). Same
+   isolation argument as the F5 worker: demucs's torch pins must not gamble the other stacks.
+4. **Ollama** — standalone Windows app/service, its own bundled CUDA; NOT a pip package, never in a
    venv. Treat as a black-box localhost service.
 
 ## F5/ESpeech TTS venv + assets (production engine)
@@ -41,9 +44,23 @@ a cp1251 parent console would mojibake the overnight log lines morning triage re
 > torchaudio 2.11 routes `torchaudio.save` through TorchCodec — so the SileroEngine writes wavs with
 > `soundfile` instead. `.venv-tts` has been retired.
 
+## Demucs venv (bed mix — the default `dub_mix`)
+
+Verified combo on host: Python 3.12, torch 2.11 cu128, demucs 4.1.0.
+
+```powershell
+py -3.12 -m venv .venv-demucs ; .venv-demucs\Scripts\Activate.ps1
+pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu128
+pip install demucs
+# htdemucs weights auto-download on first run (torch.hub cache); ~3 GB VRAM per separation
+```
+
+The pipeline needs only `demucs_python = ".venv-demucs/Scripts/python.exe"` (config default).
+`dub_mix = "replace"` or `"duck"` skips the separate stage entirely — no venv needed then.
+
 ## Python
-Use **Python 3.12** on Windows (mid-2026 sweet spot — torch, faster-whisper, ctranslate2, chatterbox all
-ship 3.12 wheels; 3.13 audio/TTS wheel coverage is still spotty). `py -3.12 -m venv ...`.
+Use **Python 3.12** on Windows (mid-2026 sweet spot — torch, faster-whisper, ctranslate2, f5-tts,
+demucs all ship 3.12 wheels; 3.13 audio/TTS wheel coverage is still spotty). `py -3.12 -m venv ...`.
 
 ## Install order (pin torch FIRST so a transitive dep can't swap your CUDA build)
 
@@ -83,7 +100,9 @@ This is a discovery gap, NOT a reason to add more venvs.
 One heavy model at a time:
 - **Stage 1** whisper large-v3 fp16 ~4.5–6 GB → SAFE. `del model; gc.collect(); torch.cuda.empty_cache()` before next stage (empty_cache is a no-op while a ref is alive — drop refs FIRST).
 - **Stage 2** Gemma-3-12B Q4_K_M ~7.5 GB (measured). Windows CUDA sysmem fallback is ON by default → overflow = silent 5–30× slowdown, not OOM. Consider disabling sysmem fallback and running the display on the iGPU. `keep_alive:0` at stage end, then VERIFY free VRAM (nvidia-smi / `ollama ps`) before Stage 3.
-- **Stage 3** Silero runs on **CPU** (~0 VRAM) + whisper-small (~1 GB) → trivially SAFE. The only real GPU contention is Stage 1 ↔ Stage 2.
+- **Stage 3** F5 worker ~0.7–0.8 GiB + whisper-small (~1 GB) → SAFE (Silero fallback: CPU, ~0).
+  The `separate` stage (htdemucs, ~3 GB) runs standalone between assemble and mux.
+  The only real GPU contention is Stage 1 ↔ Stage 2.
 
 ## Laptop thermals (overnight batches)
 Sustained load will thermal-throttle the 4080 Mobile (shows as rising RTF, not errors). Set a lower power

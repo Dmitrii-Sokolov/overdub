@@ -29,19 +29,10 @@ Tags: `[bug] [feature] [chore] [?]` — one line per entry, processed weekly.
 - [feature] ru.srt cue offsets track the SOURCE `[start,end]`, not the (possibly gap-spilled) dub; sub-onset is synced, offset drifts slightly on long clips — dub-tracking timestamps if it reads wrong
 - [chore] verify VRAM: whisper-small loads standalone (Silero is CPU) — the DECISIONS "whisper-small co-resident with TTS" note applied to a reseeding loop that no longer exists; harmless, but the co-residency exception is now moot
 
-## General
-- ~~[chore] yt-dlp is 90+ days old~~ done 2026-07-16 (2026.07.04 is current)
-
 ## Dead-air review deferrals (2026-07-16)
-- ~~[chore] similarity_threshold=0.8 was tuned per-sentence; unit-level joined strings score systematically higher — re-tune~~ resolved 2026-07-17: base raised to 0.9 (user); further tuning deferred until production flags misbehave
 - [chore] --repair id,id contract: after units the atomic re-render grain is the GROUP — update the backlog item's wording when it lands
 - [?] translate keep-length prompt now interacts with L1 stretch: relaxing the length pressure could attack underfill at the root (fuller RU, less stretching) — experiment post-ear-verdict
 - [?] mux duck/bed on multi-hour videos: numpy mix holds ~2-3 GB transient even after chunked RMS/peak — streamed mixing if hours-long sources become real
-
-## Ear verdict on the 3 mix outputs (2026-07-16, user)
-- ~~[bug] native compression drops words: unit [135-137] (17:02) speed ×1.327 → mid-word cutoff~~ shipped 2026-07-17: ceil → 1.1 + compressed-unit gate 0.9 (DECISIONS)
-- ~~[balance] duck −15 dB too shallow — retest −22..−25 dB~~ cancelled 2026-07-17: ear verdict — bed@0dB only, duck dropped
-- ~~[?] bed inapplicable on speech-only sources; bed-RMS census + duck fallback~~ resolved 2026-07-17: bed@0dB is THE mode, census/fallback cancelled; music-heavy sanity-check moved to PLAN
 
 ## Ear-check findings (2026-07-16, F5 control run)
 - [bug] translate: «причина» ×3 подряд (ids 134-137, ~17:00) — no repetition-avoidance in the rolling context; consider a variation hint in the prompt or the per-run glossary pass
@@ -70,12 +61,8 @@ Tags: `[bug] [feature] [chore] [?]` — one line per entry, processed weekly.
 - [bug] synthesize.done() never compares manifest text_tts vs translation.json — a complete manifest skips the stage over stale wavs (bit the renorm A/B; also reachable via `--force --only translate` + plain rerun). Tool now writes complete:false as a workaround; consider a make-style congruence/mtime gate in done() itself
 
 ## Ear findings on the pronounce A/B (2026-07-17, user; pronunciation itself PASSED)
-- ~~[bug] transcribe: id149/150 hard split mid-list~~ + ~~id188/189 "met through >< Xbox Live"~~ FIXED 2026-07-17 (segmentation cluster). Real cause (measured, NOT the cap): _split_overlong branch (1) treats whisper seg_end as a "pause" but 73% of seg_end have gap=0.000s; both cuts landed at gap 0.000, chosen by pure time-midpoint proximity. Fix = gap-gate ≥0.20s + uniform _STOP veto. Tolerance-band (C) and run-on-recovery (D) REJECTED on corpus evidence (C breaks the 12s unit cap; D ~5% precision, cuts inside "Call of|Duty")
-- ~~[feature] transcribe: UPSTREAM ROOT CAUSE — `condition_on_previous_text=False`~~ FIXED 2026-07-17: flipped to True via new Config flag `whisper_condition_on_previous` (default True). Measured: max terminator-free range 206→27s, 314→427 real sentences, both ear cases whole; hallucination A/B on the music video clean (longest repeat run=3 ordinary words). Layered trace proved the break is whisper's punctuation gap, not Qwen (DECISIONS). REMAINING: binding ear-check via a full --force run (PLAN item 0)
 - [?] translate/F5: within-word micro-pause at speed=1.0 (id187 "просто · людьми", no punctuation between) — F5 prosody artifact on a single generation, not slot-fill (speed=1.0) and not the em-dash; verify blind to it (sim 0.99). Reseed would likely fix; low priority, single occurrence noted
-- ~~[feature] translate: prompt must forbid self-transliteration of proper nouns~~ DONE 2026-07-17 (segmentation cluster): names of games/brands stay Latin + canonical casing, pronounce.py owns them; _is_bad echo/no_cyrillic gates updated
 - [?] translate: «катфиш-мов» — anglicism calqued instead of translated ("total catfish move"); generic Qwen quality, glossary/prompt class
-- ~~[ux] assemble: 47/315 ru.srt cues are >12 s~~ DONE 2026-07-17: display-only cue split at clause punctuation (≤6 s/84 ch, flash-guarded), sentences.json untouched
 - [bug] translate/pronounce: OUT-OF-DICT game/company names now hit the pronounce rule fallback and self-agree through verify UNFLAGGED (Bungie→бунджи, Bethesda→бетесда, Terraria→террариа) — silent-loss class, invisible to the 3-video corpus. Only detector: promote pronounce_audit.json to a pre-batch operator gate (fallback-via entries are the candidate WORDS additions)
 - [?] transcribe: _ok_cut vetoes only the 16-word _STOP set, so ~9 corpus cuts still end on a bare verb/pronoun ("you have"/"i think") — accepted (dangling verb ≫ fake-pause cut); widening _STOP is a large unmeasured change, revisit only if the ear flags it. _STOP also still lacks through/from/about (bug B's dangling preposition, now moot since branch 1 is gap-gated)
 

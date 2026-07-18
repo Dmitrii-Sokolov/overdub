@@ -2,7 +2,8 @@
 
 Local-first, semi-automated pipeline for dubbing YouTube videos into Russian.
 
-Download → transcribe → translate → synthesize → mux. Every stage runs on local
+Download → transcribe → translate → synthesize → verify → assemble → mux.
+Every stage runs on local
 hardware — no cloud APIs, no per-minute billing. Built for batch processing of
 hundreds of hours of single-speaker content.
 
@@ -17,16 +18,23 @@ hundreds of hours of single-speaker content.
    translations), prompted to keep length close to the original (it's dubbing,
    not prose). Output per sentence: raw RU for subtitles + normalized RU
    (numbers, acronyms, Latin terms spelled out) for TTS.
-4. **Synthesize (TTS)** — Silero (v4_ru, native Russian, fixed voice `eugene`)
-   generates Russian audio per sentence. No voice cloning — a single narrator
-   voice for every video (cross-lingual cloning was dropped; see DECISIONS).
-5. **Verify** — each synthesized segment is transcribed back with whisper (small)
-   and compared against the normalized TTS text; mismatches trigger
-   regeneration with a new seed. Runs on raw audio, before any speed-up.
-6. **Mux** — `ffmpeg` fits each segment into its time slot (`atempo`, uncapped —
-   extreme speed factors are logged, not fixed), pads with silence, assembles
-   the RU track and muxes the final MKV. The original video stream is never
-   re-encoded.
+4. **Synthesize (TTS)** — ESpeech-TTS-1_RL-V2 (F5-TTS, worker process in its
+   own venv) renders Russian audio. Adjacent sentences group into render units
+   for natural prosody; native speed slot-fills each unit's time span. The
+   narrator is a fixed reference clip (see "Voices" below) — one voice for every
+   video, no per-speaker cloning. Each fresh unit is round-tripped through
+   whisper-small in-stage; low similarity triggers reseed-retry (keep-best).
+   Silero v4_ru (`eugene`, CPU) is the fallback engine.
+5. **Verify** — the independent judge: every render unit is transcribed back
+   with whisper-small and compared against the normalized TTS text (the same
+   normalizer on both sides); failures are flagged in the run report — never
+   hidden, never blocking. Runs on raw audio, before any speed-up.
+6. **Separate + Mux** — htdemucs extracts a no-vocals bed from the original
+   audio; the RU track is the dub laid over that bed at original level
+   (`dub_mix = "bed"`, production default; `replace`/`duck` available). `ffmpeg`
+   fits each unit into its slot (`atempo`, uncapped — extreme speed factors are
+   logged, not fixed), aligns dub loudness to the original and muxes the final
+   MKV. The original video stream is never re-encoded.
 
 ## Output layout (MKV)
 
@@ -48,9 +56,10 @@ embedded as subtitle tracks for free.
 | Download | yt-dlp | |
 | STT | faster-whisper large-v3 | CUDA |
 | Translation | Gemma-3-12B Q4 via Ollama | OpenAI-compatible endpoint — swap-friendly |
-| TTS | Silero v4_ru (CPU) | native RU, fixed voice `eugene`; pluggable engine adapter |
+| TTS | ESpeech-TTS-1_RL-V2 (F5-TTS) | GPU worker in `.venv-f5tts`; pluggable adapter; Silero v4_ru (CPU) is the fallback |
 | Verification | faster-whisper small | ASR round-trip check |
-| Mux | ffmpeg | atempo fitting, MKV output |
+| Separation | htdemucs (Demucs) | no-vocals bed for the mix, `.venv-demucs` |
+| Mux | ffmpeg | atempo fitting, bed mix, MKV output |
 
 ## Hardware targets
 
@@ -58,22 +67,25 @@ embedded as subtitle tracks for free.
   video with explicit model unload between them — heavy models don't fit
   simultaneously. (Per-stage batching across many videos — one model load per
   stage — is a Phase 2 option.)
-- **Secondary (later):** Intel Arc B390 iGPU. whisper.cpp (SYCL/OpenVINO) and
-  llama.cpp (SYCL) are proven there for STT/translation; Silero TTS already runs
-  on CPU, so the synthesis stage is GPU-independent.
+- **Secondary (deferred):** Intel Arc B390 iGPU. whisper.cpp (SYCL/OpenVINO) and
+  llama.cpp (SYCL) are proven there for STT/translation; F5 on XPU is an
+  unproven spike — Silero (CPU) would be the safe TTS there. See PLAN deferred.
 
-Throughput budget: ≤ x5 video duration. TTS is near-free (Silero on CPU, RTF
-~0.02–0.3); the real cost is transcription + translation. Measure end-to-end on host.
+Throughput budget: ≤ x5 video duration — measured ~×1.3 realtime end-to-end on
+the host (budget cleared ~3.8×). Translation is the bottleneck (~45% of
+wall-clock); synthesis+verify is the co-bottleneck (F5 at ~0.7 GiB VRAM).
 
 ## Constraints / assumptions
 
 - Single speaker per video (covers ~95% of target content). No diarization.
-- Local only — no cloud STT, translation, or TTS.
+- Local only — no cloud STT or TTS. Translation is local by default; an opt-in
+  cloud-translate mode is approved (DECISIONS 2026-07-16) but not built yet.
 - Source is always English, output is always Russian.
 - No tempo compression cap — segments are sped up as much as their slot
   requires; occasional broken segments are acceptable losses (PoC).
-- Fixed TTS voice (Silero `eugene`) — no voice cloning; "same voice as the
-  speaker" was dropped after the day-1 engine bake-off.
+- Fixed narrator voice (an F5 reference clip) — "same voice as the speaker"
+  (cloning the source speaker cross-lingually) was dropped after the day-1
+  engine bake-off; Silero `eugene` is the fallback narrator.
 
 ## Voices, cloning and the law
 
@@ -112,6 +124,9 @@ That flexibility comes with rules. This section is not legal advice.
 
 ## Status
 
-Research / proof of concept — Phase 1 complete: the pipeline runs turn-key
-(URL in → MKV out) on real videos. TTS engine migration (Silero → F5-TTS/ESpeech)
-in progress. See `.claude/PLAN.md`, `.claude/DECISIONS.md`.
+Research / proof of concept — the pipeline runs turn-key (URL in → MKV out) on
+real videos, batch mode included. Closed: Phase 1 MVP, the F5/ESpeech engine
+migration, dead-air elimination, batch queue + stop switch, proper-noun
+pronunciation, the segmentation root fix, and the Gemma-3-12B translator swap
+(2026-07-18). Current roadmap: `.claude/PLAN.md`; rationale history:
+`.claude/DECISIONS.md`. Setup: `SETUP.md`; verified stack facts: `STACK.md`.

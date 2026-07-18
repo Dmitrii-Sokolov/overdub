@@ -1,5 +1,17 @@
 # CHANGELOG
 
+## 2026-07-18 — Docs audit: README/STACK/SETUP caught up with the code
+- README pipeline/stack/status still described the Silero era (contradicting its own "Voices"
+  section); STACK's header pipeline line still said Chatterbox and Stage 3 had no section for
+  the actual production engine. Both now document F5/ESpeech production + Silero fallback,
+  the separate stage + bed mix, and Gemma/F5 VRAM figures
+- SETUP: added the missing `.venv-demucs` section — separate.py's error message said "create
+  .venv-demucs per SETUP.md" but SETUP never covered it (verified combo from the live venv:
+  py 3.12, torch 2.11 cu128, demucs 4.1.0)
+- INBOX: purged resolved (struck-through) entries; deleted the 3 superseded session conspectus
+  from .claude-tasks/ (each declared superseded by the next; the 2026-07-18 handoff kept).
+  Audit also confirmed: all 6 test suites green, no TODO/stub code in the package
+
 ## 2026-07-18 — Sonnet cloud-translate A/B spike (sub-agents, not yet in pipeline)
 - Ran Claude Sonnet on the SAME 8 videos / 508 sentences / segmentation as the Gemma A/B, via 8
   parallel Sonnet sub-agents (one per video, same prompt rules) — a research spike, NOT the pipeline

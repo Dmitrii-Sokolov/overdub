@@ -4,7 +4,7 @@ Local-only YouTube→Russian dubbing. One heavy GPU model at a time; explicit un
 Every fact below is tagged by confidence from the adversarial verification pass. **Load-bearing empirical
 unknowns are called out explicitly — do not treat them as settled.**
 
-Pipeline: `yt-dlp → faster-whisper large-v3 → Gemma-3-12B (Ollama) → Chatterbox Multilingual → whisper-small verify → ffmpeg (MKV)`
+Pipeline: `yt-dlp → faster-whisper large-v3 → Gemma-3-12B (Ollama) → ESpeech/F5-TTS (worker) → whisper-small verify → htdemucs bed → ffmpeg (MKV)`
 
 ---
 
@@ -177,15 +177,38 @@ text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()  # defen
 
 ---
 
-## Stage 3 — TTS: Silero v4_ru (fixed voice) + whisper-small verify
+## Stage 3 — TTS: ESpeech/F5 (production) + Silero v4_ru (fallback) + whisper-small verify
 
-> Engine chosen after the day-1 ear test **rejected Chatterbox** — its Russian
-> was unacceptable even without cloning (see DECISIONS.md). Silero: native
-> Russian, fixed speakers (no cloning), tiny, CPU-fast, built-in stress.
+> Engine history: the day-1 ear test **rejected Chatterbox** (unusable Russian
+> even without cloning); Silero v4_ru carried Phase 1; bake-off #2 (2026-07-16,
+> ear) made **ESpeech-TTS-1_RL-V2 (F5-TTS) the production engine**. See
+> DECISIONS.md + bakeoff/tts-research-2026-07.md.
+
+### Production: ESpeech-TTS-1_RL-V2 (F5-TTS) — worker in `.venv-f5tts`
+
+- **Install / assets:** SETUP.md ("F5/ESpeech TTS venv + assets") — checkpoint
+  ~2.7 GB + narrator reference clip (wav + exact transcript; config
+  `f5_ref_audio` / `f5_ref_text`; rights caveat in README "Voices").
+- **Adapter:** `overdub/tts/f5.py` spawns `overdub/tts/f5_worker.py` with the
+  venv's python; line-JSON over stdio, reader-thread timeouts, id echo,
+  respawn-once, 3-strike `TtsFatalError`. Startup ~30 s; warm synth ~×1.1 of
+  audio duration; RTF 0.39 cold / ~0.60 thermally loaded; ~0.7–0.8 GiB VRAM.
+- **Output:** 24 kHz mono (vocos-mel-24khz — a checkpoint fact, not a knob);
+  RUAccent (turbo3.1) puts stresses in-worker.
+- **Seed-capable:** reseed-retry lives in the synthesize stage (keep-best by
+  round-trip similarity, seeds base+1..+N).
+- **Native speed / slot-fill:** the duration canvas is deterministic
+  (`out ≈ ref_sec·gen_bytes/ref_bytes/speed`); `plan_speed()` stretches to the
+  unit's source span (floor 0.75×base) or mildly compresses (ceil 1.1×base —
+  native compression ≥~1.3 DROPS words; atempo does the top-up, ear 2026-07-17).
+- **Short-text class:** gen texts <10 UTF-8 bytes force local speed 0.3 and
+  garble — mitigated upstream (ultra-short merge in transcribe + unit grouping).
+
+### Fallback: Silero v4_ru (fixed voice, CPU)
 
 **Install** — no pip package required; `torch.hub` fetches the model. Silero
-needs only `torch` + `torchaudio` (+ `omegaconf`), so it can share the ASR venv
-— the separate `.venv-tts` existed only for Chatterbox and can be retired.
+needs only `torch` + `torchaudio` (+ `omegaconf`), so it shares the ASR venv
+(`.venv-asr`); the Chatterbox-era `.venv-tts` is retired.
 ```powershell
 pip install omegaconf            # usually already present; torch/torchaudio already installed
 # model auto-downloads on first torch.hub.load (~38 MB, cached in ~/.cache/torch/hub)
@@ -221,7 +244,7 @@ RTF ~0.02–0.3 on CPU** — TTS is no longer a throughput factor.
 **Controls / gotchas:**
 - **Speech rate / pauses** via SSML (`<prosody rate="...">`, `<break time="400ms"/>`), but the pipeline fits timing with `atempo` at assembly anyway — SSML rate is secondary.
 - **Manual stress**: put `+` after the stressed vowel (`«зам+ок»`) to fix homographs / names; `put_accent=True` handles the common case automatically.
-- **Deterministic** — no temperature/seed; same text → same audio. Good for a reproducible verify gate, BUT a failed segment can't be "reseeded" — it gets flagged, not regenerated (differs from a neural cloner; changes the Phase 2 retry design).
+- **Deterministic** — no temperature/seed; same text → same audio. Good for a reproducible verify gate, BUT a failed segment can't be "reseeded" — it gets flagged, not regenerated (the F5 path reseeds; Silero failures flag directly).
 - **Per-call text length** bounded (~1000 chars) — per-sentence input is fine.
 - **Sibilant hiss** on some speakers (baya) — de-ess / `afftdn` post-pass if ever needed; eugene is clean.
 - Normalization (GPU→джи-пи-ю, x2→в два раза) still mandatory before synthesis.
@@ -245,4 +268,4 @@ def ollama_unload(model="gemma3:12b"):
     requests.post("http://localhost:11434/api/generate", json={"model": model, "keep_alive": 0})
     # then VERIFY release (ollama ps / nvidia-smi) before loading Stage-3 PyTorch models
 ```
-Order: Stage1 whisper → `unload` → Stage2 Ollama → `ollama_unload` + verify free VRAM → Stage3 Silero (CPU) + whisper-small. With Silero on CPU, Stage 3 barely touches VRAM — the only real juggling is whisper-large ↔ Qwen.
+Order: Stage1 whisper → `unload` → Stage2 Ollama → `ollama_unload` + verify free VRAM → Stage3 F5 worker (~0.7 GiB) + whisper-small (~1 GB). Stage 3 is light — the only real juggling is whisper-large ↔ Gemma. (Silero fallback: CPU, ~zero VRAM. The `separate` stage — htdemucs, ~3 GB — runs standalone between assemble and mux.)
