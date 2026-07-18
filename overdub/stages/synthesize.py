@@ -121,6 +121,25 @@ class SynthesizeStage:
             return False                                   # torn manifest → re-run
         if not doc.get("complete", True):
             return False
+        # congruence gate: a complete manifest must match what the CURRENT translation
+        # would have it render — otherwise `--force --only translate` + a plain rerun
+        # skips this stage over stale wavs (the one forbidden silent class; bit the
+        # renorm A/B). Compares the manifest's OWN units against current text only, so
+        # a group_gap_max change stays WARN-only below and never surprise-regroups.
+        try:
+            segs = json.loads(ctx.work.translation.read_text(encoding="utf-8"))
+            by_id = {s["id"]: (s.get("text_tts") or "").strip() for s in segs}
+            units = units_of(doc)
+            stale = sorted(i for u in units for i in u["ids"]) != sorted(by_id) or any(
+                " ".join(by_id[i] for i in u["ids"]).strip() != (u.get("text_tts") or "").strip()
+                for u in units)
+            if stale:
+                print("       [info] synthesize: translation changed since manifest — "
+                      "re-synthesizing stale units", file=sys.stderr)
+                return False
+        except Exception:
+            pass                                           # unreadable translation.json →
+                                                           # keep the legacy gate (never crash)
         try:                                               # best-effort staleness warnings —
             key = synth_key(ctx.cfg)                       # done() must never crash the skip path
             prior_key = doc.get("synth_key") or _legacy_key(doc)

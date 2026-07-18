@@ -58,7 +58,6 @@ Tags: `[bug] [feature] [chore] [?]` — one line per entry, processed weekly.
 
 ## 2026-07-17 session
 - [?] diagnostic: per-unit measured trailing silence in the placed dub (L1 fill honesty — complements the predicted-vs-actual duration heuristic; born from the "measure, don't predict" discussion)
-- [bug] synthesize.done() never compares manifest text_tts vs translation.json — a complete manifest skips the stage over stale wavs (bit the renorm A/B; also reachable via `--force --only translate` + plain rerun). Tool now writes complete:false as a workaround; consider a make-style congruence/mtime gate in done() itself
 
 ## Ear findings on the pronounce A/B (2026-07-17, user; pronunciation itself PASSED)
 - [?] translate/F5: within-word micro-pause at speed=1.0 (id187 "просто · людьми", no punctuation between) — F5 prosody artifact on a single generation, not slot-fill (speed=1.0) and not the em-dash; verify blind to it (sim 0.99). Reseed would likely fix; low priority, single occurrence noted

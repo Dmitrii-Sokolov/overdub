@@ -1,5 +1,13 @@
 # CHANGELOG
 
+## 2026-07-18 — fix: synthesize.done() congruence gate (stale-wav skip closed)
+- done() now compares the manifest's own units against the CURRENT translation.json text_tts
+  (same join as verify's reference); mismatch or uncovered ids → stage re-runs and re-renders
+  exactly the changed units via the existing reusable() path. Closes the INBOX 2026-07-17 bug:
+  `--force --only translate` + plain rerun silently skipped synthesize over stale wavs (bit the
+  renorm A/B). Grouping changes stay WARN-only (no surprise regroup); unreadable translation
+  keeps legacy behavior. New tests/test_synthesize_done.py (8 cases); all 7 suites green
+
 ## 2026-07-18 — Docs audit: README/STACK/SETUP caught up with the code
 - README pipeline/stack/status still described the Silero era (contradicting its own "Voices"
   section); STACK's header pipeline line still said Chatterbox and Stage 3 had no section for
