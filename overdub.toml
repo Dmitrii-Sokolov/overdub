@@ -11,9 +11,9 @@
 # whisper_condition_on_previous = true   # context → proper punctuation; false only if a
 #                                        # source makes whisper loop on repeats
 
-# --- translation (Qwen3-14B via Ollama native /api/chat, think:false) ---
+# --- translation (Gemma-3-12B via Ollama native /api/chat) ---
 # ollama_base_url = "http://localhost:11434"
-# ollama_model = "qwen3:14b"
+# ollama_model = "gemma3:12b"
 # num_ctx = 4096
 # context_window = 4
 

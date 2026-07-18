@@ -1,4 +1,4 @@
-"""Translate stage (Phase 1): Qwen3-14B via Ollama, context-aware per sentence.
+"""Translate stage (Phase 1): Gemma-3-12B via Ollama, context-aware per sentence.
 
 Design: the translate-stage-design workflow (3-approach panel + lens judges + synthesis),
 see DECISIONS. One LLM call per sentence, in id order — NO batching (batching risks a silent
@@ -6,10 +6,10 @@ sentence merge/drop, the one failure this pipeline forbids). The LLM returns ONL
 spoken Russian (text_ru); text_tts is derived by the deterministic Python normalizer that the
 verify stage also imports, so the round-trip comparison is exact by construction.
 
-Endpoint: the NATIVE Ollama /api/chat with `think: false` — NOT the OpenAI /v1 path. Empirically,
-qwen3:14b ignores an in-prompt `/no_think` on many samples and its reasoning is truncated by
-num_predict, leaving message.content EMPTY; the native `think: false` toggle reliably disables
-thinking (~3x faster, no wasted reasoning tokens). See DECISIONS.
+Endpoint: the NATIVE Ollama /api/chat. Gemma 3 has no thinking mode and its chat template
+rejects a system role, so SYSTEM is folded into the single user turn and no "think" key is
+sent (Ollama 400s if "think" reaches a non-thinking model). Gemma replaced Qwen3-14B on
+2026-07-18 after an 8-video A/B — tighter, more natural, fewer flags; ~16% slower. See DECISIONS.
 
 Robustness: validate every output -> reseed-retry with a temperature bump -> flagged English
 fallback, never a dropped or blanked slot. Progress is appended per sentence to translation.jsonl
@@ -50,11 +50,9 @@ SYSTEM = (
     '- Keep numbers as digits (e.g. "4080", "50%", "24/7"). Do NOT spell numbers out in words '
     "— that is handled later.\n"
     "- Output ONLY the Russian translation of SENTENCE — a single line. No quotes, no English, "
-    "no labels, no notes, no explanations.\n"
-    "/no_think"          # weak fallback; the load-bearing switch is native think:false in _chat
+    "no labels, no notes, no explanations."
 )
 
-_THINK = re.compile(r"<think>.*?</think>", re.DOTALL)
 _LABEL = re.compile(r"^\s*(\[RU\]|RU:|Russian:|Перевод:)\s*", re.IGNORECASE)
 _CYR = re.compile(r"[А-Яа-яЁё]")
 _ALPHA = re.compile(r"[A-Za-zА-Яа-яЁё]")
@@ -66,8 +64,8 @@ _REFUSAL = re.compile(
 
 
 def _parse(raw: str | None) -> str:
-    """Response content -> single clean Russian line (defensive: strip think-tags, quotes, labels)."""
-    text = _THINK.sub("", raw or "").strip().strip('"“”«»`').strip()
+    """Response content -> single clean Russian line (defensive: strip quotes, labels)."""
+    text = (raw or "").strip().strip('"“”«»`').strip()
     text = _LABEL.sub("", text)
     return text.splitlines()[0].strip() if text.strip() else ""
 
@@ -118,12 +116,14 @@ def _build_user(target_en: str, pairs: list[tuple[str, str]], char_cap: int) -> 
 
 
 def _chat(root: str, cfg, user: str, temperature: float, seed: int) -> str:
-    """One native Ollama /api/chat turn with thinking disabled. Returns message.content (may raise)."""
+    """One native Ollama /api/chat turn. Returns message.content (may raise).
+
+    Gemma 3 has no thinking mode and its chat template rejects a system role, so SYSTEM is
+    folded into the single user turn and no "think" key is sent (Ollama 400s otherwise).
+    """
     body = json.dumps({
         "model": cfg.ollama_model,
-        "messages": [{"role": "system", "content": SYSTEM},
-                     {"role": "user", "content": user}],
-        "think": False,                      # load-bearing: reliably suppresses qwen3 reasoning
+        "messages": [{"role": "user", "content": SYSTEM + "\n\n" + user}],
         "stream": False,
         "options": {
             "num_ctx": cfg.num_ctx,          # Ollama preallocates KV for the FULL num_ctx
@@ -187,7 +187,7 @@ def _preflight(root: str, model: str) -> None:
 
 
 def _unload(root: str, model: str) -> None:
-    """Best-effort keep_alive:0 so Qwen frees VRAM before the whisper-large-contending stages."""
+    """Best-effort keep_alive:0 so the translation model frees VRAM before whisper-large stages."""
     try:
         body = json.dumps({"model": model, "messages": [], "keep_alive": 0}).encode("utf-8")
         req = urllib.request.Request(

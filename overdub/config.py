@@ -30,9 +30,9 @@ class Config:
                                                  # no repetition-loop on the music video. Flip
                                                  # to False only if a source makes whisper loop
 
-    # translation — Qwen3-14B via Ollama native /api/chat (think:false; see stages/translate.py)
+    # translation — Gemma-3-12B via Ollama native /api/chat (see stages/translate.py)
     ollama_base_url: str = "http://localhost:11434"
-    ollama_model: str = "qwen3:14b"
+    ollama_model: str = "gemma3:12b"
     num_ctx: int = 4096
     context_window: int = 4          # previous OK sentence pairs fed as rolling context
     ollama_timeout_s: float = 120.0
