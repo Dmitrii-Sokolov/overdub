@@ -1,5 +1,20 @@
 # CHANGELOG
 
+## 2026-07-18 — Sonnet cloud-translate A/B spike (sub-agents, not yet in pipeline)
+- Ran Claude Sonnet on the SAME 8 videos / 508 sentences / segmentation as the Gemma A/B, via 8
+  parallel Sonnet sub-agents (one per video, same prompt rules) — a research spike, NOT the pipeline
+  path. Reused Gemma's sentences.json so only the translator varied; built translation.json through
+  the same normalize/_is_bad; published a Gemma-vs-Sonnet artifact
+- Findings: Sonnet holds length near 1:1 (median 1.00 vs Gemma 1.06 — best dubbing-fit of the three
+  models), more natural, and corrects ASR errors both local models translated literally (CLAWD→
+  Claude, entropic→Anthropic, «дообучение» for fine-tuning). Flag counts (Sonnet 7 vs Gemma 4) are
+  noise — all the «как ИИ/модель» refusal-regex false positive (INBOX); real flags 0/0
+- Speed: ~3× faster than Gemma without parallelism (988s cumulative vs 2691s), order-of-magnitude
+  faster in parallel (~4 min wall for 8 agents vs ~45 min). Cost: ~$3 per hour of source video (cloud)
+- No adoption decision yet — awaiting the user's read-through; if adopted, the in-pipeline opt-in
+  Anthropic path still has to be built. completeness-check + babble heuristic returned to the backlog
+  tail (triggers: model errors on short sentences / a narrator-voice or TTS-engine change)
+
 ## 2026-07-18 — Gemma-3-12B replaces Qwen3-14B (translation model swap)
 - 8-video A/B on identical `sentences.json` (the Qwen stats batch's finished 8; only the translator
   varied — bed + downstream byte-identical). 508 sentences: Gemma tighter (len ratio median 1.062

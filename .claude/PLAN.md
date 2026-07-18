@@ -6,24 +6,29 @@ Sample workdirs: `work/` (Silero baselines, read-only); `work-exp/context-earche
 switch models); `work-exp/gemma-ab/` (Gemma, the same 8 — the A/B set). A/B report artifact
 published (Qwen vs Gemma, 508 sentences). Report triage: any *_flag or speed_factor>1.8.
 
-1. **Sonnet cloud-translate A/B** (TOP PRIORITY) — build the opt-in Anthropic path (approved
-   DECISIONS 2026-07-16, NOT yet in code — the translate stage is Ollama-only) behind an
-   off-by-default flag, then A/B Claude Sonnet vs Gemma-3-12B on the same `sentences.json` (same
-   method as Qwen→Gemma: reuse segmentation, only the translator varies). Local Gemma stays the
-   default; cloud is opt-in, never a silent fallback. Watch length — whether Sonnet runs fuller or
-   tighter shifts the slot-fill stretch (Open questions).
+1. **Sonnet cloud-translate** (TOP PRIORITY) — A/B spike DONE 2026-07-18 via Sonnet sub-agents (NOT
+   yet the pipeline path), same 508 sentences / segmentation as the Gemma A/B. Findings: Sonnet
+   holds length near 1:1 (median 1.00 vs Gemma 1.06 — best dubbing-fit), reads more natural, and
+   fixes ASR errors the local models translated literally (CLAWD→Claude, «дообучение»); the +flags
+   are gate false-positives («как ИИ/модель»), real flags 0/0. **Speed: ~3× faster than Gemma
+   without parallelism, order-of-magnitude faster in parallel** (8 agents, ~4 min wall vs Gemma's
+   ~45 min). **Cost: ~$3 per hour of source video** (cloud, Sonnet). Artifact published (Gemma vs
+   Sonnet). REMAINING: user read-through verdict → if adopted, build the opt-in Anthropic path in
+   the translate stage (approved DECISIONS 2026-07-16; stage is Ollama-only today) behind an
+   off-by-default flag. Local Gemma stays the default; cloud is opt-in, never a silent fallback.
 
 Backlog (second tier): `--repair id,id --seed N` (point re-synth + remux; grain = the GROUP after
 units); per-run terminology glossary; singing/music detection → keep original (no robot singing);
 loudnorm/EQ on the dub; `--subs-only` fast path; morning triage HTML for batches (flagged segments
 with players); cross-video stage pipelining (translate GPU ∥ synth/verify) if nights get tight;
 fix the out/ export name collision (identical `<title> [<id>].mkv` across models overwrites — namespace
-exports per run/model or per work_root).
+exports per run/model or per work_root). — tail (lowest priority, keep for later): translation
+completeness check (EN↔RU content-word ratio / back-translation on outliers) — no current evidence
+the model drops words on short sentences, but cheap insurance if it ever does; babble duration
+heuristic (expected-vs-actual unit duration → flag garbled synth the ASR round-trip misses) — output
+is good now, ADD IT before any narrator-voice or TTS-engine change.
 
-Deferred — NOT near-term (revisit when a need surfaces): babble duration heuristic (expected vs
-actual unit duration → flag garbled-but-recognisable synth the ASR round-trip misses, e.g.
-RyvXxApfHkk id12; value is at batch-reliability scale, not the current focus); translation
-completeness check (round-trip is blind to a dropped word — same batch-scale insurance); gender-matched
+Deferred — NOT near-term (revisit when a need surfaces): gender-matched
 narrator (median-F0 → M/F reference; blocked on a female PD reference);
 multi-speaker violation detector (ECAPA vs dominant-voice centroid → report flag; full diarization
 stays out of scope); UTMOS/MOS verification (high cost, low effect until batch stats prove the
