@@ -6,19 +6,12 @@ Sample workdirs: `work/` (Silero baselines, read-only); `work-exp/context-earche
 switch models); `work-exp/gemma-ab/` (Gemma, the same 8 — the A/B set). A/B report artifact
 published (Qwen vs Gemma, 508 sentences). Report triage: any *_flag or speed_factor>1.8.
 
-1. **Translation completeness check** (NEW — now the top verify blind spot) — the ASR round-trip
-   proves TTS fidelity to `text_ru`, NOT that `text_ru` fully covers the English. Gemma's tighter
-   phrasing occasionally drops a word, unflagged (measured: Dmgujo id1, 3 of 4 adverbs). Same
-   silent-loss class as the out-of-dict pronunciation echo. Cheap detector candidates: EN↔RU
-   content-word count ratio, or a back-translation spot-check on length-ratio outliers.
-2. **Finish the stats batch on Gemma** — 15 of 23 videos unrun (batch stopped at 8/23 to switch
-   models). Re-run `--batch` on Gemma for the full stat set, incl. the two long stress-tests
-   (Karpathy 3.5 h #18, Jensen 1.7 h #14) — watch those for whisper repetition loops (the
-   context=True known risk) and atempo behaviour on long sources.
-3. **Babble duration heuristic** (~1 d) — expected (canvas formula) vs actual unit duration →
-   report flag; ASR round-trip proven blind to garbled-but-recognisable audio (id101 sim 1.0
-   ear-bad; RyvXxApfHkk id12 = whisper CJK-garble both models dutifully "translated"). Value
-   activates at batch scale. MOS/UTMOS deliberately NOT included — see Deferred.
+1. **Sonnet cloud-translate A/B** (TOP PRIORITY) — build the opt-in Anthropic path (approved
+   DECISIONS 2026-07-16, NOT yet in code — the translate stage is Ollama-only) behind an
+   off-by-default flag, then A/B Claude Sonnet vs Gemma-3-12B on the same `sentences.json` (same
+   method as Qwen→Gemma: reuse segmentation, only the translator varies). Local Gemma stays the
+   default; cloud is opt-in, never a silent fallback. Watch length — whether Sonnet runs fuller or
+   tighter shifts the slot-fill stretch (Open questions).
 
 Backlog (second tier): `--repair id,id --seed N` (point re-synth + remux; grain = the GROUP after
 units); per-run terminology glossary; singing/music detection → keep original (no robot singing);
@@ -27,9 +20,11 @@ with players); cross-video stage pipelining (translate GPU ∥ synth/verify) if 
 fix the out/ export name collision (identical `<title> [<id>].mkv` across models overwrites — namespace
 exports per run/model or per work_root).
 
-Deferred — NOT near-term (revisit when a need surfaces): optional cloud translation (Anthropic,
-opt-in, OFF by default — DECISIONS 2026-07-16; Gemma is now the local default it must not silently
-replace); gender-matched narrator (median-F0 → M/F reference; blocked on a female PD reference);
+Deferred — NOT near-term (revisit when a need surfaces): babble duration heuristic (expected vs
+actual unit duration → flag garbled-but-recognisable synth the ASR round-trip misses, e.g.
+RyvXxApfHkk id12; value is at batch-reliability scale, not the current focus); translation
+completeness check (round-trip is blind to a dropped word — same batch-scale insurance); gender-matched
+narrator (median-F0 → M/F reference; blocked on a female PD reference);
 multi-speaker violation detector (ECAPA vs dominant-voice centroid → report flag; full diarization
 stays out of scope); UTMOS/MOS verification (high cost, low effect until batch stats prove the
 duration heuristic insufficient); unit sim threshold re-tune (base 0.9 — revisit only if production
@@ -38,11 +33,12 @@ F5/Gemma-on-XPU spike).
 
 ## Open questions
 - **"Keep length" ↔ slow speech.** The SYSTEM prompt asks the LLM to keep RU CLOSE IN LENGTH to the
-  EN so it fits the same time slot. Too long → atempo compresses (word-drop risk above ~1.3×); too
-  short → the slot-fill stretch slows the speech (the "slightly slow / large inter-word gaps" the
-  user heard on the item-0 dub) or leaves gaps. Gemma is tighter → marginally more stretch. Lever:
-  RELAX the keep-length pressure for fuller RU (less stretch, more compression) — an experiment, a
-  trade not a free win. `f5_speed_floor` caps max stretch at the cost of inter-phrase gaps.
+  EN so it fits the same slot; every sentence is then fitted to its slot (atempo compress if long,
+  F5 slot-fill stretch if short). Measured Gemma vs Qwen (508 segs): Gemma ~2% shorter (raw
+  audio/slot 0.981 vs 0.997), stretched on 46% of segments vs 39%, mean tts_speed 0.977 vs 0.989,
+  leftover silence 1.2% vs 0.8% — its tightness pushes marginally toward the slow-speech end. Lever:
+  RELAX the keep-length pressure for fuller RU (less stretch, more compression) — a trade, not free.
+  `f5_speed_floor` caps max stretch at the cost of inter-phrase gaps.
 - Silero stress on names/homographs — a `+`-stress dictionary pass? (fallback engine only, low stakes)
 - ~~Similarity metric/threshold~~ RESOLVED: char-level SequenceMatcher(autojunk=False); unit-level 0.9.
 - ~~RTF end-to-end~~ RESOLVED (2026-07-16): translate is the bottleneck. Gemma adds ~16% there.
