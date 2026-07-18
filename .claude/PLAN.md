@@ -6,16 +6,13 @@ Sample workdirs: `work/` (Silero baselines, read-only); `work-exp/context-earche
 switch models); `work-exp/gemma-ab/` (Gemma, the same 8 — the A/B set). A/B report artifact
 published (Qwen vs Gemma, 508 sentences). Report triage: any *_flag or speed_factor>1.8.
 
-1. **Sonnet cloud-translate** (TOP PRIORITY) — A/B spike DONE 2026-07-18 via Sonnet sub-agents (NOT
-   yet the pipeline path), same 508 sentences / segmentation as the Gemma A/B. Findings: Sonnet
-   holds length near 1:1 (median 1.00 vs Gemma 1.06 — best dubbing-fit), reads more natural, and
-   fixes ASR errors the local models translated literally (CLAWD→Claude, «дообучение»); the +flags
-   are gate false-positives («как ИИ/модель»), real flags 0/0. **Speed: ~3× faster than Gemma
-   without parallelism, order-of-magnitude faster in parallel** (8 agents, ~4 min wall vs Gemma's
-   ~45 min). **Cost: ~$3 per hour of source video** (cloud, Sonnet). Artifact published (Gemma vs
-   Sonnet). REMAINING: user read-through verdict → if adopted, build the opt-in Anthropic path in
-   the translate stage (approved DECISIONS 2026-07-16; stage is Ollama-only today) behind an
-   off-by-default flag. Local Gemma stays the default; cloud is opt-in, never a silent fallback.
+1. **Sonnet semi-automatic translate — live-run the primary route.** Verdict recorded
+   2026-07-18 (DECISIONS): quality noticeably better, much faster, replaces the heaviest stage;
+   both routes stay — Gemma = local in-pipeline default, Sonnet (subscription, cloud) = PRIMARY,
+   in semi-automatic mode (sub-agents at the translate seam). Runbook: README "Running" route B.
+   Open: harden the recipe on the first real batch beyond the spike (e.g. the remaining 15/23
+   stats-batch videos). The in-pipeline Anthropic API flag stays approved but deferred — build
+   only if the manual seam becomes the bottleneck.
 
 Backlog (second tier): `--repair id,id --seed N` (point re-synth + remux; grain = the GROUP after
 units); per-run terminology glossary; singing/music detection → keep original (no robot singing);
@@ -52,9 +49,10 @@ F5/Gemma-on-XPU spike).
 Phase 0 skeleton ✅ · Phase 1 MVP turn-key URL→MKV ✅ · Phase 3 TTS → F5/ESpeech ✅ · Dead-air ✅ ·
 Batch queue + stop switch ✅ · Proper nouns ✅ · Segmentation cluster + whisper-context ROOT fix ✅ ·
 **Item 0 whisper-context ear-validated ✅ (2026-07-18)** · **Gemma-3-12B migration ✅ (2026-07-18,
-A/B-driven; Qwen removed)**.
+A/B-driven; Qwen removed)** · **Sonnet A/B + verdict: semi-auto = primary route ✅ (2026-07-18)**.
 
 Stack pins, verified APIs and setup: STACK.md + SETUP.md. Translation: Gemma-3-12B (Ollama),
-`gemma3:12b`, default by A/B 2026-07-18 (Qwen3-14B removed). TTS: ESpeech-TTS-1_RL-V2 (F5-TTS,
+`gemma3:12b`, local in-pipeline default by A/B 2026-07-18 (Qwen3-14B removed); PRIMARY route =
+Sonnet semi-automatic (DECISIONS 2026-07-18, runbook README "Running"). TTS: ESpeech-TTS-1_RL-V2 (F5-TTS,
 .venv-f5tts) — production by ear 2026-07-16; narrator = ESpeech demo reference (rights caveat in
 README). Silero v4/v5 = fallback; Chatterbox rejected day-1.

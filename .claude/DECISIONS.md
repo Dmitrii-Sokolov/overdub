@@ -798,6 +798,24 @@ Qwen's native `think:false` + separate system message. It was built first as two
 byte-identical (proven); once Gemma won, the flags AND the Qwen branch were removed (YAGNI). Default
 `ollama_model` qwen3:14b → gemma3:12b (~7.5 GB VRAM loaded, was ~8.6 GB).
 
+## 2026-07-18 — Sonnet verdict (user read-through): both translation routes stay; Sonnet semi-automatic is the PRIMARY route
+
+**User verdict on the 508-sentence A/B read-through:** Sonnet's quality is noticeably
+better and its speed significantly higher (~3× serial, order-of-magnitude in parallel) —
+and, notably, it replaces the pipeline's heaviest, longest stage (translate is the local
+bottleneck). Both routes are declared good and both stay:
+- **Gemma-3-12B (local)** — good quality, free, offline, slow; remains the in-pipeline
+  default. The local path must keep working (hard constraint unchanged).
+- **Claude Sonnet (cloud)** — requires a subscription; better quality, much faster.
+
+**Primary route: Sonnet in SEMI-AUTOMATIC mode** — the sub-agent workflow proven by the
+A/B spike (transcribe in-pipeline → Sonnet sub-agents write translation.json under the
+translate contract → pipeline resumes from synthesize), NOT an in-pipeline API
+integration. The approved opt-in Anthropic API path (2026-07-16) stays approved but is no
+longer the next step — build it only if the semi-automatic seam's manual step becomes the
+bottleneck. Cloud translation remains explicit and per-run, never a silent fallback.
+Runbook for both routes: README "Running".
+
 **Top blind spot after this: translation COMPLETENESS is unmeasured.** verify's ASR round-trip
 checks TTS fidelity to `text_ru`, not that `text_ru` is a complete translation of the English.
 Gemma's tightness occasionally drops a word (measured: 1 of 3 adverbs on Dmgujo id1) and nothing

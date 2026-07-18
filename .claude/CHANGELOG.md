@@ -1,5 +1,16 @@
 # CHANGELOG
 
+## 2026-07-18 — Sonnet verdict: semi-automatic cloud translate is the primary route
+- User read-through verdict on the A/B: Sonnet noticeably better and much faster; both routes
+  declared good — Gemma = good quality, local, slow (in-pipeline default); Sonnet = subscription,
+  better quality, cloud, replaces the heaviest stage. PRIMARY route = Sonnet in semi-automatic
+  mode (sub-agent workflow at the translate seam). In-pipeline Anthropic API flag stays approved
+  but deferred. DECISIONS 2026-07-18
+- Runbook added to README ("Running"): route A — turn-key local batch (Gemma); route B —
+  transcribe-only batch → Sonnet sub-agents write translation.json under the translate contract
+  (text_tts via normalize_for_tts in Python, _is_bad gates) → plain rerun resumes from
+  synthesize. CLAUDE.md hard-constraint note updated to match
+
 ## 2026-07-18 — fix: synthesize.done() congruence gate (stale-wav skip closed)
 - done() now compares the manifest's own units against the CURRENT translation.json text_tts
   (same join as verify's reference); mismatch or uncovered ids → stage re-runs and re-renders

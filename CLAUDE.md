@@ -23,10 +23,12 @@ segments are tolerated, silent failures are not.
 ## Hard constraints
 
 - **Local by default.** No cloud STT or TTS, ever. The Ollama endpoint is
-  localhost, not a hosted API. One approved exception (DECISIONS 2026-07-16):
-  an explicitly opt-in cloud-translate mode (Anthropic API) — OFF by default,
-  never a silent fallback; the local Gemma path remains the default and must
-  keep working.
+  localhost, not a hosted API. One approved exception — cloud translation
+  (DECISIONS 2026-07-16 + 2026-07-18): the PRIMARY translate route is Sonnet in
+  semi-automatic mode (sub-agents write translation.json at the translate seam;
+  runbook: README "Running"); the local Gemma path remains the in-pipeline
+  default and must keep working; cloud is always explicit, never a silent
+  fallback.
 - **EN→RU only.** Source audio is always English, the dub is always Russian.
   No language detection, no multi-language handling.
 - **Single-speaker assumption.** No diarization in v1.
