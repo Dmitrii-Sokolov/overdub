@@ -62,7 +62,7 @@ python -c "import torch; print(torch.__version__, torch.version.cuda, torch.cuda
 winget install Gyan.FFmpeg              # ffmpeg + ffprobe on PATH
 python -m pip install -U yt-dlp
 # Ollama: install from ollama.com, then:
-ollama pull qwen3:14b
+ollama pull gemma3:12b
 setx OLLAMA_KEEP_ALIVE -1               # keep model resident across a long batch
 ffmpeg -version ; ffprobe -version ; yt-dlp --version ; curl http://localhost:11434/api/tags
 ```
@@ -82,7 +82,7 @@ This is a discovery gap, NOT a reason to add more venvs.
 ## VRAM discipline on 12 GB (usable ~10.5–11 GB — WDDM + display reserve ~1–2 GB)
 One heavy model at a time:
 - **Stage 1** whisper large-v3 fp16 ~4.5–6 GB → SAFE. `del model; gc.collect(); torch.cuda.empty_cache()` before next stage (empty_cache is a no-op while a ref is alive — drop refs FIRST).
-- **Stage 2** Qwen3-14B Q4_K_M 9.3 GB + KV → **tightest stage. Pin `num_ctx` ≤ ~8K (use 4K per-segment).** Windows CUDA sysmem fallback is ON by default → overflow = silent 5–30× slowdown, not OOM. Consider disabling sysmem fallback and running the display on the iGPU. `keep_alive:0` at stage end, then VERIFY free VRAM (nvidia-smi / `ollama ps`) before Stage 3.
+- **Stage 2** Gemma-3-12B Q4_K_M ~7.5 GB (measured). Windows CUDA sysmem fallback is ON by default → overflow = silent 5–30× slowdown, not OOM. Consider disabling sysmem fallback and running the display on the iGPU. `keep_alive:0` at stage end, then VERIFY free VRAM (nvidia-smi / `ollama ps`) before Stage 3.
 - **Stage 3** Silero runs on **CPU** (~0 VRAM) + whisper-small (~1 GB) → trivially SAFE. The only real GPU contention is Stage 1 ↔ Stage 2.
 
 ## Laptop thermals (overnight batches)

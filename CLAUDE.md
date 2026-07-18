@@ -25,13 +25,13 @@ segments are tolerated, silent failures are not.
 - **Local by default.** No cloud STT or TTS, ever. The Ollama endpoint is
   localhost, not a hosted API. One approved exception (DECISIONS 2026-07-16):
   an explicitly opt-in cloud-translate mode (Anthropic API) — OFF by default,
-  never a silent fallback; the local Qwen path remains the default and must
+  never a silent fallback; the local Gemma path remains the default and must
   keep working.
 - **EN→RU only.** Source audio is always English, the dub is always Russian.
   No language detection, no multi-language handling.
 - **Single-speaker assumption.** No diarization in v1.
 - **12 GB VRAM budget.** Never load two heavy models (whisper large-v3,
-  Qwen3-14B, TTS) at once; explicit model unload between stages. Exception:
+  Gemma-3-12B, TTS) at once; explicit model unload between stages. Exception:
   whisper-small (~0.5 GB) stays co-resident with the TTS engine during
   synthesis + verification.
 - **No tempo cap.** `atempo` speeds segments up as much as their slot
@@ -43,7 +43,7 @@ segments are tolerated, silent failures are not.
 
 ## Stack (v1)
 
-yt-dlp → faster-whisper large-v3 → Qwen3-14B (Ollama) → ESpeech/F5-TTS →
+yt-dlp → faster-whisper large-v3 → Gemma-3-12B (Ollama) → ESpeech/F5-TTS →
 htdemucs no-vocals bed (dub_mix="bed" default) → ffmpeg.
 
 TTS engines are pluggable behind an adapter: ESpeech-TTS-1_RL-V2 (F5-TTS, worker

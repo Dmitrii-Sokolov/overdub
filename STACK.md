@@ -4,7 +4,7 @@ Local-only YouTube→Russian dubbing. One heavy GPU model at a time; explicit un
 Every fact below is tagged by confidence from the adversarial verification pass. **Load-bearing empirical
 unknowns are called out explicitly — do not treat them as settled.**
 
-Pipeline: `yt-dlp → faster-whisper large-v3 → Qwen3-14B (Ollama) → Chatterbox Multilingual → whisper-small verify → ffmpeg (MKV)`
+Pipeline: `yt-dlp → faster-whisper large-v3 → Gemma-3-12B (Ollama) → Chatterbox Multilingual → whisper-small verify → ffmpeg (MKV)`
 
 ---
 
@@ -123,13 +123,15 @@ hyp = "".join(s.text for s in vseg)       # then normalize(hyp) vs normalize(ref
 
 ---
 
-## Stage 2 — Translation: Qwen3-14B via Ollama (OpenAI-compatible)
+## Stage 2 — Translation: Gemma-3-12B via Ollama (OpenAI-compatible)
+
+> As of 2026-07-18 the default is **Gemma-3-12B** (no thinking mode, no system role — the system prompt is folded into the user turn, no `think` key sent). The Qwen3-14B findings below are retained as history.
 
 **Install**
 ```powershell
 # Ollama is a SEPARATE OS process with its own bundled CUDA — NOT a pip package, NOT in the venv.
-ollama pull qwen3:14b            # default = Q4_K_M, 9.3 GB, 40K native ctx
-ollama pull qwen3:14b-q4_K_M     # explicit pin for reproducible batches (same blob)
+ollama pull gemma3:12b            # default = Q4_K_M, ~8.1 GB (this host: digest f4031aab637d)
+# reproducible batches: pin by digest (gemma3:12b@sha256:…) — no bare gemma3:12b-q4_K_M tag exists
 pip install openai               # HTTP client only; no cloud calls
 setx OLLAMA_KEEP_ALIVE -1        # keep resident across a long batch (more reliable than per-request)
 ```
@@ -147,7 +149,7 @@ SYSTEM = ("You are a professional dubbing translator. Translate the English line
           "Output ONLY the Russian translation, no notes. /no_think")
 
 resp = client.chat.completions.create(
-    model="qwen3:14b",
+    model="gemma3:12b",
     messages=[{"role":"system","content":SYSTEM},
               {"role":"user","content":"This GPU is roughly x2 faster."}],
     temperature=0.2, top_p=0.9, seed=42,
@@ -239,7 +241,7 @@ def unload(model):
     torch.cuda.empty_cache()
     torch.cuda.ipc_collect()
 
-def ollama_unload(model="qwen3:14b"):
+def ollama_unload(model="gemma3:12b"):
     requests.post("http://localhost:11434/api/generate", json={"model": model, "keep_alive": 0})
     # then VERIFY release (ollama ps / nvidia-smi) before loading Stage-3 PyTorch models
 ```

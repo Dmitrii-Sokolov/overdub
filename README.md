@@ -12,7 +12,7 @@ hundreds of hours of single-speaker content.
 2. **Transcribe (STT)** — `faster-whisper` (large-v3) produces the English
    transcript with word timestamps; words are re-assembled into sentences with
    `[start, end]`. The sentence is the unit of translation, synthesis and sync.
-3. **Translate** — local LLM (Qwen3-14B via Ollama) translates sentence by
+3. **Translate** — local LLM (Gemma-3-12B via Ollama) translates sentence by
    sentence with a rolling context window (previous EN sentences + their RU
    translations), prompted to keep length close to the original (it's dubbing,
    not prose). Output per sentence: raw RU for subtitles + normalized RU
@@ -47,7 +47,7 @@ embedded as subtitle tracks for free.
 |---|---|---|
 | Download | yt-dlp | |
 | STT | faster-whisper large-v3 | CUDA |
-| Translation | Qwen3-14B Q4 via Ollama | OpenAI-compatible endpoint — swap-friendly |
+| Translation | Gemma-3-12B Q4 via Ollama | OpenAI-compatible endpoint — swap-friendly |
 | TTS | Silero v4_ru (CPU) | native RU, fixed voice `eugene`; pluggable engine adapter |
 | Verification | faster-whisper small | ASR round-trip check |
 | Mux | ffmpeg | atempo fitting, MKV output |

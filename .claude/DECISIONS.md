@@ -770,3 +770,36 @@ VAD-pause cuts were objectively worse and other videos will have real >15 s sent
 priority lesson stands: Measure surfaced the 206 s blocks and they were filed to backlog instead
 of tested first — the one-line flag outperformed the whole cluster. Test the root before
 polishing the symptom.
+
+## 2026-07-18 — Gemma-3-12B replaces Qwen3-14B as the translation model
+
+**Decision: Gemma-3-12B is the default translator; Qwen3-14B is removed entirely — not kept even
+as an option.** The user's standing observation ("Qwen местами сыпется") was confirmed and fixed.
+
+**Evidence: an 8-video A/B on identical segmentation.** Both models were fed the SAME
+`sentences.json` (the 8 videos the Qwen stats batch had finished), so the only variable is the
+translator — the demucs bed and everything downstream are byte-identical. 508 sentences. Objective:
+RU/EN length ratio (dubbing fit) median 1.062 vs 1.086 (Gemma tighter → less atempo stretch);
+translate flags 4 vs 6; verify round-trip sim ~0.991 vs ~0.988 (≈); lower mean max speed-factor.
+Qualitative (user read ~100 phrases, all better on Gemma; + a divergence scan): Qwen's real
+defects were absent in Gemma — "эффективное/эффективное" duplicated on "effectively, efficiently"
+(twice), an untranslated "fluent" left in Latin, "Интеллектуальная грамотность" for "AI fluency".
+
+**Cost accepted: ~16% slower.** Same 508 sentences: 5.30 vs 4.58 s/sentence (1.08–1.21× per
+video). translate is the pipeline bottleneck, so end-to-end ≈ +8–10%. At 100-hour batch scale that
+is real (+~1–1.5 h/overnight) but the quality jump dominates. (Counter-intuitive for 12B<14B;
+thinking is not the cause — Qwen ran think:false, Gemma has none — it is Gemma-3 arch/tokenisation.)
+
+**Gemma-3 API differences forced a code change, not a config swap.** Gemma 3 has no thinking mode
+(Ollama HTTP-400s if a "think" key reaches it) and its chat template rejects a system role. The
+translate stage now folds SYSTEM into the single user turn and sends no "think" key — replacing
+Qwen's native `think:false` + separate system message. It was built first as two config flags
+(`ollama_system_role`/`ollama_send_think`) for a clean A/B that kept the Qwen wire-request
+byte-identical (proven); once Gemma won, the flags AND the Qwen branch were removed (YAGNI). Default
+`ollama_model` qwen3:14b → gemma3:12b (~7.5 GB VRAM loaded, was ~8.6 GB).
+
+**Top blind spot after this: translation COMPLETENESS is unmeasured.** verify's ASR round-trip
+checks TTS fidelity to `text_ru`, not that `text_ru` is a complete translation of the English.
+Gemma's tightness occasionally drops a word (measured: 1 of 3 adverbs on Dmgujo id1) and nothing
+flags it — same silent-loss class as the out-of-dict pronunciation echo. A completeness check is now
+the highest-value verify upgrade (PLAN roadmap 1).

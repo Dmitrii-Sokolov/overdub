@@ -1,5 +1,29 @@
 # CHANGELOG
 
+## 2026-07-18 — Gemma-3-12B replaces Qwen3-14B (translation model swap)
+- 8-video A/B on identical `sentences.json` (the Qwen stats batch's finished 8; only the translator
+  varied — bed + downstream byte-identical). 508 sentences: Gemma tighter (len ratio median 1.062
+  vs 1.086), fewer flags (4 vs 6), ≈ verify sim. User read ~100 phrases — all better on Gemma;
+  Qwen's defects (эффективное×2 for effectively/efficiently, "fluent" left Latin, "Интеллектуальная
+  грамотность" for AI fluency) absent. DECISIONS 2026-07-18
+- Cost: ~16% slower translate (5.30 vs 4.58 s/sentence), ≈ +8–10% end-to-end. Accepted for the quality
+- Code: translate stage folds SYSTEM into the user turn + sends no "think" key (Gemma 3 has no
+  thinking mode and rejects a system role). The A/B's two config flags AND the Qwen branch removed
+  (Qwen not kept even as an option); `ollama_model` default qwen3:14b → gemma3:12b. Live smoke green
+- Built via an ultracode workflow (7 agents) that kept the Qwen wire-request byte-identical during
+  the A/B, then collapsed to the single Gemma path. Reference docs updated (Qwen findings in STACK
+  retained as history)
+
+## 2026-07-18 — Whisper-context fix ear-validated: roadmap item 0 CLOSED
+- Full --force pass on a fresh workdir with `whisper_condition_on_previous=True` (x7DfiXqSEdM,
+  work-exp/context-earcheck). Objective: 427 sentences (matched the predicted 314→427), 0 verify
+  flags, max speed 1.288, 0 units >1.8. User ear verdict: all found problems gone, no sudden
+  pauses, "sounds better than ever"
+- One accepted roughness: speech slightly slow (inter-word gaps a touch large) = the slot-fill
+  stretch (f5_speed_floor). Compressing instead would open inter-phrase gaps (worse). Root lever is
+  the "keep length" prompt pressure (PLAN Open questions), not a post-hoc squeeze. NB the ear-check
+  dub used Qwen — the segmentation verdict is translator-independent
+
 ## 2026-07-17 — Whisper punctuation context: segmentation root fix (config flag)
 - Ear check of the segfix run found the "period mid-sentence" defect frequent (181/314
   sentences open mid-thought). Layered trace: the full stop is Qwen's, but the BREAK is

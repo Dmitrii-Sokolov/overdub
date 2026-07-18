@@ -78,3 +78,16 @@ Tags: `[bug] [feature] [chore] [?]` — one line per entry, processed weekly.
 - ~~[ux] assemble: 47/315 ru.srt cues are >12 s~~ DONE 2026-07-17: display-only cue split at clause punctuation (≤6 s/84 ch, flash-guarded), sentences.json untouched
 - [bug] translate/pronounce: OUT-OF-DICT game/company names now hit the pronounce rule fallback and self-agree through verify UNFLAGGED (Bungie→бунджи, Bethesda→бетесда, Terraria→террариа) — silent-loss class, invisible to the 3-video corpus. Only detector: promote pronounce_audit.json to a pre-batch operator gate (fallback-via entries are the candidate WORDS additions)
 - [?] transcribe: _ok_cut vetoes only the 16-word _STOP set, so ~9 corpus cuts still end on a bare verb/pronoun ("you have"/"i think") — accepted (dangling verb ≫ fake-pause cut); widening _STOP is a large unmeasured change, revisit only if the ear flags it. _STOP also still lacks through/from/about (bug B's dangling preposition, now moot since branch 1 is gap-gated)
+
+## 2026-07-18 session (Gemma migration + item-0 close)
+- [?] verify: translation COMPLETENESS unmeasured — the ASR round-trip proves TTS↔text_ru, not
+  text_ru↔EN. Gemma's tightness drops a word unflagged (Dmgujo id1: 3 of 4 adverbs). Now the top
+  verify gap → PLAN roadmap 1 (EN/RU content-word ratio or back-translation spot-check)
+- [bug] transcribe: RyvXxApfHkk id12 — whisper emitted garbage with CJK chars + U+FFFD ("Theisk
+  models… 酸petto"); both Qwen and Gemma dutifully "translated" it and verify passed it (round-trip
+  blind to confident garbage). Real corpus case for the babble/duration heuristic (roadmap 3)
+- [chore] mux/export: out/ name collision — Qwen and Gemma runs export identical "<title> [<id>].mkv"
+  and silently overwrite each other; authoritative per-model MKVs live in the work dirs. Namespace
+  exports per work_root/model (backlog)
+- [chore] work-exp/gemma-ab/gemma.toml still sets the removed ollama_system_role/ollama_send_think
+  keys → harmless "[config] unknown key ignored" on rerun; drop them if that dir is reused
