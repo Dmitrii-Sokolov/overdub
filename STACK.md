@@ -203,7 +203,38 @@ text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()  # defen
 - **Already fp16, and not compilable.** f5_tts casts the model to float16 itself
   for vocos on sm≥7 (`utils_infer.py:191-198`); the vocoder deliberately stays
   fp32. `torch.compile` is unavailable here — no Triton in `.venv-f5tts`.
-  Cross-unit batching is a dead end too (see DECISIONS 2026-07-19).
+  Cross-unit batching is a dead end too. Full lever ledger with the reasons:
+  DECISIONS 2026-07-19 — read it before planning any further F5 speed work.
+- **Over half of each call denoises audio that is thrown away.** F5 builds the
+  canvas as `ref + gen` and slices the ref part off afterwards
+  (`utils_infer.py:508`). Our reference is **9.164 s** (recovered by inverting
+  `plan_speed` over 326 unclamped units, p05–p95 spread ~0.001 s) against a
+  ~7 s mean unit, so ref is ~57% of the trajectory. Shortening it is a real
+  lever, multiplicative with nfe — deferred with the narrator swap because it
+  changes speaker conditioning.
+
+### Measured cost model (12 workdirs, 2026-07-19)
+
+```
+stage_s ≈ 34.8 + 2.295 × units + 0.2176 × audio_sec        # at nfe=48
+          └fixed┘  └─ per call ─┘  └─ per second of output ─┘
+```
+Predicted mean unit 3.809 s vs measured 3.818 s; corpus total +3.1%. The per-call
+floor decomposes as **0.295 s ASR round-trip + 2.00 s F5**, and that 2.00 s is
+predicted to 0.3% by `0.2176 × 9.164` — i.e. it IS the discarded ref canvas.
+Scale the nfe-dependent terms by `nfe/48` (cost is exactly linear).
+
+Fixed costs per video, per stage — the numbers stage-major amortises to once per
+BATCH: transcribe **22.2 s** (large-v3 load), synthesize **34.8 s** (worker spawn
++ model), separate **13.2 s**, verify **1.5 s**. `separate` is pure load: its
+slope against audio length is statistically zero (R²=0.000).
+
+> Two traps when re-measuring from `work/`: five of the twelve `timings.json`
+> values come from RESUMED runs and cover only the re-rendered units (visible
+> only via wav mtimes), and a regression cannot separate fixed from marginal cost
+> here because the predictors are collinear (r=0.977, intercept swings −11.7 →
+> 140.3 s on one dropped point). Measure the fixed cost directly from mtimes
+> instead. See DECISIONS 2026-07-19 "Measurement gotchas".
 - **Output:** 24 kHz mono (vocos-mel-24khz — a checkpoint fact, not a knob);
   RUAccent (turbo3.1) puts stresses in-worker.
 - **Seed-capable:** reseed-retry lives in the synthesize stage (keep-best by

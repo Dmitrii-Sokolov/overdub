@@ -1,5 +1,68 @@
 # DECISIONS
 
+## 2026-07-19 — F5 speedup: the full lever ledger, including the ones that do NOT exist
+
+Roadmap item 1 named four levers. Two of them were already done by somebody else and one cannot
+run on this host — findings that cost a day to establish and would cost another day to re-derive.
+This table is the point of the entry: **half the value of this work is knowing what not to try.**
+
+| Lever | Verdict | Why |
+|---|---|---|
+| `f5_nfe` 48 → 16 | **ADOPTED**, 2.16× per unit | Cost is exactly linear in nfe (Euler, one DiT forward per step). 16 is EPSS-tuned; 48 and 32 both fall through to naive `linspace`, so the once-planned 48→32 was the one step down the library gives no help with. Ear-checked on a full video. |
+| stage-major batch | **ADOPTED**, ~72 s/video → ~72 s/batch | Model loading was a quarter of those stages' wall clock. Byte-identity verified 39/39. |
+| half precision (fp16) | **ALREADY ON** — no lever | `f5_tts` casts the model itself for vocos on sm≥7 (`utils_infer.py:191-198`); the fp32 checkpoint is cast down at load. The vocoder deliberately stays fp32 (`utils_infer.py:507` lifts the mel back). Nothing to enable; bf16 pointless since fp16 has run in production for 13 workdirs. |
+| `torch.compile` | **UNAVAILABLE on this host** | No Triton in `.venv-f5tts`, and `torch/utils/_triton.py` returns False on ImportError, so inductor cannot build CUDA kernels. Not a tuning problem — do not design around it. Would need a Triton-on-Windows story first. |
+| cross-unit batching | **MIRAGE** | `infer_batch_process` builds a batch of ONE per text (`utils_infer.py:483`) and merely threads them onto one CUDA stream. Real batching needs `attn_mask_enabled=True`, which our `MODEL_CFG` leaves False (`dit.py:189`) — short units would attend over the longest unit's padding, which is WRONG OUTPUT, not a numerical delta. Enabling it materialises a b×heads×n×n mask the library itself warns against without `flash_attn`, which is not installed. |
+| TF32 | placebo | Only affects fp32 matmuls; the DiT is fp16. |
+| `cudnn.benchmark` | likely harmful | Input shape changes almost every unit (duration is derived from text bytes), so it would re-search algorithms per shape. |
+| SDPA / `no_grad` / `inference_mode` | already in use | `no_grad` is doubled (`cfm.py:83` decorator + `utils_infer.py:496` context). At batch=1 the mask is None, so the fast kernel already applies. |
+| VRAM parking (model→CPU between videos) | **NOT NEEDED** | Solved more generally by stage-major, which makes peak VRAM the MAX over models rather than their sum. Kept as a concept only for a future route that needs Gemma co-resident. |
+| shorter reference clip | **DEFERRED**, bundled with the narrator swap | Real: F5 denoises `ref + gen` and discards the ref part (`utils_infer.py:508`); ref is 9.164 s against a ~7 s mean unit, so over half the compute is thrown away. But it MULTIPLIES with nfe — after 16 it is worth ~158 s/batch instead of ~477 — and it changes speaker conditioning, i.e. the voice, so it needs an ear session that the rights-clear narrator replacement already owes. |
+| demucs multi-file invocation | **DEFERRED** with reason | Worth ~13.2 s × N (the stage is nothing but model loading — slope against audio length is R²=0.000). Its CLI takes several files per call, but that needs the batch known upfront, which fights per-video resume. Needs a `Stage` protocol change; not worth it inside this change. |
+
+**Meta-lesson, the one worth carrying to the next optimization.** Four levers were named from
+reading our own config comments. Investigation showed two were already applied by the library, one
+was impossible, and one was structurally wrong — and it surfaced a fifth (EPSS) that nobody had
+named, which turned out to be the one that mattered. **Read the dependency's source before planning
+against its knobs.** The `~30% faster` note that sat in `overdub.toml` for weeks was both an
+overstatement (23-26% at stage level) and pointed at the wrong step count.
+
+## 2026-07-19 — Measurement gotchas that cost time and will recur
+
+Recorded because each one silently produces a WRONG number rather than an error.
+
+**Resumed runs poison `stage_s`, and nothing in the JSON says so.** 5 of 12 workdirs have
+`timings.json` values covering only the units re-rendered in the last session (`DmgujoZ1mmk`:
+71.9 s for 31 units when only 12 were fresh). Visible ONLY by comparing segment wav mtimes against
+the timings file. Anyone regressing over all 12 rows gets garbage. Filter to cold single-session
+workdirs first.
+
+**Regression cannot split fixed from marginal cost here — direct measurement can.** Predictors are
+collinear (r(calls, audio_s)=0.977), so the two-predictor coefficient flips sign, and the intercept
+swings −11.7 → 140.3 s on dropping one point, with standard errors of 33-53 s on a ~35 s quantity.
+Do NOT quote a regression intercept as the startup cost. What worked: `engine.synthesize` renames
+its tmp file, preserving mtime, so `stage_s − (last_mtime − first_mtime)` isolates the fixed cost
+directly — 34.8 s median, range 29.3-36.0 over 6 videos, independent of unit count.
+
+**A saturated metric predicts a clean table, which is not a pass.** Round-trip similarity has no
+room left to move (corpus median 0.995, min 0.924, zero units under the 0.9 gate, zero reseed
+retries ever fired). A green metric table was the PREDICTED outcome of the nfe sweep and carried
+almost no information. Worse, sim ROSE slightly at lower nfe — a flatter reading is easier for ASR,
+so the direction is not even monotone in quality. Any harness in this regime must say so in its own
+output rather than let green numbers imply a verdict.
+
+**Blind A/B needs a positive control.** Without rows whose correct answer is known, "cannot tell"
+is indistinguishable from a broken bench playing the same file on both sides — and the decision
+rule (indistinguishable ⇒ adopt the faster setting) would then ship a degraded default off a test
+that never played the candidate.
+
+**Adversarially review a measurement BEFORE spending the GPU time.** The review of
+`exp_nfe_sweep.py` found five must-fix issues, two of them unrecoverable after the fact: a stratum
+that ranked by text LENGTH and so selected AGAINST its own property (the corpus's 41%-Latin unit
+was excluded; selected density 0.022 vs the pool's 0.056), and a missing per-cell timestamp without
+which the block-order/thermal confound could never be estimated. Same discipline that the rejected
+`no_repeat_ngram_size` sweep taught the hard way.
+
 ## 2026-07-19 — stage-major is the default batch order; STOP no longer lands on a video boundary
 
 **Decision.** `--batch` runs stages outer / videos inner. The old order stays behind

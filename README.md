@@ -62,6 +62,14 @@ Needs Ollama serving `gemma3:12b` on localhost. Agent or human:
 - Interrupt/resume: re-run the same command — completed stages fast-skip.
   Graceful stop: create `work/STOP`. Exit codes: 0 ok / 1 any fail / 2 usage /
   3 stop-halt.
+- **Batch order.** A batch runs **stage-major**: every video through `download`,
+  then every video through `transcribe`, and so on. Each model therefore loads
+  once per BATCH instead of once per video (~72 s/video of pure model loading —
+  see STACK "Measured cost model"). The trade is that no MKV is finished until
+  late in the run; a failed video drops out of the remaining stages without
+  affecting the others, and the summary says which stage it died on. Pass
+  `--video-major` to restore the old order (each video through every stage before
+  the next) — it is the escape hatch, and it produces byte-identical audio.
 - Morning triage: the per-run rollup `work/<id>/run.json` (timings/RTF, flag counts by
   type, speed distribution, `needs_triage`) — or the raw `work/<id>/report.json` for any
   `*_flag` / `speed_factor > 1.8`. For a batch, the CLI prints a sweep after the summary;
@@ -140,18 +148,23 @@ embedded as subtitle tracks for free.
 
 ## Hardware targets
 
-- **Primary:** NVIDIA RTX 4080 Mobile, 12 GB VRAM. Stages run sequentially per
-  video with explicit model unload between them — heavy models don't fit
-  simultaneously. (Per-stage batching across many videos — one model load per
-  stage — is a Phase 2 option.)
+- **Primary:** NVIDIA RTX 4080 Mobile, 12 GB VRAM. A model's lifetime is one
+  stage sweep, so peak VRAM is the largest single model rather than the sum —
+  which is what makes one model load per BATCH safe even on the Gemma route
+  (~8-9 GB, the only model that makes 12 GB tight). Measured: whisper large-v3
+  ~3.1 GB, htdemucs ~3.0, F5 worker ~0.8, whisper-small ~0.5.
 - **Secondary (deferred):** Intel Arc B390 iGPU. whisper.cpp (SYCL/OpenVINO) and
   llama.cpp (SYCL) are proven there for STT/translation; F5 on XPU is an
   unproven spike — Silero (CPU) would be the safe TTS there. See PLAN deferred.
 
-Throughput budget: ≤ x5 video duration — measured ~×1.3 realtime end-to-end on
-the host (budget cleared ~3.8×). Translation is the bottleneck on the local
-route (~45% of wall-clock; the Sonnet route removes it); synthesis+verify is
-the co-bottleneck (F5 at ~0.7 GiB VRAM).
+Throughput budget: ≤ x5 video duration — comfortably cleared. Two changes on
+2026-07-19 roughly halved batch wall-clock: `f5_nfe` 48 → 16 (2.16× on synthesis,
+ear-checked) and stage-major batching (each model loads once per batch). On the
+12-video reference batch those stages went from ~53 min to a projected ~28 min.
+Translation is the bottleneck on the local route (~45% of wall-clock; the Sonnet
+route removes it entirely); synthesis is no longer close behind it. F5 holds
+~0.7–0.8 GiB, and with stage-major the peak is the largest single model rather
+than the sum, so the 12 GB budget has real headroom (see CLAUDE.md).
 
 ## Constraints / assumptions
 
