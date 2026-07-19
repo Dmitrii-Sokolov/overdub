@@ -35,9 +35,21 @@ Produces per video: `work/<id>/sentences.json` — a JSON list of `{id, text, st
 YouTube id inside each URL (step 1 also prints it per video: `work dir: work\<id>`):
 
 ```powershell
-$ids = Get-Content queue.txt | ForEach-Object {
-  if ($_ -match '(?:v=|youtu\.be/|/shorts/|/embed/)([A-Za-z0-9_-]{11})') { $Matches[1] } }
+$lines = @(Get-Content queue.txt | ForEach-Object { $_.Trim() } |
+  Where-Object { $_ -and -not $_.StartsWith('#') })
+$ids = @($lines | ForEach-Object {
+  if ($_ -match '(?:v=|youtu\.be/|/shorts/|/embed/)([A-Za-z0-9_-]{11})') { $Matches[1] } })
+if ($ids.Count -ne $lines.Count) {
+  throw "queue: $($lines.Count) URLs, $($ids.Count) matched ids - unmatched line(s), see below" }
+$ids = @($ids | Select-Object -Unique)
 ```
+
+Both guards are load-bearing. A URL the regex misses (e.g. a `/live/` link) is still
+PROCESSED by the pipeline — `video_id()` hash-fallbacks it into a `work/<sha1>` dir — but
+invisible to every gate below, which at step 3 means silent Gemma substitution for that
+video: normalize the URL in queue.txt to a `watch?v=` form and restart from step 1.
+Duplicate spellings of one video share a workdir and the CLI dedupes them (`cli.py`); without
+`-Unique` two parallel sub-agents would race on the same draft file.
 
 Do NOT enumerate `work/` directories — `work/` persists across batches and holds
 stale/baseline workdirs; translating those wastes tokens and overwrites their
@@ -49,7 +61,20 @@ same step-1 command until clean; completed stages fast-skip.
 
 ## Step 2 — Translate each video with a Sonnet sub-agent
 
-**One sub-agent per video, spawned in parallel** (they are independent). Use the Agent tool
+**Resume filter first** — a prior interrupted step-2 run may have finished some videos
+(helper-validated `translation.json` present); the mtime clause also catches drafts gone
+stale via a re-transcribe:
+
+```powershell
+$todo = @($ids | Where-Object {
+  $t = "work\$_\translation.json"
+  -not (Test-Path $t) -or
+    (Get-Item "work\$_\sentences.json").LastWriteTime -gt (Get-Item $t).LastWriteTime })
+```
+
+**One sub-agent per video in `$todo`, spawned in parallel in waves of ~6** (they are
+independent, but an uncapped 30-video batch = 30 concurrent Sonnet agents — cap the wave,
+wait for it, spawn the next). Use the Agent tool
 (`general-purpose`, **`model: "sonnet"` — set it explicitly**: sub-agents otherwise inherit
 the session model, silently swapping the translator; every quality verdict for this route is
 Sonnet-specific, DECISIONS 2026-07-18/19). Each sub-agent does ONE thing: read
@@ -102,9 +127,19 @@ path: with Ollama up it is silently translated by Gemma (a silent route substitu
 batch still reports ok), without Ollama it fails with a misleading "Ollama not reachable —
 start the daemon" (the real fix is step 2 for that video, not starting Ollama).
 
-Also preflight the synthesis prerequisites now, before an overnight run: `.venv-f5tts` and
-the F5 assets under `models/` exist; `.venv-demucs` exists (needed for the default
-`dub_mix = "bed"`).
+Also preflight the synthesis prerequisites now, before an overnight run — exact paths, not
+"the folder exists" (defaults from `overdub/config.py`; check `overdub.toml` for `f5_*` /
+`demucs_python` overrides). The ref clip is deliberately NOT in the repo (fetched at setup,
+SETUP.md) — a missing file here fails the first synthesize hours into the night:
+
+```powershell
+@('.venv-f5tts\Scripts\python.exe', '.venv-demucs\Scripts\python.exe',
+  'models\espeech-rlv2\espeech_tts_rlv2.pt', 'models\espeech-rlv2\vocab.txt',
+  'models\refs\ref_espeech_demo.wav', 'models\refs\ref_espeech_demo.txt') |
+  Where-Object { -not (Test-Path $_) }   # must print nothing
+```
+
+(`.venv-demucs` is needed for the default `dub_mix = "bed"`.)
 
 Then the exact command from the local route (no `--only`). `TranslateStage.done()` is
 `translation.json exists`, so download/transcribe/translate fast-skip; synthesize → verify →
@@ -136,4 +171,4 @@ assemble → separate → mux run as usual:
   The resume runs the local Gemma path for that video (silently, if Ollama is up) — hence the
   mandatory every-id check before resuming, and hence ids from the queue, never from `work/`.
 - If `sentences.json` is re-transcribed (e.g. `--force transcribe`), the drafts are stale —
-  re-run step 2 for that video.
+  re-run step 2 for that video (the `$todo` mtime clause catches this automatically).

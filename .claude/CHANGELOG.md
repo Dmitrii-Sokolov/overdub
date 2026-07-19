@@ -1,5 +1,19 @@
 # CHANGELOG
 
+## 2026-07-19 — Route-B skill audit round 2: 5 gaps closed (SKILL.md only)
+- Re-audit vs code after the round-1 hardening: commands/contract/flag table/stage order all
+  hold; helper contract tests green. 5 residual gaps, all in SKILL.md orchestration prose:
+  (1) `$ids` snippet now fails loud when a queue line doesn't match the id regex — an
+  unmatched URL (e.g. `/live/`) is still processed by the pipeline via the `video_id()`
+  hash fallback but was invisible to every gate → silent Gemma substitution at step 3;
+  (2) `$ids` deduped with `-Unique` (CLI dedupes by video_id; two spellings of one video =
+  two sub-agents racing on one draft file); (3) step-2 resume filter `$todo` — skip videos
+  with a helper-validated translation.json, mtime clause re-queues drafts stale from a
+  re-transcribe; (4) step-3 synth preflight now lists exact paths (config.py defaults incl.
+  the not-in-repo ref clip) instead of "models/ exists"; (5) step-2 parallelism capped at
+  waves of ~6 sub-agents. All three snippets verified live on a sandbox (dedupe/throw/
+  single-URL scalar/todo filter/preflight)
+
 ## 2026-07-19 — Completeness A+B: deterministic verify-side loss flags (ultracode)
 - NEW `overdub/completeness.py` — 4 non-blocking per-sentence detectors (num_loss/neg_loss/
   entity_loss/length_short) written to `report.json` at verify; rollup `rep["completeness"]`.
