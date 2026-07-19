@@ -78,17 +78,22 @@ cleanly at the translate seam and resumes from it. No Ollama needed.
 
    → per video: `work/<id>/sentences.json`.
 
-2. **Translate with Sonnet sub-agents** (one per video). Each agent reads
-   `sentences.json` and writes `work/<id>/translation.json` under the translate
+2. **Translate with Sonnet sub-agents** (one per video), orchestrated by the
+   `overdub-sonnet-batch` skill. Each sub-agent reads `sentences.json` and writes
+   ONLY a draft `work/<id>/translation.draft.json` = `[{id, text_ru}, ...]`; then
+   `scripts/build_translation.py work/<id>` assembles `translation.json` under the
    contract:
    - a JSON list, one record per sentence, id-contiguous:
      `{id, start, end, src_en, text_ru, text_tts, status: "ok", attempts: 1}`;
    - translation rules = the `SYSTEM` prompt in `overdub/stages/translate.py`
      (keep RU close in length, game/brand names stay Latin, numbers stay
      digits, rolling context);
-   - `text_tts` MUST come from Python — `overdub.normalize.normalize_for_tts(text_ru)`
-     — never spelled by the LLM (verify compares through the same normalizer);
-   - gate each line with `overdub.stages.translate._is_bad` before accepting.
+   - the helper owns the fragile part so the contract never rides on the LLM: it
+     fills src_en/timings from `sentences.json`, derives `text_tts` via
+     `overdub.normalize.normalize_for_tts` (verify compares through the same
+     normalizer — never let the LLM spell it), gates each line through
+     `overdub.stages.translate._is_bad`, and enforces id-contiguity (a malformed
+     draft fails loud, never reaches synthesize).
 
 3. **Resume the batch** with the exact command from route A — download/
    transcribe/translate skip (artifacts exist), synthesize → verify → assemble
