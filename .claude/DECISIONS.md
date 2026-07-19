@@ -1,5 +1,58 @@
 # DECISIONS
 
+## 2026-07-19 — Silero v5 audition: v4 was tested BY MISTAKE; v5 is the fast fallback
+
+**The 2026-07-15 bake-off tested the wrong release.** `v4_ru` was already superseded when it was
+adopted; the adapter then hardcoded it, so every Silero verdict in this file up to now describes
+an outdated model. `v5_5_ru` is audibly better and is now the default. v4 stays reachable only to
+reproduce pre-2026-07-19 runs.
+
+**Ear ranking (user, 5 videos × 5 voices, one voice per video, v5_5_ru):**
+- **kseniya, eugene — best.** These are the two to use.
+- **xenia** — good voice, slightly unpleasant.
+- **aidar, baya** — off-standard accent, sounds harder to follow; phonemes drift from ordinary
+  Russian. Avoid.
+
+**Verdict: quality is below F5/ESpeech and the user accepts that trade for speed, for now.**
+
+**Speed is the headline: synthesis is 12-19× faster and CPU-only.** Measured on the same
+translations as the F5 run (5 videos): synth 11-14 s vs F5's 128-250 s; whole-pipeline RTF
+0.14-0.17 vs 0.70-0.92. Synthesis stops being the bottleneck (verify and separate now dominate)
+and the GPU is left free. Objective quality is near parity — mean round-trip similarity
+0.979-0.992 vs F5's 0.985-0.991, zero verify flags, zero segments over ×1.8, `xenia` fully clean.
+The old worry that Silero would trip the 0.9 gate did NOT reproduce: sample min was 0.920. That
+worry was measured on v4 — another consequence of the wrong-release mistake.
+
+**Metrics did not predict the ear here, again.** 0.99 similarity means "the words are present",
+not "it sounds good" — the id101 precedent (sim 1.0, judged bad by ear, 2026-07-16) holds. The
+three defects below are all invisible to every metric the pipeline computes.
+
+**Three defects found by ear, none of them caught by verify:**
+1. **Noise / hiss, "cheap microphone", voices do not ring** like a trained announcer. Candidate
+   fix is post-processing — denoise, compression, EQ — not an engine change.
+2. **No expressiveness.** Tone never varies; sentence after sentence lands on the same contour and
+   the result is soporific. v5_5 is reported to support varied intonation; unexplored.
+3. **Dub lags the subtitles and the English speech.** MEASURED asymmetry against the F5 baseline:
+   clip-duration/source-span median 0.93 and 0.87 (Silero) vs 0.98 and 0.98 (F5), with more units
+   overflowing the slot (7 vs 4, and 7 vs 0). Mechanism: Silero declares `supports_target=False`,
+   so nothing asks the engine to hit the source span — F5 receives `target_sec` = the span and
+   lands on it natively, while Silero renders at its own pace and only assemble's `atempo`
+   intervenes, and only once a clip exceeds the SLOT (span + following pause), never the span
+   itself. Inside a grouped unit the per-sentence offsets then drift both ways. The user's own
+   proposed remedy — tempo-fit the already-rendered chunk — points at exactly this: fit to the
+   SPAN, not only to the slot, for engines without native targeting. NOT yet fixed.
+
+**Migration cost was small, and the code stays.** Two changes: `cfg.silero_model` (release id
+passed to `torch.hub`, replacing the hardcoded `MODEL_ID`) and — load-bearing — that id added to
+`synth_key`. Without the second, v5 would have silently reused v4 wavs under the same voice name:
+the exact silent-staleness class the `synth_key` INVARIANT exists to prevent. The v5 Cyrillic-only
+caveat needed no filter: `text_tts` is Cyrillic by contract and measured clean (0 Latin characters
+across all 12 batch videos), because the pronounce chain transliterates kept-Latin names before
+synthesis. Full suite green.
+
+**Production default stays F5.** This audition changes the fallback's identity and quality, not
+the primary engine.
+
 ## 2026-07-19 — Collapsed ASR alignment: guard the cause, not the harm
 
 **The defect.** `4szRHy_CT7s` dubbed one slot at 294 char/s (atempo ×8.79, unintelligible).

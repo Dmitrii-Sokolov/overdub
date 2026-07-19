@@ -1,5 +1,23 @@
 # CHANGELOG
 
+## 2026-07-19 — Silero release is a config knob; v5_5_ru becomes the fallback default
+- NEW `cfg.silero_model` (default `"v5_5_ru"`, was a hardcoded `MODEL_ID = "v4_ru"` in the
+  adapter): the torch.hub release id. v4 was the bake-off entrant BY MISTAKE — already superseded
+  at the time — so every pre-2026-07-19 Silero verdict describes an outdated model. v4 stays
+  selectable to reproduce old runs.
+- `synth_key` now includes the release id (`silero|<model>|<voice>|sr=…`). Load-bearing: without
+  it v5 silently reuses v4 wavs under the same voice name, the exact silent-staleness class the
+  key's INVARIANT exists to prevent. Legacy manifests re-render once, which is correct.
+- `SileroEngine(model_id=…)` + docstring: both releases expose the same five speakers; v5 is
+  Cyrillic-only, which is safe only because `text_tts` is Cyrillic by contract (measured: 0 Latin
+  characters across all 12 batch videos) — noted with the condition under which a filter is needed.
+- AUDITION (5 videos × 5 voices, same translations as the F5 run): synth 11-14 s vs F5's
+  128-250 s (12-19× faster, CPU-only, GPU idle); pipeline RTF 0.14-0.17 vs 0.70-0.92; mean
+  round-trip similarity 0.979-0.992 vs 0.985-0.991; 0 verify flags, 0 segments over ×1.8.
+  Ear: eugene + kseniya best, xenia good-but-slightly-unpleasant, aidar/baya off-standard accent.
+  Three ear-only defects (hiss/no ring, no expressiveness, dub lags picture) → DECISIONS + PLAN.
+- Production default unchanged: `tts_engine = "f5"`. Full suite (11 files) green.
+
 ## 2026-07-19 — Transcribe guard: auto-retry on a collapsed word alignment + `asr` rollup
 - NEW `transcribe.floor_run_ratio(flat) -> (ratio, longest_run)`: share of words sitting on the
   `MIN_WORD_DUR` floor IN A CHAIN (start == previous end), the signature of a whisper alignment

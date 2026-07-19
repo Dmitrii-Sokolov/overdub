@@ -67,6 +67,14 @@ class Config:
     # TTS — engine selection + seed policy
     tts_engine: str = "f5"           # "f5" (production, Phase-3 ear check 2026-07-16) | "silero" (fallback)
     tts_voice: str = "eugene"        # silero-only
+    silero_model: str = "v5_5_ru"    # silero-only release id via torch.hub. v4_ru (~38 MB) was
+                                     # the 2026-07-15 bake-off entrant BY MISTAKE — v5_5_ru
+                                     # (~139 MB) was already current and is audibly better; v4 is
+                                     # superseded, keep it only to reproduce old runs. Same five
+                                     # speakers either way (aidar, baya, kseniya, eugene, xenia);
+                                     # best by ear = kseniya, eugene. v5 is Cyrillic-only — safe
+                                     # because text_tts is Cyrillic by contract (see tts/silero.py).
+                                     # Audio-affecting → it is part of synth_key.
     tts_sample_rate: int = 48000     # silero-only (F5 sr is engine-owned: 24000)
     tts_seed: int = 42               # base seed (seed-capable engines); retries use seed+attempt
     tts_max_retries: int = 3         # reseed attempts after the first try (seed-capable engines)

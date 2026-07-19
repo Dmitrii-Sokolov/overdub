@@ -22,6 +22,9 @@ models/
 # Media and work artifacts
 work/
 work-exp/
+# TTS audition sandbox + its generated per-voice configs (2026-07-19)
+work-silero-v5/
+cfg-silero-v5/
 output/
 # personal-use voice audition page (repo policy: person-agnostic docs, PD samples only)
 bakeoff/narrators_personal.html

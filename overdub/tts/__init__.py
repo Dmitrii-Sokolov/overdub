@@ -13,7 +13,8 @@ def build_engine(cfg: Config) -> TtsEngine:
     if cfg.tts_engine == "silero":
         from .silero import SileroEngine
 
-        return SileroEngine(voice=cfg.tts_voice, sample_rate=cfg.tts_sample_rate)
+        return SileroEngine(voice=cfg.tts_voice, sample_rate=cfg.tts_sample_rate,
+                            model_id=cfg.silero_model)
     if cfg.tts_engine == "f5":
         from .f5 import F5Engine
 
@@ -58,4 +59,7 @@ def synth_key(cfg: Config) -> str:
                 f"|vocab={vocab.stem}:{vocab.stat().st_size}"  # content hash of a 2.7 GB file
                 f"|sr=24000|nfe={cfg.f5_nfe}|speed={cfg.f5_speed}"
                 f"|floor={cfg.f5_speed_floor}|ceil={cfg.f5_speed_ceil}|seed={cfg.tts_seed}")
-    return f"silero|{cfg.tts_voice}|sr={cfg.tts_sample_rate}"
+    # model release is audio-affecting (v4_ru and v5_5_ru are different voices under the same
+    # speaker name), so it MUST be in the key — see the INVARIANT above. Legacy manifests keyed
+    # without it predate the knob and were all v4_ru; they re-render once, which is correct.
+    return f"silero|{cfg.silero_model}|{cfg.tts_voice}|sr={cfg.tts_sample_rate}"
