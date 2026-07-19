@@ -177,7 +177,7 @@ text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()  # defen
 
 ---
 
-## Stage 3 — TTS: ESpeech/F5 (production) + Silero v4_ru (fallback) + whisper-small verify
+## Stage 3 — TTS: ESpeech/F5 (production) + Silero v5_5_ru (fallback) + whisper-small verify
 
 > Engine history: the day-1 ear test **rejected Chatterbox** (unusable Russian
 > even without cloning); Silero v4_ru carried Phase 1; bake-off #2 (2026-07-16,
@@ -208,40 +208,43 @@ text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()  # defen
 
 > Slightly below F5/ESpeech on quality, but needs NO voice sample — the
 > zero-setup, zero-rights-questions option (user verdict 2026-07-18). The
-> adapter loads **v4_ru** today; **v5** (`v5_5_ru`, same voices) is also good —
-> bumping is one torch.hub id, but v5 REJECTS Latin script (text_tts is already
-> Cyrillic-only by the normalize contract; add an out-of-alphabet filter, #317).
+> adapter defaults to **v5_5_ru** (`cfg.silero_model`, audition 2026-07-19 —
+> audibly better, same five voices, 12-19× faster synth than F5 on CPU alone);
+> **v4_ru** is kept only to reproduce pre-2026-07-19 runs. v5 REJECTS Latin
+> script — safe because text_tts is Cyrillic-only by the normalize contract
+> (measured: 0 Latin chars across the 12-video batch; no filter needed).
 
 **Install** — no pip package required; `torch.hub` fetches the model. Silero
 needs only `torch` + `torchaudio` (+ `omegaconf`), so it shares the ASR venv
 (`.venv-asr`); the Chatterbox-era `.venv-tts` is retired.
 ```powershell
 pip install omegaconf            # usually already present; torch/torchaudio already installed
-# model auto-downloads on first torch.hub.load (~38 MB, cached in ~/.cache/torch/hub)
+# model auto-downloads on first torch.hub.load (~139 MB for v5_5_ru, cached in ~/.cache/torch/hub)
 ```
 
 **Verified API** (working on host)
 ```python
 import torch, torchaudio as ta
 
-# CPU by design — 38 MB model, measured RTF ~0.02–0.3 on CPU; keeps the GPU free.
+# CPU by design — measured RTF ~0.02–0.3 on CPU; keeps the GPU free.
 model, _ = torch.hub.load("snakers4/silero-models", "silero_tts",
-                          language="ru", speaker="v4_ru", trust_repo=True)
+                          language="ru", speaker="v5_5_ru", trust_repo=True)
 model.to(torch.device("cpu"))
 
 audio = model.apply_tts(                      # returns a 1-D float tensor
     text="Это тест синтеза русской речи.",
-    speaker="eugene",                         # primary voice; xenia = backup
+    speaker="eugene",                         # primary voice; kseniya = backup
     sample_rate=48000,                        # 8000 / 24000 / 48000 — 48k is best
     put_accent=True, put_yo=True,             # auto stress + ё
 )
 ta.save("seg.wav", audio.unsqueeze(0), 48000)  # apply_tts is 1-D → unsqueeze for save
 ```
 
-**Voices** (v4_ru, fixed set): `aidar`, `baya`, `kseniya`, `xenia`, `eugene`,
-`random`. Host ear-test verdict: **eugene = primary** (best balance), **xenia =
-backup**; aidar/kseniya poor, baya has a sibilant hiss. No cloning — every video
-gets the same chosen narrator voice (the same-voice premise was dropped).
+**Voices** (same five in v4/v5): `aidar`, `baya`, `kseniya`, `xenia`, `eugene`
+(v4's extra `random` speaker was removed in v5). Ear ranking (2026-07-19,
+v5_5_ru): **eugene = primary**, **kseniya = backup**; xenia good but slightly
+unpleasant; aidar/baya have an off-standard accent — avoid. No cloning — every
+video gets the same chosen narrator voice (the same-voice premise was dropped).
 
 **VRAM:** effectively **zero** — runs on CPU (model ~0.1–0.5 GB even on GPU).
 whisper-small verify (~1 GB) has the whole Stage-3 budget to itself. **Measured

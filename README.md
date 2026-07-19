@@ -29,8 +29,8 @@ hundreds of hours of single-speaker content.
    video, no per-speaker cloning. Each fresh unit is round-tripped through
    whisper-small in-stage; low similarity triggers reseed-retry (keep-best).
    Silero (`eugene`, CPU) is the fallback engine — slightly lower quality, but
-   it needs no voice sample at all (adapter runs v4_ru today; v5 is also good,
-   DECISIONS 2026-07-18).
+   it needs no voice sample at all (adapter default is v5_5_ru; v4_ru is kept
+   only to reproduce pre-2026-07-19 runs, DECISIONS 2026-07-19).
 5. **Verify** — the independent judge: every render unit is transcribed back
    with whisper-small and compared against the normalized TTS text (the same
    normalizer on both sides); failures are flagged in the run report — never
@@ -133,7 +133,7 @@ embedded as subtitle tracks for free.
 | Download | yt-dlp | |
 | STT | faster-whisper large-v3 | CUDA |
 | Translation | Gemma-3-12B via Ollama · Claude Sonnet (semi-auto) | local default · primary cloud route (DECISIONS 2026-07-18) |
-| TTS | ESpeech-TTS-1_RL-V2 (F5-TTS) | GPU worker in `.venv-f5tts`; pluggable adapter; fallback: Silero (CPU, no voice sample — v4_ru in code, v5 also good) |
+| TTS | ESpeech-TTS-1_RL-V2 (F5-TTS) | GPU worker in `.venv-f5tts`; pluggable adapter; fallback: Silero (CPU, no voice sample — v5_5_ru default, v4_ru only for old runs) |
 | Verification | faster-whisper small | ASR round-trip check |
 | Separation | htdemucs (Demucs) | no-vocals bed for the mix, `.venv-demucs` |
 | Mux | ffmpeg | atempo fitting, bed mix, MKV output |
@@ -203,7 +203,8 @@ That flexibility comes with rules. This section is not legal advice.
   cloning any specific individual's voice.
 - **No-sample alternative:** the Silero fallback needs no reference clip at
   all — slightly lower quality than F5/ESpeech, zero rights questions and zero
-  voice-sample setup (v4_ru in the adapter today; v5 also good).
+  voice-sample setup (v5_5_ru in the adapter — audibly better than the v4_ru
+  it replaced, DECISIONS 2026-07-19).
 
 ## Status
 
