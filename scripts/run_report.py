@@ -69,6 +69,10 @@ def main(argv: list[str] | None = None) -> int:
                    help="queue file of URLs (ids → <work_root>/<id>)")
     p.add_argument("--config", type=Path, default=Path("overdub.toml"),
                    help="TOML config (for work_root); built-in defaults if absent")
+    p.add_argument("--rebuild", action="store_true",
+                   help="recompute run.json from the persisted artifacts instead of loading it "
+                        "(run.json is derived data; use after a rollup schema change so older "
+                        "runs gain the new fields)")
     args = p.parse_args(argv)
 
     cfg = Config.load(args.config)
@@ -97,7 +101,7 @@ def main(argv: list[str] | None = None) -> int:
     runs: list[dict] = []
     for d in dirs:
         work = WorkDir(d)
-        run = _load_json(work.root / "run.json")
+        run = None if args.rebuild else _load_json(work.root / "run.json")
         if run is None:
             run = runreport.build_run_report(work, cfg)
         if run is None:
@@ -114,16 +118,19 @@ def main(argv: list[str] | None = None) -> int:
 
     if runs:
         print("\n── batch " + "─" * 40)
-        header = ("video", "title", "wall_s", "rtf", "tr", "vf", "cp", "spd_max", ">1.8", "triage")
+        header = ("video", "title", "wall_s", "rtf", "floor", "tr", "vf", "cp",
+                  "spd_max", ">1.8", "triage")
         print(" | ".join(header))
         for r in runs:
             t = r.get("timings", {}) or {}
             sp = r.get("speed", {}) or {}
+            fr = (r.get("asr", {}) or {}).get("floor_ratio")
             row = (
                 str(r.get("video_id")),
                 (r.get("title") or "")[:24],
                 str(t.get("total_wall_s", "")),
                 str(t.get("rtf")),
+                f"{fr:.1%}" if fr is not None else "n/a",
                 str((r.get("translate", {}) or {}).get("n_failed", 0)),
                 str((r.get("verify", {}) or {}).get("n_flagged", 0)),
                 str((r.get("completeness", {}) or {}).get("n_flagged", 0)),

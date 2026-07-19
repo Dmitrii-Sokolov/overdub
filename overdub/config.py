@@ -29,6 +29,24 @@ class Config:
                                                  # class, DECISIONS 2026-07-17). Measured safe:
                                                  # no repetition-loop on the music video. Flip
                                                  # to False only if a source makes whisper loop
+    transcribe_floor_run_max: float = 0.085      # share of words landing on the MIN_WORD_DUR
+                                                 # floor above which THIS RUN's transcript is
+                                                 # treated as alignment-collapsed and re-run with
+                                                 # context feedback OFF (transcribe.py guard).
+                                                 # 0.0 disables.
+                                                 #
+                                                 # PROVISIONAL — calibrated on 5 repeat runs each
+                                                 # of 3 videos (2026-07-19). Whisper's temperature
+                                                 # fallback samples, so the SAME audio varies run
+                                                 # to run and the metric scores the run, not the
+                                                 # video: severe 9.33-11.38% (fired 5/5), mid
+                                                 # 3.82-7.52%, "clean" 0.00-7.46% — that last one
+                                                 # is why the first cut at 0.06 was wrong, a
+                                                 # healthy video hit 7.46% on one run. The
+                                                 # separating gap 7.52->9.33% is only 1.8 pp wide
+                                                 # on n=5; widen the sample from the per-run
+                                                 # figures run_report now prints before trusting
+                                                 # this as a constant.
 
     # translation — Gemma-3-12B via Ollama native /api/chat (see stages/translate.py)
     ollama_base_url: str = "http://localhost:11434"

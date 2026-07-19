@@ -207,6 +207,25 @@ def _build_run_report(work, cfg):
     breakdown = ({k: round(v / total_wall * 100, 1) for k, v in stages.items()}
                  if total_wall else {})
 
+    # --- asr alignment health (recomputed from words.json, no new artifact) ---
+    # Same function the transcribe guard gates on, so the report and the guard can never
+    # disagree. Reported EVERY run, not only when the guard fires: whisper's temperature
+    # fallback samples, so this scores the RUN and only a series of runs shows whether a
+    # threshold sits between the healthy and collapsed populations or inside their overlap.
+    from .stages.transcribe import W as _W          # local: stages imports pipeline, which
+    from .stages.transcribe import floor_run_ratio  # imports this module (cycle at import time)
+
+    words = _load_json(work.words)
+    if isinstance(words, list) and words:
+        flat = [_W(str(w.get("text", "")), float(w.get("start") or 0.0),
+                   float(w.get("end") or 0.0), bool(w.get("seg_end")))
+                for w in words if isinstance(w, dict)]
+        f_ratio, f_run = floor_run_ratio(flat)
+        asr_block = {"n_words": len(flat), "floor_ratio": round(f_ratio, 4),
+                     "floor_longest_run": f_run}
+    else:
+        asr_block = {"n_words": 0, "floor_ratio": None, "floor_longest_run": None}
+
     # --- translate -----------------------------------------------------------
     tr_by_type = {k: 0 for k in _TRANSLATE_FLAGS}
     n_sentences = n_failed = 0
@@ -286,6 +305,7 @@ def _build_run_report(work, cfg):
             "rtf": rtf,
             "breakdown_pct": breakdown,
         },
+        "asr": asr_block,
         "translate": {
             "n_sentences": n_sentences,
             "n_failed": n_failed,
@@ -497,6 +517,12 @@ def render_run_report(run, offenders):
     top_part = (" · top: " + ", ".join(f"{k} {v}%" for k, v in top3)) if top3 else ""
     timings_line = f"- timings: {t.get('total_wall_s', 0)}s wall · {rtf_part}{top_part}"
 
+    a = run.get("asr", {}) or {}
+    fr = a.get("floor_ratio")
+    asr_line = (f"- asr: {a.get('n_words', 0)} words · floor {fr:.2%} "
+                f"(longest chain {a.get('floor_longest_run')})"
+                if fr is not None else "- asr: no words.json")
+
     tr = run.get("translate", {}) or {}
     v = run.get("verify", {}) or {}
     c = run.get("completeness", {}) or {}
@@ -508,7 +534,7 @@ def render_run_report(run, offenders):
         f" · speed med {sp.get('median')}/p95 {sp.get('p95')}/max {sp.get('max')}"
         f" (n>1.8 {sp.get('n_over_1_8', 0)})")
 
-    lines = [head, timings_line, flags_line]
+    lines = [head, timings_line, asr_line, flags_line]
     if offenders:
         lines.append(f"- offenders ({len(offenders)}):")
         for o in offenders:

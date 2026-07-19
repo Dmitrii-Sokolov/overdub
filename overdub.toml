@@ -10,6 +10,10 @@
 # whisper_compute_type = "float16"
 # whisper_condition_on_previous = true   # context → proper punctuation; false only if a
 #                                        # source makes whisper loop on repeats
+#   NOTE 2026-07-19: 4szRHy_CT7s was re-transcribed with this set to FALSE — that source
+#   loops on repeats (170 degenerate 0.02s word stamps, 2 duplicate sentence pairs, one
+#   slot at 294 char/s → atempo ×8.79). With it off: 0 degenerate, 0 dups, max 24 char/s,
+#   and no overlong terminator-free blocks came back. Per-source escape hatch, not a default.
 
 # --- translation (Gemma-3-12B via Ollama native /api/chat) ---
 # ollama_base_url = "http://localhost:11434"

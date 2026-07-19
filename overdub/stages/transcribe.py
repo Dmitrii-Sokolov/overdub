@@ -14,6 +14,13 @@ mid-sentence" class (DECISIONS 2026-07-17). With it, real sentence boundaries ca
 periods and the overlong-splitter rarely fires. Measured safe (no repetition loop) on a music
 video; flip the flag off for a source that makes whisper loop.
 
+That flip is now automatic: TranscribeStage._guard measures the share of words flatten had to
+stamp onto the MIN_WORD_DUR floor (floor_run_ratio — the signature of a collapsed alignment,
+which is what the repetition loop leaves behind) and re-runs once with the flag off when it
+exceeds cfg.transcribe_floor_run_max, keeping the retry only if it at least halves the ratio.
+The guard is cause-based: downstream harm depends on the Russian text and on unit grouping,
+neither of which exists yet at this stage.
+
 Four passes: flatten (robustness) → sentence split (guarded) → duration-aware overlong
 split (pause > clause > midpoint) → emit. The sentence is the unit of translation,
 synthesis and timing sync downstream.
@@ -24,6 +31,7 @@ from __future__ import annotations
 import gc
 import json
 import re
+import sys
 from dataclasses import dataclass
 
 from ..asr import load_whisper
@@ -119,6 +127,35 @@ def flatten(segments) -> list[W]:
             flat.append(W(tok, s, e, seg_end=(i == n - 1)))
             prev_end = e
     return _dehallucinate(flat)
+
+
+def floor_run_ratio(flat: list[W]) -> tuple[float, int]:
+    """(share of words sitting on the MIN_WORD_DUR floor in a chain, longest such run).
+
+    Signature of a COLLAPSED whisper word alignment, not of fast speech: flatten's monotone
+    clamp sets start=prev_end whenever whisper hands back a start at or before the previous
+    word's end, and the floor then stretches the word to exactly MIN_WORD_DUR. One such word
+    is ordinary (whisper stamps on a 20 ms grid); a CHAIN of them means whisper returned no
+    usable timing for that stretch and flatten manufactured a plausible-looking one. Only
+    chained hits count — an isolated grid-aligned short word is not evidence.
+
+    Measured on the 12-video AI-Fluency batch: healthy sources ≤4.1%, the repetition-looping
+    source 9.1%. The ratio separates; the longest run does NOT (a healthy 128-sentence video
+    also reached 17), so the caller gates on the ratio and reports the run only as context.
+    """
+    if not flat:
+        return 0.0, 0
+    hits = longest = cur = 0
+    for i, w in enumerate(flat):
+        on_floor = abs((w.end - w.start) - MIN_WORD_DUR) < 1e-6
+        chained = i > 0 and abs(w.start - flat[i - 1].end) < 1e-6
+        if on_floor and chained:
+            hits += 1
+            cur += 1
+            longest = max(longest, cur)
+        else:
+            cur = 0
+    return hits / len(flat), longest
 
 
 def _dehallucinate(flat: list[W]) -> list[W]:
@@ -326,18 +363,61 @@ class TranscribeStage:
     def done(self, ctx: Context) -> bool:
         return ctx.work.sentences.exists()
 
+    def _guard(self, ctx: Context, asr, flat: list[W]) -> list[W]:
+        """Re-run once with context feedback OFF when the word alignment looks collapsed.
+
+        Whisper's repetition loop is fed by condition_on_previous_text, and it takes the word
+        alignment down with it: the run comes back with a chain of floor-stamped words that
+        flatten had to manufacture (see floor_run_ratio). Those fake timings are not cosmetic —
+        synthesize hands each unit's span to F5 as a native-speed target, so a collapsed stretch
+        makes the engine compress until it drops words outright, and assemble tops the rest up
+        with atempo. Observed on 4szRHy_CT7s: one slot at 294 char/s, atempo x8.79.
+
+        Cause-based on purpose. The HARM cannot be predicted here (it depends on the Russian
+        text, which does not exist until translate, and on unit grouping absorbing free gaps —
+        measured: a sentence at 178 char/s still finished at speed x1.37 because the gap after
+        it swallowed the spill). So this guards the data defect, not its downstream effect.
+
+        The retry is kept only if it at least HALVES the ratio: the flag is on for a reason
+        (punctuation — DECISIONS 2026-07-17), so a marginal win does not justify losing it.
+        """
+        limit = ctx.cfg.transcribe_floor_run_max
+        if limit <= 0 or not ctx.cfg.whisper_condition_on_previous:
+            return flat
+        ratio, longest = floor_run_ratio(flat)
+        if ratio <= limit:
+            return flat
+
+        print(f"       [guard] word alignment looks collapsed: {ratio:.1%} of words on the "
+              f"{MIN_WORD_DUR}s floor (longest chain {longest}, limit {limit:.1%}) — "
+              f"re-running with condition_on_previous_text=False", file=sys.stderr)
+        alt = asr(False)
+        alt_ratio, alt_longest = floor_run_ratio(alt)
+        if alt_ratio <= ratio / 2:
+            print(f"       [guard] retry accepted: {ratio:.1%} → {alt_ratio:.1%} "
+                  f"(longest chain {longest} → {alt_longest})", file=sys.stderr)
+            return alt
+        print(f"       [guard] retry REJECTED: {ratio:.1%} → {alt_ratio:.1%} is not a halving — "
+              f"keeping the original. Timings in this video are suspect; check the run report "
+              f"for speed offenders.", file=sys.stderr)
+        return flat
+
     def run(self, ctx: Context) -> None:
         cfg = ctx.cfg
         model = load_whisper(cfg.whisper_model, cfg.whisper_device, cfg.whisper_compute_type)
         try:
-            segments, _info = model.transcribe(
-                str(ctx.work.source_audio),
-                language=cfg.source_lang, beam_size=5,
-                word_timestamps=True, vad_filter=True,
-                vad_parameters=dict(min_silence_duration_ms=500),
-                condition_on_previous_text=cfg.whisper_condition_on_previous,
-            )
-            flat = flatten(segments)                    # consumes the lazy generator
+            def asr(condition_on_previous: bool) -> list[W]:
+                segments, _info = model.transcribe(
+                    str(ctx.work.source_audio),
+                    language=cfg.source_lang, beam_size=5,
+                    word_timestamps=True, vad_filter=True,
+                    vad_parameters=dict(min_silence_duration_ms=500),
+                    condition_on_previous_text=condition_on_previous,
+                )
+                return flatten(segments)                # consumes the lazy generator
+
+            flat = asr(cfg.whisper_condition_on_previous)
+            flat = self._guard(ctx, asr, flat)
         finally:
             del model
             gc.collect()

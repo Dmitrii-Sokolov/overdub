@@ -1,5 +1,47 @@
 # DECISIONS
 
+## 2026-07-19 — Collapsed ASR alignment: guard the cause, not the harm
+
+**The defect.** `4szRHy_CT7s` dubbed one slot at 294 char/s (atempo ×8.79, unintelligible).
+Root cause sat two stages upstream of the symptom: `condition_on_previous_text=True` fed
+whisper's decoder into a repetition loop, which took the word alignment down with it. Whisper
+returned unusable word timings, `flatten`'s monotone clamp + `MIN_WORD_DUR` floor manufactured
+plausible-looking ones (0.02 s per word, 44 in a row), and every stage below trusted them. The
+floor is correct — a zero-length word divides by zero in atempo — but it converted "no timing"
+into "false timing" and recorded nothing.
+
+**Timings are an input to SYNTHESIS, not just to assembly.** F5 receives each unit's span as a
+native-speed target (`supports_target`), so a collapsed stretch makes the engine compress until
+it DROPS words — `unit_sim_threshold` exists precisely because compression ≥~1.3 loses words
+while ASR similarity still scrapes past the base gate. So bad timings cost lost speech, not
+fast speech, and verify can miss it. That is why the guard must sit at transcribe.
+
+**Guard the cause.** Downstream harm cannot be predicted at transcribe time: it depends on the
+Russian text (which does not exist until translate) and on unit grouping absorbing free gaps —
+measured, a sentence at 178 char/s still finished at ×1.37 because the following gap swallowed
+the spill. So `floor_run_ratio` scores the DATA defect (chained floor-stamped words) and
+`_guard` re-runs once with context feedback off, keeping the retry only if it at least halves
+the ratio (the flag earns its keep on punctuation — see 2026-07-17 — and a marginal win does
+not justify losing it).
+
+**Whisper is not deterministic here, and that reframes the threshold.** `temperature` is a
+fallback LIST, so the decoder samples and the same audio yields different transcripts per run.
+Measured over 5 repeat runs each of 3 videos: severe 9.33–11.38% (fired 5/5), mid 3.82–7.52%,
+"clean" 0.00–7.46%. The control video — 0.0% on its original run — hit 7.46% with a 30-word
+chain on run 3. There is no such thing as a sick VIDEO, only a sick RUN. The first threshold
+(0.06) would therefore have fired on a healthy source and traded away punctuation for nothing;
+it is now 0.085, inside a separating gap only 1.8 pp wide on n=5 and marked PROVISIONAL.
+
+**Consequence accepted:** the guard is reliable insurance against a CATASTROPHE (severe case
+caught 5/5) and unreliable as a borderline detector (mid case 2/5). Claiming otherwise would be
+false. `run.json` now carries `asr.floor_ratio` on EVERY run so the threshold can be recalibrated
+from a real distribution instead of single samples.
+
+**Still open:** `no_repeat_ngram_size` / `repetition_penalty` are at library defaults (0 and 1 —
+i.e. off). They attack the repetition loop that FEEDS the temperature fallback, so they are the
+only lever that could narrow the run-to-run spread rather than catch its tail. Not adopted
+blind: a too-small n mangles legitimate repetition silently, which is the forbidden class.
+
 ## 2026-07-15 — Founding decisions
 
 **Local-only pipeline.** Target volume is hundreds of hours; cloud TTS pricing

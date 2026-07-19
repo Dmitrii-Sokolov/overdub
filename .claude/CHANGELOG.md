@@ -1,5 +1,32 @@
 # CHANGELOG
 
+## 2026-07-19 — Transcribe guard: auto-retry on a collapsed word alignment + `asr` rollup
+- NEW `transcribe.floor_run_ratio(flat) -> (ratio, longest_run)`: share of words sitting on the
+  `MIN_WORD_DUR` floor IN A CHAIN (start == previous end), the signature of a whisper alignment
+  collapse. Only chained hits count — whisper stamps on a 20 ms grid, so an isolated short word
+  is ordinary output, not evidence.
+- NEW `TranscribeStage._guard`: when the ratio exceeds `cfg.transcribe_floor_run_max` it re-runs
+  ASR ONCE with `condition_on_previous_text=False` (the model stays loaded — no reload cost) and
+  keeps the retry only if it at least HALVES the ratio; otherwise it keeps the original and says
+  loudly that the timings are still suspect. Never silent either way.
+- NEW `cfg.transcribe_floor_run_max = 0.085` (0.0 disables), marked PROVISIONAL with its sample.
+- `run.json` gains an `asr` block (`n_words`, `floor_ratio`, `floor_longest_run`), recomputed from
+  the already-persisted `words.json` — no new artifact, no schema break, and the SAME function the
+  guard gates on, so report and guard cannot drift. Reported every run, not only when the guard
+  fires: the threshold can only be calibrated from a distribution.
+- `scripts/run_report.py`: `floor` column in the batch table, `- asr:` line per video block, and a
+  new `--rebuild` flag (recompute run.json from artifacts) so older runs gain new rollup fields.
+  Import of `floor_run_ratio` is function-local — a module-level one cycles
+  `pipeline → runreport → stages.transcribe → pipeline`.
+- NEW `tests/test_transcribe_guard.py` (12 tests: detector shape + every `_guard` branch on a stub
+  ASR). Full suite 11 files green.
+- FIXED in the AI-Fluency batch: `4szRHy_CT7s` (repetition loop → 2 duplicate sentence pairs, one
+  slot at 294 char/s) re-transcribed with the flag off — 170 floor-stamped words → 0, max density
+  294 → 24 char/s, atempo ×8.79 → ×1.03, no overlong terminator-free blocks came back.
+  `RyvXxApfHkk` likewise re-run: max ×1.81 → ×1.57, 63.6 → 35.9 char/s.
+- MEASURED (5 repeat runs × 3 videos): whisper's temperature fallback samples, so the metric scores
+  the RUN, not the video — a "clean" control video hit 7.46% on one run of five. See DECISIONS.
+
 ## 2026-07-19 — Morning-triage HTML: flagged units with inline audio (closes PLAN item 1)
 - NEW `scripts/triage_html.py [work/<id> ...] [--queue FILE] [--out PATH] [--link]`: renders one
   self-contained HTML page for a batch — a triage table (which videos need a listen) + per FLAGGED
