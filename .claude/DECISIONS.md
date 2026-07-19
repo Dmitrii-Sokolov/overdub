@@ -833,3 +833,54 @@ checks TTS fidelity to `text_ru`, not that `text_ru` is a complete translation o
 Gemma's tightness occasionally drops a word (measured: 1 of 3 adverbs on Dmgujo id1) and nothing
 flags it — same silent-loss class as the out-of-dict pronunciation echo. A completeness check is now
 the highest-value verify upgrade (PLAN roadmap 1).
+
+## 2026-07-19 — 4-way translate bake-off on x7DfiXqSEdM: Gemma prompt-bundle dropped, Sonnet isolation dropped
+
+Single-video A/B/C/D on one frozen `sentences.json` (x7DfiXqSEdM, 427 sentences, ~39 min,
+first-person vlog monologue on social gaming), same input, four translators:
+1. **gemma-base** — current SYSTEM prompt (shipping local default).
+2. **gemma-impr** — the four-change bundle from `.claude/gemma-translate-ab-brief.md`:
+   completeness-first reframe (#1) + forward lookahead of the next 1-2 EN sentences (#2) +
+   1-2 few-shot examples inside SYSTEM (#3) + anti-repetition rule (#4). Ran on a FRESH workdir
+   (the brief's stale-`src_en`-reuse trap) via a branch build of `translate.py`.
+3. **sonnet-v1** — Sonnet sub-agent, `general-purpose` type (Tools:*), whole document in context.
+4. **sonnet-iso** — Sonnet sub-agent, a custom isolated `overdub-translator` type (Read/Write only),
+   built to test whether a narrow agent translates cleaner than the broad one.
+
+**Objective metrics** (all four: 427 sentences, 0 `_is_bad` flags):
+
+| variant | len ratio med | >1.5× slots | name_loss* | digit_loss* |
+|---|---|---|---|---|
+| gemma-base | 0.98 | 2 | 29 | 6 |
+| gemma-impr | 1.06 | **20** | 27 | 5 |
+| sonnet-v1  | 0.93 | 1 | 21 | **0** |
+| sonnet-iso | 0.95 | 1 | 21 | 0 |
+
+\* noisy heuristic (EN names/digits absent from RU); valid for cross-variant comparison, not absolute.
+Pairwise differ-counts: base↔impr 345/427, v1↔iso 344/427 (81%), v1↔gemma-base 411/427 (96%) —
+engine choice moves the translation far more than any prompt/agent tweak.
+
+**User read-through verdict:**
+- **Gemma base vs impr → PARITY on text, base wins for the video.** impr makes no outright errors
+  (base occasionally mistranslates), but builds clumsier, harder-to-parse sentences. Net: the bundle
+  is not worth it. The mechanical cause is change #1 (completeness reframe): it inflated length
+  (+7% median, **×10 more >1.5× slots: 2→20**) without recovering meaning in the target spots (the
+  `[46]` "medium of a game" drop it was meant to fix survived) — it just added filler and register
+  stiffness. **DROPPED; branch `gemma-completeness-ab` discarded, `translate.py` unchanged.**
+- **Sonnet v1 vs iso → difference small, v1 slightly more natural** (iso calques the English a touch
+  more often). Isolation does NOT improve translation quality; its only value is operational
+  (narrow tool-set, determinism, tokens). Not worth a second agent type. **iso agent DROPPED; the
+  `overdub-sonnet-batch` skill stays on `general-purpose`.**
+- **Sonnet vs Gemma → Sonnet is the clear winner** — more accurate and more natural speech. On this
+  lifestyle vlog the gap is clear; on the earlier science-pop read-through it was even wider
+  (content-dependent). Confirms Sonnet = PRIMARY route (DECISIONS 2026-07-18).
+
+**Kept:** the semi-automatic Sonnet-route infrastructure — `.claude/skills/overdub-sonnet-batch/`
+(fixed transcribe → sub-agent draft → resume order) + `scripts/build_translation.py` (sub-agent
+writes only `{id, text_ru}`; the helper fills src_en/timings, derives `text_tts` via the pipeline's
+own `normalize_for_tts`, gates each line through `_is_bad`, enforces id-contiguity — so the translate
+contract never rides on an LLM's discipline). Validated on this 427-sentence run.
+
+**Completeness stays the top blind spot but the prompt-bundle is NOT the fix** (this experiment
+falsified it). The verify-side completeness check (PLAN roadmap 1) remains the right lever.
+Caveat: n=1 video, lifestyle content — indicative, not a multi-content-type A/B.

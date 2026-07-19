@@ -1,5 +1,16 @@
 # CHANGELOG
 
+## 2026-07-19 — 4-way translate bake-off: Gemma bundle + Sonnet isolation dropped; Sonnet-route infra kept
+- A/B/C/D on x7DfiXqSEdM (427 sentences): gemma-base vs gemma-impr (completeness+lookahead+few-shot+
+  anti-repeat bundle) vs sonnet-v1 (general-purpose) vs sonnet-iso (isolated agent). User read-through:
+  Gemma bundle = parity but clumsier → dropped (×10 more >1.5× slots, no completeness win); Sonnet iso
+  ≈ v1, no quality gain → dropped; Sonnet >> Gemma, confirmed primary. DECISIONS 2026-07-19
+- Kept + committed: `.claude/skills/overdub-sonnet-batch/` (fixed route-B order: transcribe → Sonnet
+  sub-agent writes `{id,text_ru}` draft → resume) + `scripts/build_translation.py` (helper fills the
+  contract: src_en/timings, `text_tts` via normalize_for_tts, `_is_bad` gate, id-contiguity)
+- Discarded: branch `gemma-completeness-ab` (translate.py prompt bundle) and the isolated
+  `overdub-translator` agent type — neither earned its keep
+
 ## 2026-07-18 — Silero v5 recorded as the good no-sample TTS option
 - User verdict: quality slightly below F5/ESpeech, but no narrator reference clip needed —
   zero voice-sample setup and zero rights questions. Documented in README (pipeline, stack
