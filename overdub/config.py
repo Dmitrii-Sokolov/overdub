@@ -82,6 +82,14 @@ class Config:
     similarity_threshold_compressed: float = 0.9   # stricter gate for natively compressed
                                                    # units (word-drop risk; unit_sim_threshold)
 
+    # completeness — cheap deterministic loss check (stages/verify.py + completeness.py),
+    # non-blocking triage only. len(text_ru)/len(src_en) below this AND len(src_en) >= 30 chars
+    # -> length_short. 0.45 sits under the natural RU-compression floor (~0.46): validated
+    # 0/427 false positives on both the Gemma and near-clean Sonnet samples; 0.50 would false-
+    # flag a legit condensed sentence. Weak signal, redundant with the precise num/neg/entity
+    # detectors — kept conservative to prefer a miss over a false alarm.
+    completeness_len_ratio_min: float = 0.45
+
     @classmethod
     def load(cls, path: Path | None) -> "Config":
         cfg = cls()

@@ -24,7 +24,7 @@ import sys
 
 import soundfile as sf
 
-from .. import report
+from .. import completeness, report
 from ..asr import load_whisper, roundtrip_similarity
 from ..normalize import normalize_for_compare
 from ..pipeline import Context
@@ -141,6 +141,37 @@ class VerifyStage:
                          "units_key": man.get("units_key"),
                          "n_units": len(units), "n_segments": len(segs), "n_flagged": n_flag,
                          "n_retried": n_retried, "n_repaired": n_repaired}
+
+        # Completeness: a pure src_en<->text_ru text comparison (no audio, no model, no unit
+        # grouping) — a SEPARATE loop over sentences, run here on the CPU after the whisper
+        # model is freed. Non-blocking triage flags only; never gates the pipeline. Written
+        # UNCONDITIONALLY per sentence (None/[] when clean) so a re-run after a translation fix
+        # overwrites stale flags — the same stale-clearing discipline the unit loop uses above.
+        n_num = n_neg = n_ent = n_len = n_comp_flag = 0
+        for s in segs:
+            c = completeness.check(s.get("src_en") or "", s.get("text_ru") or "", cfg)
+            fl = c["flags"]
+            report.upsert(
+                rep, s["id"],
+                completeness_flags=fl,
+                completeness_len_ratio=c["length_ratio"],
+                completeness_missing_numbers=(c["missing_numbers"] or None),
+                completeness_missing_entities=(c["missing_entities"] or None),
+                completeness_negation_lost=(True if c["negation_lost"] else None),
+            )
+            if fl:
+                n_comp_flag += 1
+            n_num += "num_loss" in fl
+            n_neg += "neg_loss" in fl
+            n_ent += "entity_loss" in fl
+            n_len += "length_short" in fl
+        rep["completeness"] = {"len_ratio_min": cfg.completeness_len_ratio_min,
+                               "n_sentences": len(segs), "n_flagged": n_comp_flag,
+                               "n_num_loss": n_num, "n_neg_loss": n_neg,
+                               "n_entity_loss": n_ent, "n_length": n_len}
+
         report.save(ctx.work.report, rep)
         print(f"       {len(units)} units / {len(segs)} sentences verified "
               f"({n_flag} flagged, {n_retried} retried, {n_repaired} repaired)")
+        print(f"       {len(segs)} sentences completeness-checked "
+              f"({n_comp_flag} flagged: num {n_num}, neg {n_neg}, ent {n_ent}, len {n_len})")
