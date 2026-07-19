@@ -115,6 +115,31 @@ def test_empty_text_ru_flagged() -> None:
     assert out[0]["status"] == "failed" and out[0]["flag"] == "empty"
 
 
+def test_non_string_text_ru_exits() -> None:
+    # a JSON null must be rejected LOUD — str() coercion would voice it literally
+    # ("None" -> "нон") and it passes every _is_bad gate
+    assert _exits(
+        [_sent(0, "a")],
+        [{"id": 0, "text_ru": None}],
+    )
+
+
+def test_pronounce_audit_written() -> None:
+    # parity with TranslateStage.run: route B must keep the audit-only triage artifact
+    with tempfile.TemporaryDirectory() as d:
+        tmp = Path(d)
+        work = WorkDir(root=tmp)
+        work.sentences.write_text(
+            json.dumps([_sent(0, "It runs at 60 fps.")]), encoding="utf-8")
+        dp = tmp / "draft.json"
+        dp.write_text(json.dumps([{"id": 0, "text_ru": "Она выдаёт 60 fps."}],
+                                 ensure_ascii=False), encoding="utf-8")
+        build_translation.build(work, dp, Config())
+        audit = json.loads(work.pronounce_audit.read_text(encoding="utf-8"))
+        assert audit["video_id"] == work.root.name
+        assert "fps" in audit["tokens"]
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):
