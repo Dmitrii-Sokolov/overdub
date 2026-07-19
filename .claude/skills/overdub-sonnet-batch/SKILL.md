@@ -29,16 +29,31 @@ do not skip the helper, do not let a sub-agent hand-write `text_tts`.
 Single video: same command with the URL instead of `--batch queue.txt`.
 
 Produces per video: `work/<id>/sentences.json` — a JSON list of `{id, text, start, end}`,
-`id` contiguous from 0. That is the sub-agent's input. Get the id list:
+`id` contiguous from 0. That is the sub-agent's input.
+
+**The id list comes from the QUEUE, never from a `work/` listing.** `<id>` is the 11-char
+YouTube id inside each URL (step 1 also prints it per video: `work dir: work\<id>`):
 
 ```powershell
-Get-ChildItem work -Directory | ForEach-Object { $_.Name }
+$ids = Get-Content queue.txt | ForEach-Object {
+  if ($_ -match '(?:v=|youtu\.be/|/shorts/|/embed/)([A-Za-z0-9_-]{11})') { $Matches[1] } }
 ```
+
+Do NOT enumerate `work/` directories — `work/` persists across batches and holds
+stale/baseline workdirs; translating those wastes tokens and overwrites their
+`translation.json` (experiment baselines are unrecoverable).
+
+**Gate before step 2:** step 1 exited 0 and `work/<id>/sentences.json` exists for every id in
+`$ids`. The batch continues past per-video failures (`FAIL` rows in the summary) — re-run the
+same step-1 command until clean; completed stages fast-skip.
 
 ## Step 2 — Translate each video with a Sonnet sub-agent
 
 **One sub-agent per video, spawned in parallel** (they are independent). Use the Agent tool
-(`general-purpose`). Each sub-agent does ONE thing: read `sentences.json`, translate, and write
+(`general-purpose`, **`model: "sonnet"` — set it explicitly**: sub-agents otherwise inherit
+the session model, silently swapping the translator; every quality verdict for this route is
+Sonnet-specific, DECISIONS 2026-07-18/19). Each sub-agent does ONE thing: read
+`sentences.json`, translate, and write
 `work/<id>/translation.draft.json` = a JSON list `[{"id": <int>, "text_ru": "<string>"}, ...]`
 covering **every** id. Nothing else — no `text_tts`, no `src_en`, no timings.
 
@@ -57,7 +72,9 @@ Sub-agent prompt skeleton (fill `<id>`):
 > Follow these rules exactly: <paste "Translation rules" from references/translate-contract.md>.
 > Write `D:\code\overdub\work\<id>\translation.draft.json` as `[{"id": 0, "text_ru": "..."}, ...]`
 > with one entry for EVERY id in sentences.json, in order. Output only text_ru — do NOT add
-> text_tts, do NOT respell numbers, do NOT touch timings. Report the count written.
+> text_tts, do NOT respell numbers, do NOT touch timings. For long videos (300+ sentences)
+> write the file incrementally — append batches of ~50 entries per edit, never one giant
+> single-shot write. Report the count written.
 
 Then, for each video, assemble + validate the real artifact with the helper (it fills
 `src_en`/timings, derives `text_tts` via the pipeline's own normalizer, gates each line through
@@ -73,7 +90,23 @@ helper; do not proceed with a partial `translation.json`.
 
 ## Step 3 — Resume the full pipeline
 
-The exact command from the local route (no `--only`). `TranslateStage.done()` is
+**Gate before resuming (do not skip):** `work/<id>/translation.json` must exist for EVERY id
+in `$ids`:
+
+```powershell
+$ids | Where-Object { -not (Test-Path "work\$_\translation.json") }   # must print nothing
+```
+
+A video missing it does NOT fail loudly at resume — its translate stage runs the LOCAL Gemma
+path: with Ollama up it is silently translated by Gemma (a silent route substitution; the
+batch still reports ok), without Ollama it fails with a misleading "Ollama not reachable —
+start the daemon" (the real fix is step 2 for that video, not starting Ollama).
+
+Also preflight the synthesis prerequisites now, before an overnight run: `.venv-f5tts` and
+the F5 assets under `models/` exist; `.venv-demucs` exists (needed for the default
+`dub_mix = "bed"`).
+
+Then the exact command from the local route (no `--only`). `TranslateStage.done()` is
 `translation.json exists`, so download/transcribe/translate fast-skip; synthesize → verify →
 assemble → separate → mux run as usual:
 
@@ -85,7 +118,9 @@ assemble → separate → mux run as usual:
 - Interrupt/resume: re-run the same command — completed stages fast-skip. Graceful stop:
   create `work/STOP`. Exit codes: 0 ok / 1 any fail / 2 usage / 3 stop-halt.
 - Morning triage: `work/<id>/report.json` — any `*_flag`, or `speed_factor > 1.8`. Translate
-  flags also surface as `status:"failed"` lines in `translation.json`.
+  flags also surface as `status:"failed"` lines in `translation.json`; `pronounce_audit.json`
+  (the helper writes it, parity with the local route) lists what the pipeline invented for
+  out-of-dict Latin names — the one silent-loss class verify cannot catch.
 
 ## Guardrails (the failure modes this skill exists to prevent)
 
@@ -97,5 +132,8 @@ assemble → separate → mux run as usual:
 - **The helper is not optional.** It is the only thing validating the contract on the resume
   path (`TranslateStage.done()` only checks that the file exists — a malformed hand-written
   `translation.json` would sail straight into synthesize and produce garbage or crash there).
+- **A missing `translation.json` at step 3 is a silent route substitution, not an error.**
+  The resume runs the local Gemma path for that video (silently, if Ollama is up) — hence the
+  mandatory every-id check before resuming, and hence ids from the queue, never from `work/`.
 - If `sentences.json` is re-transcribed (e.g. `--force transcribe`), the drafts are stale —
   re-run step 2 for that video.

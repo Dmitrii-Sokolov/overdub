@@ -12,6 +12,10 @@ the translate-seam contract never rides on an LLM's discipline:
                            in-pipeline Gemma path flags (empty / no_cyrillic / english_echo /
                            runaway / refusal)
   - id-contiguity          enforced (exit, never a silent drop) exactly like TranslateStage.run
+  - pronounce_audit.json   pronounce.audit_summary(...) -- the audit-only operator-triage
+                           artifact the local route writes; without it route B silently loses
+                           the only detector for the out-of-dict Latin-name silent-loss class
+                           (DECISIONS 2026-07-17 item F)
 
 Reusing the pipeline's own (partly private) helpers is deliberate: route B replaces only the
 LLM call, so every downstream invariant stays byte-identical to the local route. If _is_bad or
@@ -33,6 +37,7 @@ from pathlib import Path
 # scripts/ is sys.path[0] when run as a file -- put the repo root first so `import overdub` resolves
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from overdub import pronounce                            # noqa: E402
 from overdub.config import Config                       # noqa: E402
 from overdub.normalize import normalize_for_tts         # noqa: E402
 from overdub.stages.translate import _is_bad            # noqa: E402
@@ -48,9 +53,13 @@ def _load_draft(path: Path) -> dict[int, str]:
     for i, rec in enumerate(raw):
         try:
             sid = int(rec["id"])
-            text_ru = str(rec["text_ru"])
+            text_ru = rec["text_ru"]
         except (TypeError, KeyError, ValueError) as e:
             sys.exit(f"[FAIL] draft record {i} missing id/text_ru ({e}): {rec!r}")
+        if not isinstance(text_ru, str):
+            # str() coercion would voice a JSON null literally ("None" -> "нон") and it
+            # passes every _is_bad gate -- reject the type, don't launder it
+            sys.exit(f"[FAIL] draft record {i}: text_ru is not a string: {rec!r}")
         if sid in out:
             sys.exit(f"[FAIL] draft has duplicate id {sid}")
         out[sid] = text_ru
@@ -95,6 +104,13 @@ def build(work: WorkDir, draft_path: Path, cfg: Config) -> tuple[int, int]:
     tmp = work.translation.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
     os.replace(tmp, work.translation)                    # atomic: never a torn translation.json
+
+    # pronounce audit -- same audit-only artifact as TranslateStage.run (written, never
+    # read back): operator triage of what the pipeline invented for Latin tokens
+    audit = pronounce.audit_summary(work.root.name, out)
+    atmp = work.pronounce_audit.with_suffix(".json.tmp")
+    atmp.write_text(json.dumps(audit, ensure_ascii=False, indent=2), encoding="utf-8")
+    os.replace(atmp, work.pronounce_audit)
     return len(out), n_fail
 
 

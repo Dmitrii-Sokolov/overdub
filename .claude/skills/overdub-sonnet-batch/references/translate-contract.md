@@ -7,7 +7,7 @@ artifacts involved. The division of labour is the whole point:
 |---|---|---|
 | transcribe stage | `sentences.json` | id, source text, timings |
 | **Sonnet sub-agent** | `translation.draft.json` | **`text_ru` only** (the judgement part) |
-| `scripts/build_translation.py` | `translation.json` | src_en/timings copy, `text_tts`, gate, contiguity |
+| `scripts/build_translation.py` | `translation.json` + `pronounce_audit.json` | src_en/timings copy, `text_tts`, gate, contiguity |
 
 ## Input — `work/<id>/sentences.json`
 
@@ -67,6 +67,10 @@ deterministically by the helper. One `text_ru` = one natural spoken-Russian line
   Never hand-written.
 - `status` — `"ok"`, or `"failed"` with an extra `"flag"` field when `_is_bad` rejects the line.
 - `attempts` — always `1` on this route (no reseed loop; Sonnet translated once).
+
+The helper also writes `work/<id>/pronounce_audit.json` (audit-only, read by nobody — same as
+the local route): what the pronounce chain invented for Latin tokens, for operator triage of
+the out-of-dict-name silent-loss class.
 
 ## Gate — why a line comes back `status:"failed"`
 

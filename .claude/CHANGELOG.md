@@ -1,6 +1,19 @@
 # CHANGELOG
 
-## 2026-07-19 — 4-way translate bake-off: Gemma bundle + Sonnet isolation dropped; Sonnet-route infra kept
+## 2026-07-19 — Route-B hardening: skill audit closed 8 defects (skill + helper)
+- Skill audit (minimal-context-agent lens) vs code: commands/contract/flag table all held;
+  8 gaps fixed. SKILL.md: ids from queue.txt (regex, never a `work/` listing — stale/baseline
+  workdirs would be re-translated and their translation.json overwritten), gate before step 2
+  (every sentences.json exists), MANDATORY gate before step 3 (every translation.json exists —
+  a missing one silently falls back to Gemma with Ollama up, or fails with a misleading
+  "start the daemon"), explicit `model: "sonnet"` for sub-agents (else session model silently
+  substitutes), incremental draft writes for 300+ sentences, synth-prereq preflight before the
+  overnight resume
+- build_translation.py: writes pronounce_audit.json (parity with the local route — route B was
+  silently losing the only detector for the out-of-dict Latin-name silent-loss class,
+  DECISIONS 2026-07-17 item F); rejects non-string text_ru (JSON null coerced to "None" passed
+  every _is_bad gate and would be voiced as «нон»). Both verified live on a synthetic workdir
+- translate-contract.md: helper's outputs now include pronounce_audit.json
 - A/B/C/D on x7DfiXqSEdM (427 sentences): gemma-base vs gemma-impr (completeness+lookahead+few-shot+
   anti-repeat bundle) vs sonnet-v1 (general-purpose) vs sonnet-iso (isolated agent). User read-through:
   Gemma bundle = parity but clumsier → dropped (×10 more >1.5× slots, no completeness win); Sonnet iso
