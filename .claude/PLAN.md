@@ -6,33 +6,15 @@ Sample workdirs: `work/` (Silero baselines, read-only); `work-exp/context-earche
 switch models); `work-exp/gemma-ab/` (Gemma, the same 8 — the A/B set). A/B report artifact
 published (Qwen vs Gemma, 508 sentences). Report triage: any *_flag or speed_factor>1.8.
 
-1. **Stage-major batch execution — CODE COMPLETE 2026-07-19, awaiting GPU verification.**
-   Implemented as three commits (loop inversion + status machine · `Session` + model cache ·
-   Ollama unload at sweep end); design and hazard handling in DECISIONS, inventory in CHANGELOG.
-   **Still open — the verification run, which is the acceptance gate:** L0 F5 worker-state probe
-   (does render N depend on render N−1 inside one live worker — if it does, byte-identity is the
-   wrong criterion and the bounded-equivalence fallback applies), then L1 byte-identity on 2
-   videos (`-UN9sNqQ0t4`, `DmgujoZ1mmk`, both `n_retried=0`), the L1-guard timing check (SM's
-   summed synthesize wall must be ≥30 s below VM's, or the restructure is a no-op that passes
-   byte-identity trivially), L1b the never-yet-exercised reseed branch, and an observability test
-   for the accounting that byte-identity structurally cannot cover (`run.json`, `timings.json`,
-   the summary). Byte comparison CANNOT include transcribe or translate — whisper's temperature
-   fallback samples, so it is irreproducible by construction; run on pre-seeded `translation.json`.
-   Every `work/*/segments` render is stale by `synth_key` since nfe went to 16 — only
-   `work-exp/nfe16/RyvXxApfHkk` is current.
-   **Projection corrected: ~53 → ~28 min, not ~26.** The old figure folded in demucs multi-file
-   batching (~2.4 min), which is deliberately deferred — see DECISIONS for why it needs a `Stage`
-   protocol change and fights per-video resume.
-   **Two side effects to know before the first overnight run, neither a bug:**
-   (a) `download` amortises nothing, so hoisting it means a 100-video queue downloads in full
-   before the first transcribe — ~100 GB in hour 0. Watch for ENOSPC; the compensation is that
-   network failures surface immediately instead of smeared across the night.
-   (b) `_title_of` is a networked `yt-dlp --print title` with a 30 s timeout for pre-change
-   workdirs. Those calls used to be spread across the batch; in the finish sweep they queue up
-   back-to-back — an offline resume of 12 videos can sit in up to 6 minutes of timeouts in one
-   block at the very end.
+**Before the first overnight batch on the new order — two side effects, neither a bug:**
+(a) `download` amortises nothing, so hoisting it means a 100-video queue downloads in full before
+the first transcribe — ~100 GB in hour 0. Watch for ENOSPC; the compensation is that network
+failures surface immediately instead of smeared across the night.
+(b) `_title_of` is a networked `yt-dlp --print title` with a 30 s timeout for pre-change workdirs.
+Those calls used to be spread across the batch; in the finish sweep they queue back-to-back — an
+offline resume of 12 videos can sit in up to 6 minutes of timeouts in one block at the very end.
 
-2. **Sonnet semi-automatic translate — live-run the primary route.** Verdict recorded
+1. **Sonnet semi-automatic translate — live-run the primary route.** Verdict recorded
    2026-07-18 (DECISIONS): quality noticeably better, much faster, replaces the heaviest stage;
    both routes stay — Gemma = local in-pipeline default, Sonnet (subscription, cloud) = PRIMARY,
    in semi-automatic mode (sub-agents at the translate seam). Runbook: README "Running" route B.
@@ -46,7 +28,7 @@ published (Qwen vs Gemma, 508 sentences). Report triage: any *_flag or speed_fac
    in-pipeline Anthropic API flag stays approved but deferred — build only if the manual seam
    becomes the bottleneck.
 
-3. **`--repair-asr id,id` — automate the isolated-window repair.** The manual loop proved out 7/7
+2. **`--repair-asr id,id` — automate the isolated-window repair.** The manual loop proved out 7/7
    on the AI-Fluency batch (method + caveats: DECISIONS 2026-07-19): `rate_implausible` /
    `dup_adjacent` already localise the defect window; re-ASR just that window with
    `condition_on_previous_text=False`; accept ONLY if the reading is identical under cond=True
@@ -56,7 +38,7 @@ published (Qwen vs Gemma, 508 sentences). Report triage: any *_flag or speed_fac
    it activates the moment the next batch's detectors fire. `words.json` stays deliberately
    untouched (CHANGELOG 2026-07-19).
 
-4. **Video summary from the full transcript — "is this worth watching at all?"** A separate Sonnet
+3. **Video summary from the full transcript — "is this worth watching at all?"** A separate Sonnet
    sub-agent reads the COMPLETE original transcript (`sentences.json` — it already exists after
    transcribe, no new stage input) and writes a **Russian** summary of **~200 words**. Purpose is
    triage-before-viewing, not a synopsis: it must answer (a) is the video worth watching, and
@@ -170,7 +152,9 @@ A/B-driven; Qwen removed)** · **Sonnet A/B + verdict: semi-auto = primary route
 **Item 0 — AI-Fluency batch: 8 ASR defects repaired, 2 detectors shipped, 12 MKVs re-shipped ✅
 (2026-07-19; sub-item index 0a-0j in CHANGELOG)** · **`no_repeat_ngram_size` sweep → REJECTED ✅
 (2026-07-19)** · **F5 `nfe` 48→16 measured + ear-checked + adopted, 2.16× on synthesis ✅
-(2026-07-19; fp16/compile/batching found already-on, unavailable and a mirage respectively)**.
+(2026-07-19; fp16/compile/batching found already-on, unavailable and a mirage respectively)** ·
+**Stage-major batch execution ✅ (2026-07-19; byte-identity verified 39/39 wavs, one worker spawn
+amortised per extra video — roadmap item 1 "speed up F5" CLOSED, lever ledger in DECISIONS)**.
 
 Stack pins, verified APIs and setup: STACK.md + SETUP.md. Translation: Gemma-3-12B (Ollama),
 `gemma3:12b`, local in-pipeline default by A/B 2026-07-18 (Qwen3-14B removed); PRIMARY route =
