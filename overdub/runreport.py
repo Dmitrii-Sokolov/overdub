@@ -378,6 +378,107 @@ def summarize_offenders(report, translation=None, limit=40):
     return rows[:limit]
 
 
+def flagged_units(report, translation=None, limit=500):
+    """UNIT-level triage rows for the morning-triage HTML — richer than summarize_offenders (which
+    is sentence-level for the text digest). One row per RENDER UNIT (deduped by group_id) that
+    carries a problem: a verify flag / combined-speed >= 1.8 / assemble flag on the leader, OR a
+    completeness flag or a failed/flagged translation on ANY member. Carries the leader id (→ the
+    `segments/<lead>.wav` a human listens to), the member ids, the ASR similarity + hypothesis
+    (the verify-triage payload — hypothesis lives on the leader record only), the joined EN/RU/tts
+    text, and the unit span + speed. Pure, no I/O — the HTML script owns file reads/rendering.
+
+    group_id is the leader's own sentence id by construction (verify/assemble set it to the unit's
+    first id), so `lead` doubles as the wav key. Falls back to id for legacy per-sentence records."""
+    if not isinstance(report, dict):
+        return []
+    segs = report.get("segments")
+    if not isinstance(segs, list):
+        return []
+
+    groups: dict = {}                                       # gid -> {"lead": rec, "members": [rec]}
+    order: list = []
+    for rec in segs:
+        if not isinstance(rec, dict):
+            continue
+        gid = rec.get("group_id")
+        if gid is None:
+            gid = rec.get("id")
+        if gid not in groups:
+            groups[gid] = {"lead": rec, "members": []}     # first-seen = the leader (id-sorted)
+            order.append(gid)
+        groups[gid]["members"].append(rec)
+
+    tr_by_id: dict = {}
+    if isinstance(translation, list):
+        for r in translation:
+            if isinstance(r, dict) and "id" in r:
+                tr_by_id[r.get("id")] = r
+
+    rows = []
+    for gid in order:
+        lead = groups[gid]["lead"]
+        members = groups[gid]["members"]
+        reasons: list = []
+        vf = lead.get("verify_flag")
+        if vf:
+            reasons.append(f"verify:{vf}")
+        sp = lead.get("combined_factor")
+        if sp is None:
+            sp = lead.get("speed_factor")
+        sp = float(sp) if isinstance(sp, (int, float)) else None
+        if sp is not None and sp >= _BROKEN:
+            reasons.append(f"speed:{sp:.2f}")
+        af = lead.get("assemble_flag")
+        if af:
+            reasons.append(f"assemble:{af}")
+        seen: set = set()                                  # completeness then translate, deduped,
+        for m in members:                                  # unioned across the unit's members
+            cf = m.get("completeness_flags")
+            if isinstance(cf, list):
+                for c in cf:
+                    if ("complete", c) not in seen:
+                        seen.add(("complete", c))
+                        reasons.append(f"complete:{c}")
+        for m in members:
+            tflag = m.get("translate_flag")
+            if m.get("status") == "failed" or tflag:
+                key = tflag or "failed"
+                if ("translate", key) not in seen:
+                    seen.add(("translate", key))
+                    reasons.append(f"translate:{key}")
+        if not reasons:
+            continue
+
+        ids = [m.get("id") for m in members]
+        trs = [tr_by_id.get(i) for i in ids]
+
+        def _join(field):
+            vals = [t.get(field) for t in trs
+                    if isinstance(t, dict) and isinstance(t.get(field), str) and t.get(field).strip()]
+            return " ".join(v.strip() for v in vals) if vals else None
+
+        starts = [t.get("start") for t in trs
+                  if isinstance(t, dict) and isinstance(t.get("start"), (int, float))]
+        ends = [t.get("end") for t in trs
+                if isinstance(t, dict) and isinstance(t.get("end"), (int, float))]
+        sim = lead.get("similarity")
+        rows.append({
+            "lead": gid,
+            "ids": ids,
+            "reasons": reasons,
+            "similarity": (round(sim, 4) if isinstance(sim, (int, float)) else None),
+            "hypothesis": lead.get("hypothesis"),
+            "text_tts": _join("text_tts"),
+            "src_en": _join("src_en"),
+            "text_ru": _join("text_ru"),
+            "start": (min(starts) if starts else None),
+            "end": (max(ends) if ends else None),
+            "speed": (round(sp, 4) if sp is not None else None),
+        })
+    rows.sort(key=lambda r: (r["lead"] is None, r["lead"]))
+    return rows[:limit]
+
+
 def render_run_report(run, offenders):
     """Compact ENGLISH Markdown block for ONE video (the codebase artifact norm is English; the
     Russian human narrative is the skill agent's job). Header + timings line + flags line, plus

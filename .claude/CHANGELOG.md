@@ -1,5 +1,22 @@
 # CHANGELOG
 
+## 2026-07-19 — Morning-triage HTML: flagged units with inline audio (closes PLAN item 1)
+- NEW `scripts/triage_html.py [work/<id> ...] [--queue FILE] [--out PATH] [--link]`: renders one
+  self-contained HTML page for a batch — a triage table (which videos need a listen) + per FLAGGED
+  render unit its reason badges, EN/RU text, the ASR similarity + what whisper HEARD back vs the
+  EXPECTED `text_tts` (the verify-triage payload), and an `<audio>` player for the unit's raw
+  `segments/<lead>.wav`. Audio is base64-EMBEDDED by default (every player works under file://, page
+  is portable); `--link` references wavs by relative path (tiny page, must stay next to work/).
+  Read-only, best-effort, no model/GPU/network; a missing wav degrades to a note, a missing run.json
+  to a skipped video. Videos needing triage sort first.
+- NEW `runreport.flagged_units(report, translation)` (pure, tested): UNIT-level triage rows (deduped
+  by `group_id`) — reasons unioned across a unit's members (verify/speed/assemble from the leader,
+  completeness/translate from any member), leader id (= the wav key), similarity + hypothesis, joined
+  EN/RU/tts text, span, speed. +3 tests; full suite (10 files) green. HTML validated well-formed in
+  both audio modes on a synthetic workdir (embed base64 + link relative + ASR expected/heard block).
+- README morning-triage bullets + skill Step 4 now point at the HTML page alongside the text digest.
+  Closes PLAN item 1 (observability) in full.
+
 ## 2026-07-19 — Observability: per-run run.json + timings.json + digest + skill Step 4 (PLAN item 1)
 - NEW `overdub/runreport.py` (pure stdlib, no model/GPU/network; one best-effort ffprobe): rolls
   up the ALREADY-PERSISTED artifacts into `work/<id>/run.json` — timings + RTF + stage breakdown,

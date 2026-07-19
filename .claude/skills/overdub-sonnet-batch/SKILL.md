@@ -185,6 +185,17 @@ Keep it short and honest: name what the digest flags, don't soften a `TRIAGE` in
 A clean batch is a one-liner ("N видео, все чистые, X ч звука за Y мин"); a flagged batch leads
 with the videos and segments that need a listen.
 
+**When the batch has flagged units, also offer the clickable page** — one HTML with an inline
+audio player per flagged unit (expected vs whisper-heard, click to listen), so the user can
+actually LISTEN instead of reading ids:
+
+```powershell
+.venv-asr\Scripts\python.exe -X utf8 scripts\triage_html.py --queue queue.txt
+```
+
+Writes `work/triage.html` (audio base64-embedded → portable, every player works). Mention the
+path in your summary. Skip it for a fully clean batch (nothing to listen to).
+
 ## Guardrails (the failure modes this skill exists to prevent)
 
 - **Never let a sub-agent write `text_tts`.** It MUST come from

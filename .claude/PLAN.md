@@ -6,15 +6,7 @@ Sample workdirs: `work/` (Silero baselines, read-only); `work-exp/context-earche
 switch models); `work-exp/gemma-ab/` (Gemma, the same 8 — the A/B set). A/B report artifact
 published (Qwen vs Gemma, 508 sentences). Report triage: any *_flag or speed_factor>1.8.
 
-1. **Run report / observability — morning-triage HTML (the last open sub-part).**
-   Core SHIPPED 2026-07-19 (details in CHANGELOG): `overdub/runreport.py` + per-run
-   `work/<id>/run.json` + persisted `work/<id>/timings.json` + `scripts/run_report.py` (human
-   digest) + the overdub-sonnet-batch skill's Step 4. STILL OPEN: the backlog **morning-triage
-   HTML** — an at-a-glance batch page (flagged segments with inline audio players) built ON TOP of
-   the run.json/report.json data the digest already surfaces; the deterministic English digest
-   (`scripts/run_report.py`) is the text stand-in until the HTML earns its keep.
-
-2. **Sonnet semi-automatic translate — live-run the primary route.** Verdict recorded
+1. **Sonnet semi-automatic translate — live-run the primary route.** Verdict recorded
    2026-07-18 (DECISIONS): quality noticeably better, much faster, replaces the heaviest stage;
    both routes stay — Gemma = local in-pipeline default, Sonnet (subscription, cloud) = PRIMARY,
    in semi-automatic mode (sub-agents at the translate seam). Runbook: README "Running" route B.
@@ -24,8 +16,8 @@ published (Qwen vs Gemma, 508 sentences). Report triage: any *_flag or speed_fac
 
 Backlog (second tier): `--repair id,id --seed N` (point re-synth + remux; grain = the GROUP after
 units); per-run terminology glossary; singing/music detection → keep original (no robot singing);
-loudnorm/EQ on the dub; `--subs-only` fast path; morning triage HTML for batches (flagged segments
-with players); cross-video stage pipelining (translate GPU ∥ synth/verify) if nights get tight;
+loudnorm/EQ on the dub; `--subs-only` fast path; cross-video stage pipelining (translate GPU ∥
+synth/verify) if nights get tight;
 fix the out/ export name collision (identical `<title> [<id>].mkv` across models overwrites — namespace
 exports per run/model or per work_root). — tail (lowest priority, keep for later): translation
 completeness check (EN↔RU content-word ratio / back-translation on outliers) — no current evidence
@@ -57,7 +49,8 @@ F5/Gemma-on-XPU spike).
 Phase 0 skeleton ✅ · Phase 1 MVP turn-key URL→MKV ✅ · Phase 3 TTS → F5/ESpeech ✅ · Dead-air ✅ ·
 Batch queue + stop switch ✅ · Proper nouns ✅ · Segmentation cluster + whisper-context ROOT fix ✅ ·
 **Item 0 whisper-context ear-validated ✅ (2026-07-18)** · **Gemma-3-12B migration ✅ (2026-07-18,
-A/B-driven; Qwen removed)** · **Sonnet A/B + verdict: semi-auto = primary route ✅ (2026-07-18)**.
+A/B-driven; Qwen removed)** · **Sonnet A/B + verdict: semi-auto = primary route ✅ (2026-07-18)** ·
+**Observability: run.json + timings.json + run_report.py digest + morning-triage HTML ✅ (2026-07-19)**.
 
 Stack pins, verified APIs and setup: STACK.md + SETUP.md. Translation: Gemma-3-12B (Ollama),
 `gemma3:12b`, local in-pipeline default by A/B 2026-07-18 (Qwen3-14B removed); PRIMARY route =

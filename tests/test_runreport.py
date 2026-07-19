@@ -402,6 +402,63 @@ def test_video_sec_ffprobe_rung() -> None:
         runreport._ffprobe_duration = orig
 
 
+# --- flagged_units (morning-triage HTML data) -------------------------------------------------
+def test_flagged_units_dedup_reasons_and_join() -> None:
+    # unit A (ids 0,1 / group 0): verify low_similarity + combined 2.0 on the leader, neg_loss
+    # completeness on member 1, hypothesis on the leader only. unit B (ids 2,3 / group 2): clean.
+    segs = [
+        {"id": 0, "group_id": 0, "status": "ok", "verify_flag": "low_similarity",
+         "similarity": 0.71, "hypothesis": "мы получили шестьдесят", "combined_factor": 2.0,
+         "speed_factor": 1.5, "assemble_flag": None, "completeness_flags": [], "translate_flag": None},
+        {"id": 1, "group_id": 0, "status": "ok", "verify_flag": "low_similarity",
+         "similarity": 0.71, "hypothesis": None, "combined_factor": 2.0, "speed_factor": 1.5,
+         "assemble_flag": None, "completeness_flags": ["neg_loss"], "translate_flag": None},
+        {"id": 2, "group_id": 2, "status": "ok", "verify_flag": None, "similarity": 0.98,
+         "hypothesis": None, "combined_factor": 1.0, "speed_factor": 1.0, "assemble_flag": None,
+         "completeness_flags": [], "translate_flag": None},
+        {"id": 3, "group_id": 2, "status": "ok", "verify_flag": None, "similarity": 0.98,
+         "hypothesis": None, "combined_factor": 1.0, "speed_factor": 1.0, "assemble_flag": None,
+         "completeness_flags": [], "translate_flag": None},
+    ]
+    translation = [
+        {"id": 0, "src_en": "We hit sixty fps.", "text_ru": "Шестьдесят кадров.",
+         "text_tts": "шестьдесят кадров", "start": 1.0, "end": 3.0},
+        {"id": 1, "src_en": "It is not small.", "text_ru": "Это немало.",
+         "text_tts": "это немало", "start": 3.0, "end": 5.0},
+        {"id": 2, "src_en": "Clean two.", "text_ru": "Чисто два.", "start": 5.0, "end": 6.0},
+        {"id": 3, "src_en": "Clean three.", "text_ru": "Чисто три.", "start": 6.0, "end": 7.0},
+    ]
+    rows = runreport.flagged_units({"segments": segs}, translation)
+    assert len(rows) == 1                                       # only unit A; unit B is clean
+    u = rows[0]
+    assert u["lead"] == 0 and u["ids"] == [0, 1]                # lead = group_id = wav key
+    assert "verify:low_similarity" in u["reasons"]
+    assert any(r.startswith("speed:2.0") for r in u["reasons"])
+    assert "complete:neg_loss" in u["reasons"]                  # unioned from member 1
+    assert u["similarity"] == 0.71
+    assert u["hypothesis"] == "мы получили шестьдесят"          # leader-only field carried
+    assert u["src_en"] == "We hit sixty fps. It is not small."  # joined across members
+    assert u["text_ru"] == "Шестьдесят кадров. Это немало."
+    assert u["start"] == 1.0 and u["end"] == 5.0
+    assert u["speed"] == 2.0
+
+
+def test_flagged_units_translate_flag_on_member() -> None:
+    segs = [{"id": 0, "group_id": 0, "status": "failed", "translate_flag": "runaway",
+             "verify_flag": None, "combined_factor": 1.0, "completeness_flags": []}]
+    rows = runreport.flagged_units(
+        {"segments": segs},
+        [{"id": 0, "src_en": "x", "text_ru": "y", "start": 0.0, "end": 1.0}])
+    assert len(rows) == 1
+    assert rows[0]["reasons"] == ["translate:runaway"]
+
+
+def test_flagged_units_empty_when_clean() -> None:
+    segs = [{"id": 0, "group_id": 0, "status": "ok", "verify_flag": None,
+             "combined_factor": 1.2, "completeness_flags": [], "assemble_flag": None}]
+    assert runreport.flagged_units({"segments": segs}, None) == []
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):
