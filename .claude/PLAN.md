@@ -14,7 +14,30 @@ published (Qwen vs Gemma, 508 sentences). Report triage: any *_flag or speed_fac
    stats-batch videos). The in-pipeline Anthropic API flag stays approved but deferred — build
    only if the manual seam becomes the bottleneck.
 
-Backlog (second tier): `--repair id,id --seed N` (point re-synth + remux; grain = the GROUP after
+2. **Whisper anti-repetition decoder params — measure, then adopt or reject.** The transcribe
+   guard (shipped 2026-07-19) catches a collapsed alignment AFTER the fact; these params attack
+   what CAUSES it. `no_repeat_ngram_size` and `repetition_penalty` sit at library defaults (0 and
+   1 — off), so the repetition loop that feeds whisper's temperature fallback is unopposed, and
+   that fallback is why the same audio yields a different transcript per run (measured: a "clean"
+   video spanned 0.00–7.46% over 5 runs). This is the only lever that could NARROW the spread
+   instead of catching its tail — which would also let the guard's PROVISIONAL 0.085 threshold
+   become a real constant.
+   Do NOT adopt blind: too small an `n` silently eats legitimate repetition ("very, very",
+   refrains, list items with a shared opener) — the forbidden silent-loss class.
+   Measurement design (agreed, deferred): `4szRHy_CT7s` (severe) + a healthy control, `n` in
+   0/4/5/6, 3 repeat runs per combination (~24 runs, ~25-30 min), scored on THREE axes —
+   floor_run_ratio, duplicate adjacent sentences, and TOTAL WORD COUNT vs the n=0 baseline.
+   The third axis is the load-bearing one: fewer duplicates is the win, fewer words is the
+   regression, and a single metric cannot tell them apart. Probe script kept at
+   `scratchpad/floor_variance.py` (read-only, transcribes from work/<id>/source.wav, writes
+   nothing back) — extend it with the `n` sweep rather than starting over.
+
+Backlog (second tier): narrow the `translate:refusal` regex — `как (?:ии|модель|языковая)` fires on
+ordinary Russian "как ИИ" = "how AI" (proven: all 6 refusal flags in the 12-video AI-Fluency batch
+were false, e.g. "по мере того, как ИИ продолжает развиваться"). Written for the Gemma route where
+refusals are real; on the Sonnet route it is pure noise that inflates the triage list. Require the
+pronoun ("как ИИ, я") or the full "как языковая модель";
+`--repair id,id --seed N` (point re-synth + remux; grain = the GROUP after
 units); per-run terminology glossary; singing/music detection → keep original (no robot singing);
 loudnorm/EQ on the dub; `--subs-only` fast path; cross-video stage pipelining (translate GPU ∥
 synth/verify) if nights get tight;
