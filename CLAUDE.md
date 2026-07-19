@@ -32,10 +32,15 @@ segments are tolerated, silent failures are not.
 - **EN→RU only.** Source audio is always English, the dub is always Russian.
   No language detection, no multi-language handling.
 - **Single-speaker assumption.** No diarization in v1.
-- **12 GB VRAM budget.** Never load two heavy models (whisper large-v3,
-  Gemma-3-12B, TTS) at once; explicit model unload between stages. Exception:
-  whisper-small (~0.5 GB) stays co-resident with the TTS engine during
-  synthesis + verification.
+- **12 GB VRAM budget — a budget, not a prohibition** (revised 2026-07-19, see
+  DECISIONS). Keep the resident total under it and account for what is loaded;
+  co-residency is allowed when the arithmetic works. Measured: whisper large-v3
+  ~3.1 GB, htdemucs ~3.0, F5/ESpeech worker ~0.8, whisper-small ~0.5 — all four
+  at once is ~7.4 GB and fits. The one model that makes it tight is
+  Gemma-3-12B (~8-9 GB), so on the local translate route free the others around
+  it (`translate_unload` POSTs keep_alive:0); the Sonnet route never loads it at
+  all. The old blanket "never load two heavy models at once" was an artifact of
+  Gemma's size and blocked model reuse across a batch for no VRAM reason.
 - **No tempo cap.** `atempo` speeds segments up as much as their slot
   requires, applied at assembly — always after verification, never before.
   Per-segment speed factor goes to the run report; audibly broken segments
