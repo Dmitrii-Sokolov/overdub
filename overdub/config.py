@@ -35,18 +35,21 @@ class Config:
                                                  # context feedback OFF (transcribe.py guard).
                                                  # 0.0 disables.
                                                  #
-                                                 # PROVISIONAL — calibrated on 5 repeat runs each
-                                                 # of 3 videos (2026-07-19). Whisper's temperature
-                                                 # fallback samples, so the SAME audio varies run
-                                                 # to run and the metric scores the run, not the
-                                                 # video: severe 9.33-11.38% (fired 5/5), mid
-                                                 # 3.82-7.52%, "clean" 0.00-7.46% — that last one
-                                                 # is why the first cut at 0.06 was wrong, a
-                                                 # healthy video hit 7.46% on one run. The
-                                                 # separating gap 7.52->9.33% is only 1.8 pp wide
-                                                 # on n=5; widen the sample from the per-run
-                                                 # figures run_report now prints before trusting
-                                                 # this as a constant.
+                                                 # PROVISIONAL, and weaker than a threshold should
+                                                 # be. Whisper's temperature fallback samples, so
+                                                 # the SAME audio varies run to run and this scores
+                                                 # the RUN, not the video. First 5-run sample
+                                                 # (2026-07-19) looked separable — severe
+                                                 # 9.33-11.38%, mid 3.82-7.52%, clean 0.00-7.46% —
+                                                 # but a second independent sample the same day put
+                                                 # the MID video at 15.82%, above the severe one's
+                                                 # entire range. The populations OVERLAP; there is
+                                                 # no clean gap to sit in. 0.085 is kept because
+                                                 # the severe case has never once fallen below it
+                                                 # (catastrophe insurance holds), while borderline
+                                                 # detection is knowingly unreliable. Recalibrate
+                                                 # from the asr.floor_ratio series run_report now
+                                                 # accumulates — not from another hand-run probe.
 
     # translation — Gemma-3-12B via Ollama native /api/chat (see stages/translate.py)
     ollama_base_url: str = "http://localhost:11434"

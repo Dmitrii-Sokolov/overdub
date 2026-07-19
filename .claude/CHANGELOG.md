@@ -1,5 +1,20 @@
 # CHANGELOG
 
+## 2026-07-19 — `no_repeat_ngram_size` measured and REJECTED; guard threshold downgraded
+- 60-run sweep (3 videos × n in 0/4/5/6 × 5 repeats, read-only probe, no workdir writes): the knob
+  is NOT adopted. Severe source improved (floor 11.07% → 8.2%, dups 2 → 0 at n=6), borderline got
+  worse on every axis (floor 6.13% → 13.51%, dups 0 → 2, words +11.5% — more words WITH more
+  duplicates = the loop changed shape, not stopped), healthy control degraded at n=4
+  (0.13% → 4.44%). No code change; PLAN item 3 struck through with the reason.
+- The sweep's third axis is recorded as MISDESIGNED: "word count drops ⇒ real speech eaten" cannot
+  distinguish that from "a duplicate was correctly removed", which is exactly the case it had to
+  judge. A future attempt needs a content comparison against a reference transcript.
+- `cfg.transcribe_floor_run_max` comment corrected: the n=0 cells form a second independent sample
+  and put the MID video at 15.82% — above the severe video's entire range, and 2× its own maximum
+  from the earlier session. The 1.8 pp "separating gap" does not exist; the populations overlap.
+  0.085 is kept only because the severe case has never fallen below it. Catastrophe insurance
+  holds; borderline detection is knowingly unreliable.
+
 ## 2026-07-19 — Triage that means something: `refusal` narrowed, advisory flags demoted
 - FIXED `translate._REFUSAL`: `как (?:ии|модель|языковая)` matched ordinary "как ИИ" = "how AI",
   so all 6 refusal flags in the 12-video batch were false. Now requires the first-person clause a

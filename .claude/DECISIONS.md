@@ -1,5 +1,35 @@
 # DECISIONS
 
+## 2026-07-19 — `no_repeat_ngram_size` REJECTED; and the guard threshold's separation is gone
+
+**Measured, not argued: 60 ASR runs** (3 videos × n in 0/4/5/6 × 5 repeats), scoring floor ratio,
+adjacent duplicate sentences, and word count vs the n=0 baseline.
+
+**No consistent direction, so it is not adopted.**
+- Severe (`4szRHy_CT7s`) — the only win: floor 11.07% → 8.2%, dups 2 → 0 at n=6; words −1.1/−1.3%.
+- Borderline (`RyvXxApfHkk`) — WORSE on every axis: floor 6.13% → 13.51%, dups 0 → 2, words +11.5%.
+  More words *with* more duplicates means the ban did not suppress the loop, it pushed the decoder
+  into a different repeating shape.
+- Healthy control (`Y0KidGr9Z2Y`) — n=4 damages a clean video: 0.13% → 4.44%.
+
+A knob that helps one source, harms another and destabilises a third is not a fix.
+
+**The third axis was badly designed, and that is worth recording.** "Word count drops ⇒ the ban ate
+real speech" is ambiguous exactly where it matters: removing a duplicated sentence ALSO drops the
+count, and that is a win. So the −1.3% on the severe video is unreadable — it could be the deleted
+duplicate or eaten text, and this metric cannot tell them apart. Settling this properly needs a
+CONTENT comparison against a reference transcript, not a word tally.
+
+**Bigger finding — the guard threshold's "clean separation" does not survive more data.** The
+n=0 cells are a second, independent 5-run sample of the same three videos. `RyvXxApfHkk` reached
+**15.82%**, above the severe video's whole range (9.3-11.9%) and more than double its own maximum
+in the earlier session (7.52%). The 7.52 → 9.33 pp gap that `transcribe_floor_run_max = 0.085`
+was calibrated into does not exist at n=60. The threshold stays PROVISIONAL and its comment
+understates the problem: this is not a narrow gap, it is overlapping populations. The guard
+remains justified as catastrophe insurance (the severe video is above threshold in every sample
+ever taken) and is confirmed unreliable for borderline cases. Recalibration must come from the
+`asr.floor_ratio` series now accumulating in run.json, not from another hand-run probe.
+
 ## 2026-07-19 — Triage signal: narrow `refusal`, and stop advisory flags from deciding it
 
 **`translate:refusal` was matching ordinary prose.** The pattern `как (?:ии|модель|языковая)`

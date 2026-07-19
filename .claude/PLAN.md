@@ -34,7 +34,14 @@ published (Qwen vs Gemma, 508 sentences). Report triage: any *_flag or speed_fac
    stats-batch videos). The in-pipeline Anthropic API flag stays approved but deferred — build
    only if the manual seam becomes the bottleneck.
 
-3. **Whisper anti-repetition decoder params — measure, then adopt or reject.** The transcribe
+3. ~~**Whisper anti-repetition decoder params.**~~ **REJECTED 2026-07-19** on a 60-run sweep — no
+   consistent direction (helped the severe source, made the borderline one worse on every axis,
+   damaged a healthy control at n=4). See DECISIONS. Do NOT retry as-is: the measurement's third
+   axis (word count vs baseline) cannot distinguish "removed a duplicate" from "ate real speech",
+   so any rerun needs a CONTENT comparison against a reference transcript first. What remains open
+   from this line of work is not the knob but the guard's threshold — see below.
+   Original writeup kept for the design of a future attempt:
+   The transcribe
    guard (shipped 2026-07-19) catches a collapsed alignment AFTER the fact; these params attack
    what CAUSES it. `no_repeat_ngram_size` and `repetition_penalty` sit at library defaults (0 and
    1 — off), so the repetition loop that feeds whisper's temperature fallback is unopposed, and
