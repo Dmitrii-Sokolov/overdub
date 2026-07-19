@@ -46,6 +46,10 @@ _VERIFY_FLAGS = ("empty_ref", "missing_wav", "unreadable_wav", "empty_hyp", "low
                  "unknown")
 _BROKEN = 1.8   # combined compression factor at/above which a unit is "candidate broken"
                 # (mirrors assemble._BROKEN — the same triage bar, one number to keep in sync)
+# Completeness flags that are informational only: they are counted and printed but never decide
+# needs_triage. See completeness.py — entity_loss names personal-name Russification as its
+# dominant IRREDUCIBLE false positive, and length_short is the deliberately coarse weak signal.
+_ADVISORY_COMPLETENESS = frozenset({"entity_loss", "length_short"})
 
 
 # --- small pure helpers -------------------------------------------------------
@@ -256,6 +260,21 @@ def _build_run_report(work, cfg):
                     ("n_sentences", "n_flagged", "n_num_loss", "n_neg_loss",
                      "n_entity_loss", "n_length")}
 
+    # Split completeness by what a human can ACT on. entity_loss fires mostly on personal names
+    # the naming rule PERMITS to be Russified — completeness.py's own docstring calls that its
+    # dominant, IRREDUCIBLE false positive — and length_short is documented there as the weak,
+    # deliberately-coarse signal. Pooling both into needs_triage marked 11 of 12 videos in the
+    # AI-Fluency batch as needing a look, which carries the same information as marking none.
+    # They stay counted and printed; they just stop deciding whether a human opens the video.
+    segs_all = report.get("segments") if isinstance(report, dict) else None
+    segs_all = segs_all if isinstance(segs_all, list) else []
+    n_comp_actionable = sum(
+        1 for s in segs_all
+        if isinstance(s, dict) and (set(s.get("completeness_flags") or []) - _ADVISORY_COMPLETENESS)
+    )
+    completeness["n_actionable"] = n_comp_actionable
+    completeness["n_advisory"] = max(completeness["n_flagged"] - n_comp_actionable, 0)
+
     # --- assemble / mux (straight copies, null when the stage never ran) -----
     ar = report.get("assemble") if isinstance(report, dict) else None
     ar = ar if isinstance(ar, dict) else {}
@@ -292,7 +311,10 @@ def _build_run_report(work, cfg):
 
     n_assemble_flagged = sum(1 for lead in leaders if lead.get("assemble_flag"))
     flags_total = n_failed + v_n_flagged + completeness["n_flagged"] + n_assemble_flagged
-    needs_triage = flags_total > 0 or n_over > 0
+    # needs_triage answers "does a human have to OPEN this video", so only actionable flags and
+    # speed offenders decide it; flags_total keeps counting everything for trend/comparison.
+    flags_actionable = n_failed + v_n_flagged + n_comp_actionable + n_assemble_flagged
+    needs_triage = flags_actionable > 0 or n_over > 0
 
     run = {
         "video_id": work.root.name,
@@ -337,6 +359,8 @@ def _build_run_report(work, cfg):
             "dub_gain_db": mr.get("dub_gain_db"),
         },
         "flags_total": flags_total,
+        "flags_actionable": flags_actionable,
+        "flags_advisory": max(flags_total - flags_actionable, 0),
         "needs_triage": needs_triage,
     }
     _atomic_write_json(work.root / "run.json", run)
@@ -530,7 +554,8 @@ def render_run_report(run, offenders):
     flags_line = (
         f"- flags: translate {tr.get('n_failed', 0)}/{tr.get('n_sentences', 0)}"
         f" · verify {v.get('n_flagged', 0)}"
-        f" · completeness {c.get('n_flagged', 0)}"
+        f" · completeness {c.get('n_actionable', c.get('n_flagged', 0))}"
+        f" (+{c.get('n_advisory', 0)} advisory)"
         f" · speed med {sp.get('median')}/p95 {sp.get('p95')}/max {sp.get('max')}"
         f" (n>1.8 {sp.get('n_over_1_8', 0)})")
 

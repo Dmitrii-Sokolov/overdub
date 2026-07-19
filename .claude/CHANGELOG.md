@@ -1,5 +1,21 @@
 # CHANGELOG
 
+## 2026-07-19 — Triage that means something: `refusal` narrowed, advisory flags demoted
+- FIXED `translate._REFUSAL`: `как (?:ии|модель|языковая)` matched ordinary "как ИИ" = "how AI",
+  so all 6 refusal flags in the 12-video batch were false. Now requires the first-person clause a
+  real refusal carries (`как ИИ, я …`). Validated 0 false positives / 0 misses over 8 benign + 8
+  genuine refusals. All 12 translations rebuilt: refusal 6 → 0.
+- NEW `_ADVISORY_COMPLETENESS = {entity_loss, length_short}` in runreport: these are counted and
+  printed but no longer decide `needs_triage`. Both are documented false-positive-prone by
+  completeness.py itself (personal-name Russification; the deliberately coarse length signal).
+  `num_loss` / `neg_loss` stay actionable — an inverted negation is the worst silent loss.
+- `run.json` gains `flags_actionable` + `flags_advisory` (`flags_total` unchanged);
+  `completeness` gains `n_actionable` + `n_advisory`. Digest block shows
+  `completeness N (+M advisory)`; batch table splits `cp` / `adv`.
+- EFFECT on the AI-Fluency batch, same run data: **11 of 12 videos needing triage → 2**, and both
+  survivors are real (a `neg_loss`; an `english_echo` that would feed Latin script to the TTS).
+- Full suite (11 files) green.
+
 ## 2026-07-19 — Silero release is a config knob; v5_5_ru becomes the fallback default
 - NEW `cfg.silero_model` (default `"v5_5_ru"`, was a hardcoded `MODEL_ID = "v4_ru"` in the
   adapter): the torch.hub release id. v4 was the bake-off entrant BY MISTAKE — already superseded

@@ -57,9 +57,17 @@ _LABEL = re.compile(r"^\s*(\[RU\]|RU:|Russian:|Перевод:)\s*", re.IGNORECA
 _CYR = re.compile(r"[А-Яа-яЁё]")
 _ALPHA = re.compile(r"[A-Za-zА-Яа-яЁё]")
 _LATIN_RUN = re.compile(r"[A-Za-z]+")
+# A refusal is the model talking about ITSELF, so the Russian arms require the first-person
+# clause that follows "как ИИ" in a real refusal ("как ИИ, я не могу…"). The bare
+# "как (?:ии|модель|языковая)" this replaces matched ordinary prose — "как ИИ" is also plain
+# "how AI", and on AI-subject content that is everywhere: all 6 refusal flags in the 12-video
+# AI-Fluency batch were false, e.g. "по мере того, как ИИ продолжает развиваться".
+# Same reason "языковая модель" alone is not a marker here: "работает как языковая модель" is
+# a normal sentence in this domain.
 _REFUSAL = re.compile(
     r"(?i)\b(i cannot|i can'?t|as an ai|i'?m sorry|i am sorry|"
-    r"не могу перевести|как (?:ии|модель|языковая))\b"
+    r"не могу перевести|"
+    r"как (?:ии|модель ии|языковая модель)\s*,?\s+я\b)"
 )
 
 

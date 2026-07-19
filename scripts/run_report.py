@@ -118,7 +118,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if runs:
         print("\n── batch " + "─" * 40)
-        header = ("video", "title", "wall_s", "rtf", "floor", "tr", "vf", "cp",
+        # cp = ACTIONABLE completeness flags; adv = advisory-only ones (entity_loss /
+        # length_short), counted but never a reason to open the video — see runreport.
+        header = ("video", "title", "wall_s", "rtf", "floor", "tr", "vf", "cp", "adv",
                   "spd_max", ">1.8", "triage")
         print(" | ".join(header))
         for r in runs:
@@ -133,7 +135,8 @@ def main(argv: list[str] | None = None) -> int:
                 f"{fr:.1%}" if fr is not None else "n/a",
                 str((r.get("translate", {}) or {}).get("n_failed", 0)),
                 str((r.get("verify", {}) or {}).get("n_flagged", 0)),
-                str((r.get("completeness", {}) or {}).get("n_flagged", 0)),
+                str((r.get("completeness", {}) or {}).get("n_actionable", 0)),
+                str((r.get("completeness", {}) or {}).get("n_advisory", 0)),
                 str(sp.get("max")),
                 str(sp.get("n_over_1_8", 0)),
                 "yes" if r.get("needs_triage") else "no",

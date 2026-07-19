@@ -1,5 +1,36 @@
 # DECISIONS
 
+## 2026-07-19 — Triage signal: narrow `refusal`, and stop advisory flags from deciding it
+
+**`translate:refusal` was matching ordinary prose.** The pattern `как (?:ии|модель|языковая)`
+was written for the Gemma route, where refusals are real. But "как ИИ" is also plain "how AI",
+and on AI-subject content that is everywhere: ALL SIX refusal flags in the 12-video AI-Fluency
+batch were false — e.g. "по мере того, как ИИ продолжает развиваться". Narrowed to require the
+first-person clause a real refusal carries (`как ИИ, я …`). "языковая модель" alone is likewise
+not a marker in this domain ("работает как языковая модель" is a normal sentence). Validated: 0
+false positives on all 6 real cases plus 2 constructed traps, 0 misses on 8 genuine refusals in
+both languages. All 12 translations rebuilt; refusal flags went 6 → 0.
+
+**The deeper problem was not the regex — it was pooling.** `needs_triage` was
+`any flag at all > 0`, so `speed ×8.79` (unintelligible audio) and `entity_loss` on the surname
+Дейкин (cosmetic) carried identical weight. The batch reported **11 of 12 videos needing a
+look**, which conveys exactly as much as reporting none. Fixing the regex alone would only have
+made it 10 of 12.
+
+**Completeness flags are now split by what a human can act on.** `entity_loss` and
+`length_short` are ADVISORY: still counted, still printed, but they no longer decide
+`needs_triage`. This is not a workaround — completeness.py's own docstring names personal-name
+Russification as `entity_loss`'s dominant IRREDUCIBLE false positive (no cheap brand-vs-person
+discriminator exists) and calls `length_short` the deliberately coarse weak signal. Narrowing
+the detectors instead would trade a real loss class (a dropped brand name) for quieter output.
+`num_loss` and `neg_loss` stay actionable — an inverted negation is the most dangerous silent
+loss there is, and one false positive per batch is a fair price for never missing one.
+
+**Result: 11 → 2 videos needing triage** on the same run data, and the two left are real
+(a `neg_loss`, and an `english_echo` that would send Latin script into the synthesizer).
+`run.json` now carries `flags_actionable` / `flags_advisory` alongside `flags_total`, so the
+advisory stream stays available for trends without polluting the decision.
+
 ## 2026-07-19 — Silero v5 audition: v4 was tested BY MISTAKE; v5 is the fast fallback
 
 **The 2026-07-15 bake-off tested the wrong release.** `v4_ru` was already superseded when it was

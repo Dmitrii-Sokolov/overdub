@@ -77,12 +77,7 @@ deliberate trade. Two directions follow:
    ear-check anything that touches quality — the id101 precedent says metrics alone cannot sign
    this off.
 
-Backlog (second tier): narrow the `translate:refusal` regex — `как (?:ии|модель|языковая)` fires on
-ordinary Russian "как ИИ" = "how AI" (proven: all 6 refusal flags in the 12-video AI-Fluency batch
-were false, e.g. "по мере того, как ИИ продолжает развиваться"). Written for the Gemma route where
-refusals are real; on the Sonnet route it is pure noise that inflates the triage list. Require the
-pronoun ("как ИИ, я") or the full "как языковая модель";
-`--repair id,id --seed N` (point re-synth + remux; grain = the GROUP after
+Backlog (second tier): `--repair id,id --seed N` (point re-synth + remux; grain = the GROUP after
 units); per-run terminology glossary; singing/music detection → keep original (no robot singing);
 loudnorm/EQ on the dub; `--subs-only` fast path; cross-video stage pipelining (translate GPU ∥
 synth/verify) if nights get tight;
