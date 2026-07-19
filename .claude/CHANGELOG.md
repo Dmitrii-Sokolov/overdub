@@ -1,5 +1,32 @@
 # CHANGELOG
 
+## 2026-07-19 — `f5_nfe` 48 → 16 (2.16× on synthesis, ear-checked); VRAM rule relaxed
+- **`cfg.f5_nfe` default 48 → 16.** Ear-checked by the user on a full 5.7-minute video rendered
+  both ways: the only defects heard (noise, flat intonation) are in the nfe=48 render too, so they
+  belong to the engine and the input, not the step count. Rationale + the EPSS finding that made
+  16 the pick over the planned 32: DECISIONS.
+- Measured on 40 real production units × nfe {48,32,16,12}: 1.0× / 1.43× / **2.16×** / 2.29×.
+  Whole-video check: synthesize 102.6 s against ~174 s predicted for nfe=48, cost model off by
+  3.6%. Timing math provably untouched — max combined compression 1.292 both ways, dub track
+  identical in length.
+- NEW `scripts/exp_nfe_sweep.py` — the measurement harness + blind A/B page generator. Real units
+  at their real `target_sec`/`max_sec` (so `plan_speed` reproduces the shipped speed), 7 disjoint
+  strata assigned rarest-first, per-cell wall/duration/samples/sha256/round-trip-sim, and
+  `--recheck` which re-renders a stratified subset to FALSIFY the determinism premise that
+  licenses one render per cell (12/12 byte-identical, on both the naive and EPSS schedule paths).
+  `--pages-only` regenerates the blind pages with no GPU.
+- Harness design was adversarially reviewed before any GPU time was spent — five findings fixed
+  first, the load-bearing two being a `translit` stratum that ranked by text LENGTH and so selected
+  against its own property (measured density 0.022 vs the pool's 0.056; the corpus's 41%-Latin unit
+  was excluded), and a missing per-cell timestamp without which the block-order/thermal confound
+  would have been unrecoverable after the fact.
+- **CLAUDE.md VRAM constraint rewritten** from "never load two heavy models at once" to a budget
+  with measured numbers. All four models resident is ~7.4 GB of 12; only Gemma-3-12B (~8-9 GB)
+  makes it tight. The old rule generalised one model's size into a law and was blocking model
+  reuse across a batch for no VRAM reason — measured cost ~72 s per video, ~13 min per 12-video
+  batch. See DECISIONS for why stage-major batching, not residency, is the preferred way to
+  collect that.
+
 ## 2026-07-19 — Item 0 closed: 8 ASR defects repaired, 2 new detectors, batch re-shipped
 - **The batch carried 8 defects across 6 of 12 videos, not the 2 PLAN recorded**, and triage
   pointed at none of them. All 8 are now repaired and all 12 MKVs rebuilt.

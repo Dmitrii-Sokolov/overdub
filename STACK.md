@@ -191,8 +191,19 @@ text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()  # defen
   `f5_ref_audio` / `f5_ref_text`; rights caveat in README "Voices").
 - **Adapter:** `overdub/tts/f5.py` spawns `overdub/tts/f5_worker.py` with the
   venv's python; line-JSON over stdio, reader-thread timeouts, id echo,
-  respawn-once, 3-strike `TtsFatalError`. Startup ~30 s; warm synth ~×1.1 of
-  audio duration; RTF 0.39 cold / ~0.60 thermally loaded; ~0.7–0.8 GiB VRAM.
+  respawn-once, 3-strike `TtsFatalError`. Startup ~30 s; ~0.7–0.8 GiB VRAM.
+  RTF 0.39 cold / ~0.60 thermally loaded — those were measured at `f5_nfe=48`;
+  the default is **16** since 2026-07-19, which is 2.16× faster per unit, so
+  divide accordingly (whole-video check: 41 units in 102.6 s including startup).
+- **`nfe` is the speed knob, and cost is EXACTLY linear in it** (Euler solver,
+  one DiT forward per step). Do NOT pick an arbitrary value: `CFM.sample` runs
+  `use_epss=True`, and `get_epss_timesteps` (`model/utils.py`) has tuned
+  schedules only for n ∈ {5,6,7,10,12,16} — anything else falls through to a
+  naive `linspace`. 48 and 32 are both untuned; 16 is a designed operating point.
+- **Already fp16, and not compilable.** f5_tts casts the model to float16 itself
+  for vocos on sm≥7 (`utils_infer.py:191-198`); the vocoder deliberately stays
+  fp32. `torch.compile` is unavailable here — no Triton in `.venv-f5tts`.
+  Cross-unit batching is a dead end too (see DECISIONS 2026-07-19).
 - **Output:** 24 kHz mono (vocos-mel-24khz — a checkpoint fact, not a knob);
   RUAccent (turbo3.1) puts stresses in-worker.
 - **Seed-capable:** reseed-retry lives in the synthesize stage (keep-best by

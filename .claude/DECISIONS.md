@@ -1,5 +1,81 @@
 # DECISIONS
 
+## 2026-07-19 — `f5_nfe` 48 → 16 ADOPTED; and two of four speed levers were already dead
+
+**Ear verdict (user, full 5.7-minute video `RyvXxApfHkk`, nfe=48 vs nfe=16 side by side):** the
+only defects heard — noise and odd intonation — are present in the nfe=48 render TOO, so they are
+properties of the engine and the input, not of the step count. Adopted.
+
+**Why 16 and not the 32 the roadmap had planned.** Cost is EXACTLY linear in nfe (Euler solver,
+one DiT forward per step — `torchdiffeq/fixed_grid.py`), but `CFM.sample` runs `use_epss=True` by
+default and `get_epss_timesteps` (`model/utils.py:206-218`) carries tuned schedules ONLY for
+n in {5,6,7,10,12,16}; everything else falls through to a naive `linspace`. So **48 and 32 are
+both untuned**, and the planned 48→32 was the one step down that buys no help from the library,
+while 16 is a designed operating point at 3× fewer forwards. Measured over 40 real production
+units × 4 step counts: 48→32 = 1.43×, 48→16 = **2.16×**, 48→12 = 2.29× — 12 adds only 6% over 16
+and sits at the edge of the tuned grid, so 16 is the pick.
+
+**Metrics could not sign this off, and said so up front.** Round-trip similarity is saturated in
+this regime (corpus: median 0.995, min 0.924, zero units under the 0.9 gate, zero reseed retries
+ever fired), so a clean table was the PREDICTED outcome carrying almost no information — the
+harness prints that warning rather than letting green numbers imply a verdict. sim even rose
+slightly at lower nfe, which means nothing: a flatter reading is EASIER for ASR. Same lesson as
+id101 (sim 1.0, judged bad by ear, 2026-07-16).
+
+**What the run did prove objectively:** timing math is untouched. Max combined compression
+identical to 3 dp (1.292 vs 1.292) and the dub track byte-identical in length, exactly as
+predicted — F5's duration canvas and `plan_speed` are both nfe-independent by construction.
+Determinism was also re-verified as a falsifiable premise: 12/12 cells byte-identical on re-render
+across BOTH schedule paths (naive at 48, EPSS at 16), which is what licensed the no-repeat-cells
+design in the first place.
+
+**Two levers PLAN named turned out not to exist.** (a) *Half precision* is already on — f5_tts
+picks fp16 itself for vocos on sm≥7 (`utils_infer.py:191-198`), the checkpoint is fp32 and gets
+cast down at load; the vocoder stays fp32 deliberately. (b) *torch.compile* is unavailable: no
+Triton in `.venv-f5tts`, so inductor cannot build CUDA kernels on this host. Also placebo here:
+TF32 (the DiT is fp16), `cudnn.benchmark` (input shape changes per unit), SDPA/no_grad (already
+used, doubly). (c) *Cross-unit batching* is a mirage — `infer_batch_process` builds a batch of ONE
+per text and merely threads them; real batching needs `attn_mask_enabled=True`, which our
+`MODEL_CFG` leaves False, so short units would attend over the longest unit's padding (wrong
+output, not a numerical delta), and enabling it materialises a b×heads×n×n mask the library itself
+warns against without flash_attn, which is not installed.
+
+**What remains, re-ranked.** The reference clip is the next real lever: F5 denoises `ref + gen`
+and then DISCARDS the ref part (`utils_infer.py:508`), and the ref canvas is 9.164 s against a
+~7 s mean unit — over half the compute is thrown away. But it MULTIPLIES with nfe, so adopting 16
+first cuts its value from ~477 s to ~158 s per 12-video batch, and it changes speaker conditioning
+(i.e. the voice), so it is bundled with the rights-clear narrator replacement rather than run as
+its own ear session. Harness kept at `scripts/exp_nfe_sweep.py` (`--pages-only` regenerates the
+blind A/B pages with no GPU).
+
+## 2026-07-19 — The VRAM rule is a budget, not a prohibition
+
+**Changed in CLAUDE.md:** "Never load two heavy models at once; explicit model unload between
+stages" → keep the resident total under 12 GB and account for it.
+
+**Why the old rule was wrong in general and right in one case.** Measured sizes: whisper large-v3
+~3.1 GB, htdemucs ~3.0, F5 worker ~0.8, whisper-small ~0.5. All four resident is ~7.4 GB of 12 —
+it fits with ~4.6 GB spare. The single model that creates the squeeze is Gemma-3-12B at ~8-9 GB.
+So the blanket prohibition generalised one model's size into a law, and that law was blocking
+model reuse across a batch for no VRAM reason at all.
+
+**What it was costing.** Per-video fixed cost measured by regression over 12 workdirs: transcribe
+~22.2 s (large-v3 load), synthesize ~34.8 s (worker spawn + model), separate ~13.2 s, verify
+~1.5 s — about 72 s per video, ~13 minutes on a 12-video batch, roughly a quarter of those stages'
+wall time. `separate` is the starkest: its slope against audio length is statistically ZERO
+(R²=0.000), i.e. the stage is nothing but model loading. whisper-small is also loaded TWICE per
+video today (synthesize's reseed verifier, then verify).
+
+**The rule is relaxed, but the preferred fix is stage-major batching, not residency.** Running the
+batch stage-outer/video-inner makes peak VRAM the MAX over models instead of their sum, so each
+model loads once per batch and the Gemma route stays safe without any parking or eviction policy.
+It also keeps a model's lifetime inside one stage, avoiding the failure-isolation trap of a
+batch-scoped engine (today a dead worker kills one video; a cached one would poison the next).
+Known costs, to be handled rather than dismissed: export moves after the mux stage, STOP is checked
+per (stage, video), per-video status must survive across stages so one failure does not cascade,
+and the first finished MKV arrives near the END of the batch instead of after ~5 minutes — fine
+for overnight runs, worse for a two-video run, so it should be `--batch` only.
+
 ## 2026-07-19 — Roadmap reprioritized: F5 speed first, any-language shelved
 
 User call. New roadmap order: F5 speedup → Sonnet live-run → `--repair-asr` → video summary.

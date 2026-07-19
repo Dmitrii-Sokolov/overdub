@@ -6,14 +6,22 @@ Sample workdirs: `work/` (Silero baselines, read-only); `work-exp/context-earche
 switch models); `work-exp/gemma-ab/` (Gemma, the same 8 — the A/B set). A/B report artifact
 published (Qwen vs Gemma, 508 sentences). Report triage: any *_flag or speed_factor>1.8.
 
-1. **Speed up F5.** The Silero audition put a number on what the primary engine costs: 128-250 s
-   of synthesis per ~5-minute video against Silero's 11-14 s. F5 quality stays preferred, so the
-   question is how much of that gap is recoverable. Unexplored levers: `f5_nfe` (48 → 32 is noted
-   in overdub.toml as ~30% faster with an un-ear-checked quality delta — ear-check it), batching
-   across units instead of one worker call per unit, keeping the worker process warm across
-   videos in a batch, and half-precision / compile options in the F5 worker. Measure per lever,
-   ear-check anything that touches quality — the id101 precedent says metrics alone cannot sign
-   this off.
+1. **Stage-major batch execution — load each model once per BATCH, not once per video.** The
+   remaining half of the F5 speedup, and it touches no audio at all: acceptance is byte-identical
+   wavs against the current renders, so it costs zero ear time. Today `_run_batch` loops videos
+   outer / stages inner, so every video reloads whisper-large (~22.2 s), respawns the F5 worker
+   (~34.8 s), reloads whisper-small (~1.5 s, and TWICE per video — synthesize's reseed verifier
+   then verify) and respawns demucs (~13.2 s, a stage whose slope against audio length is
+   statistically ZERO — it is nothing but model loading). ~72 s per video, ~13 min per 12-video
+   batch. Inverting to stage-outer/video-inner makes peak VRAM the MAX over models instead of
+   their sum, so the Gemma route stays safe with no parking or eviction policy, and a model's
+   lifetime stays inside one stage (a batch-scoped engine would poison the next video after a
+   crash — see DECISIONS). Must handle, not dismiss: export moves after the mux stage; STOP is
+   checked per (stage, video); per-video status must survive across stages so one failure does not
+   cascade; `--batch` only, since a single video has nothing to amortise. Demucs needs one extra
+   tweak to benefit — its CLI takes several input files per invocation, but that requires knowing
+   the batch upfront, which is in genuine tension with per-video resume: decide that explicitly.
+   Projected with nfe=16 already in: ~53 min → ~26 min on the 12-video batch (~2.1×).
 
 2. **Sonnet semi-automatic translate — live-run the primary route.** Verdict recorded
    2026-07-18 (DECISIONS): quality noticeably better, much faster, replaces the heaviest stage;
@@ -152,7 +160,8 @@ A/B-driven; Qwen removed)** · **Sonnet A/B + verdict: semi-auto = primary route
 **Observability: run.json + timings.json + run_report.py digest + morning-triage HTML ✅ (2026-07-19)** ·
 **Item 0 — AI-Fluency batch: 8 ASR defects repaired, 2 detectors shipped, 12 MKVs re-shipped ✅
 (2026-07-19; sub-item index 0a-0j in CHANGELOG)** · **`no_repeat_ngram_size` sweep → REJECTED ✅
-(2026-07-19)**.
+(2026-07-19)** · **F5 `nfe` 48→16 measured + ear-checked + adopted, 2.16× on synthesis ✅
+(2026-07-19; fp16/compile/batching found already-on, unavailable and a mirage respectively)**.
 
 Stack pins, verified APIs and setup: STACK.md + SETUP.md. Translation: Gemma-3-12B (Ollama),
 `gemma3:12b`, local in-pipeline default by A/B 2026-07-18 (Qwen3-14B removed); PRIMARY route =

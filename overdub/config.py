@@ -88,7 +88,17 @@ class Config:
     f5_vocab: Path = Path("models/espeech-rlv2/vocab.txt")
     f5_ref_audio: Path = Path("models/refs/ref_espeech_demo.wav")
     f5_ref_text: Path = Path("models/refs/ref_espeech_demo.txt")
-    f5_nfe: int = 48                 # 32 is ~30% faster; quality delta not ear-checked yet
+    f5_nfe: int = 16                 # denoising steps. 16, not 48 (2026-07-19, ear-checked on a
+                                     # full video): cost is EXACTLY linear in nfe (Euler, one DiT
+                                     # forward per step), and 16 is one of the step counts F5's
+                                     # get_epss_timesteps has a TUNED schedule for (5,6,7,10,12,16)
+                                     # — 48 and 32 both fall through to a naive linspace, so the
+                                     # once-planned 48→32 was the one step down that buys no help
+                                     # from the library. Measured 2.16× per unit over 40 real units
+                                     # × 4 step counts; 12 adds only 6% more and leaves the tuned
+                                     # grid's edge. Metrics could NOT sign this off (round-trip sim
+                                     # is saturated: corpus median 0.995, zero units under the 0.9
+                                     # gate) — the ear did. Audio-affecting → part of synth_key.
     f5_speed: float = 1.0            # base narrator pace (narrator calibration, DECISIONS)
     f5_speed_floor: float = 0.75     # max stretch: min per-unit speed as a MULTIPLIER of
                                      # f5_speed (slot-fill; 1.0 disables stretching)
