@@ -1,32 +1,21 @@
 # PLAN
 
-## → Roadmap (reprioritized 2026-07-18; item 0 ear-check + Gemma migration → CHANGELOG)
+## → Roadmap (reprioritized 2026-07-19 — rationale in DECISIONS; F5 speed first, any-language → backlog)
 Sample workdirs: `work/` (Silero baselines, read-only); `work-exp/context-earcheck/x7DfiXqSEdM/`
 (item-0 ear-check, Qwen translate — PASSED); `work-exp/stats-batch/` (Qwen, 8/23 — batch STOPPED to
 switch models); `work-exp/gemma-ab/` (Gemma, the same 8 — the A/B set). A/B report artifact
 published (Qwen vs Gemma, 508 sentences). Report triage: any *_flag or speed_factor>1.8.
 
-1. **Video summary from the full transcript — "is this worth watching at all?"** A separate Sonnet
-   sub-agent reads the COMPLETE original transcript (`sentences.json` — it already exists after
-   transcribe, no new stage input) and writes a **Russian** summary of **~200 words**. Purpose is
-   triage-before-viewing, not a synopsis: it must answer (a) is the video worth watching, and
-   (b) what is the most interesting thing in it / what to look for. Runs at the same seam as the
-   translate sub-agents, so it costs one extra agent per video and no GPU. Open: where the artifact
-   lands (`work/<id>/summary.md`?), whether it belongs in the batch digest and the triage HTML,
-   and whether it should run before translate so a "not worth it" verdict can skip the expensive
-   stages entirely — that last one is the real payoff at batch scale.
+1. **Speed up F5.** The Silero audition put a number on what the primary engine costs: 128-250 s
+   of synthesis per ~5-minute video against Silero's 11-14 s. F5 quality stays preferred, so the
+   question is how much of that gap is recoverable. Unexplored levers: `f5_nfe` (48 → 32 is noted
+   in overdub.toml as ~30% faster with an un-ear-checked quality delta — ear-check it), batching
+   across units instead of one worker call per unit, keeping the worker process warm across
+   videos in a batch, and half-precision / compile options in the F5 worker. Measure per lever,
+   ear-check anything that touches quality — the id101 precedent says metrics alone cannot sign
+   this off.
 
-2. **Any-language source → Russian.** Today the pipeline is EN→RU by contract (CLAUDE.md hard
-   constraint: no language detection, no multi-language handling). Extend it to accept effectively
-   any source language, WITHOUT swapping models: whisper large-v3 is already multilingual (drop the
-   hardcoded `language="en"`, detect instead), and the translator is prompt-driven so the source
-   language is a prompt variable, not a model choice. Quality degradation on rare languages is
-   ACCEPTED by design — the point is coverage, not parity. Touches: `cfg.source_lang` semantics,
-   the transcribe call, both translate routes' prompts, and the `en.srt` label. Note the knock-on:
-   sentence resegmentation (`TERMINATORS`, `_ABBREV`) is Latin-punctuation-shaped and will need
-   review for languages that punctuate differently.
-
-3. **Sonnet semi-automatic translate — live-run the primary route.** Verdict recorded
+2. **Sonnet semi-automatic translate — live-run the primary route.** Verdict recorded
    2026-07-18 (DECISIONS): quality noticeably better, much faster, replaces the heaviest stage;
    both routes stay — Gemma = local in-pipeline default, Sonnet (subscription, cloud) = PRIMARY,
    in semi-automatic mode (sub-agents at the translate seam). Runbook: README "Running" route B.
@@ -40,30 +29,25 @@ published (Qwen vs Gemma, 508 sentences). Report triage: any *_flag or speed_fac
    in-pipeline Anthropic API flag stays approved but deferred — build only if the manual seam
    becomes the bottleneck.
 
-4. ~~**Whisper anti-repetition decoder params.**~~ **REJECTED 2026-07-19** on a 60-run sweep — no
-   consistent direction (helped the severe source, made the borderline one worse on every axis,
-   damaged a healthy control at n=4). See DECISIONS. Do NOT retry as-is: the measurement's third
-   axis (word count vs baseline) cannot distinguish "removed a duplicate" from "ate real speech",
-   so any rerun needs a CONTENT comparison against a reference transcript first. What remains open
-   from this line of work is not the knob but the guard's threshold — see below.
-   Original writeup kept for the design of a future attempt:
-   The transcribe
-   guard (shipped 2026-07-19) catches a collapsed alignment AFTER the fact; these params attack
-   what CAUSES it. `no_repeat_ngram_size` and `repetition_penalty` sit at library defaults (0 and
-   1 — off), so the repetition loop that feeds whisper's temperature fallback is unopposed, and
-   that fallback is why the same audio yields a different transcript per run (measured: a "clean"
-   video spanned 0.00–7.46% over 5 runs). This is the only lever that could NARROW the spread
-   instead of catching its tail — which would also let the guard's PROVISIONAL 0.085 threshold
-   become a real constant.
-   Do NOT adopt blind: too small an `n` silently eats legitimate repetition ("very, very",
-   refrains, list items with a shared opener) — the forbidden silent-loss class.
-   Measurement design (agreed, deferred): `4szRHy_CT7s` (severe) + a healthy control, `n` in
-   0/4/5/6, 3 repeat runs per combination (~24 runs, ~25-30 min), scored on THREE axes —
-   floor_run_ratio, duplicate adjacent sentences, and TOTAL WORD COUNT vs the n=0 baseline.
-   The third axis is the load-bearing one: fewer duplicates is the win, fewer words is the
-   regression, and a single metric cannot tell them apart. Probe script kept at
-   `scratchpad/floor_variance.py` (read-only, transcribes from work/<id>/source.wav, writes
-   nothing back) — extend it with the `n` sweep rather than starting over.
+3. **`--repair-asr id,id` — automate the isolated-window repair.** The manual loop proved out 7/7
+   on the AI-Fluency batch (method + caveats: DECISIONS 2026-07-19): `rate_implausible` /
+   `dup_adjacent` already localise the defect window; re-ASR just that window with
+   `condition_on_previous_text=False`; accept ONLY if the reading is identical under cond=True
+   and cond=False — the stability gate did real accept/reject work, keep it as the acceptance
+   criterion (and consider back-porting agreement into the transcribe guard, which today accepts
+   a retry on a floor-ratio halving); then merge and renumber. Pairs operationally with item 2 —
+   it activates the moment the next batch's detectors fire. `words.json` stays deliberately
+   untouched (CHANGELOG 2026-07-19).
+
+4. **Video summary from the full transcript — "is this worth watching at all?"** A separate Sonnet
+   sub-agent reads the COMPLETE original transcript (`sentences.json` — it already exists after
+   transcribe, no new stage input) and writes a **Russian** summary of **~200 words**. Purpose is
+   triage-before-viewing, not a synopsis: it must answer (a) is the video worth watching, and
+   (b) what is the most interesting thing in it / what to look for. Runs at the same seam as the
+   translate sub-agents, so it costs one extra agent per video and no GPU. Open: where the artifact
+   lands (`work/<id>/summary.md`?), whether it belongs in the batch digest and the triage HTML,
+   and whether it should run before translate so a "not worth it" verdict can skip the expensive
+   stages entirely — that last one is the real payoff at batch scale.
 
 Backlog (second tier) — **throughput / weaker hardware, unlocked by the Silero v5 audition
 (DECISIONS 2026-07-19):** Silero v5 synthesizes 12-19× faster than F5 on CPU alone (synth 11-14 s
@@ -97,26 +81,14 @@ deliberate trade. Two directions follow:
   - Its ordering advice matches ours by accident: punctuation + number normalization first,
     round-trip ASR as QA (shipped), SSML/LLM markup last.
 
-5. **Speed up F5.** The Silero audition put a number on what the primary engine costs: 128-250 s
-   of synthesis per ~5-minute video against Silero's 11-14 s. F5 quality stays preferred, so the
-   question is how much of that gap is recoverable. Unexplored levers: `f5_nfe` (48 → 32 is noted
-   in overdub.toml as ~30% faster with an un-ear-checked quality delta — ear-check it), batching
-   across units instead of one worker call per unit, keeping the worker process warm across
-   videos in a batch, and half-precision / compile options in the F5 worker. Measure per lever,
-   ear-check anything that touches quality — the id101 precedent says metrics alone cannot sign
-   this off.
-
-6. **`--repair-asr id,id` — automate the isolated-window repair.** The manual loop proved out 7/7
-   on the AI-Fluency batch (method + caveats: DECISIONS 2026-07-19): `rate_implausible` /
-   `dup_adjacent` already localise the defect window; re-ASR just that window with
-   `condition_on_previous_text=False`; accept ONLY if the reading is identical under cond=True
-   and cond=False — the stability gate did real accept/reject work, keep it as the acceptance
-   criterion (and consider back-porting agreement into the transcribe guard, which today accepts
-   a retry on a floor-ratio halving); then merge and renumber. Pairs operationally with item 3 —
-   it activates the moment the next batch's detectors fire. `words.json` stays deliberately
-   untouched (CHANGELOG 2026-07-19).
-
-Backlog (second tier): `--repair id,id --seed N` (point re-synth + remux; grain = the GROUP after
+Backlog (second tier): any-language source → Russian (was a roadmap item, shelved 2026-07-19 until
+the EN queue runs dry — biggest effort in the list and it breaks the EN→RU hard constraint; whisper
+large-v3 is already multilingual: drop the hardcoded `language="en"` and detect; the translator is
+prompt-driven, so source language is a prompt variable, not a model choice; quality degradation on
+rare languages ACCEPTED — coverage, not parity; touches `cfg.source_lang` semantics, the transcribe
+call, both translate routes' prompts, the `en.srt` label, and the Latin-punctuation-shaped
+resegmentation (`TERMINATORS`, `_ABBREV`) needs review for languages that punctuate differently);
+`--repair id,id --seed N` (point re-synth + remux; grain = the GROUP after
 units); per-SERIES terminology glossary (`terms.tsv` per playlist fed into every translate prompt
 and checked after — drift measured across the 12-video course, e.g. ИИ-грамотность vs владение ИИ;
 per-video isolation makes it invisible to every stage, only a batch-level check sees it);
@@ -137,7 +109,11 @@ exclusion — one-line fix, advisory noise only; was item-0h); RU analogue for t
 (Д/Ф/К/Д does not spell "4D" — prompt unpacking or a RU mnemonic, translation-quality class; was
 item-0i); quick code fixes: torn-jsonl newline guard on first append, `download.py` shutil.which
 preflight for yt-dlp/ffmpeg (raw WinError 2 today), drop the removed config keys from
-`work-exp/gemma-ab/gemma.toml`. — tail (lowest priority, keep for later): translation
+`work-exp/gemma-ab/gemma.toml`; whisper anti-repetition decoder params — REJECTED 2026-07-19 on a
+60-run sweep (DECISIONS/CHANGELOG), retry ONLY with a content comparison against a reference
+transcript (the word-count axis cannot tell "removed a duplicate" from "ate real speech"; probe
+script: `scratchpad/floor_variance.py`, extend it rather than starting over). — tail (lowest
+priority, keep for later): translation
 completeness check (EN↔RU content-word ratio / back-translation on outliers) — evidence exists:
 Gemma dropped 3 of 4 adverbs in `DmgujoZ1mmk` id1, unflagged (INBOX 2026-07-18); babble duration
 heuristic (expected-vs-actual unit duration → flag garbled synth the ASR round-trip misses) — output
@@ -175,7 +151,8 @@ Batch queue + stop switch ✅ · Proper nouns ✅ · Segmentation cluster + whis
 A/B-driven; Qwen removed)** · **Sonnet A/B + verdict: semi-auto = primary route ✅ (2026-07-18)** ·
 **Observability: run.json + timings.json + run_report.py digest + morning-triage HTML ✅ (2026-07-19)** ·
 **Item 0 — AI-Fluency batch: 8 ASR defects repaired, 2 detectors shipped, 12 MKVs re-shipped ✅
-(2026-07-19; sub-item index 0a-0j in CHANGELOG)**.
+(2026-07-19; sub-item index 0a-0j in CHANGELOG)** · **`no_repeat_ngram_size` sweep → REJECTED ✅
+(2026-07-19)**.
 
 Stack pins, verified APIs and setup: STACK.md + SETUP.md. Translation: Gemma-3-12B (Ollama),
 `gemma3:12b`, local in-pipeline default by A/B 2026-07-18 (Qwen3-14B removed); PRIMARY route =

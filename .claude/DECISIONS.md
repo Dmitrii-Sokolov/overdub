@@ -1,5 +1,13 @@
 # DECISIONS
 
+## 2026-07-19 — Roadmap reprioritized: F5 speed first, any-language shelved
+
+User call. New roadmap order: F5 speedup → Sonnet live-run → `--repair-asr` → video summary.
+Deciding factor: faster synthesis accelerates every subsequent batch AND touching the synth path
+will surface fresh defects — feeding exactly the quality loop the next two items exercise.
+Any-language → backlog: the biggest effort on the list, it breaks the EN→RU hard constraint, and
+it is not needed while the EN queue lasts. Reconsider the shelving when the EN queue runs dry.
+
 ## 2026-07-19 — `no_repeat_ngram_size` REJECTED; and the guard threshold's separation is gone
 
 **Measured, not argued: 60 ASR runs** (3 videos × n in 0/4/5/6 × 5 repeats), scoring floor ratio,
