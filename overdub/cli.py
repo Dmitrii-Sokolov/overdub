@@ -11,6 +11,7 @@ import sys
 import traceback
 from pathlib import Path
 
+from . import runreport
 from .config import Config
 from .pipeline import Context, STOP_NAME, StopRequested, check_stop, run_pipeline
 from .stages import all_stages
@@ -66,6 +67,14 @@ def _run_one(url: str, cfg: Config, *, force: bool, only: set[str] | None) -> st
     print(f"overdub: {url}")
     print(f"work dir: {work.root}")
     run_pipeline(ctx, all_stages(cfg), force=force, only=only)
+    # refresh the per-run rollup on every full or partial run (best-effort — never raises;
+    # returns None on an --only download run that has no report/translation yet)
+    run = runreport.build_run_report(work, cfg)
+    if run:
+        t = run["timings"]
+        rtf = t["rtf"] if t["rtf"] is not None else "n/a"
+        print(f"[report] RTF {rtf} ({t['video_sec_source']}) · flags {run['flags_total']}"
+              f" · triage {'yes' if run['needs_triage'] else 'no'}")
     return _export_output(ctx)
 
 
@@ -189,7 +198,32 @@ def _run_batch(urls: list[str], cfg: Config, *, force: bool, only: set[str] | No
         print(f"[stop] STOP file honored — halted {halted}; re-run the same command to resume")
     if fails:
         print("re-run the same command to retry failed videos (completed stages fast-skip)")
+
+    # batch sweep: roll up each video's run.json (_run_one wrote it). A missing/None run.json
+    # (a video that failed before the rollup, or an --only download batch) is skipped, never
+    # a crash — the summary above is the authoritative status; this is triage sugar on top.
+    runs = []
+    for vid, _status, _detail in results:
+        r = _load_run_json(cfg.work_root / vid / "run.json")
+        if r is not None:
+            runs.append(r)
+    if runs:
+        total_wall = round(sum((r.get("timings", {}) or {}).get("total_wall_s", 0) or 0
+                               for r in runs), 1)
+        sum_video = sum(((r.get("timings", {}) or {}).get("video_sec") or 0) for r in runs)
+        triage = [r.get("video_id") for r in runs if r.get("needs_triage")]
+        print("\n── batch sweep " + "─" * 32)
+        thru = f"×{sum_video / total_wall:.2f}" if total_wall > 0 else "n/a"
+        print(f"{len(runs)} run(s) · total wall {total_wall}s · throughput {thru}")
+        print(f"needs triage ({len(triage)}): {', '.join(triage) if triage else 'none'}")
     return 1 if fails else (3 if halted else 0)
+
+
+def _load_run_json(path: Path) -> dict | None:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
 
 
 if __name__ == "__main__":

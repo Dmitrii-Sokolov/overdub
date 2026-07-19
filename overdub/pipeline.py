@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
+from . import runreport
 from .config import Config
 from .workdir import WorkDir
 
@@ -70,4 +71,9 @@ def run_pipeline(
         print(f"[run ] {st.name}")
         t0 = time.perf_counter()
         st.run(ctx)
-        print(f"[ok  ] {st.name}  {time.perf_counter() - t0:.1f}s")
+        elapsed = time.perf_counter() - t0
+        print(f"[ok  ] {st.name}  {elapsed:.1f}s")
+        # persist this stage's wall-clock (only stages that ACTUALLY ran — the [skip] and
+        # --only-excluded branches above continue before here, so a resumed/partial run keeps
+        # every other stage's last real timing). Best-effort: never raises into the runner.
+        runreport.record_stage_timing(ctx.work, st.name, elapsed)

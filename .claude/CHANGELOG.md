@@ -1,5 +1,33 @@
 # CHANGELOG
 
+## 2026-07-19 — Observability: per-run run.json + timings.json + digest + skill Step 4 (PLAN item 1)
+- NEW `overdub/runreport.py` (pure stdlib, no model/GPU/network; one best-effort ffprobe): rolls
+  up the ALREADY-PERSISTED artifacts into `work/<id>/run.json` — timings + RTF + stage breakdown,
+  flag counts by type (translate/verify/completeness), speed distribution (median/p95/max of
+  `combined_factor`, count ≥ 1.8), completeness aggregates, retry/repair, flags_total +
+  needs_triage. Unit-level fields deduped by `group_id` (report records fan out per sentence) so
+  speed/verify by_type count UNITS not member sentences.
+- NEW `work/<id>/timings.json`: `run_pipeline` now persists each stage's wall-clock as it runs
+  (`record_stage_timing`, atomic upsert) — a resumed/`--only` run rewrites only the stages it
+  actually ran; skipped stages keep their last real timing. Never raises into the runner.
+- CLI: `_run_one` refreshes run.json after the pipeline (one-line RTF/flags/triage headline);
+  `_run_batch` prints a BATCH SWEEP (total wall, aggregate throughput, which video_ids need
+  triage) after the existing summary. Both best-effort — a missing/None run.json never crashes.
+- NEW `scripts/run_report.py [work\<id> ...] [--queue FILE]`: deterministic ENGLISH digest
+  (per-video block + batch table + totals) built from run.json (or rebuilt on the fly). This is
+  the DATA the overdub-sonnet-batch skill reads to write its Russian triage narrative.
+- Skill: new **Step 4 — Human-readable report** (runs the digest, agent narrates in Russian);
+  front-matter description now notes the route ends with a human-readable report.
+- 21 tests (`tests/test_runreport.py`), no regression (completeness suite green, all 10 test
+  files pass, imports resolve, no import cycle — runreport is stdlib-only). run.json validated on
+  a synthetic workdir + the digest smoke. PLAN item 1 now down to its last open sub-part: the
+  morning-triage HTML.
+- Post-build adversarial review (ultracode, 4 lenses + verify): 9 confirmed minor/nit findings,
+  all applied — verify by_type gained an `unknown` catch-all (silent-loss symmetry with translate);
+  speed emits null (not a fabricated 1.0) when verify ran but assemble did not; `n_over_1_8` trusts
+  assemble's raw-float rollup over the rounded recompute; a reset workdir clears its stale run.json;
+  torn timings.json now warns before rebuilding; +6 regression-guard tests.
+
 ## 2026-07-19 — Route-B skill audit round 2: 5 gaps closed (SKILL.md only)
 - Re-audit vs code after the round-1 hardening: commands/contract/flag table/stage order all
   hold; helper contract tests green. 5 residual gaps, all in SKILL.md orchestration prose:

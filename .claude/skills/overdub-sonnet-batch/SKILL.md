@@ -1,6 +1,6 @@
 ---
 name: overdub-sonnet-batch
-description: "Run the overdub pipeline with Claude Sonnet as the translator (README route B, the primary translate route). Fixed 3-step order: transcribe the batch, translate each video with a Sonnet sub-agent at the translate seam (writes translation.json via scripts/build_translation.py), then resume the full pipeline. Trigger when the user wants to dub a batch/video with Sonnet translation, 'прогони батч через Sonnet', 'переведи Sonnet-ом', 'route B', 'semi-auto translate', or asks how to run overdub with the cloud translator. NOT for the local Gemma route (that is fully turn-key: one --batch command)."
+description: "Run the overdub pipeline with Claude Sonnet as the translator (README route B, the primary translate route). Fixed order: transcribe the batch, translate each video with a Sonnet sub-agent at the translate seam (writes translation.json via scripts/build_translation.py), resume the full pipeline, then produce a human-readable Russian triage report from scripts/run_report.py. Trigger when the user wants to dub a batch/video with Sonnet translation, 'прогони батч через Sonnet', 'переведи Sonnet-ом', 'route B', 'semi-auto translate', or asks how to run overdub with the cloud translator. NOT for the local Gemma route (that is fully turn-key: one --batch command)."
 ---
 
 # overdub — Sonnet translation batch (route B)
@@ -156,6 +156,34 @@ assemble → separate → mux run as usual:
   flags also surface as `status:"failed"` lines in `translation.json`; `pronounce_audit.json`
   (the helper writes it, parity with the local route) lists what the pipeline invented for
   out-of-dict Latin names — the one silent-loss class verify cannot catch.
+
+## Step 4 — Human-readable report
+
+Once the resume (step 3) finishes, render the per-run digest, then write the user a concise
+Russian triage summary from it. The script produces the DATA; **your job is the human narrative
+in Russian.**
+
+```powershell
+.venv-asr\Scripts\python.exe -X utf8 scripts\run_report.py --queue queue.txt
+```
+
+Single video: pass `work\<id>` instead of `--queue queue.txt`. The script reads each
+`work/<id>/run.json` (the pipeline wrote it on resume; it rebuilds any that is missing), prints a
+per-video block (header + timings + flags + offenders), a batch table, and a totals line. It is
+read-only and never crashes on a missing run.json — a dir with none is a skipped row.
+
+Then summarize for the user in Russian, grounded ONLY in that output (do not invent numbers):
+
+- **Per video:** clean vs needs-a-look (the `[TRIAGE]`/`[clean]` marker); RTF + wall time; the
+  flag headline (translate / verify / completeness counts); and any speed offenders ≥ 1.8×
+  (`n>1.8`, and the offender ids/reasons the block lists).
+- **Batch totals:** total wall across videos, aggregate throughput, and WHICH video_ids need
+  eyes (the `need triage` list) — so the user knows what to open first, not just that something
+  is off.
+
+Keep it short and honest: name what the digest flags, don't soften a `TRIAGE` into "всё хорошо".
+A clean batch is a one-liner ("N видео, все чистые, X ч звука за Y мин"); a flagged batch leads
+with the videos and segments that need a listen.
 
 ## Guardrails (the failure modes this skill exists to prevent)
 

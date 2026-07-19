@@ -914,3 +914,27 @@ no cheap person-vs-brand discriminator exists. neg_loss is 100% FP here too (lex
 sentences) is accepted for the chance of catching a genuinely dropped brand. This is the FIRST
 data source for the run-report / observability item (PLAN 1). The heavy semantic check stays
 rejected.
+
+## 2026-07-19 — Run report (observability): two non-obvious choices in run.json
+
+Built the per-run rollup (`overdub/runreport.py` → `work/<id>/run.json`, PLAN item 1). Two calls
+worth recording; the rest is mechanical aggregation of already-persisted artifacts.
+
+**RTF denominator source priority: info_json > ffprobe > sentences.** RTF (wall / video duration)
+needs a duration, and the pipeline never stored one as a first-class field. Priority: (1)
+yt-dlp's `source.info.json` "duration" — authoritative, already on disk, zero cost; (2) a
+best-effort `ffprobe` on the source media — recovers the metadata-backfill path (info.json holds
+only a title) at the cost of one guarded subprocess, the ONLY external call runreport is allowed;
+(3) the last `sentences.json` "end" — always present once transcribe ran, but it UNDERSHOOTS
+(trailing silence/music after the final sentence isn't counted), so it slightly inflates RTF —
+acceptable as a last resort, and `video_sec_source` is stamped in run.json so the number is never
+read blind. No duration at all → RTF null, never a fabricated denominator.
+
+**Speed distribution metric = `combined_factor`, not raw `tts_speed`.** The distribution
+(median/p95/max, count ≥ 1.8) is over `combined_factor` = native F5 compression × atempo top-up,
+the REAL compression a listener hears — matching assemble's own `n_over_1_8_combined` triage bar
+(DECISIONS 2026-07-17: native ≥~1.3 drops words, atempo tops up the rest; the combined figure is
+the one that means "candidate broken"). Raw `tts_speed` alone misses the atempo half and
+`speed_factor` (atempo demand) alone misses the native half — neither is the number the 1.8 bar
+was calibrated against. Aggregated over UNIT leaders (report records fan out per sentence sharing
+a `group_id`; dedup first-seen), so the count is units, not member sentences.

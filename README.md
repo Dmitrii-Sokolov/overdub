@@ -62,8 +62,11 @@ Needs Ollama serving `gemma3:12b` on localhost. Agent or human:
 - Interrupt/resume: re-run the same command — completed stages fast-skip.
   Graceful stop: create `work/STOP`. Exit codes: 0 ok / 1 any fail / 2 usage /
   3 stop-halt.
-- Morning triage: `work/<id>/report.json` — any `*_flag`, or
-  `speed_factor > 1.8`.
+- Morning triage: the per-run rollup `work/<id>/run.json` (timings/RTF, flag counts by
+  type, speed distribution, `needs_triage`) — or the raw `work/<id>/report.json` for any
+  `*_flag` / `speed_factor > 1.8`. For a batch, the CLI prints a sweep after the summary;
+  `scripts/run_report.py [work\<id> ...] [--queue queue.txt]` renders the human digest
+  (per-video block + batch table).
 
 ### B. Batch with Sonnet translation (semi-automatic — the primary route)
 
@@ -98,6 +101,10 @@ cleanly at the translate seam and resumes from it. No Ollama needed.
 3. **Resume the batch** with the exact command from route A — download/
    transcribe/translate skip (artifacts exist), synthesize → verify → assemble
    → separate → mux run as usual.
+   - Morning triage: same as route A — `work/<id>/run.json` (the per-run rollup)
+     and `scripts/run_report.py --queue queue.txt` for the human digest; raw
+     flags in `work/<id>/report.json`. The `overdub-sonnet-batch` skill's Step 4
+     runs the digest and writes the Russian triage summary for you.
 
 Both routes are good: Gemma gives good quality locally and slowly; Sonnet needs
 a subscription and gives better quality in the cloud, much faster.

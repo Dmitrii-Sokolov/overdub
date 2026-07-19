@@ -6,29 +6,13 @@ Sample workdirs: `work/` (Silero baselines, read-only); `work-exp/context-earche
 switch models); `work-exp/gemma-ab/` (Gemma, the same 8 — the A/B set). A/B report artifact
 published (Qwen vs Gemma, 508 sentences). Report triage: any *_flag or speed_factor>1.8.
 
-1. **Run report / observability — measure and log what the pipeline loses and spends.**
-   Logging today is partial: `report.json` carries per-segment verify/assemble fields
-   (similarity, verify_flag, translate_flag, tts_speed/seed/attempts, synth_sim) + a `verify`
-   rollup (n_flagged/retried/repaired); `translation.json` carries translate status/flags;
-   `pronounce_audit.json` triages Latin tokens. GAPS: stage wall-clock is printed to stdout
-   (`[ok] Xs`) but never persisted; no per-RUN rollup (timings, RTF, stage breakdown), no
-   speed-distribution aggregate (median/p95/max, count>1.8), no completeness metric, no
-   batch-level sweep — triage is manual (grep report for *_flag / speed>1.8). Build a per-run
-   `run.json` (feeding the backlog morning-triage HTML) that should include:
-   - **timings** — per-stage wall-clock persisted; end-to-end RTF (wall / video duration); stage breakdown %.
-   - **flag counts by type** — translate (empty/echo/runaway/refusal/no_cyrillic), verify
-     (low_similarity/missing_wav/empty_hyp/…), completeness (num_loss/neg_loss/entity_loss/length).
-   - **speed distribution** — median/p95/max tts_speed, count > 1.8 (today's manual triage bar).
-   - **completeness aggregates** — numbers/entities/negations dropped EN→RU (from the A+B pass below).
-   - **retry/repair** — n_retried, n_repaired (already in the verify marker → roll up to run level).
-   - **batch sweep** — across videos: which need triage, total wall, throughput.
-   *In progress now (the completeness data source):* a cheap deterministic completeness check
-   (approaches A+B, no LLM/VRAM) — length-ratio outlier + hard-loss of numbers, negations and
-   Latin named-entities EN→RU — written as non-blocking per-segment flags in `report.json` at
-   verify. Rationale: the primary route (Sonnet) is completeness-clean (read-through found none);
-   this is minimal insurance catching the fact-inverting losses (a dropped `not`/number) that are
-   otherwise silent, on both routes. The heavy semantic check (LLM judge / embeddings) was
-   evaluated and rejected as PoC over-engineering (DECISIONS 2026-07-19).
+1. **Run report / observability — morning-triage HTML (the last open sub-part).**
+   Core SHIPPED 2026-07-19 (details in CHANGELOG): `overdub/runreport.py` + per-run
+   `work/<id>/run.json` + persisted `work/<id>/timings.json` + `scripts/run_report.py` (human
+   digest) + the overdub-sonnet-batch skill's Step 4. STILL OPEN: the backlog **morning-triage
+   HTML** — an at-a-glance batch page (flagged segments with inline audio players) built ON TOP of
+   the run.json/report.json data the digest already surfaces; the deterministic English digest
+   (`scripts/run_report.py`) is the text stand-in until the HTML earns its keep.
 
 2. **Sonnet semi-automatic translate — live-run the primary route.** Verdict recorded
    2026-07-18 (DECISIONS): quality noticeably better, much faster, replaces the heaviest stage;
