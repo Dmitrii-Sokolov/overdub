@@ -207,6 +207,20 @@ def _unload(root: str, model: str) -> None:
         pass
 
 
+class _Unloader:
+    """Session entry whose close() sends Ollama keep_alive:0. REGISTERED rather than called
+    in a per-video finally, so the unload happens once at the end of the translate SWEEP —
+    a stage-major batch would otherwise evict and reload Gemma (~8-9 GB) between every pair
+    of videos. Single-video / --video-major: the sweep is one video, i.e. the old behavior
+    exactly."""
+
+    def __init__(self, root: str, model: str) -> None:
+        self._root, self._model = root, model
+
+    def close(self) -> None:
+        _unload(self._root, self._model)
+
+
 class TranslateStage:
     name = "translate"
 
@@ -218,6 +232,9 @@ class TranslateStage:
         sentences = json.loads(ctx.work.sentences.read_text(encoding="utf-8"))
         root = _root(cfg.ollama_base_url)
         _preflight(root, cfg.ollama_model)
+        if cfg.translate_unload:                # registered BEFORE any work, as unconditionally
+            ctx.session.get(("ollama_unload", root, cfg.ollama_model),   # as the old finally
+                            lambda: _Unloader(root, cfg.ollama_model))
 
         # resume: reload any already-finished sentences from the append-only trail
         partial = ctx.work.translation_partial
@@ -234,38 +251,34 @@ class TranslateStage:
                     continue  # tolerate a torn last line from a crash mid-write
 
         window: list[tuple[str, str]] = []      # rolling context of ok (en, ru) pairs
-        try:
-            with partial.open("a", encoding="utf-8") as pf:
-                for s in sentences:
-                    sid = s["id"]
-                    if sid in done and done[sid].get("src_en") == s["text"]:  # done for THIS source
-                        # timings follow the CURRENT sentence: a re-transcribe (e.g. the ultra-short
-                        # merge) can shift start/end at an id whose text happens to match
-                        done[sid] = obj = {**done[sid], "start": s["start"], "end": s["end"]}
-                        if obj.get("status") == "ok":                 # resume: skip, keep context
-                            window = (window + [(s["text"], obj["text_ru"])])[-cfg.context_window:]
-                        continue                                      # source changed -> re-translate
-                    user = _build_user(s["text"], window[-cfg.context_window:],
-                                       cfg.translate_context_char_cap)
-                    text_ru, status, attempts, flag = _translate_one(root, cfg, user, s["text"])
-                    obj = {
-                        "id": sid, "start": s["start"], "end": s["end"], "src_en": s["text"],
-                        "text_ru": text_ru, "text_tts": normalize_for_tts(text_ru),
-                        "status": status, "attempts": attempts,
-                    }
-                    if flag:
-                        obj["flag"] = flag
-                    pf.write(json.dumps(obj, ensure_ascii=False) + "\n")
-                    pf.flush()
-                    os.fsync(pf.fileno())
-                    done[sid] = obj
-                    if status == "ok":
-                        window = (window + [(s["text"], text_ru)])[-cfg.context_window:]
-                    else:
-                        print(f"       [flag] id{sid}: {flag}", file=sys.stderr)
-        finally:
-            if cfg.translate_unload:
-                _unload(root, cfg.ollama_model)
+        with partial.open("a", encoding="utf-8") as pf:
+            for s in sentences:
+                sid = s["id"]
+                if sid in done and done[sid].get("src_en") == s["text"]:  # done for THIS source
+                    # timings follow the CURRENT sentence: a re-transcribe (e.g. the ultra-short
+                    # merge) can shift start/end at an id whose text happens to match
+                    done[sid] = obj = {**done[sid], "start": s["start"], "end": s["end"]}
+                    if obj.get("status") == "ok":                 # resume: skip, keep context
+                        window = (window + [(s["text"], obj["text_ru"])])[-cfg.context_window:]
+                    continue                                      # source changed -> re-translate
+                user = _build_user(s["text"], window[-cfg.context_window:],
+                                   cfg.translate_context_char_cap)
+                text_ru, status, attempts, flag = _translate_one(root, cfg, user, s["text"])
+                obj = {
+                    "id": sid, "start": s["start"], "end": s["end"], "src_en": s["text"],
+                    "text_ru": text_ru, "text_tts": normalize_for_tts(text_ru),
+                    "status": status, "attempts": attempts,
+                }
+                if flag:
+                    obj["flag"] = flag
+                pf.write(json.dumps(obj, ensure_ascii=False) + "\n")
+                pf.flush()
+                os.fsync(pf.fileno())
+                done[sid] = obj
+                if status == "ok":
+                    window = (window + [(s["text"], text_ru)])[-cfg.context_window:]
+                else:
+                    print(f"       [flag] id{sid}: {flag}", file=sys.stderr)
 
         # finalize: enforce the contract (raise, not assert — a never-drop invariant must not be
         # stripped under `python -O`), then atomic write

@@ -32,6 +32,16 @@ class TtsEngine(Protocol):
         or None for engines without native speed."""
         ...
 
+    def begin_video(self) -> None:
+        """Reset per-video failure state on a REUSED engine.
+
+        A stage-major batch keeps one engine across the whole synthesize sweep, but the
+        crash budget counts CONSECUTIVE failures within ONE video: without this reset a
+        video that merely flagged 2 synth_errors hands the next video a budget of 1, and
+        that video dies with TtsFatalError blaming a worker that is perfectly healthy.
+        Engines with no such state implement it as a no-op (same shape as close())."""
+        ...
+
     def close(self) -> None:
         """Release engine resources (worker process, model refs). Idempotent."""
         ...

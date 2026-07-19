@@ -6,22 +6,31 @@ Sample workdirs: `work/` (Silero baselines, read-only); `work-exp/context-earche
 switch models); `work-exp/gemma-ab/` (Gemma, the same 8 — the A/B set). A/B report artifact
 published (Qwen vs Gemma, 508 sentences). Report triage: any *_flag or speed_factor>1.8.
 
-1. **Stage-major batch execution — load each model once per BATCH, not once per video.** The
-   remaining half of the F5 speedup, and it touches no audio at all: acceptance is byte-identical
-   wavs against the current renders, so it costs zero ear time. Today `_run_batch` loops videos
-   outer / stages inner, so every video reloads whisper-large (~22.2 s), respawns the F5 worker
-   (~34.8 s), reloads whisper-small (~1.5 s, and TWICE per video — synthesize's reseed verifier
-   then verify) and respawns demucs (~13.2 s, a stage whose slope against audio length is
-   statistically ZERO — it is nothing but model loading). ~72 s per video, ~13 min per 12-video
-   batch. Inverting to stage-outer/video-inner makes peak VRAM the MAX over models instead of
-   their sum, so the Gemma route stays safe with no parking or eviction policy, and a model's
-   lifetime stays inside one stage (a batch-scoped engine would poison the next video after a
-   crash — see DECISIONS). Must handle, not dismiss: export moves after the mux stage; STOP is
-   checked per (stage, video); per-video status must survive across stages so one failure does not
-   cascade; `--batch` only, since a single video has nothing to amortise. Demucs needs one extra
-   tweak to benefit — its CLI takes several input files per invocation, but that requires knowing
-   the batch upfront, which is in genuine tension with per-video resume: decide that explicitly.
-   Projected with nfe=16 already in: ~53 min → ~26 min on the 12-video batch (~2.1×).
+1. **Stage-major batch execution — CODE COMPLETE 2026-07-19, awaiting GPU verification.**
+   Implemented as three commits (loop inversion + status machine · `Session` + model cache ·
+   Ollama unload at sweep end); design and hazard handling in DECISIONS, inventory in CHANGELOG.
+   **Still open — the verification run, which is the acceptance gate:** L0 F5 worker-state probe
+   (does render N depend on render N−1 inside one live worker — if it does, byte-identity is the
+   wrong criterion and the bounded-equivalence fallback applies), then L1 byte-identity on 2
+   videos (`-UN9sNqQ0t4`, `DmgujoZ1mmk`, both `n_retried=0`), the L1-guard timing check (SM's
+   summed synthesize wall must be ≥30 s below VM's, or the restructure is a no-op that passes
+   byte-identity trivially), L1b the never-yet-exercised reseed branch, and an observability test
+   for the accounting that byte-identity structurally cannot cover (`run.json`, `timings.json`,
+   the summary). Byte comparison CANNOT include transcribe or translate — whisper's temperature
+   fallback samples, so it is irreproducible by construction; run on pre-seeded `translation.json`.
+   Every `work/*/segments` render is stale by `synth_key` since nfe went to 16 — only
+   `work-exp/nfe16/RyvXxApfHkk` is current.
+   **Projection corrected: ~53 → ~28 min, not ~26.** The old figure folded in demucs multi-file
+   batching (~2.4 min), which is deliberately deferred — see DECISIONS for why it needs a `Stage`
+   protocol change and fights per-video resume.
+   **Two side effects to know before the first overnight run, neither a bug:**
+   (a) `download` amortises nothing, so hoisting it means a 100-video queue downloads in full
+   before the first transcribe — ~100 GB in hour 0. Watch for ENOSPC; the compensation is that
+   network failures surface immediately instead of smeared across the night.
+   (b) `_title_of` is a networked `yt-dlp --print title` with a 30 s timeout for pre-change
+   workdirs. Those calls used to be spread across the batch; in the finish sweep they queue up
+   back-to-back — an offline resume of 12 videos can sit in up to 6 minutes of timeouts in one
+   block at the very end.
 
 2. **Sonnet semi-automatic translate — live-run the primary route.** Verdict recorded
    2026-07-18 (DECISIONS): quality noticeably better, much faster, replaces the heaviest stage;

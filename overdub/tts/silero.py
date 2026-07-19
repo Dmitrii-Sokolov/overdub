@@ -54,5 +54,8 @@ class SileroEngine:
         # extension soundfile cannot infer a container from, so never rely on the suffix.
         sf.write(str(out_path), audio.cpu().numpy(), self.sample_rate, format="WAV", subtype="PCM_16")
 
+    def begin_video(self) -> None:
+        pass                     # no per-video failure state to reset (no worker, no seed)
+
     def close(self) -> None:
         pass

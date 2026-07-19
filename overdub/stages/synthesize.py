@@ -28,7 +28,6 @@ as singleton units by units_of()); "complete" marker + periodic flush semantics 
 
 from __future__ import annotations
 
-import gc
 import hashlib
 import json
 import os
@@ -38,10 +37,10 @@ import time
 import numpy as np
 import soundfile as sf
 
-from ..asr import load_whisper, roundtrip_similarity
+from ..asr import roundtrip_similarity
 from ..normalize import normalize_for_compare
 from ..pipeline import Context
-from ..tts import build_engine, engine_sample_rate, synth_key
+from ..tts import engine_sample_rate, synth_key
 from ..tts.base import TtsFatalError
 from ..workdir import replace_retry
 
@@ -209,131 +208,128 @@ class SynthesizeStage:
 
         engine = None
         verifier = None
-        if need:
-            engine = build_engine(cfg)                     # outside the per-unit try: fail LOUD
+        if need:                                           # unchanged gate: an all-reusable
+            # batch never reaches this line, so no worker is ever spawned — the session is
+            # get-or-create at the USE SITE precisely to keep that laziness
+            engine = ctx.session.tts_engine(cfg)           # outside the per-unit try: fail LOUD
+            engine.begin_video()                           # reused engine: reset the crash
+                                                           # budget, which counts CONSECUTIVE
+                                                           # failures within ONE video
             if engine.sample_rate != sr:
                 raise RuntimeError(f"engine sr {engine.sample_rate} != expected {sr}")
             if engine.supports_seed:
-                verifier = load_whisper(cfg.verify_model, cfg.whisper_device,
-                                        cfg.whisper_compute_type)
+                verifier = ctx.session.whisper(cfg, cfg.verify_model)
 
         out: list[dict] = []
         fresh_since_flush = 0
-        try:
-            for i, u in enumerate(units):
-                lead = u["ids"][0]
-                wav = ctx.work.seg_wav(lead)
-                slot = slot_of(i)
-                target = u["end"] - u["start"]
-                flag: str | None = None
-                seed_used: int | None = None
-                speed_used: float | None = None
-                attempts = 0
-                synth_sim: float | None = None
+        # no local teardown: the engine and the verifier belong to the session, whose
+        # lifetime is one stage SWEEP (pipeline.Session). For a single video that sweep ends
+        # with this stage, i.e. exactly the old finally block; in a stage-major batch the
+        # next video reuses the same warm worker.
+        for i, u in enumerate(units):
+            lead = u["ids"][0]
+            wav = ctx.work.seg_wav(lead)
+            slot = slot_of(i)
+            target = u["end"] - u["start"]
+            flag: str | None = None
+            seed_used: int | None = None
+            speed_used: float | None = None
+            attempts = 0
+            synth_sim: float | None = None
 
-                prev = prior.get(tuple(u["ids"]))
-                if reusable(i):
-                    flag = prev.get("flag")
-                    seed_used = prev.get("seed")
-                    speed_used = prev.get("speed")
-                    attempts = prev.get("attempts") or 0
-                    synth_sim = prev.get("synth_sim")
-                elif not u["text"]:
-                    sf.write(str(wav), np.zeros(0, dtype="float32"), sr)   # honest empty slot
-                    flag = "empty_tts"
-                    fresh_since_flush += 1
-                else:
-                    fresh_since_flush += 1
-                    kw = {"target_sec": target, "max_sec": slot} if supports_target else {}
-                    try:
-                        tmp = wav.with_suffix(".wav.tmp")
-                        speed_used = engine.synthesize(u["text"], tmp, seed=cfg.tts_seed, **kw)
-                        seed_used, attempts = (cfg.tts_seed if engine.supports_seed else None), 1
-                        if verifier is not None:
-                            ref_norm = normalize_for_compare(u["text"])
-                            best: float | None = None
-                            if ref_norm:
-                                try:
-                                    best, _hyp, _hn = roundtrip_similarity(
-                                        verifier, tmp, ref_norm, cfg.target_lang)
-                                except Exception as e:     # round-trip broke, audio didn't
-                                    print(f"       [warn] u{lead}: round-trip failed ({e}) — "
-                                          "keeping audio, verify will judge", file=sys.stderr)
-                            if best is not None:
-                                need_sim = unit_sim_threshold(cfg, speed_used)
-                                for k in range(1, cfg.tts_max_retries + 1):
-                                    if best >= need_sim:
-                                        break
-                                    retry_tmp = wav.with_suffix(".wav.retry")
-                                    try:
-                                        engine.synthesize(u["text"], retry_tmp,
-                                                          seed=cfg.tts_seed + k, **kw)
-                                        sim_k, _h, _n = roundtrip_similarity(
-                                            verifier, retry_tmp, ref_norm, cfg.target_lang)
-                                    except TtsFatalError:
-                                        raise
-                                    except Exception as e:
-                                        print(f"       [warn] u{lead}: retry seed "
-                                              f"{cfg.tts_seed + k} failed ({e})", file=sys.stderr)
-                                        attempts += 1
-                                        continue
-                                    attempts += 1
-                                    if sim_k > best:       # keep-best: retry never makes it worse
-                                        _replace(retry_tmp, tmp)
-                                        best, seed_used = sim_k, cfg.tts_seed + k
-                                    else:
-                                        retry_tmp.unlink(missing_ok=True)
-                                synth_sim = round(best, 4)
-                                if attempts > 1:
-                                    tail = ("ok" if best >= need_sim
-                                            else "still low")
-                                    print(f"       [retry] u{lead}: {attempts} attempts, "
-                                          f"best {best:.3f} (seed {seed_used}) — {tail}")
-                        _replace(tmp, wav)
-                    except TtsFatalError:
-                        raise
-                    except Exception as e:
-                        print(f"       [flag] u{lead}: synth_error {e}", file=sys.stderr)
-                        sf.write(str(wav), np.zeros(0, dtype="float32"), sr)
-                        flag = "synth_error"
-                        seed_used = speed_used = synth_sim = None
-
+            prev = prior.get(tuple(u["ids"]))
+            if reusable(i):
+                flag = prev.get("flag")
+                seed_used = prev.get("seed")
+                speed_used = prev.get("speed")
+                attempts = prev.get("attempts") or 0
+                synth_sim = prev.get("synth_sim")
+            elif not u["text"]:
+                sf.write(str(wav), np.zeros(0, dtype="float32"), sr)   # honest empty slot
+                flag = "empty_tts"
+                fresh_since_flush += 1
+            else:
+                fresh_since_flush += 1
+                kw = {"target_sec": target, "max_sec": slot} if supports_target else {}
                 try:
-                    info = _stat_wav(wav)
-                    frames, srate = info.frames, info.samplerate
-                except Exception as e:                     # unreadable wav → flag AND zero it so
-                    if flag is None:                       # disk and manifest agree
-                        print(f"       [flag] u{lead}: synth_error {e}", file=sys.stderr)
-                        flag = "synth_error"
-                    try:
-                        sf.write(str(wav), np.zeros(0, dtype="float32"), sr)
-                    except Exception:
-                        wav.unlink(missing_ok=True)        # missing beats divergent
-                    frames, srate = 0, sr
-                if frames and srate != sr:
-                    raise RuntimeError(f"u{lead} wav sr {srate} != engine sr {sr}")
-                out.append({
-                    "ids": u["ids"], "path": f"segments/{lead:05d}.wav",
-                    "samples": frames, "duration": round(frames / sr, 3),
-                    "sample_rate": srate, "start": u["start"], "end": u["end"],
-                    "target_sec": (round(target, 3) if u["text"] else None),
-                    "max_sec": (round(slot, 3) if slot is not None else None),
-                    "text_tts": u["text"], "flag": flag, "speed": speed_used,
-                    "seed": seed_used, "attempts": attempts, "synth_sim": synth_sim,
-                })
-                if fresh_since_flush >= _FLUSH_EVERY:
-                    self._write_manifest(ctx, cfg, key, sr, out, complete=False)
-                    fresh_since_flush = 0
-        finally:
-            if engine is not None:
-                engine.close()
-            del engine, verifier
-            gc.collect()
+                    tmp = wav.with_suffix(".wav.tmp")
+                    speed_used = engine.synthesize(u["text"], tmp, seed=cfg.tts_seed, **kw)
+                    seed_used, attempts = (cfg.tts_seed if engine.supports_seed else None), 1
+                    if verifier is not None:
+                        ref_norm = normalize_for_compare(u["text"])
+                        best: float | None = None
+                        if ref_norm:
+                            try:
+                                best, _hyp, _hn = roundtrip_similarity(
+                                    verifier, tmp, ref_norm, cfg.target_lang)
+                            except Exception as e:         # round-trip broke, audio didn't
+                                print(f"       [warn] u{lead}: round-trip failed ({e}) — "
+                                      "keeping audio, verify will judge", file=sys.stderr)
+                        if best is not None:
+                            need_sim = unit_sim_threshold(cfg, speed_used)
+                            for k in range(1, cfg.tts_max_retries + 1):
+                                if best >= need_sim:
+                                    break
+                                retry_tmp = wav.with_suffix(".wav.retry")
+                                try:
+                                    engine.synthesize(u["text"], retry_tmp,
+                                                      seed=cfg.tts_seed + k, **kw)
+                                    sim_k, _h, _n = roundtrip_similarity(
+                                        verifier, retry_tmp, ref_norm, cfg.target_lang)
+                                except TtsFatalError:
+                                    raise
+                                except Exception as e:
+                                    print(f"       [warn] u{lead}: retry seed "
+                                          f"{cfg.tts_seed + k} failed ({e})", file=sys.stderr)
+                                    attempts += 1
+                                    continue
+                                attempts += 1
+                                if sim_k > best:           # keep-best: retry never makes it worse
+                                    _replace(retry_tmp, tmp)
+                                    best, seed_used = sim_k, cfg.tts_seed + k
+                                else:
+                                    retry_tmp.unlink(missing_ok=True)
+                            synth_sim = round(best, 4)
+                            if attempts > 1:
+                                tail = ("ok" if best >= need_sim
+                                        else "still low")
+                                print(f"       [retry] u{lead}: {attempts} attempts, "
+                                      f"best {best:.3f} (seed {seed_used}) — {tail}")
+                    _replace(tmp, wav)
+                except TtsFatalError:
+                    raise
+                except Exception as e:
+                    print(f"       [flag] u{lead}: synth_error {e}", file=sys.stderr)
+                    sf.write(str(wav), np.zeros(0, dtype="float32"), sr)
+                    flag = "synth_error"
+                    seed_used = speed_used = synth_sim = None
+
             try:
-                import torch
-                torch.cuda.empty_cache()
-            except Exception:
-                pass
+                info = _stat_wav(wav)
+                frames, srate = info.frames, info.samplerate
+            except Exception as e:                         # unreadable wav → flag AND zero it so
+                if flag is None:                           # disk and manifest agree
+                    print(f"       [flag] u{lead}: synth_error {e}", file=sys.stderr)
+                    flag = "synth_error"
+                try:
+                    sf.write(str(wav), np.zeros(0, dtype="float32"), sr)
+                except Exception:
+                    wav.unlink(missing_ok=True)            # missing beats divergent
+                frames, srate = 0, sr
+            if frames and srate != sr:
+                raise RuntimeError(f"u{lead} wav sr {srate} != engine sr {sr}")
+            out.append({
+                "ids": u["ids"], "path": f"segments/{lead:05d}.wav",
+                "samples": frames, "duration": round(frames / sr, 3),
+                "sample_rate": srate, "start": u["start"], "end": u["end"],
+                "target_sec": (round(target, 3) if u["text"] else None),
+                "max_sec": (round(slot, 3) if slot is not None else None),
+                "text_tts": u["text"], "flag": flag, "speed": speed_used,
+                "seed": seed_used, "attempts": attempts, "synth_sim": synth_sim,
+            })
+            if fresh_since_flush >= _FLUSH_EVERY:
+                self._write_manifest(ctx, cfg, key, sr, out, complete=False)
+                fresh_since_flush = 0
 
         if sorted(i for e in out for i in e["ids"]) != list(range(len(segs))):
             raise RuntimeError("unit ids not contiguous (synthesize never-drop)")

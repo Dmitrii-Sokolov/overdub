@@ -18,14 +18,13 @@ of silently shipping a stale report over new wavs.
 
 from __future__ import annotations
 
-import gc
 import json
 import sys
 
 import soundfile as sf
 
 from .. import completeness, report
-from ..asr import load_whisper, roundtrip_similarity
+from ..asr import roundtrip_similarity
 from ..normalize import normalize_for_compare
 from ..pipeline import Context
 from .synthesize import unit_sim_threshold, units_of
@@ -75,63 +74,57 @@ class VerifyStage:
         if sorted(i for u in units for i in u["ids"]) != list(range(len(segs))):
             raise RuntimeError("manifest units do not cover translation ids (verify never-drop)")
 
-        model = load_whisper(cfg.verify_model, cfg.whisper_device, cfg.whisper_compute_type)
+        # session-owned: one whisper-small load per stage SWEEP. Inside a stage the session
+        # also dedupes it against synthesize's reseed verifier when both run in the same
+        # sweep — across stages it is loaded once per sweep, released at each sweep's end.
+        model = ctx.session.whisper(cfg, cfg.verify_model)
         rep = report.load(ctx.work.report)                 # preserve any assemble fields
         n_flag = n_retried = n_repaired = 0
-        try:
-            for u in units:
-                lead = u["ids"][0]
-                wav = ctx.work.seg_wav(lead)
-                # reference from CURRENT translation — the stale-translation net
-                ref = normalize_for_compare(" ".join(
-                    (segs[i].get("text_tts") or "").strip() for i in u["ids"]).strip())
-                sim: float | None = None
-                vflag: str | None = None
-                hyp = ""
+        for u in units:
+            lead = u["ids"][0]
+            wav = ctx.work.seg_wav(lead)
+            # reference from CURRENT translation — the stale-translation net
+            ref = normalize_for_compare(" ".join(
+                (segs[i].get("text_tts") or "").strip() for i in u["ids"]).strip())
+            sim: float | None = None
+            vflag: str | None = None
+            hyp = ""
 
-                if not ref:
-                    vflag = "empty_ref"
-                elif not wav.exists() or _frames(wav) == 0:
-                    vflag = "missing_wav"
+            if not ref:
+                vflag = "empty_ref"
+            elif not wav.exists() or _frames(wav) == 0:
+                vflag = "missing_wav"
+            else:
+                try:
+                    sim, hyp, hyp_n = roundtrip_similarity(model, wav, ref, cfg.target_lang)
+                except Exception as e:
+                    vflag = "unreadable_wav"
+                    print(f"       [flag] u{lead}: unreadable_wav {e}", file=sys.stderr)
                 else:
-                    try:
-                        sim, hyp, hyp_n = roundtrip_similarity(model, wav, ref, cfg.target_lang)
-                    except Exception as e:
-                        vflag = "unreadable_wav"
-                        print(f"       [flag] u{lead}: unreadable_wav {e}", file=sys.stderr)
-                    else:
-                        if not hyp_n:
-                            vflag = "empty_hyp"
-                        else:                              # compressed units → stricter gate
-                            need_sim = unit_sim_threshold(cfg, u.get("speed"))
-                            vflag = None if sim >= need_sim else "low_similarity"
+                    if not hyp_n:
+                        vflag = "empty_hyp"
+                    else:                                  # compressed units → stricter gate
+                        need_sim = unit_sim_threshold(cfg, u.get("speed"))
+                        vflag = None if sim >= need_sim else "low_similarity"
 
-                attempts = u.get("attempts") or 0
-                if attempts > 1:
-                    n_retried += 1
-                    if vflag is None:
-                        n_repaired += 1
-                for sid in u["ids"]:
-                    report.upsert(
-                        rep, sid, status=segs[sid]["status"], translate_flag=segs[sid].get("flag"),
-                        group_id=lead,
-                        similarity=(round(sim, 4) if sim is not None else None),
-                        verify_flag=vflag, hypothesis=(hyp if sid == lead else None),
-                        tts_seed=u.get("seed"), tts_attempts=(attempts or None),
-                        tts_speed=u.get("speed"), synth_sim=u.get("synth_sim"),
-                    )
-                if vflag:
-                    n_flag += 1
-                    tail = "" if sim is None else f" ({sim:.2f})"
-                    print(f"       [flag] u{lead} (ids {u['ids']}): {vflag}{tail}", file=sys.stderr)
-        finally:
-            del model
-            gc.collect()
-            try:
-                import torch
-                torch.cuda.empty_cache()
-            except Exception:
-                pass
+            attempts = u.get("attempts") or 0
+            if attempts > 1:
+                n_retried += 1
+                if vflag is None:
+                    n_repaired += 1
+            for sid in u["ids"]:
+                report.upsert(
+                    rep, sid, status=segs[sid]["status"], translate_flag=segs[sid].get("flag"),
+                    group_id=lead,
+                    similarity=(round(sim, 4) if sim is not None else None),
+                    verify_flag=vflag, hypothesis=(hyp if sid == lead else None),
+                    tts_seed=u.get("seed"), tts_attempts=(attempts or None),
+                    tts_speed=u.get("speed"), synth_sim=u.get("synth_sim"),
+                )
+            if vflag:
+                n_flag += 1
+                tail = "" if sim is None else f" ({sim:.2f})"
+                print(f"       [flag] u{lead} (ids {u['ids']}): {vflag}{tail}", file=sys.stderr)
 
         report.prune(rep, {s["id"] for s in segs})
         rep["video_id"] = ctx.work.root.name
@@ -143,8 +136,9 @@ class VerifyStage:
                          "n_retried": n_retried, "n_repaired": n_repaired}
 
         # Completeness: a pure src_en<->text_ru text comparison (no audio, no model, no unit
-        # grouping) — a SEPARATE loop over sentences, run here on the CPU after the whisper
-        # model is freed. One cross-sentence pass (duplicate_adjacent) runs before the loop on
+        # grouping) — a SEPARATE loop over sentences, run here on the CPU; the whisper model
+        # is released by the session at the end of the stage sweep, not here. One
+        # cross-sentence pass (duplicate_adjacent) runs before the loop on
         # the EN source: src_en is copied verbatim from sentences.json by both translate routes
         # (translate.py / build_translation.py, which also key their resume on that equality),
         # so the ASR-defect check reads the source text without a second file read.

@@ -1,5 +1,46 @@
 # CHANGELOG
 
+## 2026-07-19 — stage-major batch execution (each model loads once per BATCH)
+- **`--batch` now runs stages outer / videos inner.** `_run_batch_stage_major` replaces
+  `_run_batch` as the default driver; the old order stays reachable as **`--video-major`**
+  (`--batch` only — it errors on a single-video run, which has nothing to amortise). Both orders
+  go through the same `run_pipeline`, `_export_output` and `_summarize`, so a bug in the stage
+  contract shows up in both and only an ordering bug shows up in one.
+- **NEW `pipeline.Session`** — a model cache whose lifetime is exactly ONE stage sweep, so peak
+  VRAM stays the MAX over models instead of their sum (that is what keeps the Gemma route safe
+  with no parking or eviction policy). Get-or-create at the USE SITE, never eagerly: an
+  all-reusable synthesize batch still spawns no F5 worker. `run_pipeline(owns_session=True)`
+  clears after every stage, which for a single video reproduces the old per-stage teardown
+  exactly; the stage-major driver passes `False` and clears after its own sweep.
+- Stages stop owning teardown: `transcribe`/`verify`/`synthesize` lost their `try/finally`
+  (`del model` + `gc.collect()` + `torch.cuda.empty_cache()`) in favour of the session. Expected
+  amortisation on a 12-video batch: whisper-large 12 loads → 1, F5 worker 12 spawns → 1,
+  whisper-small 24 loads → 2 (synthesize and verify are different sweeps), Gemma 12 → 1.
+- **NEW `TtsEngine.begin_video()`** (no-op on Silero, resets `_crashes` on F5). A batch-scoped
+  engine would otherwise leak its crash budget across videos: `_MAX_CRASHES` counts CONSECUTIVE
+  failures within ONE video, so a video that merely flagged 2 synth_errors would hand the next one
+  a budget of 1 and kill it with `TtsFatalError` over a perfectly healthy worker. `_rid` is
+  deliberately NOT reset — it is the live protocol id matched against worker replies.
+- **Ollama unload moved to the end of the translate SWEEP** (`_Unloader` registered in the session
+  instead of a per-video `finally`), or stage-major would evict and reload Gemma between every pair
+  of videos. Single-video and `--video-major`: the sweep is one video, i.e. the old behavior.
+- **Behavior change, deliberate: `build_run_report` now runs for FAILED and STOPPED videos too.**
+  Previously a video that failed never reached the rollup, so the batch sweep picked up its
+  PREVIOUS `run.json` and counted it in totals/triage — the morning operator saw a green video that
+  did not actually render last night. Strictly more honest; guarded by a test.
+- `--only` stage names are now validated against the real stage list in `main`. Stage-major would
+  otherwise turn a typo into 8 sweeps of no-ops and report "12 ok" — exactly the silent-success
+  class this restructure could amplify.
+- Summary/sweep reporting: the batch-sweep header stamps the order it ran (`(stage-major)` /
+  `(video-major)`) because per-video RTF is not comparable across orders — under stage-major a
+  model's load time lands on whichever video went first in that stage. The count word "not run"
+  became "unfinished" (under stage-major a video that never finished was still partly processed).
+- NEW `tests/test_batch_order.py` — 17 tests, fakes injected into the driver, no GPU/network:
+  traversal order both ways, per-video failure isolation, first-error-wins, STOP breaking BOTH
+  loops (consume-on-honor means exactly one pair observes it, so continuing would leave the stop
+  un-honored for the rest of the batch), the finish sweep, session lifetime, and the engine cache
+  key covering both `synth_key` and `f5_python`.
+
 ## 2026-07-19 — `f5_nfe` 48 → 16 (2.16× on synthesis, ear-checked); VRAM rule relaxed
 - **`cfg.f5_nfe` default 48 → 16.** Ear-checked by the user on a full 5.7-minute video rendered
   both ways: the only defects heard (noise, flat intonation) are in the nfe=48 render too, so they

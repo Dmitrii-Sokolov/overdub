@@ -28,13 +28,11 @@ synthesis and timing sync downstream.
 
 from __future__ import annotations
 
-import gc
 import json
 import re
 import sys
 from dataclasses import dataclass
 
-from ..asr import load_whisper
 from ..pipeline import Context
 
 # ---- tunables (calibrate against Silero eugene comfortable length in QA) -----
@@ -404,28 +402,23 @@ class TranscribeStage:
 
     def run(self, ctx: Context) -> None:
         cfg = ctx.cfg
-        model = load_whisper(cfg.whisper_model, cfg.whisper_device, cfg.whisper_compute_type)
-        try:
-            def asr(condition_on_previous: bool) -> list[W]:
-                segments, _info = model.transcribe(
-                    str(ctx.work.source_audio),
-                    language=cfg.source_lang, beam_size=5,
-                    word_timestamps=True, vad_filter=True,
-                    vad_parameters=dict(min_silence_duration_ms=500),
-                    condition_on_previous_text=condition_on_previous,
-                )
-                return flatten(segments)                # consumes the lazy generator
+        # session-owned: one large-v3 load per stage SWEEP, not per video. The session
+        # releases it when the sweep ends (pipeline.Session.clear) — for a single video
+        # that is the end of this stage, exactly as the old local try/finally did.
+        model = ctx.session.whisper(cfg, cfg.whisper_model)
 
-            flat = asr(cfg.whisper_condition_on_previous)
-            flat = self._guard(ctx, asr, flat)
-        finally:
-            del model
-            gc.collect()
-            try:
-                import torch
-                torch.cuda.empty_cache()
-            except Exception:
-                pass
+        def asr(condition_on_previous: bool) -> list[W]:
+            segments, _info = model.transcribe(
+                str(ctx.work.source_audio),
+                language=cfg.source_lang, beam_size=5,
+                word_timestamps=True, vad_filter=True,
+                vad_parameters=dict(min_silence_duration_ms=500),
+                condition_on_previous_text=condition_on_previous,
+            )
+            return flatten(segments)                # consumes the lazy generator
+
+        flat = asr(cfg.whisper_condition_on_previous)
+        flat = self._guard(ctx, asr, flat)
 
         # raw words persisted so resegmentation can be re-tuned without re-running ASR
         ctx.work.words.write_text(

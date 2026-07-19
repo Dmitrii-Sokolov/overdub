@@ -219,6 +219,11 @@ class F5Engine:
             # texts under 10 UTF-8 bytes, where echoing the request would record fiction
             return float(msg.get("speed_eff", req["speed"]))
 
+    def begin_video(self) -> None:
+        self._crashes = 0        # only this. _rid stays monotone — it is the live protocol
+                                 # id matched against worker replies, so resetting it would
+                                 # make a late reply from a previous request look valid.
+
     def close(self) -> None:
         if self._proc is None:
             return

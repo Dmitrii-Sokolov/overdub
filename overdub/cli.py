@@ -9,11 +9,12 @@ import shutil
 import subprocess
 import sys
 import traceback
+from dataclasses import dataclass
 from pathlib import Path
 
 from . import runreport
 from .config import Config
-from .pipeline import Context, STOP_NAME, StopRequested, check_stop, run_pipeline
+from .pipeline import Context, STOP_NAME, Session, StopRequested, check_stop, run_pipeline
 from .stages import all_stages
 from .workdir import WorkDir, replace_retry, safe_filename, video_id
 
@@ -26,9 +27,14 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--config", type=Path, default=Path("overdub.toml"), help="TOML config path")
     p.add_argument("--force", action="store_true", help="re-run stages even if artifacts exist")
     p.add_argument("--only", nargs="+", metavar="STAGE", help="run only these stages")
+    p.add_argument("--video-major", action="store_true",
+                   help="batch only: run each video through every stage before the next "
+                        "(pre-2026-07-19 order; escape hatch if stage-major misbehaves)")
     args = p.parse_args(argv)
     if (args.url is None) == (args.batch is None):
         p.error("give exactly one of: URL or --batch FILE")
+    if args.video_major and args.batch is None:
+        p.error("--video-major applies to --batch only (a single video has nothing to amortise)")
 
     urls: list[str] | None = None
     if args.batch is not None:                      # usage errors before any side effects
@@ -52,8 +58,17 @@ def main(argv: list[str] | None = None) -> None:
         print("[stop] stale STOP file removed — starting normally")
 
     only = set(args.only) if args.only else None
+    if only:
+        # stage-major turns a typo into 8 sweeps of no-ops and then reports "12 ok" — a
+        # silent failure this change amplifies, so the name is validated up front instead
+        known = {st.name for st in all_stages(cfg)}
+        bad = only - known
+        if bad:
+            p.error(f"unknown stage(s): {', '.join(sorted(bad))}; "
+                    f"known: {', '.join(sorted(known))}")
     if urls is not None:
-        sys.exit(_run_batch(urls, cfg, force=args.force, only=only))
+        run = _run_batch_video_major if args.video_major else _run_batch_stage_major
+        sys.exit(run(urls, cfg, force=args.force, only=only))
     try:
         _run_one(args.url, cfg, force=args.force, only=only)
     except StopRequested as e:
@@ -67,15 +82,21 @@ def _run_one(url: str, cfg: Config, *, force: bool, only: set[str] | None) -> st
     print(f"overdub: {url}")
     print(f"work dir: {work.root}")
     run_pipeline(ctx, all_stages(cfg), force=force, only=only)
-    # refresh the per-run rollup on every full or partial run (best-effort — never raises;
-    # returns None on an --only download run that has no report/translation yet)
+    _rollup_and_print(work, cfg)
+    return _export_output(ctx)
+
+
+def _rollup_and_print(work: WorkDir, cfg: Config) -> None:
+    """Refresh the per-run rollup and print the one-line digest (best-effort — never
+    raises; build_run_report returns None on an --only download run that has no
+    report/translation yet). Shared by _run_one and the stage-major finish sweep so the
+    two batch orders cannot print different things."""
     run = runreport.build_run_report(work, cfg)
     if run:
         t = run["timings"]
         rtf = t["rtf"] if t["rtf"] is not None else "n/a"
         print(f"[report] RTF {rtf} ({t['video_sec_source']}) · flags {run['flags_total']}"
               f" · triage {'yes' if run['needs_triage'] else 'no'}")
-    return _export_output(ctx)
 
 
 def _read_queue(path: Path) -> list[str]:
@@ -165,14 +186,23 @@ def _export_output(ctx: Context) -> str | None:
     return name
 
 
-def _run_batch(urls: list[str], cfg: Config, *, force: bool, only: set[str] | None) -> int:
+def _run_batch_video_major(urls: list[str], cfg: Config, *, force: bool,
+                           only: set[str] | None) -> int:
+    """Videos outer, stages inner — the pre-2026-07-19 order, kept behind --video-major.
+
+    Every video reloads every model (~72 s of pure model loading per video), which is why
+    it is no longer the default; it stays reachable as the escape hatch that shares
+    run_pipeline, _export_output and _summarize with the stage-major driver, so a bug in
+    the stage contract shows up in BOTH orders and only an ordering bug shows up in one.
+    """
     results: list[tuple[str, str, str]] = []        # (vid, status, detail)
     halted: str | None = None
     not_run: list[str] = []
     for i, url in enumerate(urls, 1):
         vid = video_id(url)
         # no pre-video checkpoint: run_pipeline's "before stage 'download'" check fires
-        # first thing for every video and already covers the mux→next-download gap
+        # first thing for every video and already covers the mux→next-download gap. True
+        # for THIS order only — stage-major has no mux→download gap to cover.
         print(f"\n=== [{i}/{len(urls)}] {vid}  {url}")
         try:
             name = _run_one(url, cfg, force=force, only=only)
@@ -185,7 +215,126 @@ def _run_batch(urls: list[str], cfg: Config, *, force: bool, only: set[str] | No
         except Exception as e:                      # KeyboardInterrupt passes through
             traceback.print_exc()
             results.append((vid, "FAIL", f"{type(e).__name__}: {e}"))
+    return _summarize(results, not_run, halted, cfg, order="video-major")
 
+
+@dataclass
+class _Job:
+    """One video's slot in a stage-major batch. `status` is the cross-stage gate: only
+    "run" jobs enter the next stage, so a failure at synthesize drops that video out of
+    verify/assemble/mux without touching the others — the isolation that
+    _run_batch_video_major's per-video try/except gives for free."""
+    url: str
+    vid: str
+    ctx: Context
+    status: str = "run"          # run | ok   | FAIL | stop  (4-char tags: summary alignment)
+    detail: str = ""
+    n_done: int = 0              # (stage, video) pairs of THIS run that returned cleanly. Only
+                                 # used to tell "already through every stage" from "genuinely
+                                 # not reached" when a STOP lands mid-sweep — a stop cannot
+                                 # un-finish a video that is already done.
+
+
+def _run_batch_stage_major(urls: list[str], cfg: Config, *, force: bool,
+                           only: set[str] | None, stages=None, finalize=None) -> int:
+    """Stages outer, videos inner — the default. Each model loads ONCE PER BATCH instead
+    of once per video, because a model's lifetime is one stage sweep (pipeline.Session).
+
+    `stages`/`finalize` are injectable so the traversal order, the status machine and the
+    finish sweep are testable without a GPU, ffmpeg or yt-dlp.
+    """
+    stages = all_stages(cfg) if stages is None else stages
+    finalize = _export_output if finalize is None else finalize
+    session = Session()                              # one cache for the whole batch; cleared
+                                                     # after EVERY stage sweep (see below)
+    jobs = [_Job(url=u, vid=video_id(u),
+                 ctx=Context(url=u, cfg=cfg, work=WorkDir.for_url(u, cfg.work_root),
+                             session=session))
+            for u in urls]
+    for j in jobs:
+        print(f"overdub: {j.url}")
+        print(f"work dir: {j.ctx.work.root}")
+    halted: str | None = None
+
+    for st in stages:
+        try:
+            for i, j in enumerate(jobs, 1):
+                if j.status != "run":                # excluded by an earlier stage — a
+                    continue                         # dropped video is never revisited
+                # header only for stages that can actually run — run_pipeline still gets
+                # EVERY pair below, so the STOP checkpoint grid stays identical to
+                # video-major's; this just keeps an --only run from logging 8 sweeps of
+                # headers with nothing under them
+                if only is None or st.name in only:
+                    print(f"\n--- {st.name}  [{i}/{len(jobs)}] {j.vid}")
+                failed = stopped = None
+                try:
+                    # ONE stage at a time: check_stop, the only/done filters and
+                    # record_stage_timing all stay inside run_pipeline, so the
+                    # per-(stage, video) checkpoint granularity and the STOP message text
+                    # come for free and cannot drift between the two orders.
+                    run_pipeline(j.ctx, [st], force=force, only=only, owns_session=False)
+                except StopRequested as e:           # MUST precede `except Exception`
+                    stopped = str(e)
+                except Exception as e:               # KeyboardInterrupt passes through
+                    traceback.print_exc()
+                    failed = f"{st.name}: {type(e).__name__}: {e}"
+                # handled OUTSIDE the handlers: while one is active the traceback pins
+                # st.run's frame and every model local to it, so a session.clear() in there
+                # would free nothing
+                if failed is None and stopped is None:
+                    j.n_done += 1
+                if failed is not None:
+                    j.status, j.detail = "FAIL", failed
+                    session.clear()                  # a stage that raised may have left a
+                                                     # poisoned engine — never reuse it
+                if stopped is not None:
+                    # check_stop CONSUMED the STOP file, so exactly ONE (stage, video) pair
+                    # can ever observe it. Continuing to the next video would leave the rest
+                    # of the batch running against an already-deleted STOP — the stop
+                    # silently un-honored for 11 of 12 videos. Break BOTH loops.
+                    j.status, j.detail = "stop", stopped
+                    halted = f"{stopped}, video {j.vid}"
+                    for k in jobs:
+                        if k.status != "run":
+                            continue
+                        if k.n_done == len(stages):
+                            # already through EVERY stage in this run — a stop arriving while a
+                            # LATER video is still in the last sweep cannot un-finish it. Leaving
+                            # it "run" keeps its export in the finish sweep; marking it "stop"
+                            # would report six finished videos as "not reached" and ship none of
+                            # them, which is a false diagnosis, not just a cosmetic one.
+                            continue
+                        k.status = "stop"
+                        k.detail = (f"stopped after '{stages[k.n_done - 1].name}'" if k.n_done
+                                    else f"not reached (stopped at '{st.name}')")
+                    break
+        finally:
+            session.clear()                          # a model's lifetime is ONE stage sweep
+        if halted:
+            break
+
+    # --- finish sweep: runs after a normal end AND after a stop (CPU-only; STOP is already
+    # consumed and cannot re-fire). NOT hooked to the mux stage: `--only download transcribe`
+    # filters mux out entirely, and that route still owes every video its run.json.
+    for j in jobs:
+        _rollup_and_print(j.ctx.work, cfg)           # EVERY job, failed ones included: a
+        if j.status != "run":                        # skipped rollup leaves the batch sweep
+            continue                                 # reading YESTERDAY's run.json
+        try:
+            j.detail = finalize(j.ctx) or "(no output.mkv)"
+            j.status = "ok  "
+        except Exception as e:                       # video-major catches an _export_output
+            traceback.print_exc()                    # raise in its own except Exception —
+            j.status, j.detail = "FAIL", f"export: {type(e).__name__}: {e}"
+
+    return _summarize([(j.vid, j.status, j.detail) for j in jobs], [], halted, cfg,
+                      order="stage-major")
+
+
+def _summarize(results: list[tuple[str, str, str]], not_run: list[str], halted: str | None,
+               cfg: Config, *, order: str) -> int:
+    """Batch summary + run.json sweep + exit code. Shared by both orders."""
     print("\n── batch summary " + "─" * 30)
     for vid, status, detail in results:
         print(f"[{status}] {vid}  {detail}")
@@ -193,15 +342,20 @@ def _run_batch(urls: list[str], cfg: Config, *, force: bool, only: set[str] | No
         print(f"[    ] {video_id(url)}  not run")
     fails = sum(1 for _, s, _ in results if s == "FAIL")
     oks = sum(1 for _, s, _ in results if s == "ok  ")
-    print(f"{oks} ok, {fails} failed, {len(results) - oks - fails + len(not_run)} not run")
+    # "unfinished", not "not run": under stage-major a video that never finished was still
+    # partly processed — it is "stopped at stage N", not "untouched"
+    print(f"{oks} ok, {fails} failed, {len(results) - oks - fails + len(not_run)} unfinished")
     if halted:
         print(f"[stop] STOP file honored — halted {halted}; re-run the same command to resume")
     if fails:
         print("re-run the same command to retry failed videos (completed stages fast-skip)")
 
-    # batch sweep: roll up each video's run.json (_run_one wrote it). A missing/None run.json
-    # (a video that failed before the rollup, or an --only download batch) is skipped, never
-    # a crash — the summary above is the authoritative status; this is triage sugar on top.
+    # batch sweep: roll up each video's run.json (the driver wrote it). A missing/None
+    # run.json (a video that failed before the rollup, or an --only download batch) is
+    # skipped, never a crash — the summary above is the authoritative status; this is
+    # triage sugar on top. The order is stamped because per-video RTF is NOT comparable
+    # across orders: under stage-major each model's load time lands on whichever video went
+    # first in that stage.
     runs = []
     for vid, _status, _detail in results:
         r = _load_run_json(cfg.work_root / vid / "run.json")
@@ -212,7 +366,7 @@ def _run_batch(urls: list[str], cfg: Config, *, force: bool, only: set[str] | No
                                for r in runs), 1)
         sum_video = sum(((r.get("timings", {}) or {}).get("video_sec") or 0) for r in runs)
         triage = [r.get("video_id") for r in runs if r.get("needs_triage")]
-        print("\n── batch sweep " + "─" * 32)
+        print(f"\n── batch sweep ({order}) " + "─" * 20)
         thru = f"×{sum_video / total_wall:.2f}" if total_wall > 0 else "n/a"
         print(f"{len(runs)} run(s) · total wall {total_wall}s · throughput {thru}")
         print(f"needs triage ({len(triage)}): {', '.join(triage) if triage else 'none'}")

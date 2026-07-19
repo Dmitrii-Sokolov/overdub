@@ -1,5 +1,57 @@
 # DECISIONS
 
+## 2026-07-19 — stage-major is the default batch order; STOP no longer lands on a video boundary
+
+**Decision.** `--batch` runs stages outer / videos inner. The old order stays behind
+`--video-major`, not as a deprecation path but as a genuine escape hatch: it shares
+`run_pipeline`, `_export_output` and `_summarize` with the new driver, so it can isolate an
+ordering bug from a stage-contract bug. Flag name rejected alternatives: `--no-stage-major`
+(double negation in `dest` and at every use), `--legacy-order` ("legacy" promises a removal that
+is not coming), `--per-video` (not paired with the default's name), `--serial`/`--sequential`
+(both orders are sequential — it hints at parallelism that does not exist).
+
+**Accepted cost: the first finished MKV now arrives near the END of the batch.** These are
+overnight runs; throughput is what matters. Any design that trades throughput back to get an
+early first output was rejected on that ground.
+
+**STOP now halts the batch in a HETEROGENEOUS state — write this down, it is the surprising one.**
+`check_stop` CONSUMES the file at honor time, so exactly ONE (stage, video) pair can ever observe
+a given STOP. Under video-major that landed on a whole-video boundary. Under stage-major it lands
+mid-sweep, so the batch stops with (say) 12 videos transcribed, 5 translated and 0 synthesized.
+The driver therefore breaks BOTH loops and marks every still-pending job `stop` with
+"not reached (stopped at 'X')" — continuing to the next video would leave the rest of the batch
+running against an already-deleted STOP, i.e. the stop silently un-honored for 11 of 12 videos.
+Re-run is safe: `check_stop` fires BEFORE the stage body, so a stopped video left no partial
+artifact, and resume is per-(stage, video) re-evaluation of `done()`.
+
+**Why a session and not batch-long residency.** A model's lifetime is one stage sweep, so peak
+VRAM is the MAX over models rather than their sum — which is precisely what lets the local Gemma
+route (~8-9 GB) keep the whole budget with no parking or eviction policy. Nothing is pinned across
+a stage boundary. Consequence accepted: whisper-small goes 2N loads → 2 per batch, not → 1;
+getting the last one would mean holding 0.5 GB alongside Gemma to save ~1.5 s. No.
+
+**Two independent mechanisms protect the next video from a dead F5 worker,** and neither subsumes
+the other: `begin_video()` covers the SUCCESSFUL path (a `TtsEngineError` is caught per unit, never
+escapes, and would otherwise leave a nonzero crash count behind), while `session.clear()` on a
+failed stage covers the POISONED path (a `TtsFatalError` escapes and the engine object is thrown
+away whole). `clear()` is deliberately called OUTSIDE the `except` block — while a handler is
+active the traceback pins the stage frame and every model local to it, so collecting there frees
+nothing.
+
+**Engine cache key = `synth_key(cfg)` + resolved `f5_python`.** `synth_key` is the project's
+canonical "what changes rendered audio" fingerprint and carries an INVARIANT that every new
+audio-affecting knob enters it, so reusing it means this key cannot silently fall behind. It is
+wider than worker identity (seed/speed/floor/ceil are per-request), which costs nothing since cfg
+is loaded once per process. `f5_python` is appended because `synth_key` does NOT cover it and a
+different venv is a different worker process. Recomputed per video on purpose: it hashes the
+ref-audio BYTES, the only thing that would notice a narrator reference rewritten mid-batch.
+
+**Demucs multi-file input: DEFERRED, with reason.** Its CLI takes several files per invocation and
+its slope against audio length is statistically zero (R²=0.000), so the whole win is model loading
+— but collecting it needs `run_batch(ctxs)`, i.e. extending the `Stage` protocol for one stage, and
+it fights per-video resume head-on (`done()` gates on a per-video `source_bed.wav`; one call for 12
+files is all-or-nothing inside that window). Ceiling is 13.2 s × (N−1) ≈ 2.4 min on 12 videos.
+
 ## 2026-07-19 — `f5_nfe` 48 → 16 ADOPTED; and two of four speed levers were already dead
 
 **Ear verdict (user, full 5.7-minute video `RyvXxApfHkk`, nfe=48 vs nfe=16 side by side):** the
