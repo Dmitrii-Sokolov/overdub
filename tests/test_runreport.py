@@ -230,6 +230,31 @@ def test_needs_triage_false_clean_run() -> None:
         assert run["needs_triage"] is False
 
 
+def test_dup_adjacent_is_actionable() -> None:
+    # dup_adjacent is ACTIONABLE by construction: it is absent from _ADVISORY_COMPLETENESS, and
+    # n_actionable is a set DIFFERENCE, so any name not listed there decides needs_triage. This
+    # test is the only guard on that status — without it the flag silently demotes to advisory
+    # the moment someone adds it to the advisory set.
+    segs = [_unit(0, 0, verify_flag=None, combined=1.0, speed=1.0,
+                  completeness_flags=["dup_adjacent"])]
+    rep = {
+        "segments": segs,
+        "verify": {"n_units": 1, "n_segments": 1, "n_flagged": 0, "n_retried": 0, "n_repaired": 0},
+        "completeness": {"n_sentences": 1, "n_flagged": 1, "n_num_loss": 0, "n_neg_loss": 0,
+                         "n_entity_loss": 0, "n_length": 0, "n_dup_adjacent": 1},
+        "assemble": {"duration_sec": 50.0, "n_sped": 0, "in_span_silence_sec": 1.0},
+        "mux": {"dub_mix": "bed", "dub_gain_db": 0.0},
+    }
+    with tempfile.TemporaryDirectory() as d:
+        work = _mkwork(d, report=rep, translation=[{"id": 0, "status": "ok"}])
+        run = runreport.build_run_report(work, _CFG)
+        assert run["completeness"]["n_dup_adjacent"] == 1
+        assert run["completeness"]["n_actionable"] == 1
+        assert run["completeness"]["n_advisory"] == 0
+        assert run["speed"]["n_over_1_8"] == 0
+        assert run["needs_triage"] is True
+
+
 # --- both inputs absent -------------------------------------------------------
 def test_returns_none_when_report_and_translation_absent() -> None:
     with tempfile.TemporaryDirectory() as d:

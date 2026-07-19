@@ -253,12 +253,12 @@ def _build_run_report(work, cfg):
             v_by_type[vf if vf in v_by_type else "unknown"] += 1   # outside the vocab never vanishes
     v_n_flagged = int(vr.get("n_flagged", 0) or 0)
 
-    # --- completeness (six ints copied straight from the verify-side rollup) -
+    # --- completeness (seven ints copied straight from the verify-side rollup) -
     cr = report.get("completeness") if isinstance(report, dict) else None
     cr = cr if isinstance(cr, dict) else {}
     completeness = {k: int(cr.get(k, 0) or 0) for k in
                     ("n_sentences", "n_flagged", "n_num_loss", "n_neg_loss",
-                     "n_entity_loss", "n_length")}
+                     "n_entity_loss", "n_length", "n_dup_adjacent", "n_rate_implausible")}
 
     # Split completeness by what a human can ACT on. entity_loss fires mostly on personal names
     # the naming rule PERMITS to be Russified — completeness.py's own docstring calls that its

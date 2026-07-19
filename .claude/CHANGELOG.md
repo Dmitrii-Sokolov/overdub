@@ -1,5 +1,40 @@
 # CHANGELOG
 
+## 2026-07-19 — Item 0 closed: 8 ASR defects repaired, 2 new detectors, batch re-shipped
+- **The batch carried 8 defects across 6 of 12 videos, not the 2 PLAN recorded**, and triage
+  pointed at none of them. All 8 are now repaired and all 12 MKVs rebuilt.
+- NEW `completeness.implausible_rate(texts, durations)` → flag `rate_implausible`: chars/sec above
+  40 on the EN source span, the signature of a whisper alignment collapse. Threshold sits on a
+  PHYSICAL bound (speech tops out at 25-30 ch/s; corpus median 16.75, p99 34.26) rather than on
+  corpus separation. **7 fires / 1100 sentences, 7 true positives, 0 false** — best precision in
+  the module, and it found real defects in two videos every text-based signal called `[clean]`.
+- NEW containment signal inside `duplicate_adjacent` (`lcs / len(shorter) > 0.85`, OR-ed with the
+  existing ratio): catches the whisper RESTART class, where a re-spoken line is swallowed by its
+  neighbour and the symmetric ratio is dragged down by the new tail. Ratio alone found 1 of the
+  corpus's 3 repetition defects; with containment, 3 of 3.
+- FIXED `_RU_NEG_RE` twice. First cut widened it to a bare `бе[зс][а-я]*`, which made
+  positive-polarity stems (безопасн-, бесплатн-) count as surviving negation and went blind to
+  real inversions ("not safe" → "безопасно"); a test had even been added pinning that miss as
+  acceptable. Shipped form subtracts `_NEG_POSITIVE_STEMS` — re-measured identical on the corpus
+  (2 fires, target FP `W4Ua6XFfX9w#32` still removed, zero new FPs) while closing the hole.
+- Repair method: **isolated-window re-ASR, not full-file re-transcription.** Re-running whole
+  files fixed 1 defect of 4 and created new ones; re-transcribing just the defect window (no
+  prior context for the loop to feed on) returned a clean reading for 7 of 7, identical under
+  `condition_on_previous_text` True and False — that agreement was the acceptance criterion.
+  Originals at `work/<id>/_pre-repair*-sentences.json`; `words.json` deliberately untouched.
+- 6 videos re-translated through the Sonnet seam. Two defects were found by translator agents
+  READING the source, not by any detector — a hallucinated word splitting one sentence in two
+  (`W4Ua6XFfX9w` 19/20, both halves at a plausible ~26 ch/s and not similar to each other) and
+  self-referential garble. Also fixed `chain-of-thought` → «цепочка рассуждений`, which the
+  normalizer had been voicing as "чейн-оф-таугхт".
+- Also fixed 0g: `report.json` was structurally stale against `translation.json` across all 12
+  (verify/assemble gate on text-derived keys, so flag-only changes never invalidated them),
+  leaving 6 phantom `translate:refusal` in the digest that DECISIONS had declared cleared.
+- **Result: both ASR detectors fire ZERO times across the batch** (`rate_implausible` max 246 →
+  39.36 ch/s; `dup_adjacent` 3 → 0). Digest: 2 of 12 need triage, and both are documented false
+  positives — a lexical negation with no не/ни/без token, and an accepted `few-shot prompting`
+  Latin run. Full suite (11 files) green.
+
 ## 2026-07-19 — `no_repeat_ngram_size` measured and REJECTED; guard threshold downgraded
 - 60-run sweep (3 videos × n in 0/4/5/6 × 5 repeats, read-only probe, no workdir writes): the knob
   is NOT adopted. Severe source improved (floor 11.07% → 8.2%, dups 2 → 0 at n=6), borderline got

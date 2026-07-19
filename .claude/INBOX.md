@@ -70,6 +70,68 @@ Tags: `[bug] [feature] [chore] [?]` — one line per entry, processed weekly.
   (DECISIONS 2026-07-18) — bump the hub id when next touching the fallback; v5 rejects Latin
   script, so add an out-of-alphabet char filter in the adapter (bakeoff #317 crash class)
 
+## 2026-07-19 session (repair round)
+- [?] **terminology drifts ACROSS videos of one course, and nothing measures it** (decided
+  2026-07-19: not worth fixing for this batch — the drift already shipped). Measured over the
+  12-video AI-Fluency batch: "AI fluency" → ИИ-грамотность ×12 in three videos vs «владение ИИ»
+  ×2 in `QbLf2zb3oPc`; Discernment → «критическая оценка» ×13 vs «проницательность» ×1;
+  Description split «формулировка» (`Y0KidGr9Z2Y`) vs «описание» (`JpGtOfSgR-c`, `DmgujoZ1mmk`).
+  The existing backlog item calls this a per-RUN glossary; the real scope is per-SERIES. Cheap
+  version: a `terms.tsv` per playlist, passed into every translate prompt and checked after.
+  Note the structural reason it is invisible — each video is translated in isolation, so no stage
+  ever sees two videos at once; only a batch-level check can catch it
+
+## 2026-07-19 session (repair round)
+- [feature] **make the translate seam report anomalies, not just translate** — CONFIRMED as the
+  only detector for semantic garbles with no timing anomaly and no repeated span (DECISIONS
+  2026-07-19: `W4Ua6XFfX9w` 19/20, a hallucinated word splitting one sentence). Add to the
+  sub-agent prompt: "if a source sentence looks garbled, self-contradictory, truncated, or
+  duplicative of its neighbour, translate it as-is AND report the id". Near-zero token cost, and
+  it turns a stage we already run into a detection pass. Do NOT let it silently smooth the text —
+  that is exactly how PLAN 0e stayed hidden
+- [?] the same reading pass surfaced ASR mis-spellings of known names (`CLAWD` → Claude,
+  `anthropics` → Anthropic) that `pronounce_audit.json` never gated on. A per-run known-names
+  list checked against src_en would catch this class deterministically, before translate
+- [feature] **automate the isolated-window repair** — the manual loop proved out on 7 defects
+  (DECISIONS 2026-07-19): `rate_implausible`/`dup_adjacent` already localise the defect, so the
+  pipeline could re-ASR just that window with `condition_on_previous_text=False`, accept the
+  reading only if it is identical under both settings, merge the run, renumber. That is a
+  `--repair-asr id,id` stage and it reuses the existing detectors as the trigger
+- [?] the stability check (same reading under cond=True and cond=False) is doing real work as an
+  accept/reject gate — worth keeping as the acceptance criterion in any automation, and possibly
+  worth back-porting into the existing transcribe guard, which currently accepts a retry on a
+  floor-ratio HALVING rather than on agreement
+- [chore] `words.json` is not updated by a sentences.json repair — harmless today (only
+  `asr.floor_ratio` reads it, and it SHOULD keep showing the original collapse), but any future
+  consumer of words.json must know it can disagree with sentences.json after a repair
+
+## 2026-07-19 session (item 0c/0d, multi-agent pass)
+- [feature] completeness: **containment beats ratio for repetition defects — the single highest-value
+  follow-up from this pass.** `dup_adjacent`'s symmetric `SequenceMatcher.ratio() > 0.80` catches only
+  the verbatim echo (1 of the batch's 3 repetition defects). Longest-common-substring containment
+  (`lcs / len(shorter)`) separates cleanly over all 13 videos: 1.0000 ytEN 7/8 (real), 0.9677
+  x7DfiXqSEdM 298/299 (real, currently a documented miss), 0.9167 2YCaBqP8muw 16/17 (real, PLAN 0f),
+  then 0.7188 for a benign rephrase. A 0.85 cutoff catches all three with zero FP in a 0.20-wide empty
+  band. Caveat the scan itself raised: 3 true positives is a thin basis — treat 0.85 as a hypothesis,
+  not a measured constant, same distinction the `_DUP_MIN_LEN` comment already draws. Also softens the
+  docstring's "unreachable at any usable threshold", which is true only for the symmetric metric
+- [feature] transcribe/verify: **near-zero-duration detector — catches the echo class with no text
+  comparison and no threshold tuning.** ytEN_iAk09c id8 packs 56 chars into 0.32 s (25 words/s);
+  `words.json` shows 8 consecutive words each 0.02 s wide — the canonical fingerprint of a decoder
+  repetition loop. A words-per-second bound (>8 wps, or chars/s z-score) is orthogonal to string
+  similarity and would also catch NON-adjacent loops, which `dup_adjacent` structurally cannot see
+- [feature] completeness: enumeration-head detector for the PLAN 0b class — in a run of ≥3 adjacent
+  sentences matching `^(?:and\s+)?([A-Za-z]+)\s+to\s+\w+`, the captured head must be unique. Measured
+  on the real batch: exactly one flag across 13 videos / 1101 sentences, and it is the true positive
+  (`W4Ua6XFfX9w` ids 45/47, duplicated head "delegation"). Zero FPs. ~15 LOC, no model
+- [?] translate seam: ask the translator sub-agent to flag enumerations whose items repeat or
+  contradict an earlier definition in its rolling context — ~0 extra tokens, and it is the only
+  proposed detector that catches BOTH the duplicated head at id47 AND the bogus "Description to
+  control AI" at id46 that no string metric can see
+- [bug] a good translator MASKS ASR damage (PLAN 0e): Sonnet repaired garbled source into plausible
+  Russian, hiding it from every downstream detector. Argues for detecting on `src_en` BEFORE
+  translate, not after — the earlier the seam, the less repair has happened
+
 ## 2026-07-18 session (Gemma migration + item-0 close)
 - [?] verify: translation COMPLETENESS unmeasured — the ASR round-trip proves TTS↔text_ru, not
   text_ru↔EN. Gemma's tightness drops a word unflagged (Dmgujo id1: 3 of 4 adverbs). Now the top

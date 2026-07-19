@@ -1054,6 +1054,13 @@ four NON-BLOCKING per-sentence detectors written to `report.json` at verify:
 - **entity_loss** — a Titlecase Latin name in src_en absent from text_ru (leans on keep-Latin-names).
 - **length_short** — len(text_ru)/len(src_en) < `completeness_len_ratio_min` (0.45) with a 30-char
   src guard (catches a catastrophic clause drop the precise signals miss).
+- **dup_adjacent** — *(added later the same day, PLAN item 0c — listed here so this enumeration
+  stays complete)* two ADJACENT **src_en** sentences with char-level
+  `SequenceMatcher(autojunk=False).ratio() > 0.80`, first member > 25 chars. The only
+  CROSS-SENTENCE detector, so it lives in a module-level `duplicate_adjacent(texts)` rather than
+  in `check()` (whose `(src_en, text_ru, cfg)` signature cannot express it); `verify.py` appends
+  the flag and writes `completeness_duplicate_of`. Catches an **ASR** defect, not a translation
+  one — whisper's repetition loop emits a line twice and the dub says it twice.
 Integrated as a separate segs loop in `verify.run()` (after the whisper model frees, before
 `report.save`); rollup `rep["completeness"]`. 21 tests, no regression.
 
@@ -1070,6 +1077,196 @@ no cheap person-vs-brand discriminator exists. neg_loss is 100% FP here too (lex
 sentences) is accepted for the chance of catching a genuinely dropped brand. This is the FIRST
 data source for the run-report / observability item (PLAN 1). The heavy semantic check stays
 rejected.
+
+### Addendum (same day, PLAN item 0c) — 5th detector + a negation-regex fix
+
+**`dup_adjacent` is ACTIONABLE, not advisory — justified by PRECISION, not hit rate.** PLAN
+argued actionable from "found real defects in 2 of 12 videos"; that figure belongs to the
+session's ad-hoc audit, not to this rule. Measured over all 13 workdirs (1101 sentences, 1028
+eligible pairs): **exactly 1 fire, a true positive** (`ytEN_iAk09c` 7/8 — byte-identical lines,
+the second spanning 0.32 s), i.e. 1 of 13 videos, precision 1.0. Unlike `entity_loss`, whose
+dominant FP the docstring calls IRREDUCIBLE, this one's FPs are *decidable* — a human reading both
+members can always tell an echo from two distinct sentences. That difference, not frequency, is
+what splits the two across `_ADVISORY_COMPLETENESS` (deliberately left untouched: any name absent
+from it is actionable by set difference).
+
+**Correction to a first draft of this entry**, which called the FP mode "deliberate verbatim
+repetition, rare and instantly recognised". That is the *rarest* mode, not the dominant one. At
+0.80 a pair may differ in ~12% of its characters, so the reachable FP is single-token substitution
+across a shared frame: enumerations (0.89), before/after and free/paid contrasts (0.92-0.93),
+CPU/GPU swaps (0.98). Worst shape — a polarity flip in an identical frame, "You should use this…"
+/ "You should not use this…" = 0.96 — is emphatically NOT instantly recognised, and a triager who
+"resolves" it by deleting one member inverts the meaning. Measured zero times in this batch's 1028
+pairs, so it is genre exposure (explainer prose) rather than an observed defect; a conversational
+or instructional corpus would fire far more. The docstring now names this as the dominant FP with
+the read-both-members warning, and a test pins the firing boundary so the near-miss control test
+is not misread as "parallelism is safe". Actionable status stands — decidable-on-inspection is
+still the right bar — but it rests on a correct account of what the flag will show a human.
+
+**Second signal added the same day: CONTAINMENT, because ratio alone was worth a third of what
+PLAN assumed.** PLAN justified the actionable status with "found real defects in 2 of 12 videos",
+but that figure belonged to an ad-hoc script doing PARTIAL substring matching, while the method
+PLAN actually recorded was `ratio > 0.80`. The formula in PLAN was a lossy transcription of what
+had worked — and the ratio rule finds **1** of this corpus's 3 repetition defects, not 2. Worth
+recording as a process failure, not just a metric one: the finding survived into PLAN, the method
+that produced it did not.
+Containment (`longest common substring / len(shorter)`) targets the RESTART shape, where whisper
+re-speaks part of the previous line and continues — the shared span is large but the new tail
+drags the symmetric ratio down. Measured over all 13 workdirs / 1028 eligible pairs: **3 fires,
+all true positives** (ytEN_iAk09c 7/8 containment 1.0000; x7DfiXqSEdM 298/299 0.9677;
+2YCaBqP8muw 16/17 0.9167), loudest benign pair 0.7188 — a 0.20-wide empty band. `_DUP_RATIO_MIN`
+is kept rather than replaced: it is the better-grounded of the two, and the signals are OR-ed.
+**0.85 is labelled a HYPOTHESIS in the code, not a measured constant** — it rests on 3 positives,
+and the surrounding comments deliberately do NOT read like `_DUP_RATIO_MIN`'s, which earns the
+stronger claim. Re-validate as the corpus grows.
+Still missed by construction: NON-adjacent loops (the scan is pairwise; a duration/wps check is
+the orthogonal answer — INBOX) and semantic garbles that repeat no span (the four-Ds recap,
+containment 0.44).
+
+## 2026-07-19 — Repairing a whisper hallucination: isolated-window re-ASR, not a full re-run
+
+**Full-file re-transcription is not a repair method for this class.** All four known-defective
+videos were re-run with `--force --only transcribe` on the theory (PLAN 0a) that whisper's
+non-determinism would shake the defect loose. It fixed **1 of 4**. The other three reproduced the
+same defect on the same audio, one came back worse (a new 0.28 s collapsed segment), and a fourth
+gained a fresh garble containing CJK characters. These are not decoder noise — they are stable
+responses to specific passages, and re-rolling the dice costs a full ASR pass to mostly lose.
+
+**What works: re-transcribe the WINDOW, not the file.** The repetition loop is fed by
+`condition_on_previous_text`; a clipped 8-18 s window has no prior context to loop on. Applied to
+all 7 defect regions across 6 videos, every window returned a clean reading, **identical under
+both `condition_on_previous_text=True` and `False`** — the stability check that says the reading
+is the audio and not another sampling artifact. Cost is ~1 minute per window against ~50 s for a
+full file, and it repairs instead of re-rolling.
+
+**Repair discipline — delete, do not invent.** Every replacement text is the isolated window's
+OWN output; the defect is always that whisper emitted extra sentences where the window shows one,
+so each repair MERGES a run into the single verified sentence and renumbers to keep ids
+contiguous (the invariant `duplicate_adjacent` and `implausible_rate` both rely on). Exactly one
+correction overrode ASR rather than deleting: `Anthropics Cloud Models` → `Anthropic's Claude
+models`, flagged in the repair script, on the grounds that this is Anthropic's own course about
+Claude and a wrong brand name would reach both the dub and `pronounce`.
+
+**Result: 7 repairs, and both ASR detectors go silent on the batch.** `rate_implausible` max fell
+from 246 to 39.36 ch/s (under the 40 threshold — zero fires); `dup_adjacent` fires zero times
+across the 12 queue videos. Originals preserved at `work/<id>/_pre-repair-sentences.json`;
+`words.json` is deliberately NOT rewritten — it is the raw record of what the ASR actually did,
+and `asr.floor_ratio` should keep reporting that these files had a collapse.
+
+**A THIRD defect class, found by a translator sub-agent reading the text — not by any detector.**
+`W4Ua6XFfX9w` ids 19/20 read "Description goes beyond distinction." / "just writing prompts."
+The isolated window says it is one sentence: "Description goes beyond just writing prompts." A
+hallucinated word (`distinction` for `just`) split one sentence in two. **Both detectors are blind
+to this shape by construction**: each half sits at a plausible ~26 ch/s (well under the 40 bound)
+and the two are not similar to each other, so neither `rate_implausible` nor `dup_adjacent` can
+see it. Only reading the text finds it.
+**This settles the "Tier 2" question the 0d audit raised.** The translate seam is not a nice-to-
+have extra detector — it is the ONLY thing that catches semantic garbles carrying no timing
+anomaly and no repeated span. Both classes that survived every deterministic detector in this
+batch (this one, and the `RyvXxApfHkk` self-referential nonsense) were caught by an LLM reading
+the source, and in the same pass the agents also flagged `CLAWD`/`anthropics` ASR mis-spellings
+nobody had logged. The deterministic detectors remain worth having — they are cheap, they
+localise precisely, and they run before any model — but the honest architecture is
+deterministic detectors PLUS a reading pass, not one or the other.
+**Counter-note against over-trusting it:** the same property makes the translator dangerous.
+`RyvXxApfHkk` id11's garbage was silently REPAIRED into plausible Russian by Sonnet on the first
+pass (PLAN 0e), hiding it from everything downstream. A reading pass helps only when it is asked
+to REPORT anomalies rather than to smooth them over — that is a prompt requirement, not a
+property of the model.
+
+**Caveat worth keeping honest:** this is hand-editing ASR output. It is defensible here because
+every edit is grounded in a second, cleaner ASR reading of the same audio rather than in judgement
+about what was probably said — but it is a semi-automatic operator action, not something the
+pipeline does for itself. Automating it (detect → re-ASR the window → merge) is the obvious next
+step and is NOT built.
+
+## 2026-07-19 — `dup_adjacent` + `rate_implausible` (continued)
+
+**Third signal, and the best one in the file: `rate_implausible` (signal D).** A source sentence
+whose chars/second exceeds `_RATE_MAX_CPS = 40` cannot have been spoken in its own span — the
+signature of a whisper alignment collapse. Unlike every other threshold here, this one is sited on
+a PHYSICAL bound rather than corpus separation: human speech tops out near 25-30 ch/s, and the
+corpus agrees (1100 sentences, median 16.75, p95 23.97, p99 34.26, fastest benign 39.4). The
+defects sit at 70-246 ch/s — an order of magnitude clear.
+**7 fires / 1100 sentences, 7 true positives, 0 false.** Highest precision of anything in this
+module, and it is the only detector that reads TIMING instead of text.
+
+**What it found that nothing else could.** Two videos that every text-based signal reported
+`[clean]` carry real collapsed segments: `DmgujoZ1mmk#32` (93 chars in 0.88 s) and
+`W5cga7xipRI#23` (66 chars in 0.94 s). Batch triage went 2 → 4 videos, and the two additions are
+real. It also catches garble that repeats NOTHING (`RyvXxApfHkk#11`, "The LLM is used to analyze
+and categorize data, like the LLM, or LLM." in 0.28 s) — invisible to every similarity metric —
+and, structurally, repetition loops that are NON-ADJACENT, which `dup_adjacent` cannot see by
+construction. The two detectors are complementary; neither subsumes the other, and the tests pin
+that claim.
+
+**The strategic lesson, worth more than the detector.** Three text-similarity detectors were built
+before anyone measured duration, and duration beat all of them on precision, recall, and grounding
+— with less code. `_dehallucinate` in `transcribe.py` had been using near-zero duration as an
+artifact signal at the WORD level since the beginning; nobody lifted it to the sentence level.
+When the next detector is proposed, ask what physical invariant the defect violates before
+reaching for a text comparison.
+
+**Threshold 0.80 is a module constant, NOT a Config knob.** Every threshold in 0.70..0.95 yields
+the identical single fire; the true positive (1.0000) sits in a 0.30-wide empty band above the
+loudest benign pair (0.6977). A knob would advertise a tuning problem that does not exist. The
+25-char guard is INERT on this batch (identical fire set at guard 0..40) — kept as a structural
+guard for conversational corpora, explicitly not presented as validated.
+
+**KNOWN MISS, documented on purpose:** this catches the verbatim-ECHO class only. Whisper
+RESTARTS (a truncated line re-spoken differently) score 0.35–0.70 — `x7DfiXqSEdM` 298/299 is
+0.6977, sitting between two benign pairs at 0.6667 — so no usable threshold separates them. The
+`W4Ua6XFfX9w` four-Ds garble (0.5882) is a duplicated HEAD TOKEN across an enumeration, a
+different defect. A clean `dup_adjacent` does not mean "no repetition defects here".
+
+**Deliberate PLAN deviation, named rather than hidden:** PLAN says the check "must run on
+sentences.json". It reads `src_en` from the already-in-memory translation.json instead. Same
+bytes — both translate routes copy `src_en` verbatim (`translate.py:252`, `build_translation.py:87`)
+and `translate.py:241` uses that equality as its resume key, so verbatimness is an enforced
+invariant, not an assumption. Buys zero new I/O and zero new failure modes (missing/torn
+sentences.json, id desync).
+
+**`_RU_NEG_RE`: `без(?![а-я])` → `бе[зс](?!опасн|платн|условн|обидн|конечн|ед)[а-я]*`.** The real
+bug was ASYMMETRY, broader than PLAN's framing ("scans for без with a з"): не/ни matched as
+prefixes while без matched only as a standalone word, hiding **voiced** bound prefixes too. без/бес
+is ONE marker split by voicing assimilation.
+
+**A first cut widened it to a bare `бе[зс][а-я]*` and that was wrong — recorded because the error
+is instructive, not because the numbers were bad.** On the corpus it looked free (neg_loss 3 → 2,
+removing exactly the target FP `W4Ua6XFfX9w#32`, zero additions). Its justification was that
+"non-negative бе[зс]- lexis (беседа, бешеный) has ZERO occurrences", but those two words are
+absent from the corpus while the бе[зс]- lexis that IS present is безопасн-×18. The predicate was
+ETYMOLOGICAL (privative origin) where the detector needs SEMANTIC (polarity): безопасный means
+*safe*, so counting it as surviving negation makes "it is not safe" → "это безопасно" — a textbook
+inversion — read as a kept negation and pass silently. Eight such constructions were caught by the
+old regex and missed by the bare widening. A test was even added pinning one ("I don't like this
+conversation." → "Мне нравится эта беседа.", negation genuinely dropped) as an *accepted miss*,
+telling future maintainers that an inversion miss is fine for the one detector that exists to
+catch inversions.
+
+**The general lesson, which outlives this regex:** the module-wide "over-matching only ever causes
+a MISS, the safe direction" rule does NOT apply to `neg_loss`. `completeness.py` anchors
+prefer-miss to "the weak length signal most of all", and DECISIONS 2026-07-19 carves neg_loss out
+by name — *"an inverted negation is the most dangerous silent loss there is, and one false positive
+per batch is a fair price for never missing one."* For this detector a MISS is the failure mode the
+detector exists to prevent. Citing the module docstring to justify lowering its sensitivity was
+circular: the regex, the docstring sentence licensing it, and the pinning test all landed together.
+
+**Shipped form subtracts positive-polarity stems** (`_NEG_POSITIVE_STEMS`). Re-measured over the
+same 1101 sentences: **identical to the bare widening — 2 fires, the same two**, target FP still
+removed, **zero new false positives**. So the correction is free on observed data and closes a
+LATENT hole; the accepted cost is a flagged correct translation ("not dangerous" → "безопасно"),
+which is the trade DECISIONS already priced. Both directions are now pinned by tests, including
+one asserting the inversion IS caught.
+
+**Rejected in the same pass:** adding `"i don't know"` to `_NEG_IDIOMS` (it would convert one FP
+into a systemic miss over real negation — `_NEG_IDIOMS` is excised unconditionally before the
+scan); an enumeration-head detector and a timing/chars-per-second detector (both real, both with
+their own FP surface and tests — INBOX, not this commit).
+
+**Artifacts do not self-heal:** `work/W4Ua6XFfX9w/report.json` keeps its stale neg_loss and
+`ytEN_iAk09c` gains its dup flag only after a re-run of verify. No resynthesis needed — the
+completeness loop never touches audio.
 
 ## 2026-07-19 — Run report (observability): two non-obvious choices in run.json
 
