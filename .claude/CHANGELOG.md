@@ -34,6 +34,14 @@
   39.36 ch/s; `dup_adjacent` 3 → 0). Digest: 2 of 12 need triage, and both are documented false
   positives — a lexical negation with no не/ни/без token, and an accepted `few-shot prompting`
   Latin run. Full suite (11 files) green.
+- Sub-item index (the 0a-0j labels INBOX/DECISIONS still reference; the detail lived in PLAN item 0,
+  removed on close): 0a `ytEN_iAk09c` 7/8 duplicated pair · 0b `W4Ua6XFfX9w` four-Ds recap garble ·
+  0c the no-duplicate-detector blind spot (→ `dup_adjacent`) · 0d morning-report re-audit (triage
+  was wrong about both videos it named) · 0e `RyvXxApfHkk` 10/11 garbled ASR masked by Sonnet's
+  repair · 0f `2YCaBqP8muw` 16/17 repetition loop · 0g `report.json` flag-staleness (cleared via
+  `--force --only verify assemble`) · 0h `entity_loss` acronym+s bug (left open → PLAN backlog) ·
+  0i four-Ds mnemonic destroyed in RU (left open → PLAN backlog) · 0j collapsed spans in videos
+  reported `[clean]` (found by the rate detector).
 
 ## 2026-07-19 — `no_repeat_ngram_size` measured and REJECTED; guard threshold downgraded
 - 60-run sweep (3 videos × n in 0/4/5/6 × 5 repeats, read-only probe, no workdir writes): the knob

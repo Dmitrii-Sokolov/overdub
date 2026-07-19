@@ -17,7 +17,6 @@ Tags: `[bug] [feature] [chore] [?]` — one line per entry, processed weekly.
 - [feature] normalize: decade suffix "90х"/"2000х" → "девяностых"/"двухтысячных" (currently "девяностох", rough); dedicated pass if worth voicing
 - [feature] normalize: "10-20%" keeps a literal dash ("десять-двадцать процентов") — percent pass consumes the 20 before the range pass. Prosody-only, verify strips the hyphen
 - [feature] translate: Ollama circuit-breaker — abort after ~3 consecutive api_error instead of burning 4×timeout/sentence for the whole file (batch-scale operability; note failed records aren't retried on resume)
-- [bug] translate: refusal regex both directions — "как модель/ии" false-positives on legit RU; RU refusals outside the 4 phrases pass as ok. Tighten self-reference phrasing, broaden RU set
 - [?] translate: _parse keeps only line 1 — silently truncates a genuine multi-line continuation (rare with think:false). Consider flagging when discarded lines look like substantive Cyrillic prose
 - [bug] translate: torn last jsonl line on power-loss can concat two records; self-heals (unparseable line re-translated) but leaves junk. Prepend "\n" on first append if file doesn't end in one
 - [chore] translate: global terminology drift beyond the 4-pair window (AI → "ИИ" vs "искусственный интеллект"); a per-run glossary/term-pin pass if consistency matters
@@ -46,9 +45,6 @@ Tags: `[bug] [feature] [chore] [?]` — one line per entry, processed weekly.
 
 ## Ideas backlog (2026-07-16 session brainstorm; top-3 first — duplicated in PLAN roadmap/backlog)
 - [feature] babble detector in verify: expected-vs-actual duration heuristic + optional local MOS (UTMOS) — ASR round-trip PROVEN blind to babble (sim 0.93 on garbage audio)
-- [feature] per-segment NATIVE F5 speed from slot budget, atempo only on the residual — ×1.6 verified at ≤0.022 sim cost; part of F5Engine integration
-- [feature] morning triage HTML for batch runs: flagged segments (+2 s context) with audio players + one-command reseed — listen to 1–2% instead of 100%
-- [feature] sentence grouping for prosody: adjacent sentences with gap <0.4 s → one synth call (also mitigates the id43 ultra-short class)
 - [feature] --repair id,id --seed N: point re-synthesis + remux without a full rerun
 - [feature] per-run terminology glossary: pin the first translation of recurring terms (AI → один вариант на весь ролик)
 - [feature] singing/music detection (whisper no-speech prob) → keep original audio, don't dub songs
@@ -75,8 +71,6 @@ Tags: `[bug] [feature] [chore] [?]` — one line per entry, processed weekly.
   version: a `terms.tsv` per playlist, passed into every translate prompt and checked after.
   Note the structural reason it is invisible — each video is translated in isolation, so no stage
   ever sees two videos at once; only a batch-level check can catch it
-
-## 2026-07-19 session (repair round)
 - [feature] **make the translate seam report anomalies, not just translate** — CONFIRMED as the
   only detector for semantic garbles with no timing anomaly and no repeated span (DECISIONS
   2026-07-19: `W4Ua6XFfX9w` 19/20, a hallucinated word splitting one sentence). Add to the
@@ -101,20 +95,6 @@ Tags: `[bug] [feature] [chore] [?]` — one line per entry, processed weekly.
   consumer of words.json must know it can disagree with sentences.json after a repair
 
 ## 2026-07-19 session (item 0c/0d, multi-agent pass)
-- [feature] completeness: **containment beats ratio for repetition defects — the single highest-value
-  follow-up from this pass.** `dup_adjacent`'s symmetric `SequenceMatcher.ratio() > 0.80` catches only
-  the verbatim echo (1 of the batch's 3 repetition defects). Longest-common-substring containment
-  (`lcs / len(shorter)`) separates cleanly over all 13 videos: 1.0000 ytEN 7/8 (real), 0.9677
-  x7DfiXqSEdM 298/299 (real, currently a documented miss), 0.9167 2YCaBqP8muw 16/17 (real, PLAN 0f),
-  then 0.7188 for a benign rephrase. A 0.85 cutoff catches all three with zero FP in a 0.20-wide empty
-  band. Caveat the scan itself raised: 3 true positives is a thin basis — treat 0.85 as a hypothesis,
-  not a measured constant, same distinction the `_DUP_MIN_LEN` comment already draws. Also softens the
-  docstring's "unreachable at any usable threshold", which is true only for the symmetric metric
-- [feature] transcribe/verify: **near-zero-duration detector — catches the echo class with no text
-  comparison and no threshold tuning.** ytEN_iAk09c id8 packs 56 chars into 0.32 s (25 words/s);
-  `words.json` shows 8 consecutive words each 0.02 s wide — the canonical fingerprint of a decoder
-  repetition loop. A words-per-second bound (>8 wps, or chars/s z-score) is orthogonal to string
-  similarity and would also catch NON-adjacent loops, which `dup_adjacent` structurally cannot see
 - [feature] completeness: enumeration-head detector for the PLAN 0b class — in a run of ≥3 adjacent
   sentences matching `^(?:and\s+)?([A-Za-z]+)\s+to\s+\w+`, the captured head must be unique. Measured
   on the real batch: exactly one flag across 13 videos / 1101 sentences, and it is the true positive

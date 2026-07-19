@@ -6,136 +6,6 @@ Sample workdirs: `work/` (Silero baselines, read-only); `work-exp/context-earche
 switch models); `work-exp/gemma-ab/` (Gemma, the same 8 — the A/B set). A/B report artifact
 published (Qwen vs Gemma, 508 sentences). Report triage: any *_flag or speed_factor>1.8.
 
-0. ~~**Close out the AI-Fluency batch.**~~ **CLOSED 2026-07-19 — details in CHANGELOG.** Final
-   scope was 8 defects across 6 of 12 videos (PLAN had recorded 2). All repaired via
-   isolated-window re-ASR, 6 videos re-translated, all 12 MKVs rebuilt; both ASR detectors now
-   fire zero times across the batch and the 2 remaining triage flags are documented false
-   positives. Two detectors shipped (`rate_implausible`, containment) plus the `_RU_NEG_RE` fix.
-   **What did NOT get closed, deliberately:** cross-video terminology drift (measured, INBOX,
-   judged not worth re-translating the other 6 videos for) and the `entity_loss` acronym+s bug
-   (0h below — advisory-only, costs noise not correctness).
-   Kept below for the reasoning, which the roadmap items above still lean on.
-
-   **REPAIRED 2026-07-19 via isolated-window re-ASR (method + caveats in DECISIONS).** 7 defect
-   regions across 6 videos merged back to the single sentence each window actually contains;
-   originals at `work/<id>/_pre-repair-sentences.json`. Both ASR detectors now fire ZERO times
-   across the 12 queue videos (`rate_implausible` max 246 → 39.36 ch/s; `dup_adjacent` 3 → 0).
-   Repaired: `ytEN_iAk09c` 7/8 · `W4Ua6XFfX9w` four-Ds recap + 29/30/31 · `RyvXxApfHkk` 10/11 ·
-   `2YCaBqP8muw` 16/17/18 + 43/44 · `DmgujoZ1mmk` 31/32 · `W5cga7xipRI` 23/24.
-   REMAINING for these 6: translate (Sonnet seam) → synthesize → verify → assemble → separate →
-   mux, then a fresh digest. Until that finishes, `out/` still holds the OLD dubs.
-
-   **RE-TRANSCRIBE RESULT (2026-07-19) — the premise of 0a was WRONG.** All four videos were
-   re-transcribed with `--force --only transcribe`. PLAN assumed whisper non-determinism would
-   shake the defects loose ("the guard may now handle it; re-run and check"). It fixed **1 of 4**:
-   `W4Ua6XFfX9w`'s four-Ds recap came back correct as a single sentence. The other three reproduce
-   the SAME defect on the same audio — this is not decoder noise, it is a stable response to those
-   passages. `RyvXxApfHkk` came back partly worse (a new 0.28 s collapsed segment), and the new
-   `ytEN_iAk09c` gained a garbled line with CJK+Cyrillic characters. **Re-running transcribe is
-   not a repair strategy for this class.**
-   Workdirs were RESTORED from `_bak-20260719/` so they stay consistent with `out/`; the new
-   transcripts are preserved beside them in `_retranscribe-20260719/` (not wired into anything).
-   Deciding what to actually repair is the open question — surgical `sentences.json` edits are the
-   only deterministic option identified.
-
-   **STATUS after the 0c/0d pass (2026-07-19, multi-agent):**
-   - ✅ `dup_adjacent` detector shipped in `completeness.py` + wired through verify/runreport,
-     ACTIONABLE. Fires exactly once in 1028 adjacent pairs, and that fire is the ytEN_iAk09c
-     ground truth. Catches the verbatim-ECHO class ONLY — see DECISIONS for the documented misses.
-   - ✅ `_RU_NEG_RE` fixed (bound бес-/без- prefix), then CORRECTED: the first cut suppressed
-     positive-polarity stems (безопасн-) and went blind to real inversions. See DECISIONS.
-   - ✅ `rate_implausible` detector shipped (chars/sec > 40 on the EN source span). 7 fires /
-     1100 sentences, 7 true positives, 0 false — the best-grounded detector in the module.
-   - ✅ 0g fixed: `--force --only verify assemble` across all 12 cleared the 6 phantom
-     `translate:refusal`; the digest now matches `translation.json`.
-   - ❌ 0a, 0b, 0e, 0f repairs: NOT done. Re-transcribe rejected as the method (see above).
-   - 🆕 two more videos carry real defects (0e, 0f below), and TWO MORE were found by the rate
-     detector in videos previously reported `[clean]` (0j below).
-
-   **0j. `DmgujoZ1mmk#32` and `W5cga7xipRI#23` — collapsed spans in videos reported clean.**
-   Found only after the rate detector existed: 93 chars in 0.88 s and 66 chars in 0.94 s. Both
-   videos reported `[clean]` through every earlier audit, including 0d. Impact is a timing
-   artifact rather than wrong text — the dub sentence is crammed into a fraction of its slot —
-   so severity is lower than 0a/0e, but they were INVISIBLE, which is the point. Batch triage is
-   now 4 of 12, up from 2, and all four are real.
-   **Detection scorecard on the shipped transcripts — 4 of 6 known defects are now visible:**
-   0a ✅ (dup + rate) · 0f ✅ (dup + rate) · 0j ✅ (rate, ×2) · 0b ❌ · 0e ❌.
-
-   **0e. `RyvXxApfHkk` ids 10-11 — garbled + repeated ASR, reported `[clean]`.** id10 "Large
-   language models, or LLMs, like the LLM, are used to analyze and categorize data." (self-
-   referential nonsense); id11 repeats "used to analyze and categorize data" and mangles
-   "Anthropic's Claude models" into "anthropics, quads models". **The masking mechanism is the
-   finding worth keeping:** Sonnet partially REPAIRED id11 into plausible Russian ("...как модели
-   Claude от Anthropic..."), hiding the source damage from every downstream detector. A translator
-   good enough to fix ASR damage is a translator good enough to hide it. This is POST-re-transcribe
-   (`sentences.json` 12:56) — the older INBOX note about CJK garbage at id12 is a different,
-   now-gone defect.
-
-   **0f. `2YCaBqP8muw` ids 16-17 — whisper repetition loop, video in TRIAGE for an unrelated
-   reason.** id17 re-speaks 87 chars of id16 verbatim AND repeats "break complex tasks into steps"
-   twice inside itself; the six-item tip list is dubbed twice, 207 RU chars into a 4.5 s slot.
-   `similarity 0.9982`, `completeness_flags=[]` — invisible. Ratio 0.6569, BELOW the 0.80
-   threshold, so `dup_adjacent` does not catch it either.
-
-   **0a. `ytEN_iAk09c` — duplicated sentence pair (ids 7, 8).** Same whisper repetition class that
-   was fixed in `4szRHy_CT7s`; this video was simply never re-transcribed. The dub says the same
-   thing twice. Detected early in the session and then dropped on the floor — no re-run was ever
-   made. FIX: `--force --only transcribe` (the guard may now handle it; whisper is non-deterministic
-   so re-run and check), then re-translate that video with a Sonnet sub-agent (`sentences.json` ids
-   shift → the draft goes stale), `scripts/build_translation.py work\ytEN_iAk09c`, then
-   `--force --only synthesize verify assemble separate mux`. Back up the workdir artifacts first —
-   the same `_bak` discipline used for the other two.
-
-   **0b. `W4Ua6XFfX9w` — garbled four-Ds recap, ids 45-48.** The source enumerates the four
-   competencies but whisper duplicated a word: id46 "Description to control AI", id47
-   "**Delegation** to communicate clearly with AI" — id47 should be Description. The translator
-   sub-agent reported this at translate time; it was acknowledged and never acted on. Not a
-   near-duplicate (the dup scan misses it — the two lines differ), so it needs the same re-transcribe
-   treatment and then a manual read of ids 45-48 to confirm the recap reads correctly.
-
-   **0c. The blind spot this exposes, which matters more than the two videos.** Neither defect is
-   surfaced by the triage that was just rebuilt: `ytEN_iAk09c` reports `triage: no`, and
-   `W4Ua6XFfX9w` reports `yes` only because of a `neg_loss` the user already diagnosed as FALSE
-   ("полезное от бесполезного" — the negation lives in the bound prefix `бес-`, which
-   `_RU_NEG_RE` cannot match because it scans for `без` with a `з`). So 2 of 12 videos carry real
-   defects and the report points at neither.
-   **There is no duplicate-sentence detector anywhere in the pipeline.** The whole session used an
-   ad-hoc script; it found real defects in 2 of 12 videos, a better hit rate than `entity_loss`,
-   which is a shipped detector. It belongs in `completeness.py` as an ACTIONABLE flag. The method,
-   recorded here because the scratchpad it lived in is temporary — for each adjacent pair in
-   `sentences.json`, when the first is longer than 25 chars and
-   `difflib.SequenceMatcher(None, a, b).ratio() > 0.80`, flag both ids. Cheap, pure, no model.
-   Note it must run on `sentences.json` (source EN), not on the translation: it is an ASR defect.
-
-   **0d. Re-audit the original morning report line by line.** ✅ DONE 2026-07-19, from artifacts.
-   Result: triage flags 2 of 12 videos and is wrong about both — it misses all four real defects
-   and the one video it correctly puts in TRIAGE got there via a FALSE `neg_loss`. Beyond 0e/0f
-   above, it surfaced three structural findings, kept here because nothing else records them:
-
-   **0g. `report.json` is structurally stale against `translation.json` across all 12 videos, and
-   a normal re-run can never fix it.** Flags in `translation.json` changed at 14:44 (the refusal-
-   regex rebuild) while every `report.json` is 10:52-13:04. `verify.done()`/`assemble.done()` gate
-   on `synth_key`/`units_key`, which depend on TEXT, not flags — text did not change (verified:
-   0 stale units across all 12, manifests complete). So the digest still prints **6 phantom
-   `translate:refusal`** that DECISIONS 2026-07-19 declared "6 → 0", and will print them forever.
-   `run_report.py --rebuild` does not help (it rebuilds `run.json`; offenders come from
-   `report.json`). Only `--force --only verify assemble` clears it. This is the `synth_key`
-   silent-staleness class reappearing on the FLAGS field instead of the audio — the invariant has
-   no equivalent on flags.
-
-   **0h. `entity_loss` detector bug: acronym+s bypasses the ALL-CAPS exclusion.**
-   `completeness.py` filters with `base[0].isupper() and not base.isupper()`; for "LLMs" the
-   lowercase plural `s` makes `base.isupper()` False, so the acronym passes as a Titlecase name —
-   exactly what the docstring promises to exclude. 13 of 34 `entity_loss` fires in the batch
-   (38%): LLMs ×9, GPUs+TPUs, Ds ×4. One-line fix (strip a trailing `s`, or require a lowercase
-   letter in `base[1:-1]`). Advisory-only, so it costs noise, not correctness.
-
-   **0i. The "four Ds" mnemonic is destroyed in translation** (`W4Ua6XFfX9w`, `ytEN_iAk09c`,
-   `JpGtOfSgR-c`). RU keeps "четыре D"/"4D" and pronounce voices it as "четыре ди", while the RU
-   competency names are делегирование / формулировка / критическая оценка / добросовестность —
-   Д, Ф, К, Д. The listener hears a mnemonic that does not work. Translation-quality class, not
-   ASR: needs a RU-analogue mnemonic or an explicit unpacking in the prompt.
-
 1. **Video summary from the full transcript — "is this worth watching at all?"** A separate Sonnet
    sub-agent reads the COMPLETE original transcript (`sentences.json` — it already exists after
    transcribe, no new stage input) and writes a **Russian** summary of **~200 words**. Purpose is
@@ -235,7 +105,10 @@ units); per-run terminology glossary; singing/music detection → keep original 
 loudnorm/EQ on the dub; `--subs-only` fast path; cross-video stage pipelining (translate GPU ∥
 synth/verify) if nights get tight;
 fix the out/ export name collision (identical `<title> [<id>].mkv` across models overwrites — namespace
-exports per run/model or per work_root). — tail (lowest priority, keep for later): translation
+exports per run/model or per work_root); `entity_loss` acronym+s bug ("LLMs" bypasses the ALL-CAPS
+exclusion — one-line fix, advisory noise only; was item-0h); RU analogue for the "four Ds" mnemonic
+(Д/Ф/К/Д does not spell "4D" — prompt unpacking or a RU mnemonic, translation-quality class; was
+item-0i). — tail (lowest priority, keep for later): translation
 completeness check (EN↔RU content-word ratio / back-translation on outliers) — no current evidence
 the model drops words on short sentences, but cheap insurance if it ever does; babble duration
 heuristic (expected-vs-actual unit duration → flag garbled synth the ASR round-trip misses) — output
@@ -266,7 +139,9 @@ Phase 0 skeleton ✅ · Phase 1 MVP turn-key URL→MKV ✅ · Phase 3 TTS → F5
 Batch queue + stop switch ✅ · Proper nouns ✅ · Segmentation cluster + whisper-context ROOT fix ✅ ·
 **Item 0 whisper-context ear-validated ✅ (2026-07-18)** · **Gemma-3-12B migration ✅ (2026-07-18,
 A/B-driven; Qwen removed)** · **Sonnet A/B + verdict: semi-auto = primary route ✅ (2026-07-18)** ·
-**Observability: run.json + timings.json + run_report.py digest + morning-triage HTML ✅ (2026-07-19)**.
+**Observability: run.json + timings.json + run_report.py digest + morning-triage HTML ✅ (2026-07-19)** ·
+**Item 0 — AI-Fluency batch: 8 ASR defects repaired, 2 detectors shipped, 12 MKVs re-shipped ✅
+(2026-07-19; sub-item index 0a-0j in CHANGELOG)**.
 
 Stack pins, verified APIs and setup: STACK.md + SETUP.md. Translation: Gemma-3-12B (Ollama),
 `gemma3:12b`, local in-pipeline default by A/B 2026-07-18 (Qwen3-14B removed); PRIMARY route =
