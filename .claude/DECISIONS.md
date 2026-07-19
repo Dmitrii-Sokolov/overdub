@@ -884,3 +884,33 @@ contract never rides on an LLM's discipline). Validated on this 427-sentence run
 **Completeness stays the top blind spot but the prompt-bundle is NOT the fix** (this experiment
 falsified it). The verify-side completeness check (PLAN roadmap 1) remains the right lever.
 Caveat: n=1 video, lifestyle content — indicative, not a multi-content-type A/B.
+
+## 2026-07-19 — Completeness check (verify-side, deterministic A+B) — shipped, all 4 detectors kept
+
+After rejecting the LLM-judge / embedding semantic check as PoC over-engineering (the analysis
+earlier this day), built the cheap deterministic A+B insurance via an ultracode workflow (8 agents:
+understand → build → adversarial verify → synthesize). New pure module `overdub/completeness.py` —
+four NON-BLOCKING per-sentence detectors written to `report.json` at verify:
+- **num_loss** — a digit run in src_en absent from text_ru (leans on the keep-digits rule;
+  `normalize._n2w` suppresses legitimately spelled-out numbers).
+- **neg_loss** — an EN negation marker with no RU не/ни/без in text_ru (guards meaning INVERSION,
+  the worst silent loss).
+- **entity_loss** — a Titlecase Latin name in src_en absent from text_ru (leans on keep-Latin-names).
+- **length_short** — len(text_ru)/len(src_en) < `completeness_len_ratio_min` (0.45) with a 30-char
+  src guard (catches a catastrophic clause drop the precise signals miss).
+Integrated as a separate segs loop in `verify.run()` (after the whisper model frees, before
+`report.save`); rollup `rep["completeness"]`. 21 tests, no regression.
+
+**Real-data validation (x7DfiXqSEdM, 854 sentence-checks across Gemma + Sonnet): 31 fires, 0 true
+losses, all FP.** But the two precise signals stayed SILENT on the clean data — num_loss Sonnet
+0/427, length_short 0/854 — which is exactly the intended "silent until a real loss happens"
+insurance (they fire on a genuinely dropped number/clause; this content simply has none).
+entity_loss is ~100% FP (Russified personal names — Jimmy Carter, Bruce Lee — which the naming rule
+PERMITS; translated titles; Capitalized common words) with ~0 recall on EN→RU: structurally noisy,
+no cheap person-vs-brand discriminator exists. neg_loss is 100% FP here too (lexical negation:
+`not good`→`плохо`) but guards the meaning-inverting class at 0.5%.
+
+**User decision: KEEP ALL FOUR as-is** (triage-only, non-blocking). entity's noise (~3% of
+sentences) is accepted for the chance of catching a genuinely dropped brand. This is the FIRST
+data source for the run-report / observability item (PLAN 1). The heavy semantic check stays
+rejected.

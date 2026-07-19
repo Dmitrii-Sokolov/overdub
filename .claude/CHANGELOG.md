@@ -1,5 +1,18 @@
 # CHANGELOG
 
+## 2026-07-19 — Completeness A+B: deterministic verify-side loss flags (ultracode)
+- NEW `overdub/completeness.py` — 4 non-blocking per-sentence detectors (num_loss/neg_loss/
+  entity_loss/length_short) written to `report.json` at verify; rollup `rep["completeness"]`.
+  Pure, no LLM/VRAM. 21 tests, no regression. Built via an 8-agent ultracode workflow
+  (understand → build → adversarial verify → synthesize).
+- Validation (x7DfiXqSEdM, 854 checks): num_loss+length_short = silent precise insurance (0 FP on
+  clean data, fire only on a real number/clause drop); entity_loss ~100% FP structurally (naming
+  rule permits Russifying personal names); neg_loss guards meaning inversion. User: keep all four
+  as-is, triage-only, non-blocking. DECISIONS 2026-07-19
+- PLAN: observability / run-report added as item 1 (persist stage timings, per-run rollup, flag
+  counts by type, speed distribution, completeness aggregates, batch sweep) — completeness is its
+  first data source
+
 ## 2026-07-19 — Route-B hardening: skill audit closed 8 defects (skill + helper)
 - Skill audit (minimal-context-agent lens) vs code: commands/contract/flag table all held;
   8 gaps fixed. SKILL.md: ids from queue.txt (regex, never a `work/` listing — stale/baseline
