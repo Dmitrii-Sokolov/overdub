@@ -6,7 +6,47 @@ Sample workdirs: `work/` (Silero baselines, read-only); `work-exp/context-earche
 switch models); `work-exp/gemma-ab/` (Gemma, the same 8 — the A/B set). A/B report artifact
 published (Qwen vs Gemma, 508 sentences). Report triage: any *_flag or speed_factor>1.8.
 
-0. **Video summary from the full transcript — "is this worth watching at all?"** A separate Sonnet
+0. **Close out the AI-Fluency batch: two REAL defects still shipped, and the triage cannot see
+   them.** Found 2026-07-19 by re-auditing at the end of the session, after the batch had been
+   declared done twice. Both are in `out/` right now.
+
+   **0a. `ytEN_iAk09c` — duplicated sentence pair (ids 7, 8).** Same whisper repetition class that
+   was fixed in `4szRHy_CT7s`; this video was simply never re-transcribed. The dub says the same
+   thing twice. Detected early in the session and then dropped on the floor — no re-run was ever
+   made. FIX: `--force --only transcribe` (the guard may now handle it; whisper is non-deterministic
+   so re-run and check), then re-translate that video with a Sonnet sub-agent (`sentences.json` ids
+   shift → the draft goes stale), `scripts/build_translation.py work\ytEN_iAk09c`, then
+   `--force --only synthesize verify assemble separate mux`. Back up the workdir artifacts first —
+   the same `_bak` discipline used for the other two.
+
+   **0b. `W4Ua6XFfX9w` — garbled four-Ds recap, ids 45-48.** The source enumerates the four
+   competencies but whisper duplicated a word: id46 "Description to control AI", id47
+   "**Delegation** to communicate clearly with AI" — id47 should be Description. The translator
+   sub-agent reported this at translate time; it was acknowledged and never acted on. Not a
+   near-duplicate (the dup scan misses it — the two lines differ), so it needs the same re-transcribe
+   treatment and then a manual read of ids 45-48 to confirm the recap reads correctly.
+
+   **0c. The blind spot this exposes, which matters more than the two videos.** Neither defect is
+   surfaced by the triage that was just rebuilt: `ytEN_iAk09c` reports `triage: no`, and
+   `W4Ua6XFfX9w` reports `yes` only because of a `neg_loss` the user already diagnosed as FALSE
+   ("полезное от бесполезного" — the negation lives in the bound prefix `бес-`, which
+   `_RU_NEG_RE` cannot match because it scans for `без` with a `з`). So 2 of 12 videos carry real
+   defects and the report points at neither.
+   **There is no duplicate-sentence detector anywhere in the pipeline.** The whole session used an
+   ad-hoc script; it found real defects in 2 of 12 videos, a better hit rate than `entity_loss`,
+   which is a shipped detector. It belongs in `completeness.py` as an ACTIONABLE flag. The method,
+   recorded here because the scratchpad it lived in is temporary — for each adjacent pair in
+   `sentences.json`, when the first is longer than 25 chars and
+   `difflib.SequenceMatcher(None, a, b).ratio() > 0.80`, flag both ids. Cheap, pure, no model.
+   Note it must run on `sentences.json` (source EN), not on the translation: it is an ASR defect.
+
+   **0d. Re-audit the original morning report line by line.** Two items were lost between finding
+   and fixing, so the reconstruction-from-memory used all session is not trustworthy. Walk the
+   first `run_report.py --queue queue.txt` output (the 11-of-12 version, reproduced from
+   `work/<id>/report.json` if needed) against current state and confirm every listed offender is
+   either fixed, reclassified with a written reason, or still open here.
+
+1. **Video summary from the full transcript — "is this worth watching at all?"** A separate Sonnet
    sub-agent reads the COMPLETE original transcript (`sentences.json` — it already exists after
    transcribe, no new stage input) and writes a **Russian** summary of **~200 words**. Purpose is
    triage-before-viewing, not a synopsis: it must answer (a) is the video worth watching, and
@@ -16,7 +56,7 @@ published (Qwen vs Gemma, 508 sentences). Report triage: any *_flag or speed_fac
    and whether it should run before translate so a "not worth it" verdict can skip the expensive
    stages entirely — that last one is the real payoff at batch scale.
 
-1. **Any-language source → Russian.** Today the pipeline is EN→RU by contract (CLAUDE.md hard
+2. **Any-language source → Russian.** Today the pipeline is EN→RU by contract (CLAUDE.md hard
    constraint: no language detection, no multi-language handling). Extend it to accept effectively
    any source language, WITHOUT swapping models: whisper large-v3 is already multilingual (drop the
    hardcoded `language="en"`, detect instead), and the translator is prompt-driven so the source
@@ -26,7 +66,7 @@ published (Qwen vs Gemma, 508 sentences). Report triage: any *_flag or speed_fac
    sentence resegmentation (`TERMINATORS`, `_ABBREV`) is Latin-punctuation-shaped and will need
    review for languages that punctuate differently.
 
-2. **Sonnet semi-automatic translate — live-run the primary route.** Verdict recorded
+3. **Sonnet semi-automatic translate — live-run the primary route.** Verdict recorded
    2026-07-18 (DECISIONS): quality noticeably better, much faster, replaces the heaviest stage;
    both routes stay — Gemma = local in-pipeline default, Sonnet (subscription, cloud) = PRIMARY,
    in semi-automatic mode (sub-agents at the translate seam). Runbook: README "Running" route B.
@@ -34,7 +74,7 @@ published (Qwen vs Gemma, 508 sentences). Report triage: any *_flag or speed_fac
    stats-batch videos). The in-pipeline Anthropic API flag stays approved but deferred — build
    only if the manual seam becomes the bottleneck.
 
-3. ~~**Whisper anti-repetition decoder params.**~~ **REJECTED 2026-07-19** on a 60-run sweep — no
+4. ~~**Whisper anti-repetition decoder params.**~~ **REJECTED 2026-07-19** on a 60-run sweep — no
    consistent direction (helped the severe source, made the borderline one worse on every axis,
    damaged a healthy control at n=4). See DECISIONS. Do NOT retry as-is: the measurement's third
    axis (word count vs baseline) cannot distinguish "removed a duplicate" from "ate real speech",
@@ -74,8 +114,24 @@ deliberate trade. Two directions follow:
   (denoise / compression / EQ) for the cheap-microphone timbre; intonation variation (v5_5 is
   reported to support it, unexplored); and the span-vs-slot timing drift — the last one is a
   pipeline fix, not an engine one, and would also tighten any future non-targeting engine.
+  **Start from [`docs/russian-tts-guide.md`](../docs/russian-tts-guide.md)** (user-supplied,
+  July 2026) — it addresses two of those three directly and contradicts one thing we ship:
+  - **Monotone is mostly an INPUT problem, not a settings problem.** The guide puts ~70% of
+    prosody quality on what is fed in, and names flat ASR+MT punctuation as the main cause of
+    monotony — which is exactly our input shape. Cheapest lever we have not pulled.
+  - **Silero DOES take SSML** (`<speak> <p> <s> <prosody> <break>` — no emphasis/emotion tags).
+    `<p>`/`<s>` wrapping alone gives pauses and contour reset. Our adapter sends `text=` only.
+  - **`sample_rate` 24000 is called out as audibly "plastic"; 48000 is the recommendation.** We
+    already run Silero at 48000 (`overdub.toml`) — but F5 is engine-fixed at 24000, worth an ear
+    check against this claim.
+  - Also relevant to defects we already logged: per-chunk silence trimming + crossfade at joins
+    (our "seams"), synthesizing by PARAGRAPH rather than per sentence (our unit grouping already
+    moves this way), and a versioned stress dictionary (`terms.tsv`) for domain terms — the class
+    `pronounce_audit.json` already surfaces but nothing consumes.
+  - Its ordering advice matches ours by accident: punctuation + number normalization first,
+    round-trip ASR as QA (shipped), SSML/LLM markup last.
 
-4. **Speed up F5.** The Silero audition put a number on what the primary engine costs: 128-250 s
+5. **Speed up F5.** The Silero audition put a number on what the primary engine costs: 128-250 s
    of synthesis per ~5-minute video against Silero's 11-14 s. F5 quality stays preferred, so the
    question is how much of that gap is recoverable. Unexplored levers: `f5_nfe` (48 → 32 is noted
    in overdub.toml as ~30% faster with an un-ear-checked quality delta — ear-check it), batching

@@ -81,6 +81,16 @@ run the pipeline with `.venv-asr` python via `python -X utf8 -m overdub`.
   `text_tts` (normalized → synthesis); ASR verification compares against
   `text_tts` with the same normalizer applied to both sides.
 
+## Reference
+
+`docs/russian-tts-guide.md` — Russian-TTS working reference (user-supplied, July 2026): model
+comparison, input preparation (punctuation, normalization, stress dictionary, chunking), Silero
+SSML surface, a listening checklist, and a symptom → first-thing-to-check table. Read it before
+tuning TTS quality, changing engines, or chasing an intonation/pronunciation complaint. Two
+things in it we do not yet use: Silero accepts SSML (`<speak> <p> <s> <prosody> <break>`) while
+our adapter sends plain `text=`, and it attributes most prosody quality to the INPUT — flat
+ASR+MT punctuation being the main cause of monotone output.
+
 ## Artifacts
 
 Planning lives in `.claude/PLAN.md`, rationale in `.claude/DECISIONS.md`,
