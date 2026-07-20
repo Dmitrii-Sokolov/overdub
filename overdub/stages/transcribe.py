@@ -31,6 +31,7 @@ from __future__ import annotations
 import json
 import re
 import sys
+import time
 from dataclasses import dataclass
 
 from ..pipeline import Context
@@ -427,13 +428,27 @@ class TranscribeStage:
         return flat
 
     def run(self, ctx: Context) -> None:
+        from .. import runreport            # local: runreport imports this module lazily too
+
         cfg = ctx.cfg
         # session-owned: one large-v3 load per stage SWEEP, not per video. The session
         # releases it when the sweep ends (pipeline.Session.clear) — for a single video
         # that is the end of this stage, exactly as the old local try/finally did.
         model = ctx.session.whisper(cfg, cfg.whisper_model)
+        # THE CLOCK STARTS HERE, after the model is in hand. The pipeline's own stage timer
+        # (pipeline.run_pipeline) starts before this line and therefore charges the load — and
+        # the warmup — to whichever video is first in the sweep, which is the run's true cost
+        # but useless for comparing one video against another or one build against another.
+        # asr.load_whisper warms the model, so no autotuning hides in the first decode either.
+        t0 = time.perf_counter()
+        passes = 0
 
         def asr(condition_on_previous: bool) -> list[W]:
+            # counted, because _guard re-runs ASR when the alignment looks collapsed: those
+            # videos cost roughly double, and without this the outlier has no explanation
+            # six months later.
+            nonlocal passes
+            passes += 1
             return transcribe_words(model, ctx.work.source_audio, language=cfg.source_lang,
                                     condition_on_previous=condition_on_previous)
 
@@ -452,4 +467,11 @@ class TranscribeStage:
         ctx.work.sentences.write_text(
             json.dumps(sentences, ensure_ascii=False, indent=2), encoding="utf-8"
         )
-        print(f"       {len(flat)} words → {len(sentences)} sentences")
+        # after the artifacts are on disk: "from launch to exit" is the whole stage minus the
+        # model, and resegmentation plus these two writes are part of what an optimization
+        # would be trying to move.
+        work_s = time.perf_counter() - t0
+        runreport.record_stage_detail(ctx.work, "transcribe",
+                                      work_sec=round(work_s, 3), asr_passes=passes)
+        print(f"       {len(flat)} words → {len(sentences)} sentences  "
+              f"({work_s:.1f}s excl. model load, {passes} ASR pass(es))")

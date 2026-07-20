@@ -140,11 +140,22 @@ $sumTodo = @($ids | Where-Object {
 `summary.md` and no draft; keying on the prose alone would skip it here and leave it as a
 `не отсканировано` hole in the report — present, plausible, and silently missing its verdict.
 
-**Stamp the wave start before spawning anything** — it is the only clock the per-video
-summarize timing has, and it cannot be recovered afterwards:
+**Stamp the wave start before spawning anything** — it cannot be recovered afterwards, and it is
+what the report's wall-clock figure for the whole wave is derived from:
 
 ```powershell
 $waveStart = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+```
+
+The wave start is NOT the per-video summarize timing. It is shared by every agent in the spawn,
+so for an agent that waited behind the concurrency cap it measures the queue, not the work. The
+per-video number comes from each agent's own `scout.started` marker (see the prompt below); the
+two are different measurements and the report keeps them apart. **Delete stale markers for the
+videos about to be respawned**, or a re-run pairs a fresh draft with the previous attempt's
+marker and reports the gap between runs as summarization:
+
+```powershell
+$sumTodo | ForEach-Object { Remove-Item "work\$_\scout.started" -ErrorAction SilentlyContinue }
 ```
 
 Each sub-agent writes TWO files: `summary.md` (the ~200-word prose, unchanged — route B reuses
@@ -168,6 +179,13 @@ go back to S0; do not improvise one.
 Sub-agent prompt skeleton (fill `<id>`) — the prose half is **identical to the summarizer in the
 `overdub-sonnet-batch` skill's Step 2**; if you change that half, change it there too:
 
+> Your FIRST action, before reading anything: create the empty marker file
+> `D:\code\overdub\work\<id>\scout.started`. Its timestamp is how the pipeline measures how long
+> YOUR run took — the wave start cannot, because it is shared by every agent in the spawn and so
+> charges you for the time you spent queued behind the concurrency cap. Do not write a timestamp
+> INTO the file and do not report your own runtime anywhere: the filesystem stamps it, you only
+> touch it. If you skip this, the video simply has no per-video timing — never invent one.
+>
 > You are a triage summarizer for the overdub pipeline. Read
 > `D:\code\overdub\work\<id>\sentences.json` (list of `{id, text, start, end}` — the COMPLETE
 > English transcript, in order) and write `D:\code\overdub\work\<id>\summary.md`: a summary in

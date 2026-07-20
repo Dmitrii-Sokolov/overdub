@@ -153,29 +153,69 @@ def _ffprobe_duration(work):
 
 
 # --- public API ---------------------------------------------------------------
+def _load_timings(work):
+    """work/<id>/timings.json → the WHOLE document, or {} when absent. A torn file is reported
+    once and treated as empty, because rebuilding from {} silently drops prior stage walls
+    (understating total_wall/RTF) and that loss must stay visible."""
+    path = work.root / "timings.json"
+    doc = _load_json(path)
+    if doc is None and path.exists():
+        try:
+            if path.read_text(encoding="utf-8").strip():
+                print(f"[warn] {path.name} unreadable — prior stage timings discarded",
+                      file=sys.stderr)
+        except OSError:
+            pass
+    return path, (doc if isinstance(doc, dict) else {})
+
+
 def record_stage_timing(work, stage, wall_s) -> None:
     """Upsert ONE stage's wall-clock into work/timings.json, atomically, preserving every other
     stage's entry. Called per stage by the pipeline, so an --only or resumed run rewrites only
     the stages it actually ran; skipped stages keep their last real timing. Tolerates a
-    missing/torn file (rebuilds as {"stages": {}}). MUST NOT raise into the caller — a failed
-    timing write is a [warn], never a broken pipeline."""
+    missing/torn file. MUST NOT raise into the caller — a failed timing write is a [warn], never
+    a broken pipeline.
+
+    Writes back the WHOLE document, not {"stages": ...}. It used to replace the file with just
+    that one key, which was invisible while `stages` was the only section and silently ate
+    `detail` the moment a second one existed."""
     try:
-        path = work.root / "timings.json"
-        doc = _load_json(path)
-        if doc is None and path.exists():                   # torn/unreadable, not merely absent:
-            try:                                            # rebuilding from {} would SILENTLY drop
-                if path.read_text(encoding="utf-8").strip():   # prior stage walls (understating
-                    print(f"[warn] {path.name} unreadable — prior stage timings discarded",
-                          file=sys.stderr)                  # total_wall/RTF). Keep the loss visible.
-            except OSError:
-                pass
-        stages = doc.get("stages") if isinstance(doc, dict) else None
+        path, doc = _load_timings(work)
+        stages = doc.get("stages")
         if not isinstance(stages, dict):
             stages = {}
         stages[stage] = round(float(wall_s), 3)
-        _atomic_write_json(path, {"stages": stages})
+        doc["stages"] = stages
+        _atomic_write_json(path, doc)
     except Exception as e:                                  # noqa: BLE001 — must never propagate
         print(f"[warn] could not record timing for {stage!r}: {e}", file=sys.stderr)
+
+
+def record_stage_detail(work, stage, **fields) -> None:
+    """Upsert a stage's INNER measurements into work/timings.json → detail[<stage>].
+
+    Kept apart from `stages` because the two answer different questions and must never be summed
+    together. `stages[x]` is the pipeline's wall clock for the whole stage — model load included,
+    which is what the run's cost actually was. `detail[x]` is what the stage measured about
+    ITSELF (transcribe: decode time with the load excluded, and how many ASR passes ran), which
+    is what a before/after optimization comparison needs and what the wall clock cannot give:
+    load lands on whichever video happens to be first in the sweep.
+
+    Same never-raises contract as record_stage_timing."""
+    try:
+        path, doc = _load_timings(work)
+        detail = doc.get("detail")
+        if not isinstance(detail, dict):
+            detail = {}
+        entry = detail.get(stage)
+        if not isinstance(entry, dict):
+            entry = {}
+        entry.update(fields)
+        detail[stage] = entry
+        doc["detail"] = detail
+        _atomic_write_json(path, doc)
+    except Exception as e:                                  # noqa: BLE001 — must never propagate
+        print(f"[warn] could not record detail for {stage!r}: {e}", file=sys.stderr)
 
 
 def read_summary(work):

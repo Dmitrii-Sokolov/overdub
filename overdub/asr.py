@@ -9,6 +9,8 @@ loading — so on Windows we must register the pip nvidia wheels' bin dirs expli
 from __future__ import annotations
 
 import os
+import sys
+import time
 from pathlib import Path
 
 
@@ -26,12 +28,56 @@ def add_cuda_dll_dirs() -> None:
                 os.add_dll_directory(str(bindir))
 
 
+def _warm(model) -> None:
+    """One throwaway decode, so the first REAL video does not pay for kernel autotuning.
+
+    Constructing a WhisperModel does not touch the GPU compute path: cuDNN/cuBLAS pick and tune
+    their kernels on the first actual encode, so that cost lands inside whichever video happens
+    to be first in a sweep. It is invisible in the stage wall clock (it looks like a slow video)
+    and it makes the first row of every batch incomparable to the rest — which is exactly what a
+    before/after optimization measurement must not have.
+
+    Shaped like the real call on purpose — same beam size, same word_timestamps — because those
+    are what select the kernels being tuned; a cheaper warmup would tune the wrong ones. VAD is
+    off so the decoder cannot skip the buffer entirely and warm nothing.
+
+    NEVER RAISES. A model that loaded is usable whether or not it got warmed; failing the run
+    over an optimization aid would trade a real capability for a measurement.
+    """
+    try:
+        import numpy as np
+
+        # 1 s of near-silent noise at whisper's 16 kHz. Digital silence is a weaker warmup —
+        # the decoder can short-circuit on an all-zero buffer and tune nothing.
+        rng = np.random.default_rng(0)                      # fixed seed: warmup must not be a
+        audio = (rng.standard_normal(16_000) * 1e-3).astype("float32")   # source of run variance
+        segments, _info = model.transcribe(audio, language="en", beam_size=5,
+                                           word_timestamps=True, vad_filter=False)
+        for _ in segments:                                  # the generator is lazy — draining it
+            pass                                            # is what actually runs the decode
+    except Exception as e:                                  # noqa: BLE001 — cosmetic by contract
+        print(f"[warn] whisper warmup failed ({e}) — the first video of this sweep absorbs "
+              f"kernel autotuning and will look slower than it is", file=sys.stderr)
+
+
 def load_whisper(model: str, device: str = "cuda", compute_type: str = "float16"):
-    """Load a faster-whisper WhisperModel with the Windows DLL dirs registered first."""
+    """Load a faster-whisper WhisperModel with the Windows DLL dirs registered first, warmed.
+
+    Warming HERE rather than in the transcribe stage is deliberate: the session caches one model
+    per (name, device, compute_type) and hands it to transcribe, verify and the synthesize reseed
+    loop alike, so this is the one place that runs exactly once per load and no caller has to
+    know the concept exists."""
     add_cuda_dll_dirs()
     from faster_whisper import WhisperModel
 
-    return WhisperModel(model, device=device, compute_type=compute_type)
+    t0 = time.perf_counter()
+    m = WhisperModel(model, device=device, compute_type=compute_type)
+    load_s = time.perf_counter() - t0
+    t0 = time.perf_counter()
+    _warm(m)
+    print(f"[asr ] {model} loaded in {load_s:.1f}s, warmed in {time.perf_counter() - t0:.1f}s",
+          file=sys.stderr)
+    return m
 
 
 def roundtrip_similarity(model, wav_path, ref_norm: str, language: str) -> tuple[float, str, str]:
