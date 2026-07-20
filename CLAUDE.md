@@ -88,6 +88,12 @@ run the pipeline with `.venv-asr` python via `python -X utf8 -m overdub`.
 
 ## Reference
 
+`docs/repair-fixture.md` — the `--repair-asr` golden fixture: a reproducible real-media regression
+test built from the 6 preserved `_pre-repair-sentences.json` / `sentences.json` pairs in `work/`.
+Read it before changing anything in `overdub/repair.py`, before quoting a recall number for
+`--repair-asr auto`, or before scoring the automation against the human transcripts — the human side
+contains a known error and a deliberate override, so a perfect match is a red flag, not a win.
+
 `docs/russian-tts-guide.md` — Russian-TTS working reference (user-supplied, July 2026): model
 comparison, input preparation (punctuation, normalization, stress dictionary, chunking), Silero
 SSML surface, a listening checklist, and a symptom → first-thing-to-check table. Read it before
