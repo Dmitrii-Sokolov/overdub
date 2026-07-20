@@ -4,7 +4,7 @@ Same division of labour as build_translation.py, for the same reason: the sub-ag
 the judgement part and this script owns the deterministic rest, so the report contract never
 rides on an LLM's discipline.
 
-  sub-agent writes work/<id>/scout.draft.json  = {verdict, one_liner, paragraph}
+  sub-agent writes work/<id>/scout.draft.json  = {quality, one_liner, highlight, paragraph}
   THIS script adds, from artifacts already on disk:
     video_id          the workdir name
     title             source.info.json (the scout download persists it)
@@ -12,9 +12,9 @@ rides on an LLM's discipline.
     n_sentences       sentences.json
     timings           download / transcribe from timings.json; summarize from the draft's MTIME
 
-`verdict` is a CLOSED vocabulary (_VERDICTS). An unknown value is FATAL rather than clamped --
+`quality` is a CLOSED vocabulary (_QUALITY). An unknown value is FATAL rather than clamped --
 unlike build_translation's `src`, which clamps because a bad anomaly label must never block a
-dub. Here the verdict IS the artifact: the report sorts, colours and recommends on it, so a
+dub. Here the grade IS the artifact: the report colours and counts on it, so a
 clamped-to-"maybe" typo would silently downgrade a video the summarizer actually rated "watch".
 
 WHY THE SUMMARIZE TIMING IS TWO TIMESTAMPS AND NOT A DURATION. Sub-agents run outside this
@@ -58,15 +58,16 @@ from overdub.workdir import WorkDir, replace_retry        # noqa: E402
 # overdub-scout skill -- three copies of one list, so changing it means changing all three. Kept
 # as bare ASCII keys rather than Russian labels: the label is a PRESENTATION concern and belongs
 # in the renderer, where it can be changed without invalidating every scout.json on disk.
-_VERDICTS = ("watch", "maybe", "skip")
-
-# Second, ORTHOGONAL axis (viewer-profile.md): what the video costs to consume, not what it is
-# worth. A deep-dive that demands practice and a survey you can run while doing something else
-# compete for different resources and are not comparable on one scale -- which is why this is a
-# separate field rather than two more verdict values. REQUIRED, like the verdict: an optional
-# attention label would be omitted exactly when the summarizer was least sure, which is when it
-# matters most.
-_ATTENTION = ("focus", "background")
+# Quality of the MATERIAL -- substance, currency, delivery -- and deliberately NOT "should this
+# person watch it" (revised 2026-07-20). The previous verdict vocabulary was watch/maybe/skip,
+# judged against the viewer profile, and the first real queue came back 0 watch / 1 maybe /
+# 9 skip: a personal verdict is a decision taken FOR the reader, it collapses toward "no", and it
+# cannot be checked against anything. An assessment of the material can: two people can disagree
+# about whether to watch a well-made video, but not about whether it is well made.
+#
+# The viewer profile stays in the loop, demoted to context: it shapes WHAT gets named as the
+# interesting part and what counts as already-known, never the grade.
+_QUALITY = ("high", "medium", "low")
 
 # OPTIONAL third axis: is this a known-good author. Optional on purpose -- the trusted-author
 # list in the profile is empty today, so every video would carry the same "new" value, and a
@@ -76,7 +77,7 @@ _ATTENTION = ("focus", "background")
 _AUTHOR = ("trusted", "new")
 
 _ONE_LINER_MAX = 200        # visible cap, same discipline as runreport._SUMMARY_MAX_CHARS
-_REASON_MAX = 240           # one sentence; the scan table's widest text column
+_HIGHLIGHT_MAX = 240        # one sentence; the scan table's widest text column
 _PARAGRAPH_MAX = 1500
 
 
@@ -93,7 +94,8 @@ def _ensure_thumb(work: WorkDir, info: dict) -> None:
     carries; and a workdir built by an earlier report run already has thumb.jpg and is left
     alone.
 
-    NEVER RAISES. A missing preview is cosmetic — the row still carries verdict, reason and a
+    NEVER RAISES. A missing preview is cosmetic — the row still carries the grade, the highlight
+    and a
     link — so no failure here may cost the operator a scanned video. This is also the only
     network call in this script, and it is skipped entirely for the common case.
     """
@@ -172,17 +174,12 @@ def build(work: WorkDir, wave_start: float | None) -> dict:
         # A list here means the sub-agent reused the TRANSLATION draft shape. Saying so beats a
         # bare type error: it is the one wrong shape a route-B-trained agent actually produces.
         sys.exit(f"[FAIL] {draft_path} is not a JSON object -- expected "
-                 f"{{verdict, attention, one_liner, paragraph}}, got {type(raw).__name__}")
+                 f"{{quality, one_liner, highlight, paragraph}}, got {type(raw).__name__}")
 
-    verdict = raw.get("verdict")
-    if verdict not in _VERDICTS:
-        sys.exit(f"[FAIL] {draft_path}: verdict {verdict!r} is not one of {_VERDICTS} -- "
-                 f"a verdict is what the report sorts and colours on, so it is never guessed")
-    attention = raw.get("attention")
-    if attention not in _ATTENTION:
-        sys.exit(f"[FAIL] {draft_path}: attention {attention!r} is not one of {_ATTENTION} -- "
-                 f"the profile makes deep-attention slots the scarce resource, so a video with "
-                 f"no cost label cannot be scheduled against one")
+    quality = raw.get("quality")
+    if quality not in _QUALITY:
+        sys.exit(f"[FAIL] {draft_path}: quality {quality!r} is not one of {_QUALITY} -- "
+                 f"it is what the report colours on, so it is never guessed")
     author = raw.get("author")
     if author is not None and author not in _AUTHOR:
         # Clamped to absent, NOT fatal: unlike the two labels above, this axis is optional by
@@ -192,12 +189,13 @@ def build(work: WorkDir, wave_start: float | None) -> dict:
               f"as not assessed")
         author = None
     one_liner = _text_field(raw, "one_liner", _ONE_LINER_MAX, draft_path)
-    # WHY the verdict, kept apart from WHAT the video is (one_liner) and from the full write-up
-    # (paragraph). Separate because the scan table has to answer both questions at a glance and
-    # one field cannot: "разбор оркестрации агентов" does not say whether to watch it, and
-    # "тема в активной работе" does not say what it is about. Required for the same reason the
-    # verdict is: an unexplained verdict is one the reader has to take on faith.
-    reason = _text_field(raw, "reason", _REASON_MAX, draft_path)
+    # The most interesting/useful thing IN the video, kept apart from WHAT it is (one_liner).
+    # Replaced the old `reason` field, which justified a personal verdict: this states what the
+    # material offers and leaves the decision entirely with the reader. It also carries the
+    # "требует концентрации" note when the video needs undivided attention -- that used to be a
+    # separate enum, and on the first real queue 28 of 30 videos took the same value, so a field
+    # that never varies became a sentence that only appears when it is true.
+    highlight = _text_field(raw, "highlight", _HIGHLIGHT_MAX, draft_path)
     paragraph = _text_field(raw, "paragraph", _PARAGRAPH_MAX, draft_path)
 
     sents = _load_json(work.sentences)
@@ -253,11 +251,10 @@ def build(work: WorkDir, wave_start: float | None) -> dict:
         "duration_sec": round(dur, 1) if dur is not None else None,
         "duration_source": dur_src,
         "n_sentences": len(sents),
-        "verdict": verdict,
-        "attention": attention,
+        "quality": quality,
         "author": author,                            # None = not assessed (see _AUTHOR)
         "one_liner": one_liner,
-        "reason": reason,
+        "highlight": highlight,
         "paragraph": paragraph,
         "timings": {
             "download_sec": stage_sec("download"),
@@ -292,7 +289,7 @@ def main(argv: list[str] | None = None) -> int:
     tmp.write_text(json.dumps(doc, ensure_ascii=False, indent=2), encoding="utf-8")
     replace_retry(tmp, out)
     t = doc["timings"]
-    print(f"[scout] {out}  verdict={doc['verdict']}/{doc['attention']}  "
+    print(f"[scout] {out}  quality={doc['quality']}  "
           f"{doc['n_sentences']} sentences  "
           f"dl={t['download_sec']}s tr={t['transcribe_sec']}s")
     return 0

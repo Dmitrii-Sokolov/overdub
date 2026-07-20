@@ -40,8 +40,8 @@ import build_scout  # noqa: E402
 import scout_report  # noqa: E402
 from overdub.workdir import WorkDir  # noqa: E402
 
-_DRAFT = {"verdict": "watch", "attention": "focus", "one_liner": "Однофразовое описание.",
-          "reason": "Тема в активной работе, автор с позицией.",
+_DRAFT = {"quality": "high", "one_liner": "Однофразовое описание.",
+          "highlight": "Замеры с описанной методологией и случаи, где схема ломается.",
           "paragraph": "Развёрнутый абзац о том, что разобрано в видео."}
 
 
@@ -97,7 +97,7 @@ def test_valid_draft_merges_artifacts() -> None:
     with tempfile.TemporaryDirectory() as d:
         w = _workdir(Path(d), "vid00000001", draft=_DRAFT)
         doc = _build(w)
-    assert doc["verdict"] == "watch"
+    assert doc["quality"] == "high"
     assert doc["video_id"] == "vid00000001"
     assert doc["duration_sec"] == 734 and doc["duration_source"] == "info_json"
     assert doc["n_sentences"] == 2
@@ -105,34 +105,29 @@ def test_valid_draft_merges_artifacts() -> None:
     assert doc["timings"]["transcribe_sec"] == 88.1
 
 
-def test_unknown_verdict_is_fatal() -> None:
-    # Clamping to "maybe" would silently downgrade a video the summarizer rated "watch".
-    with tempfile.TemporaryDirectory() as d:
-        w = _workdir(Path(d), "vid00000001", draft={**_DRAFT, "verdict": "смотреть"})
-        try:
-            _build(w)
-        except SystemExit as e:
-            assert "verdict" in str(e.code)
-        else:
-            raise AssertionError("an unknown verdict must exit, never be clamped")
-
-
-def test_missing_or_unknown_attention_is_fatal() -> None:
-    # The cost axis is REQUIRED: the profile schedules against deep-attention slots, so a video
-    # with no cost label cannot be placed. An optional field would go missing exactly when the
-    # summarizer was least sure — which is when it matters most.
-    for bad in (None, "deep", ""):
-        draft = {k: v for k, v in _DRAFT.items() if k != "attention"}
+def test_unknown_quality_is_fatal() -> None:
+    # Clamping to "medium" would silently downgrade a video the summarizer rated "high".
+    for bad in (None, "отличное", ""):
+        draft = {k: v for k, v in _DRAFT.items() if k != "quality"}
         if bad is not None:
-            draft["attention"] = bad
+            draft["quality"] = bad
         with tempfile.TemporaryDirectory() as d:
             w = _workdir(Path(d), "vid00000001", draft=draft)
             try:
                 _build(w)
             except SystemExit as e:
-                assert "attention" in str(e.code)
+                assert "quality" in str(e.code)
             else:
-                raise AssertionError(f"attention={bad!r} must exit")
+                raise AssertionError(f"quality={bad!r} must exit, never be clamped")
+
+
+def test_the_grade_is_about_the_material_not_the_reader() -> None:
+    # Renamed axis, and the rename is the point: the first real queue came back 0 watch /
+    # 1 maybe / 9 skip under a personal verdict. Two people can disagree about whether to watch
+    # a well-made video; they cannot disagree about whether it is well made.
+    assert build_scout._QUALITY == ("high", "medium", "low")
+    assert not hasattr(build_scout, "_VERDICTS")
+    assert not hasattr(build_scout, "_ATTENTION")      # cost axis folded into the highlight text
 
 
 def test_author_is_optional_and_a_bad_value_is_clamped_not_fatal() -> None:
@@ -226,8 +221,8 @@ def test_missing_sentences_is_fatal() -> None:
 
 
 # --- scout_report: order, completeness, escaping -------------------------------
-def _scouted(root: Path, vid: str, verdict: str, **kw) -> None:
-    w = _workdir(root, vid, draft={**_DRAFT, "verdict": verdict, **kw})
+def _scouted(root: Path, vid: str, quality: str, **kw) -> None:
+    w = _workdir(root, vid, draft={**_DRAFT, "quality": quality, **kw})
     (root / vid / "scout.json").write_text(
         json.dumps(_build(w), ensure_ascii=False), encoding="utf-8")
 
@@ -236,8 +231,8 @@ def test_rows_follow_the_queue_not_the_verdict() -> None:
     # The whole point: "skip" first in the queue stays first on the page.
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
-        _scouted(root, "vid00000001", "skip", one_liner="Первое в очереди.")
-        _scouted(root, "vid00000002", "watch", one_liner="Второе в очереди.")
+        _scouted(root, "vid00000001", "low", one_liner="Первое в очереди.")
+        _scouted(root, "vid00000002", "high", one_liner="Второе в очереди.")
         q = _queue(root, ["vid00000001", "vid00000002"])
         out = root / "r.html"
         code, _ = _report(["--queue", str(q), "--config", str(_cfg(root)), "--out", str(out)])
@@ -251,7 +246,7 @@ def test_rows_follow_the_queue_not_the_verdict() -> None:
 def test_a_queued_video_without_scout_json_still_gets_a_row() -> None:
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
-        _scouted(root, "vid00000001", "watch")
+        _scouted(root, "vid00000001", "high")
         q = _queue(root, ["vid00000001", "vid00000002"])
         out = root / "r.html"
         code, log = _report(["--queue", str(q), "--config", str(_cfg(root)), "--out", str(out)])
@@ -267,7 +262,7 @@ def test_three_unfinished_states_are_told_apart() -> None:
     # Collapsing them sends the operator to the wrong one.
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
-        _scouted(root, "vid00000001", "watch")                   # complete
+        _scouted(root, "vid00000001", "high")                   # complete
         _workdir(root, "vid00000002", draft=None)                # sentences, no scout.json
         (root / "vid00000003" / "segments").mkdir(parents=True)   # audio only, no transcript
         (root / "vid00000003" / "source.wav").write_bytes(b"RIFF")
@@ -299,9 +294,9 @@ def test_numbering_follows_the_queue_and_survives_a_gap() -> None:
     # to download must KEEP its position rather than being renumbered around.
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
-        _scouted(root, "vid00000001", "watch")
+        _scouted(root, "vid00000001", "high")
         # vid00000002 missing entirely
-        _scouted(root, "vid00000003", "skip")
+        _scouted(root, "vid00000003", "low")
         q = _queue(root, ["vid00000001", "vid00000002", "vid00000003"])
         out = root / "r.html"
         _report(["--queue", str(q), "--config", str(_cfg(root)), "--out", str(out)])
@@ -313,8 +308,8 @@ def test_numbering_follows_the_queue_and_survives_a_gap() -> None:
 def test_queue_runtime_is_reported_and_build_time_is_not() -> None:
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
-        _scouted(root, "vid00000001", "watch")                    # duration 734 from info.json
-        _scouted(root, "vid00000002", "skip")
+        _scouted(root, "vid00000001", "high")                    # duration 734 from info.json
+        _scouted(root, "vid00000002", "low")
         q = _queue(root, ["vid00000001", "vid00000002"])
         out = root / "r.html"
         _report(["--queue", str(q), "--config", str(_cfg(root)), "--out", str(out)])
@@ -327,7 +322,7 @@ def test_queue_runtime_is_reported_and_build_time_is_not() -> None:
 def test_queue_runtime_marks_itself_a_floor_when_a_row_has_no_duration() -> None:
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
-        _scouted(root, "vid00000001", "watch")
+        _scouted(root, "vid00000001", "high")
         q = _queue(root, ["vid00000001", "vid00000002"])           # second never scanned
         out = root / "r.html"
         _report(["--queue", str(q), "--config", str(_cfg(root)), "--out", str(out)])
@@ -340,29 +335,29 @@ def test_reason_is_required_and_distinct_from_the_description() -> None:
     # and the scan table asks both at a glance.
     with tempfile.TemporaryDirectory() as d:
         w = _workdir(Path(d), "vid00000001",
-                     draft={k: v for k, v in _DRAFT.items() if k != "reason"})
+                     draft={k: v for k, v in _DRAFT.items() if k != "highlight"})
         try:
             _build(w)
         except SystemExit as e:
-            assert "reason" in str(e.code)
+            assert "highlight" in str(e.code)
         else:
             raise AssertionError("a missing reason must exit")
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
-        _scouted(root, "vid00000001", "watch")
+        _scouted(root, "vid00000001", "high")
         q = _queue(root, ["vid00000001"])
         out = root / "r.html"
         _report(["--queue", str(q), "--config", str(_cfg(root)), "--out", str(out)])
         page = out.read_text(encoding="utf-8")
-    assert page.count("Тема в активной работе, автор с позицией.") == 2   # table + card
+    assert page.count(_DRAFT["highlight"]) == 2                           # table + card
     assert "Однофразовое описание." in page                               # still its own field
-    assert "<th>Почему</th>" in page
+    assert "<th>Самое интересное</th>" in page
 
 
 def test_title_links_to_the_video_in_both_lists() -> None:
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
-        _scouted(root, "vid00000001", "watch")
+        _scouted(root, "vid00000001", "high")
         q = _queue(root, ["vid00000001"])
         out = root / "r.html"
         _report(["--queue", str(q), "--config", str(_cfg(root)), "--out", str(out)])
@@ -385,21 +380,21 @@ def test_an_unscanned_row_still_links_to_its_video() -> None:
 def test_the_two_lists_link_to_each_other() -> None:
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
-        _scouted(root, "vid00000001", "watch")
-        _scouted(root, "vid00000002", "skip")
+        _scouted(root, "vid00000001", "high")
+        _scouted(root, "vid00000002", "low")
         q = _queue(root, ["vid00000001", "vid00000002"])
         out = root / "r.html"
         _report(["--queue", str(q), "--config", str(_cfg(root)), "--out", str(out)])
         page = out.read_text(encoding="utf-8")
     for n in (1, 2):
-        assert f'<tr id="r{n}">' in page and f'href="#v{n}"' in page      # row → card
+        assert f'<tr id="r{n}"' in page and f'href="#v{n}"' in page       # row → card
         assert f'id="v{n}"' in page and f'href="#r{n}"' in page           # card → row
 
 
 def test_playlist_header_is_named_and_linked() -> None:
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
-        _scouted(root, "vid00000001", "watch")
+        _scouted(root, "vid00000001", "high")
         q = root / "queue.txt"
         q.write_text("# playlist: AI Fluency | https://youtube.com/playlist?list=PL123\n"
                      "https://www.youtube.com/watch?v=vid00000001\n", encoding="utf-8")
@@ -414,7 +409,7 @@ def test_playlist_header_is_optional_and_backward_compatible() -> None:
     # Every queue written before the header existed must keep working, header or not.
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
-        _scouted(root, "vid00000001", "watch")
+        _scouted(root, "vid00000001", "high")
         q = _queue(root, ["vid00000001"])                     # no header at all
         out = root / "r.html"
         code, _ = _report(["--queue", str(q), "--config", str(_cfg(root)), "--out", str(out)])
@@ -445,7 +440,7 @@ def test_thumbnail_is_inlined_not_linked() -> None:
     # meant to be read.
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
-        _scouted(root, "vid00000001", "watch")
+        _scouted(root, "vid00000001", "high")
         (root / "vid00000001" / "thumb.jpg").write_bytes(b"\xff\xd8\xff\xdb-fake-jpeg")
         q = _queue(root, ["vid00000001"])
         out = root / "r.html"
@@ -458,7 +453,7 @@ def test_thumbnail_is_inlined_not_linked() -> None:
 def test_a_missing_thumbnail_renders_nothing_at_all() -> None:
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
-        _scouted(root, "vid00000001", "watch")                 # no thumb.jpg written
+        _scouted(root, "vid00000001", "high")                 # no thumb.jpg written
         q = _queue(root, ["vid00000001"])
         out = root / "r.html"
         code, _ = _report(["--queue", str(q), "--config", str(_cfg(root)), "--out", str(out)])
@@ -467,19 +462,21 @@ def test_a_missing_thumbnail_renders_nothing_at_all() -> None:
     assert "<img" not in page and "base64" not in page
 
 
-def test_verdict_cost_and_runtime_share_one_cell_and_carry_the_jump() -> None:
+def test_the_row_is_five_cells_and_the_jump_sits_on_the_description() -> None:
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
-        _scouted(root, "vid00000001", "watch", attention="focus")
+        _scouted(root, "vid00000001", "high")
         q = _queue(root, ["vid00000001"])
         out = root / "r.html"
         _report(["--queue", str(q), "--config", str(_cfg(root)), "--out", str(out)])
         page = out.read_text(encoding="utf-8")
-    row = page[page.index('<tr id="r1">'):page.index("</tr>", page.index('<tr id="r1">'))]
-    assert 'href="#v1"' in row                                  # the jump moved onto the block
-    for txt in ("точно смотреть", "концентрация", "12:14"):
-        assert txt in row
-    assert row.count("<td") == 5                                # idx, meta, name, о чём, почему
+    start = page.index('<tr id="r1"')
+    row = page[start:page.index("</tr>", start)]
+    assert row.count("<td") == 5                     # №, превью, название, о чём, самое интересное
+    # the jump rides the description — the cell the reader is already reading when they want more
+    assert '<td class="line"><a class="jump" href="#v1"' in row
+    assert "высокое" in row                          # grade as a chip under the title
+    assert 'class="num dur">12:14' in row            # runtime at the end of the highlight cell
 
 
 def test_the_video_id_column_is_gone_from_both_lists() -> None:
@@ -500,7 +497,7 @@ def test_the_video_id_column_is_gone_from_both_lists() -> None:
 def test_every_verdict_gets_its_own_colour_class() -> None:
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
-        for i, v in enumerate(("watch", "maybe", "skip"), 1):
+        for i, v in enumerate(("high", "medium", "low"), 1):
             _scouted(root, f"vid0000000{i}", v)
         q = _queue(root, ["vid00000001", "vid00000002", "vid00000003"])
         out = root / "r.html"
@@ -510,26 +507,27 @@ def test_every_verdict_gets_its_own_colour_class() -> None:
         assert f'chip {cls}' in page and f'card {cls}' in page
 
 
-def test_attention_renders_as_a_quiet_tag_in_both_lists() -> None:
+def test_the_grade_also_stripes_the_row() -> None:
+    # Colour without spending a column on one short word: the chip names the grade, the stripe
+    # makes the table scannable at 30 rows.
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
-        _scouted(root, "vid00000001", "watch", attention="focus")
-        _scouted(root, "vid00000002", "maybe", attention="background")
+        _scouted(root, "vid00000001", "high")
+        _scouted(root, "vid00000002", "low")
         q = _queue(root, ["vid00000001", "vid00000002"])
         out = root / "r.html"
         _report(["--queue", str(q), "--config", str(_cfg(root)), "--out", str(out)])
         page = out.read_text(encoding="utf-8")
-    assert page.count("концентрация") == 2 and page.count("фоновое") == 2   # table + card
-    assert "tag a-focus" in page
-    # the cost axis must not borrow the verdict's colour classes — one coloured scale per page
-    assert "tag v-watch" not in page
+    assert '<tr id="r1" class="v-watch">' in page
+    assert '<tr id="r2" class="v-skip">' in page
+    assert "tbody tr.v-watch{border-left-color" in page
 
 
 def test_trusted_author_marker_only_when_assessed() -> None:
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
-        _scouted(root, "vid00000001", "watch")                      # no author key
-        _scouted(root, "vid00000002", "watch", author="trusted")
+        _scouted(root, "vid00000001", "high")                      # no author key
+        _scouted(root, "vid00000002", "high", author="trusted")
         q = _queue(root, ["vid00000001", "vid00000002"])
         out = root / "r.html"
         _report(["--queue", str(q), "--config", str(_cfg(root)), "--out", str(out)])
@@ -550,21 +548,21 @@ def test_unscanned_row_carries_no_cost_label() -> None:
     assert "концентрация" not in page and "фоновое" not in page
 
 
-def test_a_scout_json_without_the_cost_axis_still_renders() -> None:
+def test_a_scout_json_without_the_highlight_still_renders() -> None:
     # Forward-compat in the renderer only: build_scout REQUIRES the field from now on, but a
     # report must never crash on an artifact written by an older build.
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
         w = _workdir(root, "vid00000001", draft=_DRAFT)
         doc = _build(w)
-        doc.pop("attention")
+        doc.pop("highlight")
         (root / "vid00000001" / "scout.json").write_text(
             json.dumps(doc, ensure_ascii=False), encoding="utf-8")
         q = _queue(root, ["vid00000001"])
         out = root / "r.html"
         code, _ = _report(["--queue", str(q), "--config", str(_cfg(root)), "--out", str(out)])
         page = out.read_text(encoding="utf-8")
-    assert code == 0 and "точно смотреть" in page
+    assert code == 0 and "высокое" in page
 
 
 def test_prose_and_title_are_escaped() -> None:
@@ -588,7 +586,7 @@ def test_page_is_a_body_fragment_for_the_artifact_publisher() -> None:
     # The publisher supplies doctype/head/body; emitting our own would nest documents.
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
-        _scouted(root, "vid00000001", "watch")
+        _scouted(root, "vid00000001", "high")
         q = _queue(root, ["vid00000001"])
         out = root / "r.html"
         _report(["--queue", str(q), "--config", str(_cfg(root)), "--out", str(out)])
@@ -602,7 +600,7 @@ def test_page_is_a_body_fragment_for_the_artifact_publisher() -> None:
 def test_both_themes_are_defined() -> None:
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
-        _scouted(root, "vid00000001", "watch")
+        _scouted(root, "vid00000001", "high")
         q = _queue(root, ["vid00000001"])
         out = root / "r.html"
         _report(["--queue", str(q), "--config", str(_cfg(root)), "--out", str(out)])

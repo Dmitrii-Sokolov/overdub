@@ -50,9 +50,9 @@ _YT_ID = re.compile(r"(?:v=|/shorts/|youtu\.be/|/embed/)([A-Za-z0-9_-]{11})")
 # not in scout.json on purpose: relabelling is a rendering change and must not invalidate every
 # artifact on disk. `rank` orders the SUMMARY counts only -- never the lists themselves.
 _VERDICT = {
-    "watch": {"label": "точно смотреть", "cls": "v-watch", "rank": 0},
-    "maybe": {"label": "сомнительно", "cls": "v-maybe", "rank": 1},
-    "skip":  {"label": "точно не смотреть", "cls": "v-skip", "rank": 2},
+    "high":   {"label": "высокое", "cls": "v-watch", "rank": 0},
+    "medium": {"label": "среднее", "cls": "v-maybe", "rank": 1},
+    "low":    {"label": "слабое", "cls": "v-skip", "rank": 2},
 }
 # A queued video with no scout.json is not one state but three, told apart by which artifact is
 # missing. They need different actions from the operator, and collapsing them into one row hides
@@ -68,13 +68,11 @@ _MISSING = {"label": "не отсканировано", "cls": "v-none", "rank":
             "why": "транскрипт есть, оценки нет — суммаризатор (S2) для этого видео не "
                    "отработал; перезапусти его и пересобери отчёт"}
 
-# The cost axis, rendered as a QUIET outline chip next to the verdict. Deliberately not colour-
-# coded: the verdict owns the page's colour, and a second coloured scale would compete with it
-# for the same glance. Neither value is "worse" than the other -- they are different budgets.
-_ATTENTION = {
-    "focus": {"label": "концентрация", "cls": "a-focus"},
-    "background": {"label": "фоновое", "cls": "a-bg"},
-}
+# The cost axis USED to live here as focus/background. Dropped 2026-07-20: on the first real
+# queue 28 of 30 videos took the same value, and a field that never varies is a column that
+# trains the reader to ignore it. "Требует концентрации" is now a clause the summarizer writes
+# into the highlight, so it appears only when it is true.
+#
 # Shown ONLY for a trusted author: a marker on every row would be a column of one value while
 # the profile's trusted list is empty (build_scout._AUTHOR).
 _TRUSTED = {"label": "доверенный автор", "cls": "a-trust"}
@@ -224,10 +222,17 @@ _CSS = """
 /* the queue's source, above the counts */
 .sr .src{margin:0;font-size:1.02rem;font-weight:560;}
 
-/* verdict + cost + runtime as one stacked block, and the row's jump target */
-.sr td.meta{width:1%;}
-.sr .meta a.jump{display:flex;flex-direction:column;align-items:flex-start;gap:4px;}
-.sr .metaline{display:block;}
+/* the grade as a stripe down the row: colour without spending a column on one short word */
+.sr tbody tr{border-left:3px solid transparent;}
+.sr tbody tr.v-watch{border-left-color:var(--watch);}
+.sr tbody tr.v-maybe{border-left-color:var(--maybe);}
+.sr tbody tr.v-skip{border-left-color:var(--skip);}
+.sr td.pic{width:1%;padding-right:0;}
+.sr td.name .chip{margin-top:6px;}
+.sr .dur{display:block;margin-top:6px;}
+/* the description carries the jump, so it must read as text, not as a link */
+.sr td.line a.jump{color:inherit;font-family:inherit;}
+.sr td.line a.jump:hover{color:var(--accent);}
 
 /* preview: fixed box so a missing one never shifts the column */
 .sr .thumb{display:block;width:160px;height:auto;border-radius:4px;margin-bottom:6px;
@@ -263,6 +268,9 @@ _CSS = """
 .sr .cardhead .name{font-size:1.04rem;}
 .sr .card p{font-family:var(--read);font-size:1rem;line-height:1.68;margin:0;
   max-width:66ch;color:var(--ink);}
+/* the summarizer splits by meaning; without a visible gap that split does nothing for the
+   reader, which is what it looked like on the first real report */
+.sr .card p + p{margin-top:1.1em;}
 .sr .foot{margin-top:40px;padding-top:14px;border-top:1px solid var(--line);
   color:var(--dim);font-size:.82rem;}
 </style>
@@ -272,33 +280,26 @@ _CSS = """
 def _row(e: dict) -> str:
     """One scan-table row. Everything that came from an LLM or a video title is escaped -- same
     rule as triage_html: raw prose into HTML is the one place a report can break itself."""
-    # Verdict, cost and runtime are three short values that used to eat three columns and
-    # squeeze the two prose columns that carry the actual content. Stacked into one cell they
-    # read as a block and give the width back. The whole block is the jump link into the
-    # write-up — a bigger, more obvious target than the bare number it replaced.
+    # The grade is a STRIPE on the row plus a chip under the title, not a column of its own: it
+    # is one short word, and giving it a column cost width that the two prose columns needed.
+    # The runtime rides at the end of the highlight for the same reason.
+    v = e["v"]
+    trusted = ('<span class="tag a-trust">' + html.escape(_TRUSTED["label"]) + "</span>"
+               if e.get("author") == "trusted" else "")
     return (
-        f'<tr id="r{e["n"]}">'
+        f'<tr id="r{e["n"]}" class="{v["cls"]}">'
         f'<td class="idx">{e["n"]}</td>'
-        f'<td class="meta"><a class="jump" href="#v{e["n"]}" '
-        f'title="подробнее">{_meta_block(e)}</a></td>'
-        f'<td class="name">{_thumb_img(e)}{_title_link(e)}</td>'
-        f'<td class="line">{html.escape(e["one_liner"])}</td>'
-        f'<td class="why">{html.escape(e["reason"])}</td>'
+        f'<td class="pic">{_thumb_img(e)}</td>'
+        f'<td class="name">{_title_link(e)}'
+        f'<span class="chip {v["cls"]}">{html.escape(v["label"])}</span>{trusted}</td>'
+        # the jump lives on the description — the cell the reader is already looking at when
+        # they decide they want more, and a wider target than the number it replaced
+        f'<td class="line"><a class="jump" href="#v{e["n"]}" title="подробнее">'
+        f'{html.escape(e["one_liner"])}</a></td>'
+        f'<td class="why">{html.escape(e["highlight"])}'
+        f'<span class="num dur">{clock(e["duration"])}</span></td>'
         "</tr>"
     )
-
-
-def _meta_block(e: dict) -> str:
-    """Verdict / attention / runtime as three stacked lines."""
-    v = e["v"]
-    a = _ATTENTION.get(e.get("attention"))
-    out = [f'<span class="chip {v["cls"]}">{html.escape(v["label"])}</span>']
-    if a:
-        out.append(f'<span class="tag {a["cls"]}">{html.escape(a["label"])}</span>')
-    if e.get("author") == "trusted":
-        out.append(f'<span class="tag {_TRUSTED["cls"]}">{html.escape(_TRUSTED["label"])}</span>')
-    out.append(f'<span class="num">{clock(e["duration"])}</span>')
-    return "".join(f"<span class=\"metaline\">{x}</span>" for x in out)
 
 
 def _thumb_img(e: dict) -> str:
@@ -323,18 +324,6 @@ def _title_link(e: dict) -> str:
             f'{html.escape(e["title"])}</a>')
 
 
-def _tags(e: dict) -> str:
-    """The cost axis, plus the trusted-author marker when there is one. An unscanned row has
-    neither — showing a cost for a video nobody assessed would invent the one number the
-    operator schedules against."""
-    out = []
-    a = _ATTENTION.get(e.get("attention"))
-    if a:
-        out.append(f'<span class="tag {a["cls"]}">{html.escape(a["label"])}</span>')
-    if e.get("author") == "trusted":
-        out.append(f'<span class="tag {_TRUSTED["cls"]}">{html.escape(_TRUSTED["label"])}</span>')
-    return " ".join(out)
-
 
 def _card(e: dict) -> str:
     v = e["v"]
@@ -345,11 +334,14 @@ def _card(e: dict) -> str:
         f'{_thumb_img(e)}'
         f'<span class="name">{_title_link(e)}</span>'
         f'<span class="chip {v["cls"]}">{html.escape(v["label"])}</span>'
-        f'{_tags(e)}'
+        # same markers the table row carries: two lists that show different signals for one
+        # video make the reader wonder which of them is out of date
+        + ('<span class="tag a-trust">' + html.escape(_TRUSTED["label"]) + "</span>"
+           if e.get("author") == "trusted" else "") +
         f'<span class="num">{clock(e["duration"])}</span></div>'
-        # the verdict's justification leads, before the description: the reader arrived here
-        # from a chip and the first thing they owe is why that chip says what it says
-        f'<p class="why">{html.escape(e["reason"])}</p>'
+        # what the video actually offers leads, before the description: it is the reason the
+        # reader followed the link here
+        f'<p class="why">{html.escape(e["highlight"])}</p>'
         f'{_paragraphs(e["paragraph"])}'
         "</article>"
     )
@@ -413,9 +405,9 @@ def render(entries: list[dict], totals: dict, queue_name: str, stamp: str,
     out.append('<section class="sec"><div class="sechead"><h2>Список</h2>'
                '<p class="sub">В порядке очереди — так же, как в плейлисте.</p></div>')
     out.append('<div class="wrap"><table><thead><tr>'
-               # the number column keeps its width but loses its label: "№" over a column of
-               # numbers says nothing the numbers do not
-               "<th></th><th></th><th>Название</th><th>О чём</th><th>Почему</th>"
+               # the number and preview columns carry no label: "№" over a column of numbers,
+               # and a word over a column of images, say nothing the contents do not
+               "<th></th><th></th><th>Название</th><th>О чём</th><th>Самое интересное</th>"
                "</tr></thead><tbody>")
     out.extend(_row(e) for e in entries)
     out.append("</tbody></table></div></section>")
@@ -449,7 +441,7 @@ def collect(ids: list[str], work_root: Path) -> list[dict]:
     # — a report that renumbers around gaps stops matching the thing it is read against.
     for n, vid in enumerate(ids, 1):
         doc = _load_json(work_root / vid / "scout.json")
-        if not isinstance(doc, dict) or doc.get("verdict") not in _VERDICT:
+        if not isinstance(doc, dict) or doc.get("quality") not in _VERDICT:
             d = work_root / vid
             # Strongest evidence first: a transcript proves the download happened, whatever the
             # media looks like now (a promotion rewrites source.wav; a cleanup can delete it).
@@ -468,17 +460,16 @@ def collect(ids: list[str], work_root: Path) -> list[dict]:
             title = info.get("title") if isinstance(info, dict) else None
             entries.append({
                 "n": n, "vid": vid, "v": state, "title": title or vid, "duration": None,
-                "one_liner": "—", "reason": state["why"], "paragraph": state["why"],
+                "one_liner": "—", "highlight": state["why"], "paragraph": state["why"],
                 "timings": {},
             })
             continue
         entries.append({
             "n": n,
             "vid": doc.get("video_id") or vid,
-            "v": _VERDICT[doc["verdict"]],
+            "v": _VERDICT[doc["quality"]],
             # tolerated as absent: a scout.json written before the cost axis existed still
             # renders, it just carries no tag (build_scout requires the field going forward)
-            "attention": doc.get("attention"),
             "author": doc.get("author"),
             "thumb_b64": _thumb_b64(work_root / vid / "thumb.jpg"),
             "title": doc.get("title") or vid,
@@ -486,7 +477,7 @@ def collect(ids: list[str], work_root: Path) -> list[dict]:
             "one_liner": doc.get("one_liner") or "",
             # tolerated as absent so a scout.json written before this field existed still
             # renders; build_scout requires it going forward
-            "reason": doc.get("reason") or "—",
+            "highlight": doc.get("highlight") or "—",
             "paragraph": doc.get("paragraph") or "",
             "timings": doc.get("timings") if isinstance(doc.get("timings"), dict) else {},
             "wave": doc.get("wave") if isinstance(doc.get("wave"), dict) else None,
