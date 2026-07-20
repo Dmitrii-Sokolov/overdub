@@ -78,6 +78,9 @@ class WorkDir:
     def summary(self) -> Path: return self.root / "summary.md"            # sonnet seam (informational, PLAN item 3)
 
     @property
+    def thumb(self) -> Path: return self.root / "thumb.jpg"               # scout report: 160px preview, data-URI'd into the page
+
+    @property
     def translation(self) -> Path: return self.root / "translation.json"  # translate (final)
 
     @property
