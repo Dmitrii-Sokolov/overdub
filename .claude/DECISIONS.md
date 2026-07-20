@@ -29,8 +29,8 @@ context than the full file, so window re-ASR is not uniformly an improvement —
 buys freedom from the repetition loop (`condition_on_previous_text` has no prior to loop on) and
 pays in whatever the surrounding minutes were disambiguating. Proper nouns are the first thing to
 go, and it failed on exactly the brand name the single sanctioned human override of 2026-07-19
-exists to protect. Second instance the same run: `DmgujoZ1mmk` id 32, clean before the repair
-(`you want it to use`), wrong after (`you wanted to use`), also pulled in only by widening.
+exists to protect. ~~Second instance the same run: `DmgujoZ1mmk` id 32~~ — **RETRACTED, see the ear
+check below: that one was the automation being RIGHT.**
 
 **This does not retract the 2026-07-19 gate — it bounds it.** `readings_agree` proves STABILITY,
 never correctness; that was always in the docstring. What the fixture adds is that the scope of the
@@ -62,6 +62,51 @@ construction.
 which paid a fresh large-v3 load per invocation. The automation loads the model once per sweep:
 10 readings in 25.7 s wall, ~2.6 s each — **20× cheaper than documented**. Any argument that leans
 on repair being expensive (including "don't always dry-run first") is now void.
+
+### Ear check, same day — one finding inverted, one confirmed, and the golden fixture demoted
+
+Three windows listened to against `work/<id>/source.wav`. The result changes the scoreboard, and
+in one case reverses it.
+
+| window | what the ear says | verdict |
+|---|---|---|
+| `DmgujoZ1mmk` @ 2:42.90 | the speaker really says **`you wanted to use`** | **automation RIGHT, human golden WRONG** |
+| `2YCaBqP8muw` @ 4:08.43 | **`Claude` is spoken clearly** | regression CONFIRMED, and the worse variant |
+| `2YCaBqP8muw` @ 2:00.87 | a very short pause, no word clipped | pad safe, but running at the edge |
+
+**The retraction matters more than the confirmation.** The `DmgujoZ1mmk` case was recorded above,
+and adjudicated by an independent reviewer, as collateral damage — a clean sentence degraded by
+widening. It was the opposite: the windowed re-ASR **corrected an error the human made** during the
+manual repair. So:
+
+- **Widening is not purely a liability.** It rewrites unflagged neighbours, and at least once that
+  rewrite was an improvement. The `[warn] collateral edit` line is correctly framed as *look at
+  this*, not as *this is damage* — do not "fix" it into a rejection.
+- **The golden fixture's ground truth is a human's manual work, and it contains at least one
+  error.** "Differs from the human" is therefore not a synonym for "wrong", and the 5-of-12 recall
+  figure inherits that softness. This is the second independent reason to distrust the fixture's
+  provenance (see below) — treat it as a strong signal, never as an oracle.
+- Net over the 5 derived windows: **one confirmed regression, one confirmed improvement**, the rest
+  matching or benign. The alarm in this entry's opening stands as a description of the FAILURE MODE,
+  not of the hit rate.
+
+**The confirmed regression is the bad kind.** `Claude` is enunciated clearly, and the clipped window
+still mis-heard it while both readings agreed. So this is not "hard audio decoded differently" — it
+is context loss on clean speech, exactly as the trade above predicts.
+
+**Targeted fix now motivated by evidence, not theory.** `faster_whisper.WhisperModel.transcribe`
+(1.2.1, verified installed) accepts `hotwords` and `initial_prompt`. Seeding the window call with
+proper nouns harvested from the surrounding transcript would restore the lexical context the clip
+threw away. Crucially this is NOT a re-run of the thing we disabled: `condition_on_previous_text`
+loops because it feeds the model's OWN rolling output back to it, whereas a fixed hotword list adds
+no autoregressive path. Cheap, and it attacks the measured failure directly. Not built — roadmap.
+
+**The pad is safe but has no margin.** At 2:00.87 the inter-sentence pause is short, and
+`CLIP_PAD_SEC = 0.25` consumes essentially all of it. No word is clipped — `clip_span` clamps t0 to
+the previous sentence's end, so a shorter gap simply yields a smaller shift — but note the
+downstream consequence: the repaired unit gains 0.25 s and the PRECEDING unit loses that much
+inter-unit pause in `assemble`, i.e. a marginally higher `atempo` on one segment. Benign today;
+worth remembering if the pad is ever raised.
 
 **Fixture provenance — two discrepancies, unresolved, flagged rather than smoothed.** This file
 records `RyvXxApfHkk#11` at 246 ch/s; the preserved backup measures 35.9, which is below the 39.36

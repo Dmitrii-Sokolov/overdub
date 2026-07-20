@@ -34,23 +34,19 @@ offline resume of 12 videos can sit in up to 6 minutes of timeouts in one block 
      pre-existing tests passed under that mutation**, so this was genuinely uncovered ground.
      Lesson: "needs a real run" was an assumption, not a finding. Check what the code actually
      touches before booking GPU time.
-  b. **Listen to a repaired window — the only check still open, and no automation replaces it.**
-     DECISIONS 2026-07-20: window re-ASR is a trade, and it regressed `Claude` → `Cloud` with both
-     readings agreeing. Timestamps below are ABSOLUTE against `work/<id>/source.wav`, which is the
-     same audio the fixture ran on, so these survive any scratch cleanup:
-       - **`DmgujoZ1mmk` @ 2:42.90** — highest value. id32 was CLEAN before the repair and was
-         pulled in only by widening to the 8 s minimum: `you want it to use` → `you wanted to use`.
-         This is the collateral-damage class, the one that threatens the feature most.
-       - **`2YCaBqP8muw` @ 4:08.43** — the `Claude` → `Cloud` regression. The question the ear
-         answers is not which word is right (text already settles that) but whether the speaker
-         says it CLEARLY. Clear speech mis-heard is the worse finding.
-       - **`2YCaBqP8muw` @ 2:00.87** — boundary case: repaired sentences start exactly
-         `CLIP_PAD_SEC` (0.25 s) early. Code guarantees that span is silence; the ear checks it is
-         not a clipped word.
-     The two windows that reproduced the human result byte-for-byte (`W5cga7xipRI` 22-24,
-     `ytEN_iAk09c` 6-8) need no listen. Separately, after any `repair → resume`: the automation
-     merged two sentences where the human kept two, so that unit's TTS boundary and `atempo`
-     changed — that check rides along with the next ordinary batch.
+  b. ~~Listen to a repaired window~~ **DONE 2026-07-20 — and it inverted one of the two findings.**
+     Full record in DECISIONS 2026-07-20 "Ear check". Short version: at `DmgujoZ1mmk` 2:42.90 the
+     speaker really does say `you wanted to use`, so the automation CORRECTED an error the human
+     made — that case is retracted as collateral damage and re-filed as an improvement. At
+     `2YCaBqP8muw` 4:08.43 `Claude` is spoken clearly and the window still mis-heard it: the
+     regression is confirmed, and confirmed in its worse form (context loss on clean speech, not
+     hard audio). At 2:00.87 no word is clipped, but the 0.25 s pad consumes essentially the whole
+     inter-sentence pause. **Consequences: the golden fixture is a strong signal, not an oracle —
+     its ground truth contains at least one human error, so "differs from the human" ≠ "wrong", and
+     the 5/12 recall figure is softer than it reads. And widening is not purely a liability: keep
+     the collateral warning as "look at this", never turn it into a rejection.**
+     Still riding along with the next ordinary batch (not a gate): the automation merged two
+     sentences where the human kept two, so that unit's TTS boundary and `atempo` changed.
   c. ~~Re-run the spec-blind contract tests knowingly~~ **CLOSED 2026-07-20 — they are real.**
      Read against DECISIONS and then mutation-tested, which is what settles "were the assertions
      quietly relaxed to go green". Dropping the `+ t0` rebase in `offset_words` fails
@@ -91,6 +87,20 @@ on-disk diff blocks. Someone's number is wrong; the recall figure below inherits
    `nfe` 48→16 "2.16× on synthesis" number included. Re-check whether any recorded measurement was
    distorted by which position in the batch it was measured at, before trusting it in a future
    comparison.
+
+3. **Give the repair window back its lexical context — `hotwords` / `initial_prompt`.** The one
+   confirmed regression from the 2026-07-20 ear check is context loss on CLEAN speech: `Claude`
+   is enunciated clearly and the clipped window still returned `Cloud`, with both readings agreeing
+   so the gate could not object. `faster_whisper.WhisperModel.transcribe` (1.2.1, verified
+   installed) takes `hotwords` and `initial_prompt`; seeding the window call with proper nouns
+   harvested from the SURROUNDING transcript restores what the clip threw away.
+   **Why this is not the thing we deliberately disabled:** `condition_on_previous_text` loops
+   because it feeds the model's own rolling output back into itself. A fixed hotword list adds no
+   autoregressive path, so it buys context without re-opening the repetition-loop failure that
+   made isolated windows necessary in the first place. Sources for the list, cheapest first: the
+   video's own out-of-window sentences, and `pronounce_audit.json`, which already collects the
+   Latin tokens the pipeline had to guess at. Measure on the same golden fixture — the regression
+   is a reproducible test case now, which is the main reason this item is cheap.
 
 Backlog (second tier) — **throughput / weaker hardware, unlocked by the Silero v5 audition
 (DECISIONS 2026-07-19):** Silero v5 synthesizes 12-19× faster than F5 on CPU alone (synth 11-14 s
