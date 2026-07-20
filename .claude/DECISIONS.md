@@ -1,5 +1,18 @@
 # DECISIONS
 
+## 2026-07-20 — `--repair-asr` exits 0 when every window was rejected (decided, not defaulted)
+
+**Kept as is.** A rejection is a decided, reproducible outcome — the gate looked and said no — not a
+failure, and a nonzero code would poison the batch contract "re-run the same command to retry the
+failed videos" by making every clean re-run look broken. Rejected alternative: exit 2 or 4 on
+all-rejected, so a shell `&&` chain stops. **The named risk is real but currently hypothetical:** a
+`repair && resume` wrapper would proceed to dub an unimproved transcript silently, which is the one
+place this repo's no-silent-failures rule is bent. It is hypothetical because no such wrapper
+exists and the README prescribes a dry run first. **Reconsider the moment anyone chains repair into
+an automated pipeline** — at that point the honest fix is a distinct exit code, not a louder
+message, because a wrapper cannot read stderr prose. Logged rather than patched so the bend is
+conscious and has a named trigger instead of being rediscovered as a bug.
+
 ## 2026-07-20 — Isolated-window re-ASR has a measured cost: the clip loses context and can regress proper nouns
 
 `--repair-asr` automates the method this file blessed on 2026-07-19. Replaying the 6 preserved

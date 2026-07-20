@@ -20,87 +20,44 @@ once already. Decide what in `work-exp/` is a consumable and what is an archive 
 Those calls used to be spread across the batch; in the finish sweep they queue back-to-back — an
 offline resume of 12 videos can sit in up to 6 minutes of timeouts in one block at the very end.
 
-**→ DO THIS BEFORE THE NEXT BATCH (opened 2026-07-20).** Items 1-3 below are implemented but
-**uncommitted and not ear-checked**. Three checks stand between the change set and trusting it:
+**Carried into the next ordinary batch — not gates, just things to look at when they pass by:**
+- listen to the repaired unit in the finished MKV (repair changed a TTS unit boundary, so `atempo`
+  on that unit changed too);
+- `--repair-asr auto`'s recall (5/12) and the `RyvXxApfHkk#11` 246-vs-35.9 ch/s discrepancy are
+  both unreconciled — DECISIONS 2026-07-20, provenance section. Treat the fixture as a signal.
 
-  a. ~~`--only synthesize` fast-skip~~ **CLOSED 2026-07-20 — and it never needed real media.** The
-     question was whether item 1's `src`/`src_note` keys make the synthesize stage think every
-     record changed and silently re-render hours of audio. But `SynthesizeStage.done()` reads only
-     files, and its congruence gate compares a field-selective projection
-     (`{id: text_tts}` vs the unit's joined `text_tts`) — so the whole question is answerable by a
-     unit test on a fabricated workdir. Three added to `tests/test_synthesize_done.py`, pinning
-     BOTH directions: report-only keys must not invalidate, and must not blind the staleness check
-     either. Mutation-verified — leaking `src_note` into the projection is caught, **and all eight
-     pre-existing tests passed under that mutation**, so this was genuinely uncovered ground.
-     Lesson: "needs a real run" was an assumption, not a finding. Check what the code actually
-     touches before booking GPU time.
-  b. ~~Listen to a repaired window~~ **DONE 2026-07-20 — and it inverted one of the two findings.**
-     Full record in DECISIONS 2026-07-20 "Ear check". Short version: at `DmgujoZ1mmk` 2:42.90 the
-     speaker really does say `you wanted to use`, so the automation CORRECTED an error the human
-     made — that case is retracted as collateral damage and re-filed as an improvement. At
-     `2YCaBqP8muw` 4:08.43 `Claude` is spoken clearly and the window still mis-heard it: the
-     regression is confirmed, and confirmed in its worse form (context loss on clean speech, not
-     hard audio). At 2:00.87 no word is clipped, but the 0.25 s pad consumes essentially the whole
-     inter-sentence pause. **Consequences: the golden fixture is a strong signal, not an oracle —
-     its ground truth contains at least one human error, so "differs from the human" ≠ "wrong", and
-     the 5/12 recall figure is softer than it reads. And widening is not purely a liability: keep
-     the collateral warning as "look at this", never turn it into a rejection.**
-     Still riding along with the next ordinary batch (not a gate): the automation merged two
-     sentences where the human kept two, so that unit's TTS boundary and `atempo` changed.
-  c. ~~Re-run the spec-blind contract tests knowingly~~ **CLOSED 2026-07-20 — they are real.**
-     Read against DECISIONS and then mutation-tested, which is what settles "were the assertions
-     quietly relaxed to go green". Dropping the `+ t0` rebase in `offset_words` fails
-     `test_repaired_timestamps_are_absolute_not_clip_relative` with a precise message; forcing
-     `readings_agree` to always return True fails the gate tests. The file also independently
-     asserts the detector blind spot that the fixture later measured on real audio. **Counts as
-     independent evidence.**
+1. **Scout mode — `download → transcribe → summary`, full stop.** Artifact half already exists
+   (CHANGELOG 2026-07-20): a summary-only workdir surfaces in the text digest, `read_summary` needs
+   no change. Missing: the mode itself, and the scout page — `scripts/triage_html.py` skips a
+   workdir with no `run.json`, so scout summaries never reach the HTML. Decide before building:
+   (a) audio-only fetch (`yt-dlp -f bestaudio`) vs full download — and how a promoted video reuses
+   what scout already pulled instead of re-downloading (this is the design work, not the flag);
+   (b) `--only` composition or its own mode; (c) a promoted video must skip re-transcribe.
 
-Also unreconciled (DECISIONS 2026-07-20, provenance section): this repo records
-`RyvXxApfHkk#11` at 246 ch/s while the preserved backup measures 35.9, and "7 repairs" against 12
-on-disk diff blocks. Someone's number is wrong; the recall figure below inherits that uncertainty.
+2. **Batch/video timing accounting — separate model-load time from processing time.** Stage-major
+   amortises one load across the batch but `timings.json` / `run.json` still bill per video, so the
+   first video absorbs it all and per-video RTF is incomparable across batch positions — and across
+   `--video-major`, which has the opposite profile. **Blocks trusting any recorded speed number,
+   including `nfe` 48→16's "2.16×"; re-check those before reusing them in a comparison.**
 
-1. **Scout mode — summary only, nothing else.** `download → transcribe → summary`, full stop: no
-   translate, no synth, no verify, no assemble, no mux. The point is deciding whether a video is
-   worth watching AT ALL before spending anything on dubbing it — the honest form of the skip-gate
-   the summary item deliberately did NOT build, with the human as the decider instead of the model.
-   Pairs with a batch-level scout page: N videos, each with its ~200-word summary and verdict, one
-   screen. **Half of this is already done** (CHANGELOG 2026-07-20): `summary.md` exists and a
-   summary-only workdir already surfaces it in the text digest, so `runreport.read_summary` needs no
-   change. What is missing is the MODE and the page — `scripts/triage_html.py` skips a workdir with
-   no `run.json` by design, so scout summaries never reach the HTML. Open:
-   (a) **does scout need the full video download?** If it pulls the whole MKV the saving is GPU
-   only — network and disk are untouched, which at 100 videos is most of the cost. An audio-only
-   fetch (`yt-dlp -f bestaudio`) is where the real economy is, but then promoting a scouted video
-   to a full dub must not re-download from scratch — the artifact-reuse story is the actual design
-   work here, not the flag; (b) whether scout is a `--only` composition or its own mode; (c) how a
-   promoted video skips re-transcribe (it should — `sentences.json` already exists).
+3. **Feed the repair window `hotwords` / `initial_prompt`.** Fixes the one confirmed regression from
+   the 2026-07-20 ear check (rationale + why this does NOT reopen the repetition loop: DECISIONS
+   2026-07-20). Available in faster-whisper 1.2.1, verified. Word-list sources cheapest first: the
+   video's own out-of-window sentences, then `pronounce_audit.json`. Measure on the golden fixture —
+   the regression is a reproducible test case, which is what makes this cheap.
 
-2. **Batch/video timing accounting — amortised model loads are misattributed.** Since stage-major
-   batch execution shipped (CHANGELOG 2026-07-19) one F5 worker spawn is amortised across the whole
-   batch, but `timings.json` / `run.json` still bill wall time per video. So the FIRST video of a
-   batch absorbs the entire model-load cost and reads slow, every later one reads fast, and per-video
-   RTF is not comparable across batch positions. `--video-major` has the opposite profile (a load per
-   video), so the two modes' numbers are not comparable to each other either. Fix: record setup /
-   model-load time as its own line, separate from processing time, so per-video RTF is honest in both
-   modes and the batch total reports amortised setup once instead of smearing it.
-   **Blind spot this opens:** every speed verdict measured so far rests on this accounting — the
-   `nfe` 48→16 "2.16× on synthesis" number included. Re-check whether any recorded measurement was
-   distorted by which position in the batch it was measured at, before trusting it in a future
-   comparison.
+4. **Reconcile the two report renderers.** `triage_html.py` prints `completeness.n_flagged` where
+   `run_report.py` prints `n_actionable` + `n_advisory`, and the batch tables have diverged to 10 vs
+   13 columns — same batch, two different numbers, in the two surfaces a morning operator compares.
+   One root cause, one fix. Note `_batch_table`'s cell classes are index-based, so column changes
+   there mis-colour silently (bit item 1; now `len(cells)-1`).
 
-3. **Give the repair window back its lexical context — `hotwords` / `initial_prompt`.** The one
-   confirmed regression from the 2026-07-20 ear check is context loss on CLEAN speech: `Claude`
-   is enunciated clearly and the clipped window still returned `Cloud`, with both readings agreeing
-   so the gate could not object. `faster_whisper.WhisperModel.transcribe` (1.2.1, verified
-   installed) takes `hotwords` and `initial_prompt`; seeding the window call with proper nouns
-   harvested from the SURROUNDING transcript restores what the clip threw away.
-   **Why this is not the thing we deliberately disabled:** `condition_on_previous_text` loops
-   because it feeds the model's own rolling output back into itself. A fixed hotword list adds no
-   autoregressive path, so it buys context without re-opening the repetition-loop failure that
-   made isolated windows necessary in the first place. Sources for the list, cheapest first: the
-   video's own out-of-window sentences, and `pronounce_audit.json`, which already collects the
-   Latin tokens the pipeline had to guess at. Measure on the same golden fixture — the regression
-   is a reproducible test case now, which is the main reason this item is cheap.
+5. **A repair destroys the worklist that motivated it.** `--repair-asr` deletes `translation.json`,
+   which is where item 1's source-anomaly report lives — and the anomaly report is exactly the input
+   for explicit-id repairs, since the detectors are blind to that class. It also renumbers ids, so
+   any remaining ids from that report are stale. Repairing the first window from a report therefore
+   destroys the rest of the list. The renumbering is already warned about; the report loss is not.
+   Cheapest fix is probably preserving the report alongside `_pre-repair-sentences.json`.
 
 Backlog (second tier) — **throughput / weaker hardware, unlocked by the Silero v5 audition
 (DECISIONS 2026-07-19):** Silero v5 synthesizes 12-19× faster than F5 on CPU alone (synth 11-14 s
@@ -172,7 +129,11 @@ Gemma dropped 3 of 4 adverbs in `DmgujoZ1mmk` id1, unflagged (INBOX 2026-07-18);
 heuristic (expected-vs-actual unit duration → flag garbled synth the ASR round-trip misses) — output
 is good now, ADD IT before any narrator-voice or TTS-engine change.
 
-Deferred — NOT near-term (revisit when a need surfaces): in-pipeline Anthropic API translate flag
+Deferred — NOT near-term (revisit when a need surfaces): promoting `n_src` from advisory into
+`flags_actionable` — **blocked on measuring the source-anomaly detector's fire rate and precision on
+a real Sonnet batch first.** It has zero measured precision today, and `entity_loss` firing on 11 of
+12 videos is the standing precedent for what an unmeasured detector does to a triage list;
+in-pipeline Anthropic API translate flag
 (approved in principle, DECISIONS 2026-07-18; build ONLY if the manual sub-agent seam becomes the
 bottleneck — it is not one today, and the seam is where items 1 and 3 both hang their sub-agents,
 so automating it away has a cost beyond the code); gender-matched
