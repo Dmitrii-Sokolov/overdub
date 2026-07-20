@@ -1,5 +1,77 @@
 # DECISIONS
 
+## 2026-07-20 — Isolated-window re-ASR has a measured cost: the clip loses context and can regress proper nouns
+
+`--repair-asr` automates the method this file blessed on 2026-07-19. Replaying the 6 preserved
+`_pre-repair-sentences.json` fixtures through it — real audio, real large-v3 — found something no
+amount of code review could, because it is a property of the METHOD, not of the implementation.
+
+**The regression, verified byte-for-byte on disk.** `2YCaBqP8muw`, window ids 42-45:
+
+| source | text |
+|---|---|
+| pre-repair (full-file ASR) | `...a very specific style you want **Claude** to follow...` |
+| human ground truth | `...a very specific style you want **Claude** to follow...` |
+| `--repair-asr auto` output | `...a very specific style you want **Cloud** to follow...` |
+
+The input was RIGHT and the repair made it WRONG. Three things had to line up, and all three are
+by-design behaviours we shipped deliberately:
+
+1. That sentence carried **no detector flag**. It entered the window only because `widen()` grew the
+   span to reach `repair_window_min_sec = 8.0`.
+2. The replaced id range must be co-extensive with the audio window — otherwise a reading overwrites
+   sentences it only partially heard — so a clean neighbour gets rewritten from the window's reading.
+3. **Both readings agreed**, so the gate accepted. cond=True and cond=False agreed *on the wrong
+   word*.
+
+**The general principle, which is the point of this entry: a clipped 8-18 s window has strictly less
+context than the full file, so window re-ASR is not uniformly an improvement — it is a TRADE.** It
+buys freedom from the repetition loop (`condition_on_previous_text` has no prior to loop on) and
+pays in whatever the surrounding minutes were disambiguating. Proper nouns are the first thing to
+go, and it failed on exactly the brand name the single sanctioned human override of 2026-07-19
+exists to protect. Second instance the same run: `DmgujoZ1mmk` id 32, clean before the repair
+(`you want it to use`), wrong after (`you wanted to use`), also pulled in only by widening.
+
+**This does not retract the 2026-07-19 gate — it bounds it.** `readings_agree` proves STABILITY,
+never correctness; that was always in the docstring. What the fixture adds is that the scope of the
+evidence and the scope of the claim differ: agreement is measured over the WHOLE window, but only
+the SEED ids carry a defect hypothesis. For every other sentence the repair silently prefers a
+second, less-informed opinion over a first, better-informed one. Shipped mitigation (2026-07-20):
+`WindowResult.collateral` + a `[warn] collateral edit on unflagged id(s)` line and a per-video
+counter, so a net-negative substring can no longer report as a bare "1 accepted, 0 rejected". That
+makes it visible. **It does not make it safe — ears remain the final authority, and a repaired
+window now deserves the same listen a flagged one gets.**
+
+**Measured recall: `auto` reached 5 of the 12 human-repaired regions on disk.** Both videos this
+file already named as detector-blind produced ZERO windows and printed as clean:
+`RyvXxApfHkk` id 11 at 35.9 ch/s and `W4Ua6XFfX9w` id 21 at 26.8 ch/s, both under the physically
+grounded 40 ch/s bound. That is the 2026-07-19 prediction confirmed, not a new failure — and it is
+the standing argument for the reading pass at the translate seam (roadmap item 1), which is the only
+thing that sees these. **Do not lower `_RATE_MAX_CPS` to chase them**; the bound is sited on human
+speech physics (corpus p99 34.26), and lowering it trades a blind spot for false positives.
+
+**What held.** The `delete, do not invent` invariant: nothing was fabricated anywhere, and the
+automation correctly did NOT reproduce the human's `Anthropic's Claude models` override. Timestamps
+are sound — monotone in all 6 files, zero overlaps, zero inversions, max delta vs human inside a
+repaired window 0.71 s. The feared silent mis-rebasing of the clip onto the absolute timeline does
+not exist. Repaired first sentences start exactly `CLIP_PAD_SEC` (0.25 s) early, systematically and
+harmlessly — `clip_span` clamps t0 to the previous sentence's end, so that span is silence by
+construction.
+
+**Correction to 2026-07-19's cost figure.** "~1 minute per window" described the manual script,
+which paid a fresh large-v3 load per invocation. The automation loads the model once per sweep:
+10 readings in 25.7 s wall, ~2.6 s each — **20× cheaper than documented**. Any argument that leans
+on repair being expensive (including "don't always dry-run first") is now void.
+
+**Fixture provenance — two discrepancies, unresolved, flagged rather than smoothed.** This file
+records `RyvXxApfHkk#11` at 246 ch/s; the preserved backup measures 35.9, which is below the 39.36
+POST-repair batch maximum. That backup may therefore not be the true pre-repair state. And this file
+says "7 repairs" where the on-disk pre-vs-ground-truth diff contains 12 distinct blocks, 6 of them
+in `W4Ua6XFfX9w` alone (whose ground truth is hand-spliced window repair — its first 16 sentences
+are byte-identical in text AND timestamps to the pre-repair file, so it was never fully re-ASR'd).
+Both numbers above are computed from what is on disk. **Treat the recall figure as approximate and
+the 246 ch/s record as suspect until someone reconciles them.**
+
 ## 2026-07-19 — F5 speedup: the full lever ledger, including the ones that do NOT exist
 
 Roadmap item 1 named four levers. Two of them were already done by somebody else and one cannot

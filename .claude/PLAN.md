@@ -1,52 +1,74 @@
 # PLAN
 
-## → Roadmap (reprioritized 2026-07-19 — rationale in DECISIONS; F5 speed first, any-language → backlog)
-Sample workdirs: `work/` (Silero baselines, read-only); `work-exp/context-earcheck/x7DfiXqSEdM/`
-(item-0 ear-check, Qwen translate — PASSED); `work-exp/stats-batch/` (Qwen, 8/23 — batch STOPPED to
-switch models); `work-exp/gemma-ab/` (Gemma, the same 8 — the A/B set). A/B report artifact
-published (Qwen vs Gemma, 508 sentences). Report triage: any *_flag or speed_factor>1.8.
+## → Roadmap (re-cut 2026-07-20 — the three items that led this list shipped; scout mode leads now)
+Sample workdirs: `work/` (13 dirs — Silero baselines + the AI-Fluency batch, read-only).
+**Corrected 2026-07-20 — the rest of this line was stale:** `work-exp/context-earcheck/`,
+`work-exp/stats-batch/` and `work-exp/gemma-ab/` NO LONGER EXIST on disk (`work-exp/` holds only
+`nfe-sweep/` and `nfe16/`). The Qwen-vs-Gemma A/B set and the 8/23 stats-batch workdirs are gone;
+the published A/B report artifact (508 sentences) is the only surviving record of that comparison,
+and the stats-batch URL list is unrecoverable. Report triage: any *_flag or speed_factor>1.8.
 
 **Before the first overnight batch on the new order — two side effects, neither a bug:**
 (a) `download` amortises nothing, so hoisting it means a 100-video queue downloads in full before
 the first transcribe — ~100 GB in hour 0. Watch for ENOSPC; the compensation is that network
-failures surface immediately instead of smeared across the night.
+failures surface immediately instead of smeared across the night. **Measured 2026-07-20: 81 GB free
+on D: (of 3.8 TB).** That is less than one full large-queue run, so queue size is bounded by disk,
+not by patience — and the already-deleted `work-exp/` baselines suggest a space cleanup has happened
+once already. Decide what in `work-exp/` is a consumable and what is an archive BEFORE the next
+3am cleanup makes that call for you.
 (b) `_title_of` is a networked `yt-dlp --print title` with a 30 s timeout for pre-change workdirs.
 Those calls used to be spread across the batch; in the finish sweep they queue back-to-back — an
 offline resume of 12 videos can sit in up to 6 minutes of timeouts in one block at the very end.
 
-1. **Sonnet semi-automatic translate — live-run the primary route.** Verdict recorded
-   2026-07-18 (DECISIONS): quality noticeably better, much faster, replaces the heaviest stage;
-   both routes stay — Gemma = local in-pipeline default, Sonnet (subscription, cloud) = PRIMARY,
-   in semi-automatic mode (sub-agents at the translate seam). Runbook: README "Running" route B.
-   Open: harden the recipe on the first real batch beyond the spike (e.g. the remaining 15/23
-   stats-batch videos). Fold into the recipe (INBOX 2026-07-19, rationale in DECISIONS): the
-   sub-agent prompt gains source-anomaly reporting — "if a source sentence looks garbled,
-   self-contradictory, truncated, or duplicative of its neighbour, translate it as-is AND report
-   the id" (never silently smooth — that is exactly how 0e stayed hidden) — plus a flag for
-   enumerations whose items repeat or contradict the rolling context (the only proposed detector
-   that sees both the 0b duplicated head and the bogus id46 line no string metric can). The
-   in-pipeline Anthropic API flag stays approved but deferred — build only if the manual seam
-   becomes the bottleneck.
+**→ DO THIS BEFORE THE NEXT BATCH (opened 2026-07-20).** Items 1-3 below are implemented but
+**uncommitted and not ear-checked**. Three checks stand between the change set and trusting it:
 
-2. **`--repair-asr id,id` — automate the isolated-window repair.** The manual loop proved out 7/7
-   on the AI-Fluency batch (method + caveats: DECISIONS 2026-07-19): `rate_implausible` /
-   `dup_adjacent` already localise the defect window; re-ASR just that window with
-   `condition_on_previous_text=False`; accept ONLY if the reading is identical under cond=True
-   and cond=False — the stability gate did real accept/reject work, keep it as the acceptance
-   criterion (and consider back-porting agreement into the transcribe guard, which today accepts
-   a retry on a floor-ratio halving); then merge and renumber. Pairs operationally with item 2 —
-   it activates the moment the next batch's detectors fire. `words.json` stays deliberately
-   untouched (CHANGELOG 2026-07-19).
+  a. **`--only synthesize` fast-skip on an existing workdir.** Item 1 widened the `translation.json`
+     record with `src`/`src_note`. `synthesize._write_manifest` fingerprints `(ids, text_tts,
+     samples)` field-selectively, so extra keys SHOULD be inert — static reading only, never
+     executed. If that is wrong, the next batch silently re-renders hours of audio. One cheap run
+     settles it. **Do this first; it is the only check that can waste a whole night.**
+  b. **Listen to a repaired window.** DECISIONS 2026-07-20: window re-ASR is a trade, not a free
+     improvement, and it regressed `Claude` → `Cloud` on real audio with both readings agreeing. A
+     repaired window now deserves the same listen a flagged one gets. Nothing automated can replace
+     this.
+  c. **Re-run the spec-blind contract tests knowingly.** `tests/test_repair_contract.py` exists and
+     passes, but the agent that wrote it died before reporting, so it is unknown whether it found
+     failures or quietly relaxed its assertions to go green. Read the file once against DECISIONS
+     before counting it as independent evidence. Until then it is a test file, not a verification.
 
-3. **Video summary from the full transcript — "is this worth watching at all?"** A separate Sonnet
-   sub-agent reads the COMPLETE original transcript (`sentences.json` — it already exists after
-   transcribe, no new stage input) and writes a **Russian** summary of **~200 words**. Purpose is
-   triage-before-viewing, not a synopsis: it must answer (a) is the video worth watching, and
-   (b) what is the most interesting thing in it / what to look for. Runs at the same seam as the
-   translate sub-agents, so it costs one extra agent per video and no GPU. Open: where the artifact
-   lands (`work/<id>/summary.md`?), whether it belongs in the batch digest and the triage HTML,
-   and whether it should run before translate so a "not worth it" verdict can skip the expensive
-   stages entirely — that last one is the real payoff at batch scale.
+Also unreconciled (DECISIONS 2026-07-20, provenance section): this repo records
+`RyvXxApfHkk#11` at 246 ch/s while the preserved backup measures 35.9, and "7 repairs" against 12
+on-disk diff blocks. Someone's number is wrong; the recall figure below inherits that uncertainty.
+
+1. **Scout mode — summary only, nothing else.** `download → transcribe → summary`, full stop: no
+   translate, no synth, no verify, no assemble, no mux. The point is deciding whether a video is
+   worth watching AT ALL before spending anything on dubbing it — the honest form of the skip-gate
+   the summary item deliberately did NOT build, with the human as the decider instead of the model.
+   Pairs with a batch-level scout page: N videos, each with its ~200-word summary and verdict, one
+   screen. **Half of this is already done** (CHANGELOG 2026-07-20): `summary.md` exists and a
+   summary-only workdir already surfaces it in the text digest, so `runreport.read_summary` needs no
+   change. What is missing is the MODE and the page — `scripts/triage_html.py` skips a workdir with
+   no `run.json` by design, so scout summaries never reach the HTML. Open:
+   (a) **does scout need the full video download?** If it pulls the whole MKV the saving is GPU
+   only — network and disk are untouched, which at 100 videos is most of the cost. An audio-only
+   fetch (`yt-dlp -f bestaudio`) is where the real economy is, but then promoting a scouted video
+   to a full dub must not re-download from scratch — the artifact-reuse story is the actual design
+   work here, not the flag; (b) whether scout is a `--only` composition or its own mode; (c) how a
+   promoted video skips re-transcribe (it should — `sentences.json` already exists).
+
+2. **Batch/video timing accounting — amortised model loads are misattributed.** Since stage-major
+   batch execution shipped (CHANGELOG 2026-07-19) one F5 worker spawn is amortised across the whole
+   batch, but `timings.json` / `run.json` still bill wall time per video. So the FIRST video of a
+   batch absorbs the entire model-load cost and reads slow, every later one reads fast, and per-video
+   RTF is not comparable across batch positions. `--video-major` has the opposite profile (a load per
+   video), so the two modes' numbers are not comparable to each other either. Fix: record setup /
+   model-load time as its own line, separate from processing time, so per-video RTF is honest in both
+   modes and the batch total reports amortised setup once instead of smearing it.
+   **Blind spot this opens:** every speed verdict measured so far rests on this accounting — the
+   `nfe` 48→16 "2.16× on synthesis" number included. Re-check whether any recorded measurement was
+   distorted by which position in the batch it was measured at, before trusting it in a future
+   comparison.
 
 Backlog (second tier) — **throughput / weaker hardware, unlocked by the Silero v5 audition
 (DECISIONS 2026-07-19):** Silero v5 synthesizes 12-19× faster than F5 on CPU alone (synth 11-14 s
@@ -118,7 +140,10 @@ Gemma dropped 3 of 4 adverbs in `DmgujoZ1mmk` id1, unflagged (INBOX 2026-07-18);
 heuristic (expected-vs-actual unit duration → flag garbled synth the ASR round-trip misses) — output
 is good now, ADD IT before any narrator-voice or TTS-engine change.
 
-Deferred — NOT near-term (revisit when a need surfaces): gender-matched
+Deferred — NOT near-term (revisit when a need surfaces): in-pipeline Anthropic API translate flag
+(approved in principle, DECISIONS 2026-07-18; build ONLY if the manual sub-agent seam becomes the
+bottleneck — it is not one today, and the seam is where items 1 and 3 both hang their sub-agents,
+so automating it away has a cost beyond the code); gender-matched
 narrator (median-F0 → M/F reference; blocked on a female PD reference — search the ESpeech
 community first: HF Space Den4ikAI/ESpeech-TTS discussions + the author's channels; fallback
 re-scan LibriVox female readers — xenium5 rejected on mic, chekhov01 on timbre);
@@ -154,7 +179,11 @@ A/B-driven; Qwen removed)** · **Sonnet A/B + verdict: semi-auto = primary route
 (2026-07-19)** · **F5 `nfe` 48→16 measured + ear-checked + adopted, 2.16× on synthesis ✅
 (2026-07-19; fp16/compile/batching found already-on, unavailable and a mirage respectively)** ·
 **Stage-major batch execution ✅ (2026-07-19; byte-identity verified 39/39 wavs, one worker spawn
-amortised per extra video — roadmap item 1 "speed up F5" CLOSED, lever ledger in DECISIONS)**.
+amortised per extra video — roadmap item 1 "speed up F5" CLOSED, lever ledger in DECISIONS)** ·
+**`--repair-asr` shipped ⚠️ (2026-07-20; code done and fixture-measured, but recall is 5/12 and it
+REGRESSED a proper noun on real audio — DECISIONS 2026-07-20. Closed as a deliverable, NOT as a
+solved problem)** · **Video summary `summary.md` ✅ (2026-07-20)** · **Source-anomaly reporting at
+the translate seam ✅ (2026-07-20)**. All three await the pre-batch checks at the top of this file.
 
 Stack pins, verified APIs and setup: STACK.md + SETUP.md. Translation: Gemma-3-12B (Ollama),
 `gemma3:12b`, local in-pipeline default by A/B 2026-07-18 (Qwen3-14B removed); PRIMARY route =

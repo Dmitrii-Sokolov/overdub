@@ -1,5 +1,76 @@
 # CHANGELOG
 
+## 2026-07-20 — source-anomaly reporting at the translate seam (roadmap item 1)
+
+- **The translate sub-agent now REPORTS source damage instead of smoothing it.** The prompt gains a
+  closed six-kind anomaly vocabulary plus the rule "translate it as-is AND report the id". Rationale
+  is in DECISIONS 2026-07-19: a good translator is a defect BLEACHER by default — `RyvXxApfHkk` id11's
+  garbage was silently repaired into plausible Russian on the first pass, hiding it from every
+  downstream stage. This is compensation for an observability regression the primary translate route
+  itself introduced, not a bonus detector.
+- **No new artifact.** `src` / `src_note` ride on `translation.draft.json` into `translation.json`.
+  `src` is REQUIRED on every record — `"ok"` is a positive claim, so a silent omission cannot pass as
+  a clean sentence. `run.json` gains a `source` block with a first-class `scanned` boolean, so route A
+  (Gemma) reads "not scanned" and never "clean".
+- **Advisory only, by design.** `flags_total += n_src`; `flags_actionable` and `needs_triage` are
+  untouched, and every source defect is a `[warn]`, never an exit. Promoting it to actionable is
+  gated on measuring the detector's fire rate first (INBOX) — it has zero measured precision, and
+  `entity_loss` firing on 11 of 12 videos is the standing cautionary precedent.
+- **Latent bug caught by the new column:** `triage_html._batch_table` hard-coded the triage cell as
+  `i == 9`. The added `src` column shifts it to 10, which would have silently mis-coloured the status
+  cell. Now `len(cells) - 1`. The 2026-07-19 review had flagged this index as a landmine; it took one
+  column to step on it.
+- Prompt/contract edits in `.claude/skills/overdub-sonnet-batch/SKILL.md` and
+  `references/translate-contract.md`. 24 new assertions across three existing test files.
+
+## 2026-07-20 — video summary from the full transcript (roadmap item 3)
+
+- **`work/<id>/summary.md`** — a ~200-word Russian triage summary written by a second Sonnet
+  sub-agent at the translate seam, answering "is this worth watching" and "what to look for". Zero
+  GPU, one extra agent per video. **Gates nothing** and skips nothing: a model silently dropping a
+  video contradicts the project's own no-silent-failures rule, so the skip decision belongs to the
+  human (roadmap scout mode).
+- **No `build_summary.py`, deliberately.** `build_translation.py` earned its place as an ASSEMBLER of
+  machine-consumed fields; a prose blob has nothing to assemble, and a validator would have delivered
+  two non-blocking `print`s to a human already reading the prose. All validation moved to the READ
+  boundary — `runreport.read_summary()` strips heading markers (they would collide with the digest's
+  own `### <vid>` structure), truncates runaway text at 4000 chars with a visible marker, and returns
+  `None` for empty/unreadable. Both renderers go through it, so it cannot be bypassed.
+- **`run.json` schema UNCHANGED** — the summary is a sidecar. `_build_run_report` unlinks `run.json`
+  when report.json and translation.json are both absent, which is exactly scout mode's shape, so
+  routing the summary through the rollup would have made it invisible in the mode it exists for.
+- Smoke-confirmed: a summary-only workdir already surfaces its summary in the text digest, so scout
+  mode needs no change to `read_summary`. Triage HTML still skips such a workdir by design.
+
+## 2026-07-20 — `--repair-asr id,id|auto`: isolated-window ASR repair (roadmap item 2)
+
+- **NEW `overdub/repair.py`** — window derivation, the agreement gate, merge-and-renumber, splice.
+  `--repair-asr auto` seeds windows from `rate_implausible` / `dup_adjacent`; `--repair-asr 23,24,25`
+  takes explicit ids (single video only). `--repair-dry-run` decides and reports without writing.
+  Repair is an operator action, not a Stage: it touches no `all_stages`, runs no downstream stage.
+- **A defect's own span is unusable**, so the audio window widens using neighbours' real timings to
+  `repair_window_min_sec` (8.0). Whatever run of sentences the widened window covers is what gets
+  replaced — the audio window and the replaced id range must be co-extensive, or a reading overwrites
+  sentences it only partially heard.
+- **Downstream invalidation** (`WorkDir.invalidate_downstream`): an explicit named list, never a
+  blanket wipe. `words.json` is deliberately preserved — it is the raw record of what the ASR actually
+  did, and `asr.floor_ratio` should keep reporting the collapse. `summary.md` was added to the delete
+  set: it is derived from `sentences.json` and nothing in Python ever refreshed it.
+- **Measured on the golden fixture — real audio, real large-v3 — and the numbers matter more than the
+  feature** (full record: DECISIONS 2026-07-20). `auto` reached **5 of 12** human-repaired regions;
+  both known detector-blind videos derived zero windows and printed as clean. One accepted repair
+  **REGRESSED** `Claude` → `Cloud` on a sentence that had no flag and was pulled in only by widening,
+  with both readings agreeing. Timestamps came out sound (monotone, zero overlaps, max delta 0.71 s);
+  the feared silent mis-rebasing does not exist. Cost is ~2.6 s per reading — 20× under the
+  2026-07-19 estimate, which predates batch-level model reuse.
+- **`WindowResult.collateral` + a `[warn] collateral edit on unflagged id(s)` line** so a
+  net-negative substring can no longer report as a bare "1 accepted, 0 rejected". Makes it visible;
+  does not make it safe.
+- **`repair_window_max_sec` was born dead and is gone.** Its only use was an early return that could
+  never change a window for any `max_sec >= min_sec` — verified over 20 000 randomized cases — while
+  config.py documented it as load-bearing and the test pinning it passed identically with the guard
+  deleted. Deleted rather than made real: merging must be allowed to exceed any cap.
+
 ## 2026-07-19 — stage-major batch execution (each model loads once per BATCH)
 - **`--batch` now runs stages outer / videos inner.** `_run_batch_stage_major` replaces
   `_run_batch` as the default driver; the old order stays reachable as **`--video-major`**
