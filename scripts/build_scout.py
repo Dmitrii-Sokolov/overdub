@@ -10,17 +10,26 @@ rides on an LLM's discipline.
     title             source.info.json (the scout download persists it)
     duration_sec      source.info.json, else max sentence end -- never a network call
     n_sentences       sentences.json
-    timings           download / transcribe from timings.json; summarize from the draft's MTIME
+    timings           two KINDS of number, deliberately kept apart and never summed together:
+                        *_sec        the pipeline's wall clock per stage (timings.json.stages) --
+                                     model load included, i.e. what the run actually cost
+                        *_work_sec   the same stage measured from inside, load and warmup
+                                     excluded (timings.json.detail) -- what THIS video cost, and
+                                     the only one of the two that compares across builds
+                        summarize_sec  the sub-agent's own window, mtime(scout.started) ->
+                                     mtime(scout.draft.json). Absent when it wrote no marker.
 
 `quality` is a CLOSED vocabulary (_QUALITY). An unknown value is FATAL rather than clamped --
 unlike build_translation's `src`, which clamps because a bad anomaly label must never block a
 dub. Here the grade IS the artifact: the report colours and counts on it, so a
 clamped-to-"maybe" typo would silently downgrade a video the summarizer actually rated "watch".
 
-WHY THE SUMMARIZE TIMING IS TWO TIMESTAMPS AND NOT A DURATION. Sub-agents run outside this
-process and in parallel, so timings.json cannot see them. The obvious alternative -- the agent
-stamping its own started_at/finished_at -- is model self-measurement: unverifiable and routinely
-invented. So the stamps come from the filesystem.
+WHY THE SUMMARIZE TIMINGS COME FROM THE FILESYSTEM. Sub-agents run outside this process and in
+parallel, so timings.json cannot see them. The obvious alternative -- the agent stamping its own
+started_at/finished_at -- is model self-measurement: unverifiable and routinely invented. So the
+stamps come from the filesystem: the agent's first action is to touch `scout.started`, its last
+is to write `scout.draft.json`, and the OS supplies both times. The agent is never asked what
+time it is, only to touch a file.
 
 The first attempt stored a per-video duration, mtime(draft) - wave_start, and it was WRONG in a
 way only real data exposed (measured 2026-07-20): a 500-sentence transcript reported 1506 s and
@@ -81,8 +90,17 @@ _HIGHLIGHT_MAX = 240        # one sentence; the scan table's widest text column
 _PARAGRAPH_MAX = 1500
 
 
-_THUMB_W = 160              # rendered beside a title, and inlined as a data-URI: at ~5 KB each a
-                            # 100-video queue costs ~0.7 MB of page, which a 320px source triples
+_THUMB_W = 320              # MUST be >= the width scout_report renders the preview at, or the
+                            # scan table upscales a 160px file into a 320px slot and the result is
+                            # soft (which is exactly what 160 here looked like). 320 is also
+                            # YouTube's own `mqdefault` width, so the picker below usually finds
+                            # an exact match and ffmpeg re-encodes nothing it has to resize.
+                            # Inlined as a data-URI, so this is page weight -- but far less than
+                            # the old comment here feared. MEASURED on the 5-video Claude 3 queue
+                            # after the bump: 4.2-8.3 KB per file, ~7.7 KB once base64'd, i.e.
+                            # ~0.8 MB for a 100-video queue. The claim that 320px "triples" the
+                            # page was never measured and was wrong: -q:v 6 on a photographic
+                            # 320x180 frame lands near where 160x90 did.
 
 
 def _ensure_thumb(work: WorkDir, info: dict) -> None:
@@ -220,12 +238,26 @@ def build(work: WorkDir, wave_start: float | None) -> dict:
         dur, dur_src = float(dur), "info_json"
 
     timings_doc = _load_json(work.root / "timings.json")
-    stages = timings_doc.get("stages") if isinstance(timings_doc, dict) else None
+    timings_doc = timings_doc if isinstance(timings_doc, dict) else {}
+    stages = timings_doc.get("stages")
     stages = stages if isinstance(stages, dict) else {}
+    # detail[<stage>] — what the stage measured about itself, model load excluded. Absent for
+    # any workdir transcribed before this existed, which is why every field below is optional.
+    detail = timings_doc.get("detail")
+    detail = detail if isinstance(detail, dict) else {}
+    tr_detail = detail.get("transcribe")
+    tr_detail = tr_detail if isinstance(tr_detail, dict) else {}
+
+    def _num(d: dict, name: str, nd: int = 1):
+        """Optional numeric field, rounded. nd=None means a COUNT: kept an int, because
+        'asr_passes: 1.0' reads as a measurement of something continuous when it is a tally."""
+        v = d.get(name)
+        if not isinstance(v, (int, float)) or isinstance(v, bool):
+            return None
+        return int(v) if nd is None else round(float(v), nd)
 
     def stage_sec(name: str):
-        v = stages.get(name)
-        return round(float(v), 1) if isinstance(v, (int, float)) and not isinstance(v, bool) else None
+        return _num(stages, name)
 
     # RAW STAMPS, not a derived per-video duration. Measured 2026-07-20 on a real wave: a
     # 500-sentence transcript reported 1506 s and a 31-sentence one 1252 s -- a 16x difference in
@@ -237,13 +269,41 @@ def build(work: WorkDir, wave_start: float | None) -> dict:
     # honest figure the wave supports is its wall clock, and that needs the LAST draft against
     # the FIRST start -- neither of which this per-video script can see. scout_report derives it
     # across the queue.
+    draft_at = os.path.getmtime(draft_path)
     wave = None
     if wave_start is not None:
-        draft_at = os.path.getmtime(draft_path)
         if draft_at < wave_start:
             print(f"[warn] {work.root.name}: scout.draft.json predates the wave start -- carried "
                   f"over from an earlier run, excluded from the wave's wall clock")
         wave = {"start": round(wave_start, 1), "draft_at": round(draft_at, 1)}
+
+    # PER-VIDEO summarize cost, from the sub-agent's own marker file. This is the number the
+    # wave stamps above cannot give: `wave.start` is shared by every agent in the spawn, so it
+    # charges an agent for however long it sat behind the concurrency cap before it ever ran.
+    #
+    # Still filesystem-stamped, never self-reported -- the objection that killed the first
+    # attempt (a model's own claim about its runtime is unverifiable and routinely invented)
+    # applies just as much to a start time as to a duration. mtime is written by the OS; the
+    # agent only has to touch the file.
+    #
+    # KNOWN FLOOR, not a measurement error to be silently ignored: the marker lands after the
+    # agent's first tool round-trip, so a real 20-minute window reads a few seconds short. It
+    # errs downward, and it degrades to ABSENT (an agent that never wrote the marker) rather
+    # than to a wrong number.
+    summarize_sec = None
+    started = work.root / "scout.started"
+    try:
+        started_at = os.path.getmtime(started)
+    except OSError:
+        started_at = None
+    if started_at is not None:
+        if started_at <= draft_at:
+            summarize_sec = round(draft_at - started_at, 1)
+        else:
+            # marker newer than the draft: a re-run that touched the marker and then failed, or
+            # a carried-over draft. Either way the pair does not describe one agent's work.
+            print(f"[warn] {work.root.name}: scout.started is newer than scout.draft.json -- "
+                  f"the pair is not one agent's run, per-video summarize time recorded as unknown")
 
     return {
         "video_id": work.root.name,
@@ -257,8 +317,21 @@ def build(work: WorkDir, wave_start: float | None) -> dict:
         "highlight": highlight,
         "paragraph": paragraph,
         "timings": {
+            # *_sec = the pipeline's wall clock for the stage, model load included. What the
+            # run cost. Summed by the report.
             "download_sec": stage_sec("download"),
             "transcribe_sec": stage_sec("transcribe"),
+            # *_work_sec = the same stage with the model load and warmup excluded, i.e. what
+            # this VIDEO cost. This is the pair to compare across builds; the wall clock above
+            # cannot be, because the load lands on whichever video the sweep happened to start
+            # with. NEVER summed into the report's strip -- see scout_report.totals_of.
+            "transcribe_work_sec": _num(tr_detail, "work_sec"),
+            # 2 means the alignment guard re-ran ASR: that video cost roughly double for a
+            # reason that has nothing to do with whatever optimization is being measured.
+            "transcribe_asr_passes": _num(tr_detail, "asr_passes", None),
+            # per-agent, from the marker file -- see the comment above. Absent when the agent
+            # wrote no marker; never inferred from the wave.
+            "summarize_sec": summarize_sec,
         },
         # raw epochs, never a per-video duration -- see the comment above `wave`
         "wave": wave,
@@ -289,9 +362,14 @@ def main(argv: list[str] | None = None) -> int:
     tmp.write_text(json.dumps(doc, ensure_ascii=False, indent=2), encoding="utf-8")
     replace_retry(tmp, out)
     t = doc["timings"]
+    # per-video figures shown next to the wall clocks, and only when they exist: an older
+    # workdir has no detail section and a sub-agent that wrote no marker has no summarize time
+    extra = "".join(
+        f" {k}={t[k]}" for k in ("transcribe_work_sec", "transcribe_asr_passes", "summarize_sec")
+        if t.get(k) is not None)
     print(f"[scout] {out}  quality={doc['quality']}  "
           f"{doc['n_sentences']} sentences  "
-          f"dl={t['download_sec']}s tr={t['transcribe_sec']}s")
+          f"dl={t['download_sec']}s tr={t['transcribe_sec']}s{extra}")
     return 0
 
 

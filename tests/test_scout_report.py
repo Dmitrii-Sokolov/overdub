@@ -46,9 +46,12 @@ _DRAFT = {"quality": "high", "one_liner": "Однофразовое описан
 
 
 def _workdir(root: Path, vid: str, *, draft=None, title=None, duration=734,
-             stages=None) -> WorkDir:
+             stages=None, detail=None, started_ago=None) -> WorkDir:
     """A scouted workdir: sentences.json + info.json + timings.json + the sub-agent's draft.
-    Mirrors exactly what --scout followed by an S2 sub-agent leaves on disk."""
+    Mirrors exactly what --scout followed by an S2 sub-agent leaves on disk.
+
+    `detail` fills timings.json's per-video section; `started_ago` writes the sub-agent's
+    scout.started marker that many seconds before the draft."""
     d = root / vid
     (d / "segments").mkdir(parents=True, exist_ok=True)
     (d / "sentences.json").write_text(json.dumps(
@@ -58,12 +61,19 @@ def _workdir(root: Path, vid: str, *, draft=None, title=None, duration=734,
     if duration is not None:
         info["duration"] = duration
     (d / "source.info.json").write_text(json.dumps(info, ensure_ascii=False), encoding="utf-8")
-    (d / "timings.json").write_text(json.dumps(
-        {"stages": stages if stages is not None else {"download": 12.4, "transcribe": 88.1}}),
-        encoding="utf-8")
+    doc = {"stages": stages if stages is not None else {"download": 12.4, "transcribe": 88.1}}
+    if detail is not None:
+        doc["detail"] = detail
+    (d / "timings.json").write_text(json.dumps(doc), encoding="utf-8")
     if draft is not None:
         (d / "scout.draft.json").write_text(json.dumps(draft, ensure_ascii=False),
                                             encoding="utf-8")
+        if started_ago is not None:
+            # the marker the sub-agent touches first, backdated relative to the draft it wrote
+            marker = d / "scout.started"
+            marker.write_text("", encoding="utf-8")
+            draft_at = os.path.getmtime(d / "scout.draft.json")
+            os.utime(marker, (draft_at - started_ago, draft_at - started_ago))
     return WorkDir(d)
 
 
@@ -177,17 +187,64 @@ def test_duration_falls_back_to_the_last_sentence_end() -> None:
     assert doc["duration_sec"] == 9.0 and doc["duration_source"] == "sentences"
 
 
-def test_the_wave_is_stored_as_raw_stamps_never_a_per_video_duration() -> None:
+def test_the_wave_alone_never_yields_a_per_video_summarize_time() -> None:
     # Measured 2026-07-20: 500 sentences reported 1506 s and 31 sentences 1252 s — every agent
     # was reporting the WAVE's length, not its own cost, so a per-video duration was data that
-    # was not there. Two timestamps are facts; the duration was a wrong inference.
+    # was not there. Two timestamps are facts; the duration was a wrong inference. The wave may
+    # never be turned back into a per-video number, marker or no marker.
     start = time.time() - 40
     with tempfile.TemporaryDirectory() as d:
-        w = _workdir(Path(d), "vid00000001", draft=_DRAFT)
+        w = _workdir(Path(d), "vid00000001", draft=_DRAFT)      # no scout.started
         doc = _build(w, wave_start=start)
-    assert "summarize_sec" not in doc["timings"]
+    assert doc["timings"]["summarize_sec"] is None
     assert doc["wave"]["start"] == round(start, 1)
     assert doc["wave"]["draft_at"] >= doc["wave"]["start"]
+
+
+def test_the_marker_gives_the_agent_its_own_summarize_time() -> None:
+    # The per-video number the wave cannot give: measured from the agent's OWN first action, so
+    # time spent queued behind the concurrency cap is not billed to it.
+    with tempfile.TemporaryDirectory() as d:
+        w = _workdir(Path(d), "vid00000001", draft=_DRAFT, started_ago=90.0)
+        doc = _build(w, wave_start=time.time() - 4000)          # wave far wider than the agent
+    assert doc["timings"]["summarize_sec"] == 90.0              # its own window, not the wave's
+
+
+def test_a_marker_newer_than_the_draft_is_refused_not_negated() -> None:
+    # A respawn that touched the marker and then died, or a carried-over draft: the pair does
+    # not describe one agent's run. Absent beats a negative number presented as a measurement.
+    with tempfile.TemporaryDirectory() as d:
+        w = _workdir(Path(d), "vid00000001", draft=_DRAFT, started_ago=-120.0)
+        with redirect_stdout(io.StringIO()) as buf:
+            doc = build_scout.build(w, None)
+    assert doc["timings"]["summarize_sec"] is None
+    assert "scout.started is newer" in buf.getvalue()           # and the operator is told
+
+
+def test_transcribe_reports_its_own_cost_apart_from_the_stage_wall_clock() -> None:
+    # stages.transcribe includes the model load and warmup, which land on whichever video the
+    # sweep started with; detail.transcribe.work_sec is what THIS video cost. Both are kept.
+    with tempfile.TemporaryDirectory() as d:
+        w = _workdir(Path(d), "vid00000001", draft=_DRAFT,
+                     stages={"download": 12.4, "transcribe": 88.1},
+                     detail={"transcribe": {"work_sec": 61.25, "asr_passes": 2}})
+        doc = _build(w)
+    t = doc["timings"]
+    assert t["transcribe_sec"] == 88.1            # wall clock, load included — the run's cost
+    assert t["transcribe_work_sec"] == 61.2       # this video's cost, load excluded
+    # a tally, not a measurement: 2 rather than 2.0, or the field reads as continuous
+    assert t["transcribe_asr_passes"] == 2 and isinstance(t["transcribe_asr_passes"], int)
+
+
+def test_a_workdir_without_the_detail_section_still_builds() -> None:
+    # Every workdir transcribed before detail existed. The per-video fields are absent, never
+    # backfilled from the wall clock — which would restate the load as this video's cost.
+    with tempfile.TemporaryDirectory() as d:
+        w = _workdir(Path(d), "vid00000001", draft=_DRAFT)      # no detail key at all
+        doc = _build(w)
+    assert doc["timings"]["transcribe_sec"] == 88.1
+    assert doc["timings"]["transcribe_work_sec"] is None
+    assert doc["timings"]["transcribe_asr_passes"] is None
 
 
 def test_a_carried_over_draft_keeps_its_stamps_and_leaves_the_wave() -> None:
@@ -377,7 +434,9 @@ def test_an_unscanned_row_still_links_to_its_video() -> None:
     assert "https://www.youtube.com/watch?v=vid00000009" in page
 
 
-def test_the_two_lists_link_to_each_other() -> None:
+def test_the_table_links_into_the_cards_and_the_card_number_is_not_a_link() -> None:
+    # One direction only: the table is the index, the cards are what it indexes. The back-link
+    # on the card number duplicated the browser's own back gesture and competed with the title.
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
         _scouted(root, "vid00000001", "high")
@@ -388,7 +447,9 @@ def test_the_two_lists_link_to_each_other() -> None:
         page = out.read_text(encoding="utf-8")
     for n in (1, 2):
         assert f'<tr id="r{n}"' in page and f'href="#v{n}"' in page       # row → card
-        assert f'id="v{n}"' in page and f'href="#r{n}"' in page           # card → row
+        assert f'id="v{n}"' in page                                       # the card is there
+        assert f'href="#r{n}"' not in page                                # but nothing links back
+        assert f'<span class="idx">{n}</span>' in page                    # the number is a label
 
 
 def test_playlist_header_is_named_and_linked() -> None:
@@ -450,6 +511,13 @@ def test_thumbnail_is_inlined_not_linked() -> None:
     assert "i.ytimg.com" not in page
 
 
+def test_the_rendered_preview_width_matches_the_file_written_to_disk() -> None:
+    # Two files, one number, and nothing but a comment holding them together — which is exactly
+    # how the scan table ended up upscaling a 160px file into a 320px slot and going soft. The
+    # renderer may never ask for more pixels than build_scout stores.
+    assert f"width:{build_scout._THUMB_W}px" in scout_report._CSS
+
+
 def test_a_missing_thumbnail_renders_nothing_at_all() -> None:
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
@@ -462,7 +530,7 @@ def test_a_missing_thumbnail_renders_nothing_at_all() -> None:
     assert "<img" not in page and "base64" not in page
 
 
-def test_the_row_is_five_cells_and_the_jump_sits_on_the_description() -> None:
+def test_the_row_is_six_cells_and_the_jump_sits_on_the_description() -> None:
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
         _scouted(root, "vid00000001", "high")
@@ -472,11 +540,17 @@ def test_the_row_is_five_cells_and_the_jump_sits_on_the_description() -> None:
         page = out.read_text(encoding="utf-8")
     start = page.index('<tr id="r1"')
     row = page[start:page.index("</tr>", start)]
-    assert row.count("<td") == 5                     # №, превью, название, о чём, самое интересное
+    assert row.count("<td") == 6            # №, превью, название, время, о чём, самое интересное
     # the jump rides the description — the cell the reader is already reading when they want more
     assert '<td class="line"><a class="jump" href="#v1"' in row
-    assert "высокое" in row                          # grade as a chip under the title
-    assert 'class="num dur">12:14' in row            # runtime at the end of the highlight cell
+    # runtime is its OWN column, right after the title — scanned down the column, not hunted for
+    # at the end of a prose cell
+    assert '<td class="num dur">12:14</td>' in row
+    assert row.index('<td class="name">') < row.index('<td class="num dur">')
+    # the grade opens the highlight cell rather than sitting under the title
+    assert '<td class="why"><span class="chip v-watch">высокое</span>' in row
+    assert '<td class="name">' in row and "высокое" not in row[row.index('<td class="name">'):
+                                                              row.index('<td class="num dur">')]
 
 
 def test_the_video_id_column_is_gone_from_both_lists() -> None:
@@ -507,9 +581,9 @@ def test_every_verdict_gets_its_own_colour_class() -> None:
         assert f'chip {cls}' in page and f'card {cls}' in page
 
 
-def test_the_grade_also_stripes_the_row() -> None:
-    # Colour without spending a column on one short word: the chip names the grade, the stripe
-    # makes the table scannable at 30 rows.
+def test_the_row_itself_carries_no_grade_colour() -> None:
+    # The chip already names the grade in words AND in colour. Striping the row too tinted it
+    # before the reader had read anything, so the row is neutral now and the chip is the marker.
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
         _scouted(root, "vid00000001", "high")
@@ -518,9 +592,11 @@ def test_the_grade_also_stripes_the_row() -> None:
         out = root / "r.html"
         _report(["--queue", str(q), "--config", str(_cfg(root)), "--out", str(out)])
         page = out.read_text(encoding="utf-8")
-    assert '<tr id="r1" class="v-watch">' in page
-    assert '<tr id="r2" class="v-skip">' in page
-    assert "tbody tr.v-watch{border-left-color" in page
+    assert '<tr id="r1">' in page and '<tr id="r2">' in page      # no verdict class on the row
+    assert "tbody tr" not in page                                  # and no rule left to apply one
+    # the colour that remains is the chip's, in the highlight cell
+    assert '<span class="chip v-watch">высокое</span>' in page
+    assert '<span class="chip v-skip">слабое</span>' in page
 
 
 def test_trusted_author_marker_only_when_assessed() -> None:
@@ -611,19 +687,71 @@ def test_both_themes_are_defined() -> None:
 
 # --- the timing strip must not lie ---------------------------------------------
 def test_stage_totals_sum_and_the_wave_is_a_window_across_the_queue() -> None:
+    # ONE start shared by both entries, because that is what a wave is: the skill passes the same
+    # $waveStart to every build_scout call it spawns.
     entries = [
         {"timings": {"download_sec": 10.0, "transcribe_sec": 100.0},
          "wave": {"start": 1000.0, "draft_at": 1030.0}},
         {"timings": {"download_sec": 20.0, "transcribe_sec": 200.0},
-         "wave": {"start": 1002.0, "draft_at": 1050.0}},
+         "wave": {"start": 1000.0, "draft_at": 1050.0}},
     ]
     t = scout_report.totals_of(entries)
     assert t["download"] == 30.0 and t["transcribe"] == 300.0
-    # last draft (1050) minus FIRST start (1000) — the wave's wall clock, not any one agent's
+    # last draft (1050) minus the start (1000) — the wave's wall clock, not any one agent's
     assert t["summarize"] == 50.0
     # deliberately no grand total: adding two sums to a wall clock produced a figure that was
     # neither the work done nor the elapsed time
     assert "total" not in t
+
+
+def test_a_resumed_queue_does_not_bill_the_gap_between_waves_as_summarization() -> None:
+    # The resume case, which is the NORMAL one: the skill re-runs build_scout only for videos
+    # needing a new summary, so a carried-forward video keeps its original wave's start forever.
+    # Spanning min(start)..max(draft) across the queue then charges the hours BETWEEN waves to
+    # summarization — 40 s of work reported as 3640 s here.
+    entries = [
+        {"timings": {}, "wave": {"start": 1000.0, "draft_at": 1020.0}},   # wave A, 20 s
+        {"timings": {}, "wave": {"start": 4600.0, "draft_at": 4620.0}},   # wave B, an hour later
+    ]
+    t = scout_report.totals_of(entries)
+    assert t["summarize"] == 40.0            # 20 + 20, the two windows — never 3620
+    # and a single wave still behaves exactly as before
+    one = [{"timings": {}, "wave": {"start": 1000.0, "draft_at": 1020.0}}]
+    assert scout_report.totals_of(one)["summarize"] == 20.0
+
+
+def test_recording_a_stage_wall_clock_does_not_eat_the_per_video_detail() -> None:
+    # record_stage_timing used to write {"stages": ...} back over the whole file, which was
+    # invisible while `stages` was the only section and silently destroys `detail` now that a
+    # second one exists. The transcribe stage writes both, in that order.
+    from overdub import runreport
+
+    with tempfile.TemporaryDirectory() as d:
+        w = WorkDir(Path(d))
+        w.root.mkdir(parents=True, exist_ok=True)
+        runreport.record_stage_detail(w, "transcribe", work_sec=61.2, asr_passes=1)
+        runreport.record_stage_timing(w, "transcribe", 88.1)
+        doc = json.loads((w.root / "timings.json").read_text(encoding="utf-8"))
+    assert doc["stages"]["transcribe"] == 88.1
+    assert doc["detail"]["transcribe"] == {"work_sec": 61.2, "asr_passes": 1}
+
+
+def test_the_report_never_sums_the_per_video_figures() -> None:
+    # Per-video summarize times OVERLAP — the agents run concurrently — so their sum exceeds the
+    # wave's wall clock and means nothing. Same for work_sec against the stage wall clock. The
+    # strip carries the wall clocks; totals_of must not learn to add the others.
+    entries = [
+        {"timings": {"download_sec": 1.0, "transcribe_sec": 100.0,
+                     "transcribe_work_sec": 60.0, "summarize_sec": 900.0},
+         "wave": {"start": 1000.0, "draft_at": 1030.0}},
+        {"timings": {"download_sec": 2.0, "transcribe_sec": 200.0,
+                     "transcribe_work_sec": 180.0, "summarize_sec": 800.0},
+         "wave": {"start": 1000.0, "draft_at": 1050.0}},
+    ]
+    t = scout_report.totals_of(entries)
+    assert t["transcribe"] == 300.0          # the wall clocks, as before
+    assert t["summarize"] == 50.0            # the WAVE's window — never 1700
+    assert not any(k.endswith("work") or k == "summarize_per_video" for k in t)
 
 
 def test_unknown_timings_render_as_a_dash_not_a_zero() -> None:

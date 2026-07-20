@@ -160,7 +160,7 @@ _CSS = """
   --read:ui-serif,Georgia,"Times New Roman",serif;
   --mono:ui-monospace,"Cascadia Code",Consolas,monospace;
   background:var(--bg);color:var(--ink);font-family:var(--ui);line-height:1.55;
-  padding:clamp(20px,4vw,48px);max-width:1080px;margin:0 auto;}
+  padding:clamp(20px,4vw,48px);max-width:1240px;margin:0 auto;}
 @media (prefers-color-scheme:dark){.sr{--bg:#0f1419;--card:#171e26;--ink:#e6ecf2;--dim:#93a1b0;
   --line:#2a3541;--accent:#8fa3d8;--watch:#4cc79a;--maybe:#e0a84b;--skip:#e8798f;
   --watch-bg:#132a22;--maybe-bg:#2b2213;--skip-bg:#2b171d;--none-bg:#1c242d;}}
@@ -212,8 +212,9 @@ _CSS = """
   font-variant-numeric:tabular-nums;}
 .sr a.jump:hover{color:var(--accent);}
 .sr a:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px;}
-/* :target — the row/card you just jumped to, so the landing is not a guess */
-.sr tr:target td{background:var(--none-bg);}
+/* :target — the card you just jumped to, so the landing is not a guess. The row had the same
+   treatment until the card's back-link went away; with nothing linking to a row, it was a rule
+   that could never fire. */
 .sr .card:target{box-shadow:0 0 0 2px var(--accent);}
 
 /* the verdict's justification, distinct from the description in both lists */
@@ -222,23 +223,25 @@ _CSS = """
 /* the queue's source, above the counts */
 .sr .src{margin:0;font-size:1.02rem;font-weight:560;}
 
-/* the grade as a stripe down the row: colour without spending a column on one short word */
-.sr tbody tr{border-left:3px solid transparent;}
-.sr tbody tr.v-watch{border-left-color:var(--watch);}
-.sr tbody tr.v-maybe{border-left-color:var(--maybe);}
-.sr tbody tr.v-skip{border-left-color:var(--skip);}
+/* The grade USED to also stripe the whole row. Dropped 2026-07-20: with a chip already naming
+   it in words, the stripe was a second encoding of one fact, and it tinted the row so the eye
+   read "this row is different" before reading what the row said. The chip is the marker now. */
 .sr td.pic{width:1%;padding-right:0;}
-.sr td.name .chip{margin-top:6px;}
-.sr .dur{display:block;margin-top:6px;}
+/* runtime is its own column, right after the title: it is the number the reader budgets
+   against, and buried at the end of a prose cell it was found only by hunting */
+.sr td.dur{white-space:nowrap;}
+/* the grade opens the highlight cell — the chip and the reason it earned read as one thought */
+.sr td.why .chip{margin-right:8px;}
 /* the description carries the jump, so it must read as text, not as a link */
 .sr td.line a.jump{color:inherit;font-family:inherit;}
 .sr td.line a.jump:hover{color:var(--accent);}
 
-/* preview: fixed box so a missing one never shifts the column */
-.sr .thumb{display:block;width:160px;height:auto;border-radius:4px;margin-bottom:6px;
+/* preview: fixed box so a missing one never shifts the column. Kept in lockstep with
+   build_scout._THUMB_W — render wider than the file on disk and the column goes soft. */
+.sr .thumb{display:block;width:320px;height:auto;border-radius:4px;
   background:var(--none-bg);}
-.sr .cardhead .thumb{width:120px;margin:0 4px 0 0;}
-@media (max-width:640px){.sr .thumb{width:120px;}}
+.sr .cardhead .thumb{width:84px;margin:0;border-radius:3px;}
+@media (max-width:640px){.sr .thumb{width:200px;}}
 .sr p.why{font-family:var(--ui);font-size:.92rem;color:var(--dim);margin:0 0 10px;
   padding-left:10px;border-left:2px solid var(--line);max-width:66ch;}
 .sr .line{color:var(--dim);}
@@ -258,14 +261,24 @@ _CSS = """
 .sr .a-focus{border-color:var(--accent);color:var(--accent);}
 .sr .a-trust{border-style:dashed;}
 
-/* read cards: the severity stripe encodes the same verdict the chip states */
+/* read cards: the severity stripe encodes the same verdict the chip states.
+   The BOX is capped, not just the text inside it. The page widened to 1240px for the table's six
+   columns; a card stretched to that width around a 66ch paragraph is mostly empty right-hand
+   side, which reads as a rendering fault rather than as a measure. 62rem ≈ the padding plus that
+   measure, so the border sits just past where the prose actually ends. */
 .sr .card{background:var(--card);border:1px solid var(--line);border-radius:8px;
-  border-left:3px solid var(--line);padding:16px 18px;}
+  border-left:3px solid var(--line);padding:16px 18px;max-width:62rem;}
 .sr .card.v-watch{border-left-color:var(--watch);}
 .sr .card.v-maybe{border-left-color:var(--maybe);}
 .sr .card.v-skip{border-left-color:var(--skip);}
-.sr .cardhead{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px;margin-bottom:8px;}
-.sr .cardhead .name{font-size:1.04rem;}
+/* the card's header line: bigger type against a smaller preview, so number, title and runtime
+   carry the row rather than the thumbnail dwarfing all three */
+.sr .cardhead{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:10px;}
+.sr .cardhead .idx{font-size:1.15rem;}
+.sr .cardhead .name{font-size:1.3rem;font-weight:600;}
+.sr .cardhead .num{font-size:1.05rem;}
+/* the page widened for the table's six columns, so the prose caps its OWN measure: a 1240px
+   line is unreadable, and the card is the one place on this page meant to be read, not scanned */
 .sr .card p{font-family:var(--read);font-size:1rem;line-height:1.68;margin:0;
   max-width:66ch;color:var(--ink);}
 /* the summarizer splits by meaning; without a visible gap that split does nothing for the
@@ -280,24 +293,27 @@ _CSS = """
 def _row(e: dict) -> str:
     """One scan-table row. Everything that came from an LLM or a video title is escaped -- same
     rule as triage_html: raw prose into HTML is the one place a report can break itself."""
-    # The grade is a STRIPE on the row plus a chip under the title, not a column of its own: it
-    # is one short word, and giving it a column cost width that the two prose columns needed.
-    # The runtime rides at the end of the highlight for the same reason.
+    # The grade is a CHIP opening the highlight cell, not a column of its own and no longer a
+    # tint on the row: it is one short word, and giving it a column cost width the prose columns
+    # needed. It leads the highlight because the grade and the reason it earned are one thought —
+    # under the title it sat between the title and the description and split them.
     v = e["v"]
     trusted = ('<span class="tag a-trust">' + html.escape(_TRUSTED["label"]) + "</span>"
                if e.get("author") == "trusted" else "")
     return (
-        f'<tr id="r{e["n"]}" class="{v["cls"]}">'
+        f'<tr id="r{e["n"]}">'
         f'<td class="idx">{e["n"]}</td>'
         f'<td class="pic">{_thumb_img(e)}</td>'
-        f'<td class="name">{_title_link(e)}'
-        f'<span class="chip {v["cls"]}">{html.escape(v["label"])}</span>{trusted}</td>'
+        f'<td class="name">{_title_link(e)}{trusted}</td>'
+        # runtime next to the title, not at the end of a prose cell: it is scanned down the
+        # column ("what fits in an evening"), which a value buried in text cannot be
+        f'<td class="num dur">{clock(e["duration"])}</td>'
         # the jump lives on the description — the cell the reader is already looking at when
         # they decide they want more, and a wider target than the number it replaced
         f'<td class="line"><a class="jump" href="#v{e["n"]}" title="подробнее">'
         f'{html.escape(e["one_liner"])}</a></td>'
-        f'<td class="why">{html.escape(e["highlight"])}'
-        f'<span class="num dur">{clock(e["duration"])}</span></td>'
+        f'<td class="why"><span class="chip {v["cls"]}">{html.escape(v["label"])}</span>'
+        f'{html.escape(e["highlight"])}</td>'
         "</tr>"
     )
 
@@ -310,8 +326,9 @@ def _thumb_img(e: dict) -> str:
     b64 = e.get("thumb_b64")
     if not b64:
         return ""
-    return (f'<img class="thumb" src="data:image/jpeg;base64,{b64}" alt="" '
-            f'loading="lazy" width="160">')
+    # No width ATTRIBUTE: the table and the card want different sizes off one helper, and an
+    # attribute would fight the CSS that sets each. The width still comes from CSS in both.
+    return f'<img class="thumb" src="data:image/jpeg;base64,{b64}" alt="" loading="lazy">'
 
 
 def _title_link(e: dict) -> str:
@@ -330,7 +347,10 @@ def _card(e: dict) -> str:
     return (
         f'<article class="card {v["cls"]}" id="v{e["n"]}">'
         f'<div class="cardhead">'
-        f'<a class="jump" href="#r{e["n"]}" title="назад к списку">{e["n"]}</a>'
+        # the number is a LABEL here, not a link: the reader arrived from the table and their
+        # own back gesture already returns them, so a jump back was a link that never earned
+        # its underline and one more thing competing with the title
+        f'<span class="idx">{e["n"]}</span>'
         f'{_thumb_img(e)}'
         f'<span class="name">{_title_link(e)}</span>'
         f'<span class="chip {v["cls"]}">{html.escape(v["label"])}</span>'
@@ -407,7 +427,8 @@ def render(entries: list[dict], totals: dict, queue_name: str, stamp: str,
     out.append('<div class="wrap"><table><thead><tr>'
                # the number and preview columns carry no label: "№" over a column of numbers,
                # and a word over a column of images, say nothing the contents do not
-               "<th></th><th></th><th>Название</th><th>О чём</th><th>Самое интересное</th>"
+               "<th></th><th></th><th>Название</th><th>Время</th><th>О чём</th>"
+               "<th>Самое интересное</th>"
                "</tr></thead><tbody>")
     out.extend(_row(e) for e in entries)
     out.append("</tbody></table></div></section>")
@@ -510,7 +531,18 @@ def totals_of(entries: list[dict]) -> dict:
              and isinstance(w.get("start"), (int, float))
              and isinstance(w.get("draft_at"), (int, float))
              and w["draft_at"] >= w["start"]]
-    sm = (max(w["draft_at"] for w in waves) - min(w["start"] for w in waves)) if waves else None
+    # GROUPED BY START, one window per wave, windows summed. A queue is routinely summarized in
+    # SEVERAL waves -- the skill's resume filter re-runs build_scout only for the videos that
+    # need a new summary, so the ones carried forward keep the OLD wave's start forever. Taking
+    # `max(draft) - min(start)` across the whole queue then spans every wave AND the idle time
+    # between them: two 20-minute waves five hours apart reported five and a half hours of
+    # "summarization". That is the same mistake the per-video duration was (2026-07-20) -- a
+    # wall clock presented as work -- one level up, so it is fixed the same way: measure only
+    # what was actually running, never the gaps.
+    last: dict[float, float] = {}
+    for w in waves:
+        last[w["start"]] = max(last.get(w["start"], w["start"]), w["draft_at"])
+    sm = sum(end - start for start, end in last.items()) if last else None
     # Total runtime of the QUEUE itself — the number the operator budgets against ("do I have
     # 9 hours of watching here or 90 minutes"). Missing durations are skipped, not zeroed, and
     # the count of skipped rows travels with it so the figure can be read as a floor rather than
