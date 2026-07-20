@@ -4,6 +4,11 @@ Run: .venv-asr/Scripts/python.exe tests/test_synthesize_done.py   (or via pytest
 Filesystem only — no GPU, no engine, no worker. Guards the INBOX 2026-07-17 bug:
 a complete manifest must NOT skip the stage over wavs rendered from a stale
 translation (`--force --only translate` + plain rerun; bit the renorm A/B).
+
+Since 2026-07-20 it also guards the mirror-image failure: the gate must stay INERT to
+report-only fields added to the translation record (PLAN item 1's `src`/`src_note`).
+Both directions are pinned, because a gate that cannot be fooled by a new key is
+worthless if it also stopped noticing a changed one.
 """
 
 from __future__ import annotations
@@ -83,6 +88,38 @@ def test_grouped_unit_matches_joined_text() -> None:
 def test_grouped_unit_stale_member_reruns() -> None:
     segs = [seg(0, "первый"), seg(1, "ДРУГОЙ")]
     assert _run(segs, [unit([0, 1], "первый второй")]) is False
+
+
+def test_report_only_fields_do_not_invalidate_the_manifest() -> None:
+    """PLAN item 1 widened the translation record with `src`/`src_note` — REPORT fields the
+    synthesize stage never renders from. If this gate compared whole records instead of the
+    fields it actually uses (ids + joined text_tts), the first batch after that change would
+    silently re-render every unit in every video: hours of GPU, no error, no flag, and the
+    operator's only clue a longer night. Inertness to a new key is a contract, not luck."""
+    segs = [seg(0, "первый"), seg(1, "второй")]
+    segs[0]["src"] = "ok"
+    segs[1]["src"] = "garbled"
+    segs[1]["src_note"] = "source sentence duplicates its neighbour"
+    assert _run(segs, [unit([0], "первый"), unit([1], "второй")]) is True
+
+
+def test_report_only_fields_do_not_blind_the_staleness_check() -> None:
+    """The other direction, and the reason the test above is not enough on its own: a record
+    carrying report fields must STILL re-render when its text_tts actually changed. A gate
+    that ignores the new keys by ignoring the whole record would pass the test above."""
+    segs = [seg(0, "первый"), seg(1, "НОВЫЙ перевод")]
+    segs[0]["src"] = "ok"
+    segs[1]["src"] = "ok"
+    assert _run(segs, [unit([0], "первый"), unit([1], "второй")]) is False
+
+
+def test_report_only_fields_survive_grouping() -> None:
+    """Grouped units join member text_tts; the report fields of a member must not leak into
+    that join (a `src_note` folded into the joined text would re-render the whole group)."""
+    segs = [seg(0, "первый"), seg(1, "второй")]
+    segs[1]["src"] = "truncated"
+    segs[1]["src_note"] = "cut mid-clause"
+    assert _run(segs, [unit([0, 1], "первый второй")]) is True
 
 
 def test_legacy_segments_doc_matches() -> None:
