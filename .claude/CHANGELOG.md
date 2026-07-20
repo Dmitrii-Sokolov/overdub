@@ -1,5 +1,133 @@
 # CHANGELOG
 
+## 2026-07-20 — the scout REPORT: rated queue, two lists, published as an Artifact (route C)
+
+Built on the same day as `--scout` below, after the mode itself was exercised end to end. Scout
+answered "what is in this queue"; this layer answers "what of it earns my time".
+
+- **`.claude/viewer-profile.md` — the criterion, and it is personal.** Verdicts are judged against
+  one person's stacks, what they already KNOW (the section that stops the system recommending
+  beginner courses), and what makes a video useless to them regardless of topic. Without it a
+  summarizer can only rate generic quality, which is not the question being asked. **Gitignored**;
+  the prompt that builds it from the owner's own chat history is committed at
+  `.claude/skills/overdub-scout/references/viewer-profile-prompt.md`, because Claude Code has no
+  access to conversation history, profile or memory and cannot produce it here. The skill's S0
+  preflight refuses to scout without it — before S1, since S1 is the expensive half.
+- **Two orthogonal axes, not one scale.** `verdict` (`watch`/`maybe`/`skip`) is what a video is
+  worth; `attention` (`focus`/`background`) is what it COSTS to consume. A deep dive needing
+  practice alongside and a survey you can run in the background compete for different budgets, so
+  `background` is not a worse grade. `attention` is REQUIRED for the same reason the verdict is: an
+  optional cost label goes missing exactly when the summarizer was least sure. An optional `author`
+  axis stays absent while the profile's trusted list is empty — a column of one repeated value is
+  noise, and filling that list lights it up with no code change.
+- **`scripts/build_scout.py` owns everything deterministic**, the same division of labour
+  `build_translation.py` enforces on route B: the sub-agent writes six judgement fields into
+  `scout.draft.json`, the helper adds title, duration, sentence count and stage timings FROM
+  ARTIFACTS, and validates. An unknown `verdict`/`attention` is fatal (they are what the page sorts
+  and colours on); a bad optional `author` is clamped; empty prose is fatal; over-length is truncated
+  with a `[warn]`.
+- **Per-video summarize time is taken from the FILESYSTEM**, not from the model. Sub-agents run
+  outside the process and in parallel, so `timings.json` cannot see them; the alternative — the agent
+  stamping its own start/finish — is unverifiable self-measurement. `mtime(scout.draft.json) −
+  wave_start` is honest about what it measures: TIME-UNTIL-DONE FROM THE WAVE START, which for a
+  queued agent includes waiting for a slot. Per-video values therefore do not sum to the wave's wall
+  clock, and the page says so. A draft older than the wave start is a carry-over, recorded as
+  UNKNOWN rather than as an instant zero.
+- **`scripts/scout_report.py` → `work/scout-report.html`.** A scan table (verdict/attention/runtime
+  block · preview · title · what it is · why that verdict) and read cards in the SAME order, cross
+  linked both ways. **Order is the queue's, never sorted** — the report is read beside the playlist
+  it came from, so position is information; this is the deliberate opposite of `triage_html.py`,
+  which sorts the worst first because it answers "what is broken". Numbers survive gaps for the same
+  reason. Body-fragment HTML (inline `<style>`, no doctype/`<html>`) so it publishes as a Claude
+  Artifact unchanged and still opens locally.
+- **`one_liner` and `reason` are separate fields** because the scan table asks two questions at once
+  and one field answers neither well: "разбор оркестрации агентов" does not say whether to watch it,
+  "тема в активной работе" does not say what it is. The full write-up splits into paragraphs on blank
+  lines — **the split is the summarizer's**, since only it knows where the meaning turns; the
+  renderer honours blank lines and never invents its own.
+- **Three unfinished states, not one.** `не скачано` / `не расшифровано` / `не отсканировано`, told
+  apart by which artifact is missing, because each needs a different fix. Probed transcript-first: a
+  transcript proves the download happened whatever the media looks like now, and probing the wav
+  first would order a re-fetch of something already transcribed. A queued video never vanishes from
+  the report.
+- **Previews are inlined as data-URIs.** A remote `src` is blocked outright by the Artifact CSP —
+  invisible in the one place this page is meant to be read. yt-dlp fetches the thumbnail during the
+  scout download; older workdirs self-heal over the network from the URL `info.json` already carries.
+  One normalizing function, three possible inputs, one output, never fatal — ~3.5 KB per video after
+  an ffmpeg downscale to 160 px.
+- **The queue's provenance travels with the queue**: a `# playlist: <title> | <url>` header comment
+  names and links the source at the top of the report. A comment, so every queue written before this
+  keeps working and the line stays valid pipeline input.
+- **Transient download failures retry in-process.** A 12-video scout batch lost two videos to
+  `HTTP Error 403` and `Video unavailable`; both downloaded on a plain re-run of the same command,
+  same binary, same URLs, and their audio-only formats were verified present afterwards — transient,
+  and stage-major hoisting every download into the first minutes is the burst shape that provokes it.
+  yt-dlp's own knobs (`--retries`/`--extractor-retries`/`--retry-sleep exp=2:60`) now spend seconds
+  inside the run instead of costing a human-initiated re-run. **NOT a bug fix** — the resume contract
+  already covered it. No full-video fallback was added: paying ~20× the bytes to route around a
+  transient is the wrong trade, and the no-audio-only case already fails loud.
+- **Own skill, `overdub-scout`** (S0 preflight → S1 scout → S2 rate+summarize → S3 report+publish),
+  split out of `overdub-sonnet-batch` so the router cannot pick the dubbing skill for a scouting
+  request. The summarizer prompt is shared between the two and marked as such in both files.
+- Verified: 41 tests in `tests/test_scout_report.py`, full suite green (17 files). **Not verified:**
+  no live sub-agent has ever written a `scout.draft.json` — every draft in testing was hand-authored,
+  so `reason`, the paragraph split and the previews are unexercised against a real wave.
+
+## 2026-07-20 — scout mode: `--scout` = download (audio only) → transcribe → stop (roadmap item 1)
+
+- **A cheap triage pass over an unread queue.** `--scout` truncates the pipeline to two stages and
+  fetches AUDIO ONLY (`yt-dlp -f bestaudio` → `source.wav`, 16 kHz mono — exactly what whisper eats).
+  `source.mkv` is never written, so a 100-video queue costs a few GB instead of ~100 GB in hour 0,
+  which is the constraint that motivated the mode (81 GB free on D:, measured 2026-07-20). Works with
+  a single URL and with `--batch`, in both batch orders.
+- **`DownloadStage.done()` splits into two gates** — audio-ready (`source.wav`) for scout, video-ready
+  (`source.mkv` AND `source.wav`) unchanged for everything else. A promoted video therefore fails the
+  video gate and re-downloads, while `transcribe` fast-skips on the scout's `sentences.json` so the
+  large-v3 pass is not repeated. The `~5%` this wastes, and the three rejected ways of avoiding it,
+  are in DECISIONS 2026-07-20.
+- **`-f bestaudio` with no `/best` tail**, unlike the full branch's `/b`. The fallback would pull a
+  progressive VIDEO stream on a source with no audio-only format — scout silently doing the exact
+  thing it exists to prevent, at ~20× the bytes. A hard FAIL for that one video is the correct and
+  loud outcome. The audio container is deleted after extraction; the wav is the artifact.
+- **`--write-info-json` lands as `source.audio.<ext>.info.json`, a name nothing reads**, so the fetch
+  renames it to `source.info.json`. Left alone it costs a 30 s networked `yt-dlp --print title` per
+  scouted workdir at report time (~50 min across a 100-video queue) AND silently downgrades a promoted
+  video's `video_sec_source` from `info_json` to `ffprobe`/`sentences`. The rename is unconditional:
+  the only other writer for a scout workdir is `_title_of`'s title-only backfill, a strict subset.
+- **No summarize stage, deliberately** — the pipeline stops after transcribe and `summary.md` keeps
+  being written by a Sonnet sub-agent at the seam, exactly as route B already does. `read_summary`
+  and `run.json`'s schema needed no change (predicted in the 2026-07-20 summary entry, confirmed).
+- **`--scout` is a mode, not an `--only` composition.** `scout_stages()` builds the truncated list and
+  the audio-only `DownloadStage` in ONE expression, so the two facts cannot desynchronize into
+  "truncated list + full download" (100 GB for a triage pass) or "full list + audio-only download"
+  (mux fails eight hours in). `--scout --only` and `--scout --repair-asr` are usage errors, refused
+  before any side effect.
+- **The scout page.** `scripts/triage_html.py` skipped every run.json-less workdir, so the whole mode
+  was invisible there — a pure-scout batch printed "nothing to render" and wrote no file. Scouted
+  workdirs now render as a **card** (`SCOUT` tag, duration, sentence count, summary): no audio player,
+  no RTF, no triage verdict, and counted separately from videos so "0 need triage" cannot cover 100
+  never-dubbed videos. The discriminator is `sentences.json` AND NO `source.mkv` — `sentences.json`
+  alone is also the shape of route B's step 1, a workdir between `--repair-asr` and its re-run, and
+  any batch killed mid-translate. At zero scouted videos both the page meta and the CLI line are
+  byte-identical to the pre-scout strings.
+- **New CLI status line** `scouted · 12:34 · 210 sentences · summary pending|ok`, not
+  `(no output.mkv)` — the latter is what a broken full run prints, so a clean scout batch would have
+  read as a wall of defects. Re-running the identical `--scout` command is therefore the operator's
+  completion check for the whole pass: both stages fast-skip, and the line re-reads disk.
+- **Pre-existing hazard closed on the way past:** WAV extraction now writes `source.wav.tmp` +
+  `replace_retry` on BOTH download paths. Both `done()` gates are bare existence checks, so a run
+  killed mid-extraction previously left a truncated `source.wav` that every later resume accepted as
+  complete. The atomic tmp then needed an explicit `-f wav` — ffmpeg picks its muxer from the
+  extension and `.tmp` matches none, which took both branches down with exit 127 (reproduced against
+  the repo's ffmpeg 7.1.1, and the same hazard `mux.py`'s `-f matroska` already guards).
+- **Verified in tests only.** 44 new tests — 32 in the new `tests/test_scout.py`, 12 appended to
+  `tests/test_triage_html.py`; all 16 test files green (`test_batch_order.py` needed no edits, as
+  predicted). A mutation harness killed 8/8 mutants, and in doing so caught two errors in the code
+  review: one proposed fix was unpinned by the test that supposedly covered it, and `read_summary`
+  does NOT strip a heading to empty (it strips the marker, keeps the text). **No real-media run:**
+  no scout pass has been executed against YouTube, so bytes saved, wall per video and the promotion
+  round-trip on disk are all unmeasured. See PLAN.
+
 ## 2026-07-20 — source-anomaly reporting at the translate seam (roadmap item 1)
 
 - **The translate sub-agent now REPORTS source damage instead of smoothing it.** The prompt gains a

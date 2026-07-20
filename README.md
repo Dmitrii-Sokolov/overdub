@@ -129,6 +129,97 @@ cleanly at the translate seam and resumes from it. No Ollama needed.
 Both routes are good: Gemma gives good quality locally and slowly; Sonnet needs
 a subscription and gives better quality in the cloud, much faster.
 
+### C. Scout a queue before dubbing it (audio only)
+
+A cheap pass over an unread queue — **download → transcribe → stop**. No
+translation, no TTS, no MKV. It answers one question per video: is this worth
+the dub? Run it before route A or B on any queue you have not read.
+
+```powershell
+.venv-asr\Scripts\python.exe -X utf8 -m overdub --batch queue.txt --scout
+```
+
+- **Audio only.** `yt-dlp -f bestaudio` → `work/<id>/source.wav` (16 kHz mono,
+  exactly what whisper eats). `source.mkv` is never written, so a 100-video
+  queue costs a few GB instead of ~100 GB in hour 0 — full-mode queue size is
+  bounded by free disk, not by patience. There is no `/best` fallback on
+  purpose: a source with no audio-only format FAILS out of the scout pass
+  rather than quietly pulling a full video stream.
+- Single video: same command with a URL instead of `--batch`. `--force`
+  re-fetches (and re-transcribes). `--scout` is its own mode, not a
+  composition — `--scout --only …` and `--scout --repair-asr …` are usage
+  errors, refused before any side effect.
+- Per video the summary line reads
+  `scouted · 12:34 · 210 sentences · summary pending|ok`. Re-running the
+  identical command is the completion check for the whole pass: both stages
+  fast-skip, so it takes seconds and just re-reads what is on disk.
+
+**The summary is written at the seam, not by the pipeline.** There is no
+summarize stage and no Ollama involvement: after the scout pass one Sonnet
+sub-agent per video reads `sentences.json` and writes two files —
+`work/<id>/summary.md` (prose, shared with route B) and
+`work/<id>/scout.draft.json` (`{verdict, attention, one_liner, reason,
+paragraph}` — the judgement the report renders; `one_liner` says what the video
+is, `reason` says why it earned its verdict, and they are kept apart because the
+scan table asks both questions at once). The sub-agent also reads `source.info.json`, so
+channel and upload date are available to it — a transcript alone carries neither,
+which would leave any staleness or author rule in the profile unenforceable.
+`scripts/build_scout.py` then assembles `work/<id>/scout.json`, owning everything
+deterministic (title, duration, sentence count, stage timings) and rejecting an
+unknown verdict outright — the same split of labour `build_translation.py`
+enforces on route B.
+
+**Two axes, not one.** `verdict` (`watch` / `maybe` / `skip`) is what the video is
+worth; `attention` (`focus` / `background`) is what it costs to consume. A deep
+dive that needs practice alongside and a survey you can run in the background
+compete for different budgets and are not comparable on one scale — so `background`
+is not a worse grade. An optional `author` axis (`trusted`) is rendered only when
+the profile carries a trusted-author list to match against.
+
+**Both are judged against a viewer profile.** `.claude/viewer-profile.md` — one
+person's stacks, what they already know, and what makes a video useless to them.
+Without it a summarizer can only rate generic quality, which is not the question.
+The file is **gitignored** (personal); the prompt that builds it from your own chat
+history is committed at
+`.claude/skills/overdub-scout/references/viewer-profile-prompt.md`, and the skill
+refuses to scout until the profile exists.
+
+Then build the report — two lists over the same videos, **in queue order**:
+
+```powershell
+.venv-asr\Scripts\python.exe -X utf8 scripts\scout_report.py --queue queue.txt
+```
+
+Writes `work/scout-report.html`: a verdict tally and a timing strip (download,
+transcribe, summarize, report build, total), a scan table (verdict · title ·
+duration · video id · one line), then a card per video with the full paragraph.
+Order is the queue's, never sorted — the report is read next to the playlist it
+came from, so position is information. A queued video with no `scout.json` gets
+an explicit "не отсканировано" row rather than vanishing. The output is a body
+fragment (inline `<style>`, no `<html>`/`<head>`), so it publishes as a Claude
+Artifact unchanged and still opens locally.
+
+The generic triage page also handles a scouted workdir. It has no `run.json` —
+nothing was dubbed — so it appears as a **scout card** instead of a batch-table
+row:
+
+```powershell
+.venv-asr\Scripts\python.exe -X utf8 scripts\triage_html.py --queue queue.txt
+```
+
+Cards carry the `SCOUT` tag, duration, sentence count and the summary — no audio
+player, no RTF, no triage verdict, because none of those exist for an undubbed
+video. They sort after any dubbed videos and are counted separately
+(`N scouted`), never folded into the video total or the throughput figure.
+`scripts/run_report.py` prints the same summaries in the text digest.
+
+**Promotion** — trim `queue.txt` to the survivors and run the ordinary route A
+or B command, without `--scout`. `transcribe` fast-skips on the scout's
+`sentences.json`, so the large-v3 pass is not repeated; `download` re-runs
+because the full contract needs `source.mkv`, which re-fetches the audio bytes
+inside the merged container. That is ~5% extra traffic for zero new machinery,
+accepted deliberately (DECISIONS 2026-07-20).
+
 ### Repairing an ASR defect
 
 When whisper collapses — a repetition loop, or a sentence stamped onto an

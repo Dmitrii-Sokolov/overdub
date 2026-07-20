@@ -1,5 +1,61 @@
 # DECISIONS
 
+## 2026-07-20 — Scout mode: audio-only fetch, no local summarizer, its own flag
+
+Three choices, one per axis. Recorded together because each is cheap to "fix" later in exactly the
+direction that undoes the reason it exists, and because each one's cost is real and named rather
+than argued away.
+
+**1. Scout fetches AUDIO ONLY, and a promoted video re-downloads.** `yt-dlp -f bestaudio` →
+`source.wav`; no `source.mkv`, so `DownloadStage.done()` splits into an audio gate and the unchanged
+video gate. The forcing constraint is disk, not time: D: has 81 GB free, and a 100-video queue in
+full mode wants ~100 GB in hour 0 (stage-major hoists all downloads to the front). A triage pass that
+cannot fit on the disk is not a triage pass.
+
+**Cost, named: promotion re-downloads the audio bytes inside the merged MKV — ~5% extra traffic,
+paid on exactly the videos that were worth dubbing.** Accepted for zero new machinery: no cache, no
+container surgery, no third gate. A second, subtler cost rides along — the promoted run OVERWRITES
+`source.wav` with a differently-decoded file (ba[ext=m4a] out of the MKV, vs the scout's opus), while
+`sentences.json` was read off the old bytes and `--repair-asr` will clip windows from the new ones.
+Same YouTube master and same timeline, so this is believed benign; it has not been checked, and it is
+in PLAN's backlog rather than dismissed.
+
+Rejected, all three for the same class of reason: **letting the video gate accept `source.wav`** —
+mux then gets a container with no video stream, i.e. the failure lands eight hours later at the end
+of a run; **skipping re-extraction when `source.wav` already exists** — saves the rewrite and leaves
+a wav from a DIFFERENT fetch as the permanent input to a full run, which is a stale artifact served
+as current; **a separate scout workdir** — two directories per video and a promotion step that has
+to move files, to save a fetch that costs 5%.
+
+**2. No local summarizer. The summary stays a Sonnet sub-agent at the seam.** Rejected: a
+Gemma/Ollama summarize stage inside the pipeline. It would have made scout self-contained, and the
+2026-07-20 summary entry had already established the read-boundary sanitizing that makes an
+LLM-written prose blob safe to render.
+
+**Cost, named: scout is NOT turn-key on the local route, which is the one property route A has that
+route B does not.** Route A is one command; a scout pass is a command plus an agent fan-out, so a
+Gemma-only operator gets `sentences.json` and a page full of `summary pending` and no way to finish.
+Paid because the alternative is worse in a way this project has already measured: the summary's whole
+job is "should a human spend an hour on this", and Gemma-3-12B is the model we A/B'd into second
+place for translation (2026-07-18). A ~200-word judgement call written by the weaker model would be
+read as if written by the stronger one. Adding a Gemma summarizer stays available — it is additive,
+it needs no schema change, and this decision is not a bar on it. It just was not built blind.
+
+**3. A dedicated `--scout` flag, not `--only download transcribe`.** `--scout` selects
+`scout_stages()`, which constructs the truncated list and the audio-only `DownloadStage` in one
+expression. `--only` cannot express the audio-only download at all — that fact lives INSIDE the
+stage — and `run_pipeline` checks STOP before the only/done filters, so an `--only` composition
+would sweep 8 stages and grid 8 STOP checkpoints per video to do 2 stages of work.
+
+**Cost, named: a flag that must be kept in sync with the stage list.** Adding a stage to
+`all_stages` that belongs before transcribe will not appear in `scout_stages`, and nothing enforces
+that scout stays a strict PREFIX of the full pipeline — which it must, because a promoted video
+re-enters the full pipeline on the artifacts these two stages produced. Mitigations, both partial:
+the prefix property is pinned by a test, and the two facts that could actually corrupt a run
+(truncation + download shape) are welded into one expression so they cannot drift apart. The flag
+also has to be excluded by hand from every other mode — `--only` and `--repair-asr` both needed a
+new usage-error clause, and a third mode would need a third.
+
 ## 2026-07-20 — `--repair-asr` exits 0 when every window was rejected (decided, not defaulted)
 
 **Kept as is.** A rejection is a decided, reproducible outcome — the gate looked and said no — not a
