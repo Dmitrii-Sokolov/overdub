@@ -51,6 +51,25 @@ class Config:
                                                  # from the asr.floor_ratio series run_report now
                                                  # accumulates — not from another hand-run probe.
 
+    # --- --repair-asr: isolated-window re-ASR (DECISIONS 2026-07-19) ---
+    # Neither key enters synth_key: they change SOURCE TEXT, which is upstream of synthesis
+    # and already covered by the downstream delete set. Do not "fix" that.
+    repair_window_min_sec: float = 8.0    # A collapsed sentence has a BOGUS span (measured:
+                                          # 66 chars in 0.94 s; 0.28 s on RyvXxApfHkk#11), so
+                                          # clipping its own span yields no usable audio. The
+                                          # window is widened outward by whole SENTENCES until
+                                          # its audio span reaches this length. 8-18 s is the
+                                          # band all 7 manual repairs worked in — a reported
+                                          # range, not a calibrated threshold. Do not cite it
+                                          # as measured.
+                                          # There is NO matching max key: `repair_window_max_sec`
+                                          # existed until 2026-07-20, when it was measured to be
+                                          # inert — see repair.widen's docstring. A window that
+                                          # reaches min_sec by swallowing one long neighbour, or
+                                          # a merged window, has no upper bound, and that is
+                                          # correct: reaching min_sec is what makes the clip
+                                          # transcribable. The actual span is always printed.
+
     # translation — Gemma-3-12B via Ollama native /api/chat (see stages/translate.py)
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "gemma3:12b"

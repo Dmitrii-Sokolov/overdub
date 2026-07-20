@@ -6,8 +6,8 @@ by earlier stages) and rolls them up. The ONE external call it may make is a bes
 `ffprobe` on the source media to recover a video duration when yt-dlp left none — guarded, and
 purely a fallback for the RTF denominator.
 
-Pure stdlib on purpose (json/os/shutil/subprocess/math/pathlib): the aggregation logic is
-unit-tested without importing torch/whisper/soundfile, and the module has NO dependency on
+Pure stdlib on purpose (json/math/os/re/shutil/subprocess/textwrap/pathlib): the aggregation
+logic is unit-tested without importing torch/whisper/soundfile, and the module has NO dependency on
 pipeline/stages/cli/config internals (config is passed in, WorkDir is duck-typed via `.root`
 and its artifact-path properties) so importing it from pipeline.py cannot create a cycle.
 
@@ -34,9 +34,11 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
 import shutil
 import subprocess
 import sys
+import textwrap
 
 # Fixed vocabularies — kept explicit so a run.json always carries every key at 0 (a consumer
 # can diff two runs without None-guarding), and an unknown/new flag can never silently vanish.
@@ -50,6 +52,28 @@ _BROKEN = 1.8   # combined compression factor at/above which a unit is "candidat
 # needs_triage. See completeness.py — entity_loss names personal-name Russification as its
 # dominant IRREDUCIBLE false positive, and length_short is the deliberately coarse weak signal.
 _ADVISORY_COMPLETENESS = frozenset({"entity_loss", "length_short"})
+
+# Source anomalies the route-B translate sub-agent REPORTS on the English source (PLAN item 1).
+# Same fixed-vocab discipline as above; "unknown" is the clamp bucket build_translation.py writes
+# for a kind outside its own _SRC_KINDS, so a new/mistyped kind is counted, never dropped.
+# Deliberately NOT named dup_adjacent: dup_neighbour is a different detector with different
+# evidence (an LLM reading the text vs a string metric) and must never be conflated with the
+# completeness flag in a digest line.
+_SOURCE_KINDS = ("garbled", "truncated", "dup_neighbour", "enum_repeat",
+                 "context_contradiction", "unknown")
+_SOURCE_LIMIT = 40      # mirrors summarize_offenders(limit=40) — keeps run.json small + diffable
+
+# The summary is free-form Russian prose an LLM wrote (PLAN item 3 — INFORMATIONAL, it gates
+# nothing). Two renderers consume it, so the sanitizing happens ONCE here at the read boundary and
+# not in either renderer: a markdown heading inside the text would collide with the digest's own
+# "### <vid>" block header and silently break block boundaries for the agent that parses the
+# digest, and a runaway blob would wreck the digest's line flow and bloat the triage page. There is
+# deliberately NO build_summary.py operator step — an operator step can be skipped, a read boundary
+# both renderers go through cannot (same "centralize the shared transform" precedent report.py
+# cites for normalize.py).
+# 4000 chars is ~3x what a ~200-word Russian summary occupies — headroom, not a quality bar.
+_SUMMARY_MAX_CHARS = 4000
+_HEADING = re.compile(r"^\s{0,3}#{1,6}\s*")     # atx heading marker: strip the marker, keep the text
 
 
 # --- small pure helpers -------------------------------------------------------
@@ -154,6 +178,30 @@ def record_stage_timing(work, stage, wall_s) -> None:
         print(f"[warn] could not record timing for {stage!r}: {e}", file=sys.stderr)
 
 
+def read_summary(work):
+    """work/<id>/summary.md → sanitized prose, or None when absent/empty/unreadable (PLAN item 3).
+
+    A SIDECAR, deliberately not folded into run.json: run.json is derived and self-clears when
+    report.json + translation.json are both gone (a scout-mode workdir, PLAN item 4), so routing the
+    summary through the rollup would make it invisible in the one mode it was designed for. Keeping
+    the rollup small and diffable is load-bearing besides.
+
+    Never raises: a missing summary is NORMAL (it gates nothing — the v1 summary is informational)
+    and an unreadable one degrades to None, the same contract _load_json gives every other optional
+    artifact this module reads."""
+    try:
+        raw = work.summary.read_text(encoding="utf-8")
+    except (OSError, ValueError):                 # ValueError: torn UTF-8, mirrors _load_json
+        return None
+    lines = [_HEADING.sub("", ln).rstrip() for ln in raw.replace("\r\n", "\n").split("\n")]
+    text = re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
+    if not text:
+        return None
+    if len(text) > _SUMMARY_MAX_CHARS:            # visible truncation, never a silent drop
+        text = text[:_SUMMARY_MAX_CHARS].rstrip() + " …[truncated]"
+    return text
+
+
 def build_run_report(work, cfg):
     """Aggregate the persisted artifacts into work/run.json (atomic) and RETURN the dict.
 
@@ -232,15 +280,35 @@ def _build_run_report(work, cfg):
 
     # --- translate -----------------------------------------------------------
     tr_by_type = {k: 0 for k in _TRANSLATE_FLAGS}
-    n_sentences = n_failed = 0
+    sa_by_type = {k: 0 for k in _SOURCE_KINDS}
+    sa_items: list[dict] = []
+    n_sentences = n_failed = n_scanned = 0
     if isinstance(translation, list):
         n_sentences = len(translation)
         for rec in translation:
-            if not isinstance(rec, dict) or rec.get("status") == "ok":
+            if not isinstance(rec, dict):
+                continue
+            # A source anomaly is ORTHOGONAL to status: an anomalous English sentence usually
+            # translates fine and therefore carries status "ok". This read MUST precede the
+            # status-ok `continue` below or the whole signal disappears for the common case.
+            src = rec.get("src")
+            if isinstance(src, str):                 # "ok" counts as scanned -- the attestation
+                n_scanned += 1
+                if src != "ok":
+                    kind = src if src in sa_by_type else "unknown"
+                    sa_by_type[kind] += 1
+                    if len(sa_items) < _SOURCE_LIMIT:
+                        sa_items.append({
+                            "id": rec.get("id"),
+                            "kind": kind,
+                            "note": (rec.get("src_note") or "")[:200],
+                            "src_en": (rec.get("src_en") or "")[:100]})
+            if rec.get("status") == "ok":
                 continue
             n_failed += 1
             flag = rec.get("flag")
             tr_by_type[flag if flag in tr_by_type else "unknown"] += 1
+    n_src = sum(sa_by_type.values())
 
     # --- verify (rollup copied; by_type recomputed over UNIT leaders) --------
     vr = report.get("verify") if isinstance(report, dict) else None
@@ -310,7 +378,14 @@ def _build_run_report(work, cfg):
         n_over = sum(1 for v in speed_vals if v >= _BROKEN)
 
     n_assemble_flagged = sum(1 for lead in leaders if lead.get("assemble_flag"))
-    flags_total = n_failed + v_n_flagged + completeness["n_flagged"] + n_assemble_flagged
+    flags_total = (n_failed + v_n_flagged + completeness["n_flagged"] + n_assemble_flagged
+                   + n_src)
+    # Source anomalies are ADVISORY in v1: counted in flags_total, printed everywhere, but they
+    # do NOT move flags_actionable or needs_triage. An LLM asked to report source damage has no
+    # measured precision yet, and _ADVISORY_COMPLETENESS above demoted entity_loss for exactly
+    # this reason -- it marked 11 of 12 videos, which carries the same information as marking
+    # none. Promotion is ONE line (add n_src to flags_actionable) and is gated on one batch's
+    # measured fire rate; this demotion is provisional, not permanent.
     # needs_triage answers "does a human have to OPEN this video", so only actionable flags and
     # speed offenders decide it; flags_total keeps counting everything for trend/comparison.
     flags_actionable = n_failed + v_n_flagged + n_comp_actionable + n_assemble_flagged
@@ -332,6 +407,19 @@ def _build_run_report(work, cfg):
             "n_sentences": n_sentences,
             "n_failed": n_failed,
             "by_type": tr_by_type,
+        },
+        # src_en is duplicated into `items` DELIBERATELY: this block must be readable in a
+        # transcribe+translate-only workdir, where report.json does not exist. Discovering the
+        # anomaly hours before synthesize is the entire point of the signal, so it must not
+        # depend on a post-synthesis artifact. `scanned` is first-class rather than inferred
+        # from n_flagged == 0 because route A (local Gemma) writes no `src` at all -- a consumer
+        # must render "not scanned" there, NEVER "clean".
+        "source": {
+            "scanned": bool(n_sentences) and n_scanned == n_sentences,
+            "n_scanned": n_scanned,
+            "n_flagged": n_src,
+            "by_type": sa_by_type,
+            "items": sa_items,
         },
         "verify": {
             "n_units": int(vr.get("n_units", 0) or 0),
@@ -492,6 +580,17 @@ def flagged_units(report, translation=None, limit=500):
                     reasons.append(f"translate:{key}")
         if not reasons:
             continue
+        # Source anomalies are a CROSS-REFERENCE, never a row-maker -- hence this sits AFTER the
+        # `not reasons` bail, not before it. An anomalous sentence whose unit came out clean gains
+        # no row: there is no audio to listen to, and a fabricated row would break the lead/wav
+        # join. run["source"]["items"] is the complete authority; this only tells a human already
+        # looking at a flagged unit WHY the English was suspect.
+        for m in members:
+            trec = tr_by_id.get(m.get("id"))
+            kind = trec.get("src") if isinstance(trec, dict) else None
+            if kind and kind != "ok" and ("src", kind) not in seen:
+                seen.add(("src", kind))
+                reasons.append(f"src:{kind}")
 
         ids = [m.get("id") for m in members]
         trs = [tr_by_id.get(i) for i in ids]
@@ -523,10 +622,25 @@ def flagged_units(report, translation=None, limit=500):
     return rows[:limit]
 
 
-def render_run_report(run, offenders):
+def render_summary_block(summary):
+    """The digest's summary section: a '- summary (N words):' header plus the prose wrapped to the
+    digest width and indented two spaces, matching the offender bullets' continuation shape.
+
+    DELIBERATE EXCEPTION to render_run_report's English-artifact norm below: this text is REQUIRED
+    to be Russian (PLAN item 3) — do not 'fix' it. Paragraph breaks are flattened to single newlines
+    (a blank line would terminate the digest's bullet list); the triage HTML keeps them. Heading
+    markers are already gone — read_summary strips them — so no line here can start a new block."""
+    paras = [p for p in summary.split("\n\n") if p.strip()]
+    body = [textwrap.fill(" ".join(p.split()), width=94,
+                          initial_indent="  ", subsequent_indent="  ") for p in paras]
+    return f"- summary ({len(summary.split())} words):\n" + "\n".join(body)
+
+
+def render_run_report(run, offenders, summary=None):
     """Compact ENGLISH Markdown block for ONE video (the codebase artifact norm is English; the
-    Russian human narrative is the skill agent's job). Header + timings line + flags line, plus
-    an offenders bullet list only when non-empty. Pure, no I/O."""
+    Russian human narrative is the skill agent's job). Header + timings line + flags line, an
+    optional Russian summary section, plus an offenders bullet list only when non-empty. Pure, no
+    I/O — the caller reads the sidecar."""
     vid = run.get("video_id")
     title = run.get("title")
     marker = "TRIAGE" if run.get("needs_triage") else "clean"
@@ -560,6 +674,26 @@ def render_run_report(run, offenders):
         f" (n>1.8 {sp.get('n_over_1_8', 0)})")
 
     lines = [head, timings_line, asr_line, flags_line]
+    # Source anomalies (PLAN item 1), rendered whenever non-empty INDEPENDENT of the
+    # [clean]/[TRIAGE] marker — they are advisory, and advisory must never cost visibility.
+    # Machine bullets stay together, so this sits after the flags line and before the prose.
+    # A run.json predating this schema has no "source" key at all → nothing prints, exactly like
+    # every other block here (hence the `"source" in run` guard on the not-scanned line: absent
+    # is UNKNOWN, not unscanned); --rebuild backfills it. A run.json that HAS the block always
+    # gets one of the two lines, so route A reads "not scanned" rather than silently clean.
+    s = run.get("source", {}) or {}
+    n_sent = (run.get("translate", {}) or {}).get("n_sentences")
+    if s.get("n_flagged"):
+        lines.append(f"- source anomalies ({s['n_flagged']}):")
+        for it in (s.get("items") or []):
+            note = (it.get("note") or "").strip().replace("\n", " ")
+            en = (it.get("src_en") or "").strip().replace("\n", " ")[:60]
+            lines.append(f"  - {it.get('id')} [{it.get('kind')}] {note}")
+            lines.append(f"    EN: {en}")
+    elif "source" in run and isinstance(n_sent, int) and n_sent and not s.get("scanned"):
+        lines.append("- source anomalies: not scanned (route A, or the src pass did not run)")
+    if summary:
+        lines.append(render_summary_block(summary))
     if offenders:
         lines.append(f"- offenders ({len(offenders)}):")
         for o in offenders:

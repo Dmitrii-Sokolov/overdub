@@ -17,6 +17,17 @@ the translate-seam contract never rides on an LLM's discipline:
                            the only detector for the out-of-dict Latin-name silent-loss class
                            (DECISIONS 2026-07-17 item F)
 
+The ONE judgement field beyond text_ru the sub-agent also owns is `src` -- its reading of the
+ENGLISH source (PLAN item 1). A good translator is a defect BLEACHER: DECISIONS 2026-07-19,
+RyvXxApfHkk id11's ASR garbage came back as plausible Russian on the first pass and vanished
+from everything downstream, and rate_implausible / dup_adjacent are blind BY CONSTRUCTION to a
+semantic garble that carries no timing anomaly and no repeated span. This script copies `src`
+onto translation.json, clamps an unknown kind instead of dropping it, and COUNTS how many
+records carried one at all -- so a skipped anomaly pass reports as "not scanned" rather than as
+a clean-looking empty report. Every src defect is a [warn], NEVER an exit: a report must never
+gate a dub, and a hard failure here would leave translation.json unwritten and hand that video
+to the silent local-Gemma path at resume.
+
 Reusing the pipeline's own (partly private) helpers is deliberate: route B replaces only the
 LLM call, so every downstream invariant stays byte-identical to the local route. If _is_bad or
 normalize_for_tts change, this script inherits the change for free.
@@ -43,13 +54,22 @@ from overdub.normalize import normalize_for_tts         # noqa: E402
 from overdub.stages.translate import _is_bad            # noqa: E402
 from overdub.workdir import WorkDir                      # noqa: E402
 
+# Closed source-anomaly vocabulary (PLAN item 1). Mirrored in runreport._SOURCE_KINDS, which adds
+# the "unknown" bucket this file clamps into -- keep the two in sync, one is the writer and the
+# other the reader. See references/translate-contract.md for what each kind means.
+_SRC_KINDS = ("ok", "garbled", "truncated", "dup_neighbour", "enum_repeat",
+              "context_contradiction")
+_SRC_NOTE_MAX = 200          # visible cap, same discipline as runreport._SUMMARY_MAX_CHARS
 
-def _load_draft(path: Path) -> dict[int, str]:
-    """Draft the sub-agent wrote: JSON list [{id, text_ru}, ...] -> {id: text_ru}."""
+
+def _load_draft(path: Path) -> dict[int, tuple[str, str | None, str]]:
+    """Draft the sub-agent wrote: JSON list [{id, text_ru, src, src_note?}, ...]
+    -> {id: (text_ru, src|None, src_note)}. src is None when the record carried none
+    (an UNSCANNED record -- counted, warned, never fatal: see build())."""
     raw = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(raw, list):
         sys.exit(f"[FAIL] draft {path} is not a JSON list")
-    out: dict[int, str] = {}
+    out: dict[int, tuple[str, str | None, str]] = {}
     for i, rec in enumerate(raw):
         try:
             sid = int(rec["id"])
@@ -62,12 +82,28 @@ def _load_draft(path: Path) -> dict[int, str]:
             sys.exit(f"[FAIL] draft record {i}: text_ru is not a string: {rec!r}")
         if sid in out:
             sys.exit(f"[FAIL] draft has duplicate id {sid}")
-        out[sid] = text_ru
+        # src / src_note are REPORT fields -- a wrong id set produces a wrong DUB (hence the
+        # exits above), a mislabeled report row produces a slightly-wrong report. Warn, degrade.
+        src = rec.get("src") if isinstance(rec, dict) else None
+        note = rec.get("src_note") if isinstance(rec, dict) else None
+        if src is not None and not isinstance(src, str):
+            print(f"[warn] draft record {i}: src is not a string ({src!r}) -> unscanned")
+            src = None
+        if not isinstance(note, str):
+            if note is not None:
+                print(f"[warn] draft record {i}: src_note is not a string -> dropped")
+            note = ""
+        out[sid] = (text_ru, src, note.strip())
     return out
 
 
-def build(work: WorkDir, draft_path: Path, cfg: Config) -> tuple[int, int]:
-    """Write work/<id>/translation.json from the draft. Returns (total, flagged)."""
+def build(work: WorkDir, draft_path: Path, cfg: Config
+          ) -> tuple[int, int, int, int, list[tuple[int, str, str, str]]]:
+    """Write work/<id>/translation.json from the draft.
+
+    Returns (total, flagged, source_anomalies, scanned, anomaly_rows) -- the rows are
+    (id, kind, note, src_en) so main() can print each anomaly WITH its English source at the
+    seam, hours before synthesize, where --repair-asr is still cheap."""
     sentences = json.loads(work.sentences.read_text(encoding="utf-8"))
     draft = _load_draft(draft_path)
 
@@ -82,10 +118,13 @@ def build(work: WorkDir, draft_path: Path, cfg: Config) -> tuple[int, int]:
 
     out: list[dict] = []
     n_fail = 0
+    n_scanned = n_anom = 0
+    anom_rows: list[tuple[int, str, str, str]] = []
     for s in sentences:                                  # sentence order is the source of truth
         sid = s["id"]
         src_en = s["text"]
-        text_ru = draft[sid].strip()
+        text_ru, src, note = draft[sid]
+        text_ru = text_ru.strip()
         reason = _is_bad(text_ru, src_en, cfg)           # same gate as the Gemma path
         rec = {
             "id": sid, "start": s["start"], "end": s["end"], "src_en": src_en,
@@ -95,6 +134,26 @@ def build(work: WorkDir, draft_path: Path, cfg: Config) -> tuple[int, int]:
         if reason is not None:
             rec["flag"] = reason                         # flagged, never hidden, never blocking
             n_fail += 1
+        if src is not None:
+            n_scanned += 1
+            if src not in _SRC_KINDS:
+                # clamp, never drop: an unknown kind must not vanish, and must not fail the
+                # build either -- a report never gates a dub (PLAN item 1 / item 3 D2).
+                print(f"[warn] id {sid}: unknown src {src!r} -> unknown")
+                note = f"[raw src={src!r}] {note}".strip()
+                src = "unknown"
+            # `src` is copied for EVERY scanned record, "ok" included: this file is written by
+            # Python, not by an LLM, so the copy costs zero output tokens and ~1% of the record's
+            # bytes, and it is what makes run.json's `scanned` derivable from translation.json
+            # alone, forever, surviving --rebuild. The token argument applies to the DRAFT.
+            rec["src"] = src
+            if src != "ok":
+                if not note:
+                    print(f"[warn] id {sid}: src={src!r} with no src_note")
+                rec["src_note"] = (note[:_SRC_NOTE_MAX].rstrip() + " …[truncated]"
+                                   if len(note) > _SRC_NOTE_MAX else note)
+                anom_rows.append((sid, src, rec["src_note"], src_en))
+                n_anom += 1
         out.append(rec)
 
     ids = [o["id"] for o in out]
@@ -111,7 +170,7 @@ def build(work: WorkDir, draft_path: Path, cfg: Config) -> tuple[int, int]:
     atmp = work.pronounce_audit.with_suffix(".json.tmp")
     atmp.write_text(json.dumps(audit, ensure_ascii=False, indent=2), encoding="utf-8")
     os.replace(atmp, work.pronounce_audit)
-    return len(out), n_fail
+    return len(out), n_fail, n_anom, n_scanned, anom_rows
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -132,8 +191,20 @@ def main(argv: list[str] | None = None) -> None:
     if not draft_path.exists():
         sys.exit(f"[FAIL] draft not found: {draft_path}")
 
-    total, n_fail = build(work, draft_path, Config.load(args.config))
-    print(f"[ok] {total} sentences -> {work.translation} ({n_fail} flagged)")
+    total, n_fail, n_anom, n_scanned, anom_rows = build(work, draft_path,
+                                                        Config.load(args.config))
+    # The seam surface: step 2 runs HOURS before synthesize, so an anomaly named here is one a
+    # human can still act on cheaply (--repair-asr <ids>, then re-run step 2 for that video).
+    if n_scanned == 0:
+        print("[warn] no record carried a 'src' field -- the source-anomaly pass did not run "
+              "(see references/translate-contract.md); reported as scanned=false")
+    elif n_scanned < total:
+        print(f"[warn] only {n_scanned}/{total} records carried 'src' -- partial source scan")
+    print(f"[ok] {total} sentences -> {work.translation} "
+          f"({n_fail} flagged, {n_anom} source anomalies, {n_scanned}/{total} src-scanned)")
+    for sid, kind, note, src_en in anom_rows:
+        print(f"  src {sid} [{kind}] {note}")
+        print(f"      EN: {src_en[:100]}")
 
 
 if __name__ == "__main__":

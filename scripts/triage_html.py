@@ -85,7 +85,8 @@ def _audio_src(wav: Path, out_dir: Path, *, embed: bool) -> str | None:
 _CSS = """
 :root{color-scheme:light dark;--bg:#fbfbfd;--fg:#1a1a1e;--muted:#6b6b76;--card:#fff;
 --line:#e5e5ea;--en:#3a5bd9;--ru:#1a1a1e;--triage:#c0392b;--clean:#1f9d55;
---b-verify:#d98c00;--b-speed:#c0392b;--b-complete:#8e44ad;--b-translate:#d35400;--b-assemble:#555}
+--b-verify:#d98c00;--b-speed:#c0392b;--b-complete:#8e44ad;--b-translate:#d35400;--b-assemble:#555;
+--b-src:#0b7285}
 @media (prefers-color-scheme:dark){:root{--bg:#131316;--fg:#e7e7ea;--muted:#9a9aa4;--card:#1c1c21;
 --line:#2c2c33;--en:#7aa2ff;--ru:#e7e7ea;--triage:#ff6b5e;--clean:#4ad07d}}
 *{box-sizing:border-box}
@@ -103,6 +104,9 @@ a{color:var(--en);text-decoration:none}a:hover{text-decoration:underline}
 color:#fff;vertical-align:middle;margin-left:6px}
 .tag.triage{background:var(--triage)}.tag.clean{background:var(--clean)}
 .rollup{color:var(--muted);font-size:13px;margin:0 0 14px}
+.summary{background:var(--card);border:1px solid var(--line);border-left:3px solid var(--en);
+border-radius:0 8px 8px 0;padding:10px 14px;margin:0 0 16px;font-size:14px;line-height:1.55}
+.summary p{margin:0 0 8px}.summary p:last-child{margin:0}
 .unit{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin:0 0 12px}
 .reasons{margin-bottom:6px}
 .badge{display:inline-block;font-size:11px;font-weight:600;padding:1px 7px;border-radius:6px;
@@ -118,6 +122,14 @@ background:color-mix(in srgb,var(--b-verify) 8%,transparent);border-radius:0 6px
 audio{width:100%;margin-top:10px;height:34px}
 .noaudio{display:inline-block;margin-top:10px;font-size:12px;color:var(--triage)}
 .clean-list{color:var(--muted);font-size:13px}
+.srcanom{background:var(--card);border:1px solid var(--line);border-left:3px solid var(--b-src);
+border-radius:0 8px 8px 0;padding:10px 14px;margin:0 0 16px;font-size:13.5px}
+.srcanom .lbl{color:var(--muted);font-size:12px;margin:0 0 6px;text-transform:uppercase;
+letter-spacing:.04em}
+.srcanom ul{margin:0;padding-left:18px}.srcanom li{margin-bottom:6px}
+.srcanom .k{color:var(--b-src);font-weight:600}
+.srcanom .en{color:var(--en);display:block;font-size:12.5px}
+.badge.src{background:var(--b-src)}
 """
 
 
@@ -125,7 +137,8 @@ def _badges(reasons: list[str]) -> str:
     out = []
     for r in reasons:
         cat = r.split(":", 1)[0]
-        cls = cat if cat in ("verify", "speed", "complete", "translate", "assemble") else "assemble"
+        cls = (cat if cat in ("verify", "speed", "complete", "translate", "assemble", "src")
+               else "assemble")
         out.append(f'<span class="badge {cls}">{html.escape(r)}</span>')
     return "".join(out)
 
@@ -174,7 +187,8 @@ def _unit_html(u: dict, wav: Path, out_dir: Path, *, embed: bool) -> str:
     return "\n".join(lines)
 
 
-def _video_html(run: dict, units: list[dict], work: WorkDir, out_dir: Path, *, embed: bool) -> str:
+def _video_html(run: dict, units: list[dict], work: WorkDir, out_dir: Path, *,
+                embed: bool, summary: str | None = None) -> str:
     vid = run.get("video_id")
     title = run.get("title")
     triage = bool(run.get("needs_triage"))
@@ -194,6 +208,30 @@ def _video_html(run: dict, units: list[dict], work: WorkDir, out_dir: Path, *, e
     out = [f'<section class="video" id="v-{html.escape(str(vid))}">',
            f'  <h2>{head} {tag}</h2>',
            f'  <p class="rollup">{rollup}</p>']
+    if summary:
+        # summary.md is Markdown but this page has no markdown renderer (none is offline-safe to
+        # add). runreport.read_summary already stripped heading markers, so paragraphs are the only
+        # structure left. Escape first — this is raw LLM prose going straight into HTML.
+        paras = [html.escape(p.strip()).replace("\n", " ")
+                 for p in summary.split("\n\n") if p.strip()]
+        out.append('  <div class="summary">' + "".join(f"<p>{p}</p>" for p in paras) + '</div>')
+    # Source anomalies (PLAN item 1) — content first, then defects. Rendered even when `units` is
+    # empty: a pre-synthesis workdir is exactly when this signal is most actionable (--repair-asr
+    # is still cheap there). Deliberately NO <audio> player, and deliberately not routed through
+    # flagged_units: the defect is in the ENGLISH source, so listening to the Russian tells the
+    # operator nothing. html.escape on every field — raw LLM prose into HTML, same rule as summary.
+    s = run.get("source", {}) or {}
+    items = s.get("items") or []
+    if items:
+        li = []
+        for it in items:
+            li.append(f'<li><b>#{html.escape(str(it.get("id")))}</b> '
+                      f'<span class="k">{html.escape(str(it.get("kind")))}</span> — '
+                      f'{html.escape(it.get("note") or "")}'
+                      f'<span class="en">EN: {html.escape(it.get("src_en") or "")}</span></li>')
+        out.append(f'  <div class="srcanom"><p class="lbl">source anomalies '
+                   f'({len(items)}) — defect is in the ENGLISH source; no audio to check</p>'
+                   f'<ul>{"".join(li)}</ul></div>')
     if units:
         for u in units:
             out.append(_unit_html(u, work.seg_wav(u.get("lead")), out_dir, embed=embed))
@@ -204,7 +242,8 @@ def _video_html(run: dict, units: list[dict], work: WorkDir, out_dir: Path, *, e
 
 
 def _batch_table(runs: list[dict]) -> str:
-    head = ("video", "title", "RTF", "wall", "tr", "vf", "cp", "spd max", "&gt;1.8", "status")
+    head = ("video", "title", "RTF", "wall", "tr", "vf", "cp", "src", "spd max", "&gt;1.8",
+            "status")
     rows = ["<tr>" + "".join(f"<th>{h}</th>" for h in head) + "</tr>"]
     for r in runs:
         t = r.get("timings", {}) or {}
@@ -219,20 +258,27 @@ def _batch_table(runs: list[dict]) -> str:
             str((r.get("translate", {}) or {}).get("n_failed", 0)),
             str((r.get("verify", {}) or {}).get("n_flagged", 0)),
             str((r.get("completeness", {}) or {}).get("n_flagged", 0)),
+            # src: advisory source-anomaly count. "-" means NOT SCANNED (route A, or a
+            # pre-schema run.json) -- never conflate that with a scanned-and-clean "0".
+            # --rebuild backfills the block for runs that predate it.
+            (str((r.get("source", {}) or {}).get("n_flagged", 0))
+             if (r.get("source", {}) or {}).get("scanned") else "-"),
             html.escape(str(sp.get("max"))),
             str(sp.get("n_over_1_8", 0)),
             '<span>needs triage</span>' if triage else '<span>clean</span>',
         ]
         cls = ' class="yes"' if triage else ' class="no"'
-        tds = "".join(f"<td>{cells[0]}</td>" if i == 0
-                      else (f"<td{cls}>{cells[i]}</td>" if i == 9 else f"<td>{cells[i]}</td>")
+        status_i = len(cells) - 1              # the triage cell is always last — index, never a
+        tds = "".join(f"<td>{cells[0]}</td>" if i == 0     # hardcoded number that a new column
+                      else (f"<td{cls}>{cells[i]}</td>"    # would silently mis-colour
+                            if i == status_i else f"<td>{cells[i]}</td>")
                       for i in range(len(cells)))
         rows.append(f"<tr>{tds}</tr>")
     return "<table>\n" + "\n".join(rows) + "\n</table>"
 
 
 def render_page(entries: list[dict], out_dir: Path, *, embed: bool) -> str:
-    """entries: [{run, units, work}]. Videos needing triage sort first. Pure string assembly."""
+    """entries: [{run, units, work, summary}]. Videos needing triage sort first. Pure string assembly."""
     entries = sorted(entries, key=lambda e: (not e["run"].get("needs_triage"),
                                              str(e["run"].get("video_id"))))
     runs = [e["run"] for e in entries]
@@ -247,7 +293,8 @@ def render_page(entries: list[dict], out_dir: Path, *, embed: bool) -> str:
 
     body = [_batch_table(runs)] if runs else []
     for e in entries:
-        body.append(_video_html(e["run"], e["units"], e["work"], out_dir, embed=embed))
+        body.append(_video_html(e["run"], e["units"], e["work"], out_dir,
+                                embed=embed, summary=e.get("summary")))
 
     return (
         "<!doctype html>\n"
@@ -318,7 +365,8 @@ def main(argv: list[str] | None = None) -> int:
         report = _load_json(work.report)
         translation = _load_json(work.translation)
         units = runreport.flagged_units(report, translation, args.limit) if report else []
-        entries.append({"run": run, "units": units, "work": work})
+        entries.append({"run": run, "units": units, "work": work,
+                        "summary": runreport.read_summary(work)})
 
     if not entries:
         print(f"[triage] nothing to render — no readable run.json in: {', '.join(skipped) or '(none)'}",

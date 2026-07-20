@@ -15,6 +15,9 @@
 #   slot at 294 char/s → atempo ×8.79). With it off: 0 degenerate, 0 dups, max 24 char/s,
 #   and no overlong terminator-free blocks came back. Per-source escape hatch, not a default.
 
+# repair_window_min_sec = 8.0   # --repair-asr: widen a defect window to at least this many seconds
+#                               # (no max key — a window has no upper bound; see repair.widen)
+
 # --- translation (Gemma-3-12B via Ollama native /api/chat) ---
 # ollama_base_url = "http://localhost:11434"
 # ollama_model = "gemma3:12b"

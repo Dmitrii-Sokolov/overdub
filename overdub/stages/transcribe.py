@@ -96,7 +96,10 @@ def _f(v, default: float) -> float:
         return default
 
 
-def _norm(text: str) -> str:
+def norm_text(text: str) -> str:
+    """Letters and digits only, lowercased. Public because repair.readings_agree defines
+    'the two readings are identical' with the SAME normalization _dehallucinate uses for
+    token identity — two definitions of sameness in one codebase would drift."""
     return re.sub(r"\W", "", text.lower())
 
 
@@ -166,8 +169,8 @@ def _dehallucinate(flat: list[W]) -> list[W]:
     i, n = 0, len(flat)
     while i < n:
         j = i
-        key = _norm(flat[i].text)
-        while key and j + 1 < n and _norm(flat[j + 1].text) == key:
+        key = norm_text(flat[i].text)
+        while key and j + 1 < n and norm_text(flat[j + 1].text) == key:
             j += 1
         run = flat[i:j + 1]
         collapse = False
@@ -355,6 +358,29 @@ def resegment(flat: list[W]) -> list[dict]:
     return out
 
 
+def transcribe_words(model, audio_path, *, language: str,
+                     condition_on_previous: bool) -> list[W]:
+    """faster-whisper → clean, monotone word list. Body verbatim from the old run() closure.
+
+    Module-level because it has a SECOND consumer: --repair-asr runs it over a clipped
+    WINDOW of source.wav (DECISIONS 2026-07-19). Sharing one body is what keeps the repair
+    and the stage from drifting apart in beam size, VAD or word_timestamps — a drift that
+    would make a repaired sentence a different kind of artifact from its neighbours.
+
+    Timestamps are relative to the audio PASSED IN (flatten starts prev_end at 0.0), so a
+    caller transcribing a clip must offset them itself. That is deliberately not done here:
+    this function knows nothing about ctx, windows or _guard.
+    """
+    segments, _info = model.transcribe(
+        str(audio_path),
+        language=language, beam_size=5,
+        word_timestamps=True, vad_filter=True,
+        vad_parameters=dict(min_silence_duration_ms=500),
+        condition_on_previous_text=condition_on_previous,
+    )
+    return flatten(segments)                # consumes the lazy generator
+
+
 class TranscribeStage:
     name = "transcribe"
 
@@ -408,14 +434,8 @@ class TranscribeStage:
         model = ctx.session.whisper(cfg, cfg.whisper_model)
 
         def asr(condition_on_previous: bool) -> list[W]:
-            segments, _info = model.transcribe(
-                str(ctx.work.source_audio),
-                language=cfg.source_lang, beam_size=5,
-                word_timestamps=True, vad_filter=True,
-                vad_parameters=dict(min_silence_duration_ms=500),
-                condition_on_previous_text=condition_on_previous,
-            )
-            return flatten(segments)                # consumes the lazy generator
+            return transcribe_words(model, ctx.work.source_audio, language=cfg.source_lang,
+                                    condition_on_previous=condition_on_previous)
 
         flat = asr(cfg.whisper_condition_on_previous)
         flat = self._guard(ctx, asr, flat)

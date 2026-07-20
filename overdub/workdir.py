@@ -75,6 +75,9 @@ class WorkDir:
     def sentences(self) -> Path: return self.root / "sentences.json"      # transcribe
 
     @property
+    def summary(self) -> Path: return self.root / "summary.md"            # sonnet seam (informational, PLAN item 3)
+
+    @property
     def translation(self) -> Path: return self.root / "translation.json"  # translate (final)
 
     @property
@@ -111,3 +114,69 @@ class WorkDir:
 
     @property
     def output(self) -> Path: return self.root / "output.mkv"            # mux
+
+    @property
+    def pre_repair_sentences(self) -> Path:
+        return self.root / "_pre-repair-sentences.json"   # --repair-asr: the TRUE original,
+                                                          # written once, never clobbered
+
+    def invalidate_downstream(self) -> tuple[list[str], list[str]]:
+        """Delete exactly the artifacts downstream of sentences.json. Returns (removed, failed)
+        as workdir-relative names.
+
+        An EXPLICIT named list, never a blanket wipe, and never a partial one: verify/assemble/
+        mux done() all self-heal on manifest synth_key/units_key stamps and mtimes, so an
+        INCOMPLETE delete mostly works and then silently ships a stale artifact — the one
+        failure class this pipeline forbids. Each survivor is kept for a stated reason:
+          source.mkv / source.wav / source.info.json — upstream of transcribe.
+          words.json — a transcribe SIBLING, not downstream. DECISIONS 2026-07-19 keeps it as
+            the raw record of what the ASR actually did, so asr.floor_ratio keeps reporting
+            that this file had a collapse.
+          source_bed.wav — NOT downstream: SeparateStage depends only on source.mkv and its
+            done() is a bare existence check. Deleting it costs a pointless ~3 GB-VRAM
+            htdemucs re-run.
+          timings.json — record_stage_timing upserts per stage, so the download/transcribe
+            walls stay valid. Deleting it understates total_wall_s and RTF forever, silently.
+          out/<title> [<id>].mkv — self-heals: _export_output compares mtimes and a re-mux
+            produces a new inode that reads newer (cli.py:171-184).
+          segments/_atempo/ — a transient; assemble rmtree-rebuilds it and nothing reads it.
+
+        report.json AND translation.json must BOTH go: runreport._build_run_report self-clears
+        run.json only when both are absent.
+
+        summary.md is DOWNSTREAM, not a survivor (added 2026-07-20): the summarizer's only input
+        is sentences.json, so a repair makes the prose describe a transcript that no longer
+        exists. Nothing in the Python code refreshes it — the only staleness check that exists is
+        the mtime filter in the route-B skill, which never runs on the local Gemma route, while
+        scripts/run_report.py and scripts/triage_html.py both render it unconditionally and with
+        no staleness marker. D2 makes the summary informational, so deleting it costs nothing a
+        re-run cannot rebuild; keeping it would let the operator triage a repaired dub against a
+        description of the hallucination that was repaired out.
+        """
+        targets = [
+            self.summary,                                # sonnet seam (derived from sentences)
+            self.translation,                            # translate
+            self.translation_partial,
+            self.pronounce_audit,
+            self.root / "translation.draft.json",        # route-B Sonnet draft: keyed by id, and
+                                                         # a repair renumbers every later id
+            self.seg_manifest,                           # synthesize
+            self.report,                                 # verify + assemble + mux
+            self.dub_audio,                              # assemble
+            self.en_srt,
+            self.ru_srt,
+            self.output,                                 # mux
+            self.root / "run.json",                      # derived rollup
+            *sorted(self.segments_dir.glob("*.wav")),     # a repair renumbers ids → unit leaders move
+        ]
+        removed: list[str] = []
+        failed: list[str] = []
+        for p in targets:
+            rel = str(p.relative_to(self.root)).replace("\\", "/")
+            try:
+                if p.exists():
+                    p.unlink()
+                    removed.append(rel)
+            except OSError as e:
+                failed.append(f"{p.name}: {e}")
+        return removed, failed

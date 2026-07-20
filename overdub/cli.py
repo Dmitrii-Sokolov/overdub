@@ -12,7 +12,7 @@ import traceback
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import runreport
+from . import repair, runreport
 from .config import Config
 from .pipeline import Context, STOP_NAME, Session, StopRequested, check_stop, run_pipeline
 from .stages import all_stages
@@ -30,11 +30,35 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--video-major", action="store_true",
                    help="batch only: run each video through every stage before the next "
                         "(pre-2026-07-19 order; escape hatch if stage-major misbehaves)")
+    p.add_argument("--repair-asr", metavar="IDS|auto",
+                   help="isolated-window ASR repair: 'auto' (windows derived from the "
+                        "rate_implausible/dup_adjacent detectors) or explicit comma-separated "
+                        "sentence ids '23,24,25' (single video only)")
+    p.add_argument("--repair-dry-run", action="store_true",
+                   help="--repair-asr only: decide and report, write nothing (the re-ASR still "
+                        "runs — that IS the decision, and it costs the same GPU time)")
     args = p.parse_args(argv)
     if (args.url is None) == (args.batch is None):
         p.error("give exactly one of: URL or --batch FILE")
     if args.video_major and args.batch is None:
         p.error("--video-major applies to --batch only (a single video has nothing to amortise)")
+
+    # usage errors before any side effects. Erroring rather than ignoring matches the --only
+    # typo validation below: a silent no-op at 2am is the failure mode this repo prevents.
+    repair_ids: list[int] | None = None
+    if args.repair_asr is None:
+        if args.repair_dry_run:
+            p.error("--repair-dry-run applies to --repair-asr only")
+    else:
+        for flag, name in ((args.force, "--force"), (args.only, "--only"),
+                           (args.video_major, "--video-major")):
+            if flag:
+                p.error(f"{name} does not apply to --repair-asr (repair runs no stages)")
+        if args.repair_asr != "auto":
+            if args.batch is not None:
+                p.error("--repair-asr with explicit ids is single-video only; "
+                        "use --repair-asr auto with --batch")
+            repair_ids = _parse_repair_ids(args.repair_asr, p)
 
     urls: list[str] | None = None
     if args.batch is not None:                      # usage errors before any side effects
@@ -66,6 +90,9 @@ def main(argv: list[str] | None = None) -> None:
         if bad:
             p.error(f"unknown stage(s): {', '.join(sorted(bad))}; "
                     f"known: {', '.join(sorted(known))}")
+    if args.repair_asr is not None:
+        sys.exit(_run_repair(urls if urls is not None else [args.url], cfg,
+                             ids=repair_ids, dry_run=args.repair_dry_run))
     if urls is not None:
         run = _run_batch_video_major if args.video_major else _run_batch_stage_major
         sys.exit(run(urls, cfg, force=args.force, only=only))
@@ -84,6 +111,143 @@ def _run_one(url: str, cfg: Config, *, force: bool, only: set[str] | None) -> st
     run_pipeline(ctx, all_stages(cfg), force=force, only=only)
     _rollup_and_print(work, cfg)
     return _export_output(ctx)
+
+
+def _parse_repair_ids(spec: str, p) -> list[int]:
+    """'23,24,25' → [23,24,25], sorted and deduped. Any non-digit or negative token is a usage
+    error before any side effect — a typo'd id list means the operator was reading a different
+    file, and guessing which ids they meant is the silent-failure class this repo forbids."""
+    ids: list[int] = []
+    for tok in spec.split(","):
+        tok = tok.strip()
+        try:
+            ids.append(int(tok))
+        except ValueError:
+            p.error(f"--repair-asr: expected 'auto' or comma-separated ids, got {spec!r}")
+    if not ids:
+        p.error(f"--repair-asr: expected 'auto' or comma-separated ids, got {spec!r}")
+    if any(i < 0 for i in ids):
+        p.error("--repair-asr: sentence ids are non-negative")
+    return sorted(set(ids))
+
+
+def _run_repair(urls: list[str], cfg: Config, *, ids: list[int] | None,
+                dry_run: bool, window_asr=None) -> int:
+    """Isolated-window ASR repair over one or more videos (DECISIONS 2026-07-19).
+
+    ONE Session for the whole sweep so large-v3 loads once for the batch, cleared in a
+    finally — an F5-style orphan would otherwise hold ~3.1 GB. `window_asr` is injectable so
+    the mode is testable without a GPU, ffmpeg or media.
+
+    Exit codes: 0 normal, INCLUDING a run where every window was rejected — a rejection is a
+    decided, reported outcome that re-running reproduces identically, and conflating it with
+    FAIL would poison the "re-run the same command to retry failed videos" contract the batch
+    summary prints. 1 if any video raised OR was asked to repair explicit ids it has no
+    sentences.json for. 3 on an honored STOP — but a FAIL outranks a stop, exactly as
+    _summarize resolves the same collision. Repair does NOT run any downstream stage (D1).
+    """
+    mode = "auto" if ids is None else ",".join(str(i) for i in ids)
+    if dry_run:
+        print("[info] --repair-dry-run: the re-ASR still runs (that IS the decision); "
+              "nothing is written")
+    rows: list[tuple[str, str, str]] = []            # (vid, tag, detail)
+    rejected: list[str] = []
+    n_repaired = n_rejected_only = n_clean = n_collateral = 0
+    any_window = False
+    halted: str | None = None
+    session = Session()
+    try:
+        for i, url in enumerate(urls, 1):
+            vid = video_id(url)
+            work = WorkDir.for_url(url, cfg.work_root)
+            ctx = Context(url=url, cfg=cfg, work=work, session=session)
+            print(f"\n=== [{i}/{len(urls)}] {vid}  repair ({mode})")
+            try:
+                check_stop(cfg.work_root, f"before repair of '{vid}'")
+            except StopRequested as e:
+                halted = str(e)
+                for rest in urls[i - 1:]:
+                    rows.append((video_id(rest), "    ", "not run"))
+                break
+            if not work.sentences.exists():
+                # auto: a legitimate skip — a sweep over a queue passes over videos that are not
+                # transcribed yet. Explicit ids: a FAIL — the operator named specific ids in a
+                # file that does not exist, so the repair they asked for cannot have happened,
+                # and exiting 0 lets a `repair && resume` wrapper ship the UNREPAIRED transcript.
+                # Same contract as the out-of-range id above, which already exits 1.
+                tag = "skip" if ids is None else "FAIL"
+                print(f"       [{tag}] no sentences.json (run transcribe first)")
+                rows.append((vid, tag, "no sentences.json (run transcribe first)"))
+                continue
+            try:
+                results, n_before, n_after = repair.repair_video(
+                    ctx, ids=ids, dry_run=dry_run, window_asr=window_asr)
+            except Exception as e:                   # KeyboardInterrupt passes through
+                traceback.print_exc()
+                rows.append((vid, "FAIL", f"{type(e).__name__}: {e}"))
+                continue
+            any_window = any_window or bool(results)
+            n_ok = sum(1 for r in results if r.accepted)
+            n_bad = len(results) - n_ok
+            rejected += [f"{vid} {r.window.lo}-{r.window.hi}" for r in results if not r.accepted]
+            if not results:
+                rows.append((vid, "    ", "no defect windows"))
+                n_clean += 1
+                continue
+            n_coll = sum(1 for r in results if r.collateral)
+            counts = (f"{n_ok} accepted ({n_coll} with collateral edits), {n_bad} rejected"
+                      if n_coll else f"{n_ok} accepted, {n_bad} rejected")
+            if n_coll:
+                n_collateral += 1
+            if n_before != n_after:
+                rows.append((vid, "ok  ", f"{counts}  {n_before} → {n_after} sentences"))
+                n_repaired += 1
+            elif n_ok:
+                # Two different facts used to share one "(unchanged)" label. They are told
+                # apart now: every accept reproducing its own text is not the same event as
+                # accepts that rewrote text without changing the sentence count.
+                note = ("(text unchanged)" if all(r.unchanged for r in results if r.accepted)
+                        else "(no count change)")
+                rows.append((vid, "ok  ", f"{counts}  {note}"))
+                n_repaired += 1
+            else:
+                rows.append((vid, "ok  ", f"{counts}  (unchanged)"))
+                n_rejected_only += 1
+    finally:
+        session.clear()
+
+    print(f"\n── repair summary ({mode}) " + "─" * 30)
+    for vid, tag, detail in rows:
+        print(f"[{tag}] {vid}  {detail}")
+    print(f"{n_repaired} repaired, {n_rejected_only} rejected-only, {n_clean} clean, "
+          f"{n_collateral} with collateral edits")
+    if n_collateral:
+        # A clipped window has LESS context than the full file and can be worse on proper
+        # nouns ("Claude" → "Cloud", 2YCaBqP8muw) — with both readings agreeing, so the gate
+        # cannot catch it. Flagged, never blocked.
+        print("collateral edits touched sentences no detector flagged — read the [warn] lines")
+    if rejected:
+        print(f"rejected windows need eyes: {', '.join(rejected)}")
+    if ids is None and not any_window:
+        # keeps a clean sweep from being over-read
+        print("note: both detectors are blind to a hallucinated word that SPLITS one sentence")
+        print("      into two plausible halves (W4Ua6XFfX9w 19/20) — 'no windows' is not 'the")
+        print("      transcript is clean'.")
+    if dry_run:
+        print("dry run — nothing written; re-run without --repair-dry-run to apply")
+    elif n_repaired:
+        print(f"next: re-run the pipeline for the {n_repaired} repaired video(s) "
+              f"(completed stages fast-skip)")
+    fails = any(t == "FAIL" for _, t, _ in rows)
+    if halted:
+        print(f"[stop] STOP file honored — halted {halted}; re-run the same command to resume")
+    if fails:
+        print("re-run the same command to retry failed videos (completed stages fast-skip)")
+    # A FAIL OUTRANKS a stop, matching _summarize's `1 if fails else (3 if halted else 0)`. The
+    # two batch drivers live in one module and a supervising script branches on the code: 3 must
+    # keep meaning "nothing broken, resume later", so a stop must never mask a video that needs
+    # eyes.
+    return 1 if fails else (3 if halted else 0)
 
 
 def _rollup_and_print(work: WorkDir, cfg: Config) -> None:

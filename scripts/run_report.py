@@ -104,14 +104,21 @@ def main(argv: list[str] | None = None) -> int:
         run = None if args.rebuild else _load_json(work.root / "run.json")
         if run is None:
             run = runreport.build_run_report(work, cfg)
+        summary = runreport.read_summary(work)      # sidecar, deliberately not a run.json field
         if run is None:
-            blocks.append(f"### {d.name}  [no run.json — skipped]\n"
-                          f"- no report.json / translation.json in {d} (run the pipeline first)")
+            # A transcribe+summary-only workdir has no run.json by construction (runreport
+            # clears it when report.json + translation.json are both absent) — still print its
+            # summary, so the scout-shaped prefix of this route is readable (PLAN item 3 → 4).
+            block = (f"### {d.name}  [no run.json — skipped]\n"
+                     f"- no report.json / translation.json in {d} (run the pipeline first)")
+            if summary:
+                block += "\n" + runreport.render_summary_block(summary)
+            blocks.append(block)
             continue
         report = _load_json(work.report)
         translation = _load_json(work.translation)
         offenders = runreport.summarize_offenders(report, translation) if report else []
-        blocks.append(runreport.render_run_report(run, offenders))
+        blocks.append(runreport.render_run_report(run, offenders, summary))
         runs.append(run)
 
     print("\n\n".join(blocks))
@@ -120,7 +127,7 @@ def main(argv: list[str] | None = None) -> int:
         print("\n── batch " + "─" * 40)
         # cp = ACTIONABLE completeness flags; adv = advisory-only ones (entity_loss /
         # length_short), counted but never a reason to open the video — see runreport.
-        header = ("video", "title", "wall_s", "rtf", "floor", "tr", "vf", "cp", "adv",
+        header = ("video", "title", "wall_s", "rtf", "floor", "tr", "vf", "cp", "adv", "src",
                   "spd_max", ">1.8", "triage")
         print(" | ".join(header))
         for r in runs:
@@ -137,6 +144,11 @@ def main(argv: list[str] | None = None) -> int:
                 str((r.get("verify", {}) or {}).get("n_flagged", 0)),
                 str((r.get("completeness", {}) or {}).get("n_actionable", 0)),
                 str((r.get("completeness", {}) or {}).get("n_advisory", 0)),
+                # src: advisory source-anomaly count. "-" means NOT SCANNED (route A, or a
+                # pre-schema run.json) -- never conflate that with a scanned-and-clean "0".
+                # --rebuild backfills the block for runs that predate it.
+                (str((r.get("source", {}) or {}).get("n_flagged", 0))
+                 if (r.get("source", {}) or {}).get("scanned") else "-"),
                 str(sp.get("max")),
                 str(sp.get("n_over_1_8", 0)),
                 "yes" if r.get("needs_triage") else "no",

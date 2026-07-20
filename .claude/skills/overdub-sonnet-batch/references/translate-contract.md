@@ -6,8 +6,8 @@ artifacts involved. The division of labour is the whole point:
 | Who | Produces | Owns |
 |---|---|---|
 | transcribe stage | `sentences.json` | id, source text, timings |
-| **Sonnet sub-agent** | `translation.draft.json` | **`text_ru` only** (the judgement part) |
-| `scripts/build_translation.py` | `translation.json` + `pronounce_audit.json` | src_en/timings copy, `text_tts`, gate, contiguity |
+| **Sonnet sub-agent** | `translation.draft.json` | **`text_ru` + `src`** (the two judgement parts) |
+| `scripts/build_translation.py` | `translation.json` + `pronounce_audit.json` | src_en/timings copy, `text_tts`, gate, contiguity, src vocab clamp + coverage count |
 
 ## Input — `work/<id>/sentences.json`
 
@@ -24,11 +24,15 @@ The unit of translation is the sentence (`text`). Translate in `id` order.
 A JSON list, one entry per sentence, covering **every** id in `sentences.json`:
 
 ```json
-[ { "id": 0, "text_ru": "Итак, сегодня мы смотрим на RTX 4080." }, ... ]
+[ {"id": 0,  "text_ru": "Итак, сегодня мы смотрим на RTX 4080.", "src": "ok"},
+  {"id": 19, "text_ru": "Описание выходит за рамки различия.",
+   "src": "truncated",
+   "src_note": "ends mid-thought; id 20 reads as its continuation"} ]
 ```
 
-Nothing else. No `text_tts`, no `src_en`, no `start`/`end`, no `status`. Those are filled
-deterministically by the helper. One `text_ru` = one natural spoken-Russian line.
+`src` is REQUIRED on every record; `src_note` is required whenever `src` is not `"ok"` and is
+ignored otherwise. Nothing else. No `text_tts`, no `src_en`, no `start`/`end`, no `status`. Those
+are filled deterministically by the helper. One `text_ru` = one natural spoken-Russian line.
 
 ## Translation rules (paste verbatim into the sub-agent prompt)
 
@@ -51,6 +55,48 @@ deterministically by the helper. One `text_ru` = one natural spoken-Russian line
    that is handled later by the normalizer.
 7. Each `text_ru` is a **single line** — no quotes, no English, no labels, no notes, no
    explanations, no `[RU]` prefix.
+8. If a source sentence is **garbled, self-contradictory, truncated mid-thought, duplicative of
+   its neighbour, or contradicts what earlier sentences established** — **translate it AS-IS and
+   REPORT it.** Do not smooth it into plausible Russian, do not guess the intended wording, do
+   not merge it with a neighbour. Set that record's `src` to the matching kind and add a
+   one-line **English** `src_note` saying what looks wrong. A translator that repairs the source
+   silently destroys the only signal that the source was damaged. Also watch runs of parallel or
+   enumerated clauses: an item that repeats another item's head, or that contradicts the rolling
+   context, is `enum_repeat` / `context_contradiction` even when each sentence reads fine alone.
+   Every record gets a `src` — `"ok"` when the English is sound.
+
+## Source anomalies — REPORT, never repair
+
+Rationale: a good translator silently launders source damage. DECISIONS 2026-07-19 —
+`RyvXxApfHkk` id11's ASR garbage was repaired into plausible Russian by Sonnet on the first
+pass and vanished from everything downstream. The better the translator, the more reliably it
+hides source damage. A reading pass helps only when it is asked to REPORT rather than smooth;
+that is a prompt requirement, not a property of the model.
+
+`"ok"` is a POSITIVE CLAIM: you read this English sentence and it is not damaged. Omitting the
+field is not the same as `"ok"` — it is reported as "not scanned".
+
+| `src` | fires when | the 0-case it exists for |
+|---|---|---|
+| `ok` | you read this English sentence and it is not damaged | — (positive claim) |
+| `garbled` | unintelligible or self-contradictory as written | `RyvXxApfHkk` id11 |
+| `truncated` | cut mid-thought; the thought continues in a neighbour | `W4Ua6XFfX9w` 19/20 |
+| `dup_neighbour` | says what an adjacent sentence already said | echoes below the 0.80 `dup_adjacent` bar |
+| `enum_repeat` | an item in a run of parallel/enumerated clauses repeats another item's head | 0b duplicated head |
+| `context_contradiction` | contradicts what earlier sentences established | the bogus id46 line |
+
+- `dup_neighbour` is set on **every** id involved, matching `completeness.duplicate_adjacent`'s
+  both-pair-members convention that `repair.seed_ids_from_detectors` relies on.
+- `garbled` covers self-contradictory-*as-written*; `context_contradiction` covers contradicting
+  the *rolling context*.
+- `src_note` is **English** (it sits beside the `src_en` it describes) and one line. Anything
+  over 200 chars is visibly truncated by the helper.
+
+Worked example (`W4Ua6XFfX9w`): id 19 `"Description goes beyond distinction."` /
+id 20 `"just writing prompts."` — a hallucinated `distinction` for `just` split one sentence in
+two. Each half sits at ~26 ch/s against the 40 bound and the halves are not similar to each
+other, so `rate_implausible` and `dup_adjacent` are blind BY CONSTRUCTION. Only reading the
+text finds it. Mark id 19 `truncated` ("ends mid-thought; id 20 reads as its continuation").
 
 ## Output schema — `work/<id>/translation.json` (the helper builds THIS; agents never write it)
 
@@ -89,3 +135,10 @@ Reasons (`flag` value), so you know what to fix in the draft:
 Flagged lines are **not blocking** — they are recorded and the pipeline runs on (audibly broken
 segments are acceptable losses; silent ones are not). Re-run just the affected sub-agent and the
 helper if you want to clear a flag.
+
+The helper's `src` handling is deliberately **non-blocking**: a missing `src`, an unknown kind,
+or an anomaly with no note each produce a `[warn]` and are reported (unknown kinds bucket as
+`unknown`; a record with no `src` counts as unscanned and shows as `-` rather than `0` in the
+digest). It never exits non-zero on them. A report must never gate a dub — a hard failure here
+would leave `translation.json` unwritten, and a resume would then silently run the local Gemma
+path for that video.

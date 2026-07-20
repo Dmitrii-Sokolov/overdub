@@ -93,7 +93,10 @@ cleanly at the translate seam and resumes from it. No Ollama needed.
 
 2. **Translate with Sonnet sub-agents** (one per video), orchestrated by the
    `overdub-sonnet-batch` skill. Each sub-agent reads `sentences.json` and writes
-   ONLY a draft `work/<id>/translation.draft.json` = `[{id, text_ru}, ...]`; then
+   ONLY a draft `work/<id>/translation.draft.json` = `[{id, text_ru, src}, ...]` (`src` is
+   the sub-agent's reading of the ENGLISH source — required on every record, `"ok"` when it
+   is sound, plus a one-line English `src_note` when it is not; vocabulary in
+   `.claude/skills/overdub-sonnet-batch/references/translate-contract.md`); then
    `scripts/build_translation.py work/<id>` assembles `translation.json` under the
    contract:
    - a JSON list, one record per sentence, id-contiguous:
@@ -108,6 +111,11 @@ cleanly at the translate seam and resumes from it. No Ollama needed.
      `overdub.stages.translate._is_bad`, and enforces id-contiguity (a malformed
      draft fails loud, never reaches synthesize).
 
+   In the same wave, a second Sonnet sub-agent writes `work/<id>/summary.md` — a
+   ~200-word Russian triage blurb read straight from the file by the digest and
+   the triage page; it is informational and gates nothing, and there is no helper
+   script for it.
+
 3. **Resume the batch** with the exact command from route A — download/
    transcribe/translate skip (artifacts exist), synthesize → verify → assemble
    → separate → mux run as usual.
@@ -120,6 +128,38 @@ cleanly at the translate seam and resumes from it. No Ollama needed.
 
 Both routes are good: Gemma gives good quality locally and slowly; Sonnet needs
 a subscription and gives better quality in the cloud, much faster.
+
+### Repairing an ASR defect
+
+When whisper collapses — a repetition loop, or a sentence stamped onto an
+impossible span — the fix is not a full re-transcription (1/4 in the manual
+trial) but an isolated re-read of the defect window (7/7). Run it after
+`--only download transcribe` and before translating; dry-run first:
+
+```powershell
+.venv-asr\Scripts\python.exe -X utf8 -m overdub --batch queue.txt --repair-asr auto --repair-dry-run
+.venv-asr\Scripts\python.exe -X utf8 -m overdub --batch queue.txt --repair-asr auto
+```
+
+Repair clips the window out of `source.wav`, reads it twice (with context
+feedback off and on) and **accepts only if the two readings say the same
+words**. On accept it merges the window into its own reading, renumbers every
+id so they stay contiguous, keeps the original at
+`work/<id>/_pre-repair-sentences.json` (written once, never clobbered), and
+deletes exactly the artifacts downstream of `sentences.json`. It never re-runs a
+stage itself — the next ordinary run redoes translate → mux honestly, and
+completed stages still fast-skip. `words.json` is deliberately left alone: it is
+the raw record of what the ASR actually did.
+
+A **rejection means the two readings disagreed**, i.e. whisper is still guessing
+there. Re-running reproduces it exactly, so it needs ears, not a retry — listen
+to the span and fix the text by hand if it matters.
+
+`--repair-asr 23,24,25` takes explicit ids (single video only). It is **stronger
+than `auto`**, not a legacy convenience: the two detectors behind `auto` are
+blind to a hallucinated word that splits one sentence into two plausible halves,
+so "no defect windows" is not "the transcript is clean". Note that an accepted
+repair renumbers ids — re-derive them before a second explicit pass.
 
 ## Output layout (MKV)
 

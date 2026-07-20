@@ -1,6 +1,6 @@
 ---
 name: overdub-sonnet-batch
-description: "Run the overdub pipeline with Claude Sonnet as the translator (README route B, the primary translate route). Fixed order: transcribe the batch, translate each video with a Sonnet sub-agent at the translate seam (writes translation.json via scripts/build_translation.py), resume the full pipeline, then produce a human-readable Russian triage report from scripts/run_report.py. Trigger when the user wants to dub a batch/video with Sonnet translation, 'прогони батч через Sonnet', 'переведи Sonnet-ом', 'route B', 'semi-auto translate', or asks how to run overdub with the cloud translator. NOT for the local Gemma route (that is fully turn-key: one --batch command)."
+description: "Run the overdub pipeline with Claude Sonnet as the translator (README route B, the primary translate route). Fixed order: transcribe the batch, translate and summarize each video with Sonnet sub-agents at the translate seam (writes translation.json via scripts/build_translation.py), resume the full pipeline, then produce a human-readable Russian triage report from scripts/run_report.py. Trigger when the user wants to dub a batch/video with Sonnet translation, 'прогони батч через Sonnet', 'переведи Sonnet-ом', 'route B', 'semi-auto translate', or asks how to run overdub with the cloud translator. NOT for the local Gemma route (that is fully turn-key: one --batch command)."
 ---
 
 # overdub — Sonnet translation batch (route B)
@@ -10,7 +10,7 @@ artifact (`work/<id>/translation.json`), so the pipeline stops cleanly at the tr
 and resumes from it. Sonnet replaces only the LLM call; every downstream invariant stays
 identical to the local Gemma route. **No Ollama needed.**
 
-This skill is the orchestrator. Follow the three steps in order — do not improvise the order,
+This skill is the orchestrator. Follow the four steps in order — do not improvise the order,
 do not skip the helper, do not let a sub-agent hand-write `text_tts`.
 
 ## Preconditions (check, fail loud, do not auto-install)
@@ -59,7 +59,7 @@ stale/baseline workdirs; translating those wastes tokens and overwrites their
 `$ids`. The batch continues past per-video failures (`FAIL` rows in the summary) — re-run the
 same step-1 command until clean; completed stages fast-skip.
 
-## Step 2 — Translate each video with a Sonnet sub-agent
+## Step 2 — Translate each video with a Sonnet sub-agent (+ summarize it)
 
 **Resume filter first** — a prior interrupted step-2 run may have finished some videos
 (helper-validated `translation.json` present); the mtime clause also catches drafts gone
@@ -72,21 +72,23 @@ $todo = @($ids | Where-Object {
     (Get-Item "work\$_\sentences.json").LastWriteTime -gt (Get-Item $t).LastWriteTime })
 ```
 
-**One sub-agent per video in `$todo`, spawned in parallel in waves of ~6** (they are
-independent, but an uncapped 30-video batch = 30 concurrent Sonnet agents — cap the wave,
-wait for it, spawn the next). Use the Agent tool
+**One sub-agent per video in `$todo`, spawned in parallel in waves of ~3 videos** (two agents
+each — the translator below and the summarizer further down — so ~6 concurrent; the cap is on
+AGENTS, not videos). They are independent, but an uncapped 30-video batch = 60 concurrent Sonnet
+agents — cap the wave, wait for it, spawn the next. Use the Agent tool
 (`general-purpose`, **`model: "sonnet"` — set it explicitly**: sub-agents otherwise inherit
 the session model, silently swapping the translator; every quality verdict for this route is
 Sonnet-specific, DECISIONS 2026-07-18/19). Each sub-agent does ONE thing: read
 `sentences.json`, translate, and write
-`work/<id>/translation.draft.json` = a JSON list `[{"id": <int>, "text_ru": "<string>"}, ...]`
+`work/<id>/translation.draft.json` = a JSON list
+`[{"id": <int>, "text_ru": "<string>", "src": "<ok|…>"}, ...]`
 covering **every** id. Nothing else — no `text_tts`, no `src_en`, no timings.
 
 The full contract, the translation rules (mirrored from `SYSTEM` in
 `overdub/stages/translate.py`), and the draft/output schemas are in
 [`references/translate-contract.md`](references/translate-contract.md). **Read it, then paste
-its "Translation rules" + "Draft schema" sections verbatim into every sub-agent prompt** so
-each agent translates under exactly the same rules as the local route.
+its "Translation rules" + "Source anomalies" + "Draft schema" sections verbatim into every
+sub-agent prompt** so each agent translates under exactly the same rules as the local route.
 
 Sub-agent prompt skeleton (fill `<id>`):
 
@@ -95,11 +97,17 @@ Sub-agent prompt skeleton (fill `<id>`):
 > spoken Russian for a single-narrator voice-over, **in id order**, keeping a rolling memory of the
 > previous sentences and your Russian for them so terminology/names/pronouns stay consistent.
 > Follow these rules exactly: <paste "Translation rules" from references/translate-contract.md>.
-> Write `D:\code\overdub\work\<id>\translation.draft.json` as `[{"id": 0, "text_ru": "..."}, ...]`
-> with one entry for EVERY id in sentences.json, in order. Output only text_ru — do NOT add
-> text_tts, do NOT respell numbers, do NOT touch timings. For long videos (300+ sentences)
-> write the file incrementally — append batches of ~50 entries per edit, never one giant
-> single-shot write. Report the count written.
+> Write `D:\code\overdub\work\<id>\translation.draft.json` as
+> `[{"id": 0, "text_ru": "...", "src": "ok"}, ...]`
+> with one entry for EVERY id in sentences.json, in order. Output only `text_ru` and `src` — do
+> NOT add text_tts, do NOT respell numbers, do NOT touch timings. For every sentence also judge
+> the ENGLISH source: if it is garbled, self-contradictory, truncated mid-thought, duplicative of
+> its neighbour, or an enumeration item that repeats or contradicts what came before, translate it
+> **AS IS** — never repair or smooth it — and set `src` to the matching kind plus a short English
+> `src_note` saying what looks wrong (rule 8 / the vocabulary table in the contract). Otherwise
+> set `src` to `"ok"`. Every record gets a `src`. For long videos (300+ sentences) write the file
+> incrementally — append batches of ~50 entries per edit, never one giant single-shot write.
+> Report the count written and the count of non-`ok` sentences.
 
 Then, for each video, assemble + validate the real artifact with the helper (it fills
 `src_en`/timings, derives `text_tts` via the pipeline's own normalizer, gates each line through
@@ -111,7 +119,44 @@ Then, for each video, assemble + validate the real artifact with the helper (it 
 
 The helper **exits non-zero and loud** on any missing id, extra id, or non-contiguous set —
 that is the safety net. If it fails, fix the draft (or re-run that one sub-agent) and re-run the
-helper; do not proceed with a partial `translation.json`.
+helper; do not proceed with a partial `translation.json`. It also clamps the `src` vocabulary,
+prints each anomaly with its EN source at the seam, and reports how many records carried a `src`
+at all — all as `[warn]`s: a source-anomaly problem is never a helper failure (a hard exit would
+leave `translation.json` unwritten and hand that video to the silent Gemma path).
+
+**A second sub-agent per video writes the ~200-word Russian summary.** Same input file, same wave,
+same `general-purpose` + **`model: "sonnet"` — set it explicitly** (a summary written by an
+inherited session model is not the artifact this route was verified with, DECISIONS 2026-07-18/19).
+It is INFORMATIONAL — it gates nothing, skips nothing, and no code reads a verdict out of it
+(PLAN item 3, decided 2026-07-19). Its own resume filter, keyed on its own artifact:
+
+```powershell
+$sumTodo = @($ids | Where-Object {
+  $s = "work\$_\summary.md"
+  -not (Test-Path $s) -or
+    (Get-Item "work\$_\sentences.json").LastWriteTime -gt (Get-Item $s).LastWriteTime })
+```
+
+**There is NO helper script for this one, deliberately.** The summary derives no machine-consumed
+field, so there is no contract for a helper to own — unlike `text_tts` / `src_en` / id-contiguity,
+which is exactly why `build_translation.py` is not optional. The digest and the triage page read
+`summary.md` directly and sanitize it on read (heading markers stripped, runaway text truncated,
+empty treated as absent), so a malformed summary can never break either surface.
+
+Sub-agent prompt skeleton (fill `<id>`):
+
+> You are a triage summarizer for the overdub pipeline. Read
+> `D:\code\overdub\work\<id>\sentences.json` (list of `{id, text, start, end}` — the COMPLETE
+> English transcript, in order) and write `D:\code\overdub\work\<id>\summary.md`: a summary in
+> RUSSIAN of about 200 words. The reader has NOT watched the video and is deciding whether to. So
+> answer two things, in prose: (a) is this worth watching at all, and for whom — say so plainly,
+> including "смотреть не стоит" if that is the honest read; (b) what is the single most interesting
+> thing in it / what to look out for, and roughly where (use the `start` timestamps, `M:SS`).
+> Ground every claim in the transcript — do not invent facts, names, or numbers that are not there,
+> and if the transcript is too garbled or thin to judge, say that instead of guessing. Plain
+> paragraphs only: no markdown headings, no bullet lists, no title, no preamble like "Вот краткое
+> содержание" — the file's whole content is the summary text. Read the file in one pass; write it
+> in one pass.
 
 ## Step 3 — Resume the full pipeline
 
@@ -177,6 +222,18 @@ Then summarize for the user in Russian, grounded ONLY in that output (do not inv
 - **Per video:** clean vs needs-a-look (the `[TRIAGE]`/`[clean]` marker); RTF + wall time; the
   flag headline (translate / verify / completeness counts); and any speed offenders ≥ 1.8×
   (`n>1.8`, and the offender ids/reasons the block lists).
+- **The summary, when present:** the digest prints it as a `- summary (N words):` section per video
+  and the triage page shows it above the audio units. Use it as the *content* half of your narrative
+  (what the video is about, is it worth the user's time) alongside the *quality* half the flags
+  give you — quote or paraphrase it instead of re-deriving one, say nothing about a video that has
+  none, and never let it soften a `TRIAGE` marker.
+- **Source anomalies, when present:** name the video and the ids, quote the notes, and say the
+  next action out loud — `--repair-asr <ids>` on that single video, then re-run step 2 for it
+  (`explicit_seeds` range-checks the ids; a repair renumbers every later id and
+  `invalidate_downstream` deletes `translation.draft.json`, `translation.json` and `summary.md`,
+  so explicit-id repair is NOT idempotent — re-derive ids before a second pass). Never fold them
+  into the quality half of your narrative: they are a claim about the TRANSCRIPT, not about the
+  dub. If the `src` column reads `-`, say "не проверялось", never "чисто".
 - **Batch totals:** total wall across videos, aggregate throughput, and WHICH video_ids need
   eyes (the `need triage` list) — so the user knows what to open first, not just that something
   is off.
@@ -211,3 +268,25 @@ path in your summary. Skip it for a fully clean batch (nothing to listen to).
   mandatory every-id check before resuming, and hence ids from the queue, never from `work/`.
 - If `sentences.json` is re-transcribed (e.g. `--force transcribe`), the drafts are stale —
   re-run step 2 for that video (the `$todo` mtime clause catches this automatically).
+- **A missing `summary.md` is never a reason not to resume.** Do NOT add a `summary.md` clause to
+  the step-3 gate: the summary is informational in v1 (PLAN item 3, decided 2026-07-19) — it gates
+  nothing and skips nothing, and a gate here would be exactly the model-decides-what-to-drop
+  behaviour that decision rejected. That gate exists to catch a silent Gemma substitution; widening
+  it would let a failed summarizer block a dub that has everything it needs. Both report surfaces
+  treat an absent summary as normal and render nothing.
+- **Never let a sub-agent silently repair a garbled source.** DECISIONS 2026-07-19: on
+  `RyvXxApfHkk` id11 Sonnet turned ASR garbage into plausible Russian on the first pass, hiding
+  it from everything downstream — `rate_implausible` and `dup_adjacent` are blind to a semantic
+  garble that carries no timing anomaly and no repeated span, so the reading pass is the only
+  detector that sees it. A good translator is a defect BLEACHER by default; the better it is,
+  the more reliably it hides source damage. It only helps when asked to REPORT rather than
+  smooth — a prompt requirement, not a property of the model. This is compensation for an
+  observability regression this route itself introduced, not a bonus detector. `src` is required
+  on every record precisely so a skipped anomaly pass shows up as `not scanned` instead of as a
+  clean-looking empty report.
+- **Source anomalies gate nothing.** Do not add a `src` clause to the step-3 gate, do not let
+  them delay a resume, and do not treat a `[warn]` from the helper as a failure — same reasoning
+  as the summary bullet above (PLAN item 3 D2). They are advisory in v1 and do not move
+  `needs_triage`; their action is `--repair-asr`, taken deliberately by a human. Promote them
+  into `needs_triage` only after one batch has measured their fire rate — an unmeasured detector
+  promoted early is how `entity_loss` came to mark 11 of 12 videos.
