@@ -62,6 +62,27 @@ hardcode engine specifics outside the engine adapter. Three venvs, never merge t
 `.venv-asr` (pipeline), `.venv-f5tts` (F5 worker), `.venv-demucs` (separate stage);
 run the pipeline with `.venv-asr` python via `python -X utf8 -m overdub`.
 
+## Tests
+
+One command, from the repo root:
+
+```powershell
+.venv-asr\Scripts\python.exe -m pytest
+```
+
+380 tests, ~5 s, no GPU / network / media. `pytest` lives in `.venv-asr` only
+(`pip install -e ".[dev]"`); config is `[tool.pytest.ini_options]` in
+`pyproject.toml`. **Do not hand-roll a loop over `tests/*.py`** — that was the
+state before 2026-07-20 and it produced invented result lines. Run it from the
+repo root specifically: `testpaths` only applies there (pytest 8+), so from a
+subdirectory you get "no tests ran", not the suite.
+
+A single file still runs standalone — `python -X utf8 tests/test_x.py` — and
+prints its own summary. Keep that footer when adding a test file, and keep the
+`sys.path.insert` preamble: it is the ONE mechanism that makes both entry points
+work, and `pythonpath` in the ini would be a second one that can silently
+diverge from it.
+
 ## Design rules
 
 - Every TTS segment goes through ASR verification (whisper-small round-trip +

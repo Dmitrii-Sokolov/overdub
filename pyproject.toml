@@ -16,9 +16,32 @@ dependencies = [
 [project.scripts]
 overdub = "overdub.cli:main"
 
+[project.optional-dependencies]
+# Installed into .venv-asr only — the f5tts and demucs venvs run worker processes, not tests.
+#   .venv-asr\Scripts\python.exe -m pip install -e ".[dev]"
+dev = ["pytest"]
+
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
+
+[tool.pytest.ini_options]
+# testpaths is LOAD-BEARING, not tidiness: the three venvs live inside the repo and site-packages
+# ships hundreds of its own test suites and conftest.py files (numpy, pandas, sklearn, sympy…).
+# A bare `pytest` without this collects them and takes minutes to fail in someone else's code.
+testpaths = ["tests"]
+norecursedirs = [".venv-*", "work", "work-exp", "out", "scratchpad", ".git"]
+# `test_*.py` ONLY — pytest's default also matches `*_test.py`, and `scripts/` holds three
+# one-off audition scripts named that way (day1_smoke_test, no_ref_test, silero_test). They
+# import chatterbox (an engine rejected day 1) and torchcodec, and they want a GPU: collected,
+# they are three import errors in a suite that is otherwise green. testpaths keeps them out of
+# a bare `pytest` run; this keeps them out of every OTHER invocation too.
+python_files = ["test_*.py"]
+# Import each test file as a top-level module by basename. Every file already does its own
+# sys.path.insert for `overdub` and `scripts`, and there is no tests/__init__.py — prepend mode
+# is what makes that keep working under pytest exactly as it does under `python tests/foo.py`.
+# (All 17 basenames are unique, which is what prepend mode requires.)
+addopts = "--import-mode=prepend -q"
 
 [tool.setuptools.packages.find]
 include = ["overdub*"]

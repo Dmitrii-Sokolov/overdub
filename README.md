@@ -269,6 +269,37 @@ blind to a hallucinated word that splits one sentence into two plausible halves,
 so "no defect windows" is not "the transcript is clean". Note that an accepted
 repair renumbers ids — re-derive them before a second explicit pass.
 
+## Tests
+
+```powershell
+.venv-asr\Scripts\python.exe -m pytest
+```
+
+380 tests in ~5 s. No GPU, no network, no media, no model downloads — everything
+is pure logic over temp dirs and injected stages, which is what makes a bare
+`pytest` a safe thing to run at any time, including while a batch is on the GPU.
+
+`pytest` is installed in `.venv-asr` only (`pip install -e ".[dev]"`); the other
+two venvs run worker processes, not tests. Configuration is
+`[tool.pytest.ini_options]` in `pyproject.toml`, and two settings there are
+load-bearing rather than cosmetic: `testpaths` keeps collection out of the three
+in-repo venvs (site-packages ships hundreds of its own suites), and
+`python_files` is narrowed to `test_*.py` so pytest's default `*_test.py` does
+not drag in the one-off audition scripts in `scripts/`.
+
+**Run it from the repo root.** `testpaths` only applies when the invocation
+directory is the rootdir (pytest 8+), so elsewhere you get "no tests ran".
+
+Every file also stays directly runnable and prints its own summary:
+
+```powershell
+.venv-asr\Scripts\python.exe -X utf8 tests\test_scout_report.py
+```
+
+Both entry points work off the same `sys.path.insert` preamble inside each test
+file — there is deliberately no `pythonpath` in the ini, because a second
+mechanism could silently diverge from the first.
+
 ## Output layout (MKV)
 
 | Stream | Content |

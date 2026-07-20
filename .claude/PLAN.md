@@ -78,31 +78,14 @@ a number to beat, and there is currently nothing on disk to compare against.
    `summarize_sec` is `null` until a wave runs under the new prompt, so the first pass IS the
    baseline and there is nothing to compare against before it.
 
-2. **Integrate pytest — there is no way to run the suite with one command.** `pytest` is installed
-   in NO venv (`find_spec('pytest')` → False in all three), there is no `conftest.py` and no
-   `[tool.pytest.ini_options]`; every `tests/test_*.py` is a self-driving script with a `__main__`
-   footer, run one file at a time. Surfaced 2026-07-20 when the scout work had to loop over the
-   files by hand to get a suite-wide result. Consequences today: no single green/red signal before
-   a commit, no aggregate count, a file that dies on import reports as one failed file rather than
-   N failed tests, and any agent told to "run the tests" invents its own loop — or claims a pytest
-   result line it never produced. Add pytest to `.venv-asr` + a `[tool.pytest.ini_options]` block
-   in `pyproject.toml`. **Migrate the existing footers rather than rewriting the tests:** they are
-   already plain asserts in `test_*` functions, so collection mostly works as is — keep the
-   `__main__` footers so a single file stays directly runnable, and check what the injected-stage
-   fixtures in `test_batch_order.py` / `test_scout.py` need. Non-goal: coverage, CI, parametrizing.
-   **Promoted from 6th to 2nd on 2026-07-20 evening:** it is small, it is CPU-only (so it can be
-   done while a GPU pass runs), and it taxes every item below it — this session hand-looped the
-   17 files twice and the roadmap itself already notes that an agent told to "run the tests"
-   invents a loop or claims a result it never produced.
-
-3. **Reconcile the two report renderers.** `triage_html.py` prints `completeness.n_flagged` where
+2. **Reconcile the two report renderers.** `triage_html.py` prints `completeness.n_flagged` where
    `run_report.py` prints `n_actionable` + `n_advisory`, and the batch tables have diverged to 10 vs
    13 columns — same batch, two different numbers, in the two surfaces a morning operator compares.
    One root cause, one fix. Note `_batch_table`'s cell classes are index-based, so column changes
    there mis-colour silently (the `src` column bit exactly this; now `len(cells)-1`). Scout added a
    third divergence to fold in: both surfaces now special-case a run.json-less workdir, separately.
 
-4. **Finish the timing accounting — transcribe is DONE, the rest is not.** `timings.json` carries
+3. **Finish the timing accounting — transcribe is DONE, the rest is not.** `timings.json` carries
    `detail.transcribe.work_sec` (load and warmup excluded) alongside the stage wall clock, and
    `scout.json` surfaces both. Remaining:
    (a) **`synthesize` and `translate` have no `detail` entry**, so the same distortion still
@@ -112,19 +95,19 @@ a number to beat, and there is currently nothing on disk to compare against.
    incomparable across batch positions and across `--video-major`.
    (c) **Blocks trusting any recorded speed number, including `nfe` 48→16's "2.16×"**; those
    were measured under the old accounting and must be re-checked before reuse.
-   **Dropped from 2nd to 4th:** the half that mattered for the route in daily use (transcribe, and
+   **Dropped from 2nd:** the half that mattered for the route in daily use (transcribe, and
    scout runs only download+transcribe) is shipped. What is left serves the DUB route, which is
    not the current bottleneck — but (c) is a live landmine: do not quote an old speed number.
 
-5. **A repair destroys the worklist that motivated it.** `--repair-asr` deletes `translation.json`,
+4. **A repair destroys the worklist that motivated it.** `--repair-asr` deletes `translation.json`,
    which is where the source-anomaly report lives — and the anomaly report is exactly the input
    for explicit-id repairs, since the detectors are blind to that class. It also renumbers ids, so
    any remaining ids from that report are stale. Repairing the first window from a report therefore
    destroys the rest of the list. The renumbering is already warned about; the report loss is not.
    Cheapest fix is probably preserving the report alongside `_pre-repair-sentences.json`.
-   Ahead of item 6 because it prevents LOSS; item 6 only improves a result.
+   Ahead of the item below because it prevents LOSS; that one only improves a result.
 
-6. **Feed the repair window `hotwords` / `initial_prompt`.** Fixes the one confirmed regression from
+5. **Feed the repair window `hotwords` / `initial_prompt`.** Fixes the one confirmed regression from
    the 2026-07-20 ear check (rationale + why this does NOT reopen the repetition loop: DECISIONS
    2026-07-20). Available in faster-whisper 1.2.1, verified. Word-list sources cheapest first: the
    video's own out-of-window sentences, then `pronounce_audit.json`. Measure on the golden fixture —

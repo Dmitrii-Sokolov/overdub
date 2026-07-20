@@ -1,5 +1,36 @@
 # CHANGELOG
 
+## 2026-07-20 (evening) — pytest: the suite finally has one command
+
+Closes roadmap item 2. Before this, `tests/` was 17 self-driving scripts run one file at a time,
+`pytest` was in none of the three venvs, and there was no documented way to get a suite-wide
+result — so every agent asked to "run the tests" invented a loop, or reported a pytest line it
+never produced.
+
+- **`pytest` into `.venv-asr` only** (`[project.optional-dependencies] dev`), plus
+  `[tool.pytest.ini_options]` in `pyproject.toml`. The other two venvs run worker processes.
+- **Zero changes to the test files.** All 380 tests collected and passed on the first run — the
+  files were already plain asserts in `test_*` functions, none takes a fixture argument, and each
+  does its own `sys.path.insert`. The `__main__` footers stay, so a single file is still directly
+  runnable; the anticipated work on the injected-stage fixtures in `test_batch_order.py` /
+  `test_scout.py` turned out not to be needed.
+- **`testpaths = ["tests"]` is load-bearing**, not tidiness: the three venvs live inside the repo
+  and site-packages ships hundreds of foreign suites and `conftest.py` files.
+- **`python_files` narrowed to `test_*.py`.** pytest's default also matches `*_test.py`, and
+  `scripts/` holds three one-off audition scripts named that way (`day1_smoke_test`,
+  `no_ref_test`, `silero_test`) that import `chatterbox` and `torchcodec` and want a GPU.
+  Found by running `pytest` from `scripts/`, which collected them as three import errors.
+- **No `pythonpath` in the ini, deliberately.** It would let a new test file work under pytest
+  while silently failing standalone; the per-file preamble is the single mechanism serving both.
+- **Documented in CLAUDE.md and README**, which is the actual fix for the invented-loop problem:
+  neither file mentioned tests at all before today.
+
+**Verified beyond "it went green":** pytest's per-file counts were compared against each
+footer's own count, all 17 files match (380 = 380). Also checked from the repo root, from
+`tests/`, from `scripts/`, single-file, and `-k` selection. Known and accepted: `testpaths` only
+applies when the invocation directory is the rootdir (pytest 8+), so running from a subdirectory
+reports "no tests ran" rather than the suite — documented rather than worked around.
+
 ## 2026-07-20 (evening) — per-video timings, and a scan table that survives being read
 
 Two unrelated jobs in one pass: the report got the layout the morning's schema change had only
