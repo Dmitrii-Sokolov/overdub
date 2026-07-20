@@ -1,6 +1,6 @@
 ---
 name: overdub-sonnet-batch
-description: "Run the overdub pipeline with Claude Sonnet as the translator (README route B, the primary translate route). Fixed order: transcribe the batch, translate and summarize each video with Sonnet sub-agents at the translate seam (writes translation.json via scripts/build_translation.py), resume the full pipeline, then produce a human-readable Russian triage report from scripts/run_report.py. Trigger when the user wants to dub a batch/video with Sonnet translation, 'прогони батч через Sonnet', 'переведи Sonnet-ом', 'route B', 'semi-auto translate', or asks how to run overdub with the cloud translator. NOT for the local Gemma route (that is fully turn-key: one --batch command)."
+description: "Run the overdub pipeline with Claude Sonnet as the translator (README route B, the primary translate route). Fixed order: transcribe the batch, translate and summarize each video with Sonnet sub-agents at the translate seam (writes translation.json via scripts/build_translation.py), resume the full pipeline, then produce a human-readable Russian triage report from scripts/run_report.py. Trigger when the user wants to dub a batch/video with Sonnet translation, 'прогони батч через Sonnet', 'переведи Sonnet-ом', 'route B', 'semi-auto translate', or asks how to run overdub with the cloud translator. NOT for the local Gemma route (that is fully turn-key: one --batch command). NOT for deciding WHAT to dub — that is the overdub-scout skill (route C)."
 ---
 
 # overdub — Sonnet translation batch (route B)
@@ -19,6 +19,23 @@ do not skip the helper, do not let a sub-agent hand-write `text_tts`.
   only from synthesize onward — step 3, not step 1/2.)
 - A queue: `queue.txt` (one URL per line, `#` comments and blanks skipped) **or** a single URL.
 - Run everything from the repo root `D:\code\overdub`. Never merge venvs.
+
+## Scouting first? That is a different skill (README route C)
+
+If the user has NOT decided what to dub — "что тут стоит дублировать", "прогони разведку",
+"scout the queue" — that is the **`overdub-scout` skill**, not this one. It runs
+`--scout` (download audio only → transcribe → stop), writes one summary per video and hands
+back a recommend-only rundown. Load it instead of improvising a scout pass here.
+
+A scouted queue re-enters THIS skill at **Step 1** with no cleanup: `transcribe` fast-skips on
+the scout's `sentences.json` (the large-v3 pass is not repeated), `summary.md` is reused, and
+`translate` has nothing yet so Step 2 runs normally. `download` DOES re-run — the full contract
+needs `source.mkv` and scout never wrote one — re-fetching the audio bytes inside the merged
+container: ~5% extra traffic, accepted (DECISIONS 2026-07-20). Do not try to save it by
+hand-assembling an MKV from `source.wav`.
+
+**The summarizer prompt in Step 2 below is shared with that skill.** Change it in one place and
+change it in the other, or the two routes start producing different artifacts under one name.
 
 ## Step 1 — Transcribe the batch (no translation yet)
 
@@ -284,6 +301,12 @@ path in your summary. Skip it for a fully clean batch (nothing to listen to).
   observability regression this route itself introduced, not a bonus detector. `src` is required
   on every record precisely so a skipped anomaly pass shows up as `not scanned` instead of as a
   clean-looking empty report.
+- **A scout pass never shortens the queue by itself.** S3 recommends; the human drops videos.
+  Same reasoning as the two bullets above and the same rule the summary was built under
+  (CHANGELOG 2026-07-20): a model silently deciding a video is not worth dubbing is
+  indistinguishable, downstream, from the pipeline losing it. Also never hand-write a
+  `summary.md` to clear a `summary pending` line — that line is the pass's only completion
+  signal, and forging it is the silent failure in miniature.
 - **Source anomalies gate nothing.** Do not add a `src` clause to the step-3 gate, do not let
   them delay a resume, and do not treat a `[warn]` from the helper as a failure — same reasoning
   as the summary bullet above (PLAN item 3 D2). They are advisory in v1 and do not move
