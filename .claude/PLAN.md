@@ -33,33 +33,65 @@ offline resume of 12 videos can sit in up to 6 minutes of timeouts in one block 
   scouted workdir pays a 30 s networked title lookup at report time; and one promotion end to end —
   `transcribe` must fast-skip while `download` re-runs.
 
-1. **Batch/video timing accounting — separate model-load time from processing time.** Stage-major
+**Two scout findings from 2026-07-20 that are not items yet — check them on the next pass:**
+- **Calibrate the grade before trusting a queue-wide shape.** The profile carries four videos its
+  owner will certainly watch (its "калибровочные примеры" line). Scout them and read the grades:
+  under the NEW contract they should come back `high` on substance/currency/delivery. If they do
+  not, the prompt is drifting and no amount of queue-reading will show it — this is the only
+  cheap test that separates "the queue was weak" from "the grader is wrong", and it is what the
+  0/1/9 run lacked.
+- **Two yt-dlp binaries are installed and the pipeline picks the older one.** `2026.03.17` on
+  PATH (used, because running `.venv-asr\Scripts\python.exe` does NOT activate the venv) and
+  `2026.07.04` inside `.venv-asr` (unused). Not implicated in any failure — both fetched the two
+  "broken" videos on demand — but the download stage's version is currently unpredictable and is
+  not the one that was installed for it.
+
+1. **The summarize wave is the scout bottleneck — 5×, not the tie it was assumed to be.**
+   Measured 2026-07-20 on a 10-video queue: download 34 s, transcribe 4.6 min (both sums),
+   summarize **25.1 min** (wall clock of the wave). Two consequences, and the second is the
+   bigger one:
+   (a) **Pipelining transcribe → summarize buys ~15%, not a third.** The ceiling is
+   `min(transcribe, summarize)` = 4.6 min of 30. Still worth doing — the dependency is strictly
+   per video (`sentences.json` → its sub-agent), so it is a barrier-free pipeline — but it
+   breaks the skill's three-step shape: S1 must finish before S2 starts today, and the pipeline
+   needs the Python run and the sub-agent wave alive at once. Cheapest form: cut the queue into
+   batches of 3-4 and interleave, rather than a true streaming orchestrator.
+   (b) **Attack the wave itself first.** 25 min for one wave of sub-agents, each reading a
+   transcript and writing five short fields, is the actual cost. Levers, cheapest first: wave
+   width (how many concurrent agents), and input size (a 500-sentence transcript is fed whole —
+   nothing has tested whether a truncated or chunked input changes the grade).
+   **Measure before optimizing either:** per-video summarize timing was REMOVED because it
+   measured the wave, not the video (CHANGELOG 2026-07-20), so today there is no per-agent cost
+   number at all — only the wave's wall clock. Getting one honestly needs the orchestrator to
+   stamp each agent's spawn, not the agent to report its own.
+
+2. **Batch/video timing accounting — separate model-load time from processing time.** Stage-major
    amortises one load across the batch but `timings.json` / `run.json` still bill per video, so the
    first video absorbs it all and per-video RTF is incomparable across batch positions — and across
    `--video-major`, which has the opposite profile. **Blocks trusting any recorded speed number,
    including `nfe` 48→16's "2.16×"; re-check those before reusing them in a comparison.**
 
-2. **Feed the repair window `hotwords` / `initial_prompt`.** Fixes the one confirmed regression from
+3. **Feed the repair window `hotwords` / `initial_prompt`.** Fixes the one confirmed regression from
    the 2026-07-20 ear check (rationale + why this does NOT reopen the repetition loop: DECISIONS
    2026-07-20). Available in faster-whisper 1.2.1, verified. Word-list sources cheapest first: the
    video's own out-of-window sentences, then `pronounce_audit.json`. Measure on the golden fixture —
    the regression is a reproducible test case, which is what makes this cheap.
 
-3. **Reconcile the two report renderers.** `triage_html.py` prints `completeness.n_flagged` where
+4. **Reconcile the two report renderers.** `triage_html.py` prints `completeness.n_flagged` where
    `run_report.py` prints `n_actionable` + `n_advisory`, and the batch tables have diverged to 10 vs
    13 columns — same batch, two different numbers, in the two surfaces a morning operator compares.
    One root cause, one fix. Note `_batch_table`'s cell classes are index-based, so column changes
    there mis-colour silently (the `src` column bit exactly this; now `len(cells)-1`). Scout added a
    third divergence to fold in: both surfaces now special-case a run.json-less workdir, separately.
 
-4. **A repair destroys the worklist that motivated it.** `--repair-asr` deletes `translation.json`,
+5. **A repair destroys the worklist that motivated it.** `--repair-asr` deletes `translation.json`,
    which is where the source-anomaly report lives — and the anomaly report is exactly the input
    for explicit-id repairs, since the detectors are blind to that class. It also renumbers ids, so
    any remaining ids from that report are stale. Repairing the first window from a report therefore
    destroys the rest of the list. The renumbering is already warned about; the report loss is not.
    Cheapest fix is probably preserving the report alongside `_pre-repair-sentences.json`.
 
-5. **Integrate pytest — there is no way to run the suite with one command.** `pytest` is installed
+6. **Integrate pytest — there is no way to run the suite with one command.** `pytest` is installed
    in NO venv (`find_spec('pytest')` → False in all three), there is no `conftest.py` and no
    `[tool.pytest.ini_options]`; every `tests/test_*.py` is a self-driving script with a `__main__`
    footer, run one file at a time. Surfaced 2026-07-20 when the scout work had to loop over the

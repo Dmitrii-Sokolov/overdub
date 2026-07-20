@@ -1,5 +1,35 @@
 # DECISIONS
 
+## 2026-07-20 — Scout grades the material, not the reader (a personal verdict cannot be checked)
+
+Scout shipped with a `watch`/`maybe`/`skip` verdict judged against `.claude/viewer-profile.md`.
+The first real queue came back **0 / 1 / 9**, and the second axis (`focus`/`background`) took the
+same value on **28 of 30** videos. Both were replaced the same day.
+
+**The measurement is not the argument — the checkability is.** A 9-of-10 skip rate could mean the
+queue was genuinely poor. What decided it is that there is no way to find out: a verdict about
+whether *this person* should watch *this video* has no referent outside the model's guess, so it
+cannot be argued with, corrected, or regression-tested. "Is this well made, current, and densely
+delivered" can be. That is the whole reason the axis moved onto the material.
+
+**The verdict also collapsed by construction.** The profile's own rule says to prefer `maybe`
+when uncertain and reserve `skip` for a named ground — and the run still produced 9 skips, i.e.
+the model was finding grounds it would not have found for a question about the material. A
+decision taken FOR the reader drifts toward "no", because "no" is the safe answer for an agent
+that cannot know.
+
+**The profile was demoted, not deleted.** It still decides what counts as the interesting part
+and what counts as already-known — the two places where knowing the reader genuinely helps. It
+no longer touches the grade. Rejected alternative: drop the profile entirely and grade purely on
+the material. That loses the "do NOT recommend an introduction to what I already know" section,
+which is the single most valuable thing in the file and cannot be derived from a transcript.
+
+**The cost, paid knowingly:** every `scout.json` and every `scout.draft.json` on disk carries the
+old vocabulary, so the 30 already-scouted videos need their S2 re-run — not a rebuild. Also
+unresolved: nothing has yet confirmed a live sub-agent can hold the distinction between "quality
+of the material" and "useful to me". That confusion is exactly what produced 0/1/9, and the
+mitigation is a calibration pass (PLAN, pre-batch checks), not more prompt text.
+
 ## 2026-07-20 — Scout mode: audio-only fetch, no local summarizer, its own flag
 
 Three choices, one per axis. Recorded together because each is cheap to "fix" later in exactly the

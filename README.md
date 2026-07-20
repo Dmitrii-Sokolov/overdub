@@ -169,18 +169,19 @@ deterministic (title, duration, sentence count, stage timings) and rejecting an
 unknown verdict outright — the same split of labour `build_translation.py`
 enforces on route B.
 
-**Two axes, not one.** `verdict` (`watch` / `maybe` / `skip`) is what the video is
-worth; `attention` (`focus` / `background`) is what it costs to consume. A deep
-dive that needs practice alongside and a survey you can run in the background
-compete for different budgets and are not comparable on one scale — so `background`
-is not a worse grade. An optional `author` axis (`trusted`) is rendered only when
-the profile carries a trusted-author list to match against.
+**The grade is about the MATERIAL, not about you.** `quality` (`high` / `medium` /
+`low`) scores three things and only these: substance, currency, delivery. It is
+deliberately not a "should you watch this" verdict — the first real queue came
+back 0 watch / 1 maybe / 9 skip under one, because a personal verdict is a
+decision taken for the reader and it collapses toward "no". A grade about the
+material can be argued with; a verdict about a person cannot. An optional `author`
+axis (`trusted`) is rendered only when the profile carries a trusted-author list.
 
-**Both are judged against a viewer profile.** `.claude/viewer-profile.md` — one
-person's stacks, what they already know, and what makes a video useless to them.
-Without it a summarizer can only rate generic quality, which is not the question.
-The file is **gitignored** (personal); the prompt that builds it from your own chat
-history is committed at
+**The viewer profile is context, not the criterion.** `.claude/viewer-profile.md`
+— one person's stacks, what they already know, and what makes a video useless to
+them — steers what gets named as the interesting part and what counts as already
+known. It does not move the grade. The file is **gitignored** (personal); the
+prompt that builds it from your own chat history is committed at
 `.claude/skills/overdub-scout/references/viewer-profile-prompt.md`, and the skill
 refuses to scout until the profile exists.
 

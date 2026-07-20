@@ -1,6 +1,41 @@
 # CHANGELOG
 
+## 2026-07-20 — scout grades the MATERIAL, not the reader (supersedes the axes below)
+
+The first real scout queue came back **0 watch · 1 maybe · 9 skip**, and 28 of 30 videos took
+the same `attention` value. Both axes shipped that morning; both were replaced the same day, on
+that evidence.
+
+- **`verdict` (watch/maybe/skip) → `quality` (high/medium/low), scored on the MATERIAL:**
+  substance, currency, delivery. A personal verdict is a decision taken FOR the reader, it
+  collapses toward "no", and nothing can check it. Whether a video is well made can be argued
+  with — which is what makes the grade worth publishing. The prompt now forbids factoring in
+  whether this particular person needs the topic.
+- **The viewer profile is demoted to context.** It steers what gets named as the interesting
+  part and what counts as already-known; it does not move the grade. The S0 preflight still
+  requires it.
+- **`attention` (focus/background) deleted.** A field that took one value on 28 of 30 videos is
+  a column that teaches the reader to ignore it. "Требует концентрации" is now a clause the
+  summarizer writes into the highlight, so it appears only when true.
+- **`reason` → `highlight`**: not "why this verdict" but *what is most interesting or useful in
+  the video*. The decision goes back to the reader; the report supplies material for it.
+- **Layout follows the schema.** The verdict/cost/runtime column is gone: the grade is a stripe
+  on the row plus a chip under the title, the runtime rides at the end of the highlight, the
+  preview gets its own column, and the jump into the write-up moved onto the description — the
+  cell the reader is already reading when they want more. Paragraph splits finally show: the
+  summarizer had been splitting by meaning since the morning and the CSS gave it no gap.
+- **Cost of the change:** every `scout.json` already on disk carries `verdict` and renders as
+  "не отсканировано" until its video is summarized again. The drafts are stale too, so this is
+  a real re-run of S2, not a rebuild.
+- Verified: 41 tests, full suite green. **Not verified:** no live sub-agent has written a draft
+  under the new contract, so whether the model actually separates "quality of the material"
+  from "useful to me" is untested — that is exactly the confusion that produced 0/1/9.
+
 ## 2026-07-20 — the scout REPORT: rated queue, two lists, published as an Artifact (route C)
+
+**Superseded in part by the entry above** — the `verdict` and `attention` axes described here
+were replaced the same day. The rest (the helper split, the wave timing, the three unfinished
+states, previews, the playlist header) still stands.
 
 Built on the same day as `--scout` below, after the mode itself was exercised end to end. Scout
 answered "what is in this queue"; this layer answers "what of it earns my time".

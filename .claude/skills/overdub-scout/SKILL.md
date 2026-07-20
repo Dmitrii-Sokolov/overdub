@@ -1,6 +1,6 @@
 ---
 name: overdub-scout
-description: "Scout an overdub queue (README route C) — the --scout pre-pass that downloads audio only, transcribes and rates each video WITHOUT dubbing it, so the user can decide what earns a full dub. Fixed order: scout the batch, rate and summarize each video with Sonnet sub-agents against .claude/viewer-profile.md, build work/scout-report.html (verdict/title/duration/id/one-liner table plus a paragraph per video, in queue order, with timings), publish it as an Artifact, then hand the user a recommend-only Russian rundown. Trigger when the user has a queue they have not watched: 'разведка по очереди', 'что тут стоит дублировать', 'прогони разведку', 'scout the queue', '--scout', 'summaries only, no dub', 'о чём эти видео'. NOT for dubbing — once the queue is chosen, hand off to the overdub-sonnet-batch skill (route B) or a plain --batch run (route A)."
+description: "Scout an overdub queue (README route C) — the --scout pre-pass that downloads audio only, transcribes and grades each video WITHOUT dubbing it, so the user can decide what earns their time and a full dub. Fixed order: scout the batch, grade the MATERIAL (substance/currency/delivery) and summarize each video with Sonnet sub-agents, build work/scout-report.html (grade · preview · title · what it is · what is most interesting, in queue order, plus a write-up per video), publish it as an Artifact, then hand the user a recommend-only Russian rundown. Trigger when the user has a queue they have not watched: 'разведка по очереди', 'что тут стоит дублировать', 'прогони разведку', 'scout the queue', '--scout', 'summaries only, no dub', 'о чём эти видео'. NOT for dubbing — once the queue is chosen, hand off to the overdub-sonnet-batch skill (route B) or a plain --batch run (route A)."
 ---
 
 # overdub — scout a queue (route C)
@@ -191,38 +191,38 @@ Sub-agent prompt skeleton (fill `<id>`) — the prose half is **identical to the
 >
 > Then write `D:\code\overdub\work\<id>\scout.draft.json`, a JSON OBJECT (not a list) with these
 > keys:
-> - `verdict` — one of exactly `"watch"` / `"maybe"` / `"skip"`. Judge against the viewer
->   profile below, NOT against generic video quality. `watch` = the content is current AND
->   overlaps substantially with what the profile says this person works on AND is usable in
->   their work. `maybe` = the topic is relevant but something undercuts it — the material is
->   dated, or it is relevant-but-useless, or the delivery is poor, or another named problem.
->   `skip` = no important information, or it is outdated, or it does not apply, or the problems
->   are too many. **If the profile states its own tie-breaking rule, that rule wins over
->   anything here.** Otherwise, when torn, choose `"maybe"` — and reserve `"skip"` for a
->   CONCRETE ground you can name from the profile. "I found no reason in favour" is not a
->   ground; it usually means the transcript was thin, not that the video was.
-> - `attention` — one of exactly `"focus"` / `"background"`: what the video COSTS to consume,
->   independent of what it is worth. `focus` = it needs undivided attention and probably
->   practice alongside. `background` = it can be consumed while doing something else. These are
->   different budgets, not a second quality scale, so a `background` video is not a worse video.
->   A video that presents itself as a deep dive but is a survey in substance is exactly the
->   case this field exists to catch — say so in the paragraph too.
+> - `quality` — one of exactly `"high"` / `"medium"` / `"low"`. **Judge the MATERIAL, not the
+>   reader.** Three things and only these three: substance (is there real information, with
+>   mechanism, numbers, method — or is it one tip padded out), currency (is what it shows still
+>   true, judged from `upload_date` and from what it demonstrates), and delivery (density,
+>   structure, whether the presenter knows the subject). `high` = strong on all three.
+>   `medium` = solid but undercut by one of them. `low` = fails on substance, or is superseded,
+>   or the delivery makes it not worth extracting from. **Do NOT factor in whether this
+>   particular person should watch it** — a well-made video on a topic they do not need is
+>   still well made. When torn, choose the lower grade and name the reason in `highlight`.
+>   (Superseded 2026-07-20: this used to be a personal watch/maybe/skip verdict and the first
+>   real queue came back 0/1/9. A grade about the material can be checked; a verdict about a
+>   person cannot.)
 > - `author` — OPTIONAL, `"trusted"` or `"new"`. Emit it ONLY if the profile carries a
 >   non-empty list of trusted authors and you can match `channel` against it. With no such list
 >   there is nothing to compare against: omit the key entirely rather than labelling everything
 >   `"new"`, which would add a column of one repeated value.
 > - `one_liner` — ONE sentence in Russian, what the video is about. It goes in a table cell;
 >   keep it under ~140 characters and do not restate the title.
-> - `reason` — ONE sentence in Russian, WHY that verdict. A different question from `one_liner`
->   and it must not repeat it: "разбор оркестрации агентов" says what the video is, "тема в
->   активной работе, автор с бенчмарками" says why it earned `watch`. Point at the concrete
->   thing that decided it — the profile section it hits, the specific staleness, the named
->   defect. Under ~200 characters. For a `skip`, this is the sentence that has to justify not
->   watching something, so name the ground rather than a mood.
+> - `highlight` — ONE sentence in Russian: **the most interesting or useful thing IN the video**,
+>   plus what decided the grade. A different question from `one_liner` and it must not repeat
+>   it: "разбор оркестрации агентов" says what the video is, "замеры с описанной методологией и
+>   разбор случаев, где схема ломается" says what you would actually get out of it. For a `low`,
+>   name the concrete defect rather than a mood. Under ~200 characters.
+>   **Add "требует концентрации" here when the video needs undivided attention** (a deep dive
+>   you have to follow with practice, rather than something that survives being background
+>   listening). This used to be a separate enum and 28 of 30 videos took the same value, so it
+>   is now a clause that appears only when it is true.
+>   This is the ONE field where the viewer profile is allowed to steer: what counts as
+>   "interesting" and what is already known to this reader come from it. The GRADE does not.
 > - `paragraph` — the full write-up in Russian, what is actually covered and why it earned that
->   verdict and that attention label. Name the concrete thing that decided it (which profile
->   item it hits, what specifically is dated or thin). This is what the person reads when the
->   one-liner interests them. **Split it into 2–3 paragraphs separated by a BLANK LINE**, where
+>   grade. Name the concrete thing that decided it (what specifically is dated, thin or strong).
+>   This is what the person reads when the one-liner interests them. **Split it into 2–3 paragraphs separated by a BLANK LINE**, where
 >   the meaning turns — a wall of text is what this field looked like before and it was hard to
 >   read. The split is yours: the renderer honours blank lines and never invents its own, so an
 >   unsplit block simply renders as one paragraph.
@@ -244,10 +244,10 @@ verdict is one you invented rather than derived from the transcript.
 .venv-asr\Scripts\python.exe -X utf8 scripts\scout_report.py --queue queue.txt
 ```
 
-Writes `work/scout-report.html`: a header with the verdict tally and the timing strip, then the
-**scan table** (вердикт · название · длительность · код · одна фраза) and the **read cards**
-(same videos, same order, one paragraph each). Verdicts carry both colour and text, so the page
-survives being read in grayscale or by someone colour-blind.
+Writes `work/scout-report.html`: a header with the grade tally and the timing strip, then the
+**scan table** (№ · превью · название с оценкой · о чём · самое интересное + длительность) and
+the **read cards** (same videos, same order, the full write-up). The grade carries both colour
+and text, so the page survives being read in grayscale or by someone colour-blind.
 
 **Row order is the queue's order, never sorted.** The report is read next to the playlist it
 came from, so position is information; a re-sorted row is a wrong row even when its fields are
@@ -270,10 +270,10 @@ because the publisher supplies that skeleton:
 Finally, write the user a short **Russian** rundown in chat, grounded ONLY in `scout.json` —
 never re-derived from the transcript. Lead with the link, then the tally (сколько watch/maybe/
 skip), then name the videos you would drop and why, and flag anything the report cannot say for
-itself (a suspiciously uniform set of verdicts usually means a stale `viewer-profile.md`, not a
-uniform queue).
+itself (a suspiciously uniform set of grades usually means the prompt is drifting, not that the
+queue is uniform — check a few against the transcripts before trusting the shape).
 
-**Recommend; never decide.** Trimming the queue is the human's call — the verdicts gate nothing,
+**Recommend; never decide.** Trimming the queue is the human's call — the grades gate nothing,
 exactly as the summary gates nothing on the dubbing route, and a model quietly shortening a
 queue is the failure this whole mode exists to prevent.
 
