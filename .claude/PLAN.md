@@ -1,7 +1,16 @@
 # PLAN
 
-## → Roadmap (re-cut 2026-07-20 — scout mode shipped; timing accounting leads now)
-Sample workdirs: `work/` (13 dirs — Silero baselines + the AI-Fluency batch, read-only).
+## → Roadmap (re-cut 2026-07-20 evening — route C is in production; its throughput leads now)
+
+**Where the project stands.** Route C (scout) has been run repeatedly on real queues and works:
+audio-only fetch, transcribe, Sonnet grading, published report. It is the route in daily use, so
+its cost is the thing worth attacking. The grade quality is ACCEPTABLE on real material — no
+longer an open item (see Deferred for the improvement question). Route B (Sonnet dub) is the
+primary dubbing route and unchanged. What is NOT settled is speed: the summarize wave dominates
+scout, and until this evening there was no per-video number to optimize against.
+
+Sample workdirs: `work/` (33 dirs — Silero baselines, the AI-Fluency batch, and the scouted
+queues, read-only).
 **Corrected 2026-07-20 — the rest of this line was stale:** `work-exp/context-earcheck/`,
 `work-exp/stats-batch/` and `work-exp/gemma-ab/` NO LONGER EXIST on disk (`work-exp/` holds only
 `nfe-sweep/` and `nfe16/`). The Qwen-vs-Gemma A/B set and the 8/23 stats-batch workdirs are gone;
@@ -26,27 +35,28 @@ offline resume of 12 videos can sit in up to 6 minutes of timeouts in one block 
   on that unit changed too);
 - `--repair-asr auto`'s recall (5/12) and the `RyvXxApfHkk#11` 246-vs-35.9 ch/s discrepancy are
   both unreconciled — DECISIONS 2026-07-20, provenance section. Treat the fixture as a signal.
-- **scout mode has never touched YouTube — the first real `--scout` pass IS its measurement.** All
-  current evidence is synthetic (tests, injected stages). Watch on the first run: bytes and wall per
-  video vs a full fetch; whether `-f bestaudio` ever fails on a real source (no `/best` fallback by
-  design — that video FAILs out of the pass); that the info.json rename actually lands, or every
-  scouted workdir pays a 30 s networked title lookup at report time; and one promotion end to end —
-  `transcribe` must fast-skip while `download` re-runs.
+**Scout is exercised, not theoretical — the 2026-07-20 "never run on real media" caveat is
+closed.** Multiple real queues have been fetched, transcribed, graded and published. `-f
+bestaudio` has not failed on a real source; the info.json rename lands (no workdir pays the 30 s
+networked title lookup); grades read as reasonable against real material. Still unconfirmed on
+real media, because nothing has needed it yet: **one promotion end to end** — `transcribe` must
+fast-skip while `download` re-runs.
 
-**Two scout findings from 2026-07-20 that are not items yet — check them on the next pass:**
-- **Calibrate the grade before trusting a queue-wide shape.** The profile carries four videos its
-  owner will certainly watch (its "калибровочные примеры" line). Scout them and read the grades:
-  under the NEW contract they should come back `high` on substance/currency/delivery. If they do
-  not, the prompt is drifting and no amount of queue-reading will show it — this is the only
-  cheap test that separates "the queue was weak" from "the grader is wrong", and it is what the
-  0/1/9 run lacked.
+**One scout finding from 2026-07-20 that is not an item yet:**
 - **Two yt-dlp binaries are installed and the pipeline picks the older one.** `2026.03.17` on
   PATH (used, because running `.venv-asr\Scripts\python.exe` does NOT activate the venv) and
   `2026.07.04` inside `.venv-asr` (unused). Not implicated in any failure — both fetched the two
   "broken" videos on demand — but the download stage's version is currently unpredictable and is
   not the one that was installed for it.
 
-1. **The summarize wave is the scout bottleneck — 5×, not the tie it was assumed to be.**
+**IN FLIGHT (2026-07-20 evening): a scout pass is running to collect the speed baseline.** It is
+the first wave under the `scout.started` marker, so it is also the first run that produces any
+`summarize_sec` at all. Do not start item 1 until it lands — the whole point of item 1 is to have
+a number to beat, and there is currently nothing on disk to compare against.
+
+---
+
+1. **Cut the summarize wave — the scout bottleneck, 5× and not the tie it was assumed to be.**
    Measured 2026-07-20 on a 10-video queue: download 34 s, transcribe 4.6 min (both sums),
    summarize **25.1 min** (wall clock of the wave). Two consequences, and the second is the
    bigger one:
@@ -68,38 +78,7 @@ offline resume of 12 videos can sit in up to 6 minutes of timeouts in one block 
    `summarize_sec` is `null` until a wave runs under the new prompt, so the first pass IS the
    baseline and there is nothing to compare against before it.
 
-2. **Batch/video timing accounting — transcribe DONE, the other stages are not.** `timings.json`
-   now carries `detail.transcribe.work_sec` (load and warmup excluded) alongside the stage wall
-   clock, and `scout.json` surfaces both. Remaining:
-   (a) **`synthesize` and `translate` have no `detail` entry**, so the same distortion still
-   applies to them — and synthesize is the expensive one on the dubbing route.
-   (b) **`run.json` / RTF still bill per video off the wall clock.** `runreport` computes
-   `total_wall` and the percentage breakdown from `stages` alone, so every RTF number remains
-   incomparable across batch positions and across `--video-major`.
-   (c) **Blocks trusting any recorded speed number, including `nfe` 48→16's "2.16×"**; those
-   were measured under the old accounting and must be re-checked before reuse.
-
-3. **Feed the repair window `hotwords` / `initial_prompt`.** Fixes the one confirmed regression from
-   the 2026-07-20 ear check (rationale + why this does NOT reopen the repetition loop: DECISIONS
-   2026-07-20). Available in faster-whisper 1.2.1, verified. Word-list sources cheapest first: the
-   video's own out-of-window sentences, then `pronounce_audit.json`. Measure on the golden fixture —
-   the regression is a reproducible test case, which is what makes this cheap.
-
-4. **Reconcile the two report renderers.** `triage_html.py` prints `completeness.n_flagged` where
-   `run_report.py` prints `n_actionable` + `n_advisory`, and the batch tables have diverged to 10 vs
-   13 columns — same batch, two different numbers, in the two surfaces a morning operator compares.
-   One root cause, one fix. Note `_batch_table`'s cell classes are index-based, so column changes
-   there mis-colour silently (the `src` column bit exactly this; now `len(cells)-1`). Scout added a
-   third divergence to fold in: both surfaces now special-case a run.json-less workdir, separately.
-
-5. **A repair destroys the worklist that motivated it.** `--repair-asr` deletes `translation.json`,
-   which is where the source-anomaly report lives — and the anomaly report is exactly the input
-   for explicit-id repairs, since the detectors are blind to that class. It also renumbers ids, so
-   any remaining ids from that report are stale. Repairing the first window from a report therefore
-   destroys the rest of the list. The renumbering is already warned about; the report loss is not.
-   Cheapest fix is probably preserving the report alongside `_pre-repair-sentences.json`.
-
-6. **Integrate pytest — there is no way to run the suite with one command.** `pytest` is installed
+2. **Integrate pytest — there is no way to run the suite with one command.** `pytest` is installed
    in NO venv (`find_spec('pytest')` → False in all three), there is no `conftest.py` and no
    `[tool.pytest.ini_options]`; every `tests/test_*.py` is a self-driving script with a `__main__`
    footer, run one file at a time. Surfaced 2026-07-20 when the scout work had to loop over the
@@ -111,6 +90,48 @@ offline resume of 12 videos can sit in up to 6 minutes of timeouts in one block 
    already plain asserts in `test_*` functions, so collection mostly works as is — keep the
    `__main__` footers so a single file stays directly runnable, and check what the injected-stage
    fixtures in `test_batch_order.py` / `test_scout.py` need. Non-goal: coverage, CI, parametrizing.
+   **Promoted from 6th to 2nd on 2026-07-20 evening:** it is small, it is CPU-only (so it can be
+   done while a GPU pass runs), and it taxes every item below it — this session hand-looped the
+   17 files twice and the roadmap itself already notes that an agent told to "run the tests"
+   invents a loop or claims a result it never produced.
+
+3. **Reconcile the two report renderers.** `triage_html.py` prints `completeness.n_flagged` where
+   `run_report.py` prints `n_actionable` + `n_advisory`, and the batch tables have diverged to 10 vs
+   13 columns — same batch, two different numbers, in the two surfaces a morning operator compares.
+   One root cause, one fix. Note `_batch_table`'s cell classes are index-based, so column changes
+   there mis-colour silently (the `src` column bit exactly this; now `len(cells)-1`). Scout added a
+   third divergence to fold in: both surfaces now special-case a run.json-less workdir, separately.
+
+4. **Finish the timing accounting — transcribe is DONE, the rest is not.** `timings.json` carries
+   `detail.transcribe.work_sec` (load and warmup excluded) alongside the stage wall clock, and
+   `scout.json` surfaces both. Remaining:
+   (a) **`synthesize` and `translate` have no `detail` entry**, so the same distortion still
+   applies to them — and synthesize is the expensive one on the dubbing route.
+   (b) **`run.json` / RTF still bill per video off the wall clock.** `runreport` computes
+   `total_wall` and the percentage breakdown from `stages` alone, so every RTF number remains
+   incomparable across batch positions and across `--video-major`.
+   (c) **Blocks trusting any recorded speed number, including `nfe` 48→16's "2.16×"**; those
+   were measured under the old accounting and must be re-checked before reuse.
+   **Dropped from 2nd to 4th:** the half that mattered for the route in daily use (transcribe, and
+   scout runs only download+transcribe) is shipped. What is left serves the DUB route, which is
+   not the current bottleneck — but (c) is a live landmine: do not quote an old speed number.
+
+5. **A repair destroys the worklist that motivated it.** `--repair-asr` deletes `translation.json`,
+   which is where the source-anomaly report lives — and the anomaly report is exactly the input
+   for explicit-id repairs, since the detectors are blind to that class. It also renumbers ids, so
+   any remaining ids from that report are stale. Repairing the first window from a report therefore
+   destroys the rest of the list. The renumbering is already warned about; the report loss is not.
+   Cheapest fix is probably preserving the report alongside `_pre-repair-sentences.json`.
+   Ahead of item 6 because it prevents LOSS; item 6 only improves a result.
+
+6. **Feed the repair window `hotwords` / `initial_prompt`.** Fixes the one confirmed regression from
+   the 2026-07-20 ear check (rationale + why this does NOT reopen the repetition loop: DECISIONS
+   2026-07-20). Available in faster-whisper 1.2.1, verified. Word-list sources cheapest first: the
+   video's own out-of-window sentences, then `pronounce_audit.json`. Measure on the golden fixture —
+   the regression is a reproducible test case, which is what makes this cheap.
+   **Last on purpose:** `--repair-asr` shipped with 5/12 recall and a proper-noun regression, so
+   the open question is whether the feature earns more investment at all, not whether its window
+   could be prompted better. Polishing it ranks below every item that serves a route in daily use.
 
 Backlog (second tier) — **throughput / weaker hardware, unlocked by the Silero v5 audition
 (DECISIONS 2026-07-19):** Silero v5 synthesizes 12-19× faster than F5 on CPU alone (synth 11-14 s
@@ -189,7 +210,18 @@ Gemma dropped 3 of 4 adverbs in `DmgujoZ1mmk` id1, unflagged (INBOX 2026-07-18);
 heuristic (expected-vs-actual unit duration → flag garbled synth the ASR round-trip misses) — output
 is good now, ADD IT before any narrator-voice or TTS-engine change.
 
-Deferred — NOT near-term (revisit when a need surfaces): promoting `n_src` from advisory into
+Deferred — NOT near-term (revisit when a need surfaces):
+**improving the GRADE's quality.** Closed as a roadmap item 2026-07-20 evening: across several
+real queues the grades read as reasonable against the material, which is the bar this pass was
+meant to clear. What is deferred is making them BETTER, and the honest position is that nobody
+has defined what better means here — there is no reference set, no disagreement log, and no
+measurement, so any prompt change would be evaluated by vibe. Before touching the prompt, decide
+what a wrong grade even looks like. The cheap instrument already exists if a queue ever comes
+back looking wrong: the profile's four "калибровочные примеры" are videos its owner will
+certainly watch — scout them and they should come back `high`. That test separates "the queue was
+weak" from "the grader is drifting", and it is the thing the 0/1/9 run lacked. Run it as a
+diagnostic when suspicion arises, not as routine work.
+Also deferred: promoting `n_src` from advisory into
 `flags_actionable` — **blocked on measuring the source-anomaly detector's fire rate and precision on
 a real Sonnet batch first.** It has zero measured precision today, and `entity_loss` firing on 11 of
 12 videos is the standing precedent for what an unmeasured detector does to a triage list;
@@ -237,8 +269,12 @@ amortised per extra video — roadmap item 1 "speed up F5" CLOSED, lever ledger 
 REGRESSED a proper noun on real audio — DECISIONS 2026-07-20. Closed as a deliverable, NOT as a
 solved problem)** · **Video summary `summary.md` ✅ (2026-07-20)** · **Source-anomaly reporting at
 the translate seam ✅ (2026-07-20)** · **Scout mode `--scout` ✅ (2026-07-20; audio-only fetch, two
-download gates, scout cards in both report surfaces — 44 new tests, but NEVER run on real media)**.
-All four await the pre-batch checks at the top of this file.
+download gates, scout cards in both report surfaces — 44 new tests; the "never run on real media"
+caveat is CLOSED 2026-07-20 evening: multiple real queues fetched, graded and published)** ·
+**Scout report + per-video timing instrumentation ✅ (2026-07-20 evening; two kinds of timing kept
+apart, filesystem-stamped summarize marker, 49 tests)**.
+The `--repair-asr` entry above is the only one still carrying an unsolved problem; the pre-batch
+checks at the top of this file apply to the next DUBBING batch, not to a scout pass.
 
 Stack pins, verified APIs and setup: STACK.md + SETUP.md. Translation: Gemma-3-12B (Ollama),
 `gemma3:12b`, local in-pipeline default by A/B 2026-07-18 (Qwen3-14B removed); PRIMARY route =
