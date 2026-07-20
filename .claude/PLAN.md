@@ -60,16 +60,24 @@ offline resume of 12 videos can sit in up to 6 minutes of timeouts in one block 
    transcript and writing five short fields, is the actual cost. Levers, cheapest first: wave
    width (how many concurrent agents), and input size (a 500-sentence transcript is fed whole —
    nothing has tested whether a truncated or chunked input changes the grade).
-   **Measure before optimizing either:** per-video summarize timing was REMOVED because it
-   measured the wave, not the video (CHANGELOG 2026-07-20), so today there is no per-agent cost
-   number at all — only the wave's wall clock. Getting one honestly needs the orchestrator to
-   stamp each agent's spawn, not the agent to report its own.
+   **The measurement now exists — collect the baseline before touching either lever.** Each
+   sub-agent touches `work/<id>/scout.started` and `summarize_sec` is the mtime delta
+   (DECISIONS 2026-07-20 evening). Note the plan above was wrong about the mechanism: having the
+   ORCHESTRATOR stamp each spawn does not work, because agents queue behind the concurrency cap
+   and spawn time then measures the queue. Nothing on disk carries the field yet — every
+   `summarize_sec` is `null` until a wave runs under the new prompt, so the first pass IS the
+   baseline and there is nothing to compare against before it.
 
-2. **Batch/video timing accounting — separate model-load time from processing time.** Stage-major
-   amortises one load across the batch but `timings.json` / `run.json` still bill per video, so the
-   first video absorbs it all and per-video RTF is incomparable across batch positions — and across
-   `--video-major`, which has the opposite profile. **Blocks trusting any recorded speed number,
-   including `nfe` 48→16's "2.16×"; re-check those before reusing them in a comparison.**
+2. **Batch/video timing accounting — transcribe DONE, the other stages are not.** `timings.json`
+   now carries `detail.transcribe.work_sec` (load and warmup excluded) alongside the stage wall
+   clock, and `scout.json` surfaces both. Remaining:
+   (a) **`synthesize` and `translate` have no `detail` entry**, so the same distortion still
+   applies to them — and synthesize is the expensive one on the dubbing route.
+   (b) **`run.json` / RTF still bill per video off the wall clock.** `runreport` computes
+   `total_wall` and the percentage breakdown from `stages` alone, so every RTF number remains
+   incomparable across batch positions and across `--video-major`.
+   (c) **Blocks trusting any recorded speed number, including `nfe` 48→16's "2.16×"**; those
+   were measured under the old accounting and must be re-checked before reuse.
 
 3. **Feed the repair window `hotwords` / `initial_prompt`.** Fixes the one confirmed regression from
    the 2026-07-20 ear check (rationale + why this does NOT reopen the repetition loop: DECISIONS

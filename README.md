@@ -158,16 +158,29 @@ the dub? Run it before route A or B on any queue you have not read.
 summarize stage and no Ollama involvement: after the scout pass one Sonnet
 sub-agent per video reads `sentences.json` and writes two files —
 `work/<id>/summary.md` (prose, shared with route B) and
-`work/<id>/scout.draft.json` (`{verdict, attention, one_liner, reason,
-paragraph}` — the judgement the report renders; `one_liner` says what the video
-is, `reason` says why it earned its verdict, and they are kept apart because the
-scan table asks both questions at once). The sub-agent also reads `source.info.json`, so
+`work/<id>/scout.draft.json` (`{quality, one_liner, highlight, paragraph}`, plus
+an optional `author` — the judgement the report renders; `one_liner` says what
+the video IS, `highlight` says what is most interesting IN it, and they are kept
+apart because the scan table asks both questions at once). Its first action is to
+touch `work/<id>/scout.started`, an empty marker whose mtime is how long that
+agent's own run took. The sub-agent also reads `source.info.json`, so
 channel and upload date are available to it — a transcript alone carries neither,
 which would leave any staleness or author rule in the profile unenforceable.
 `scripts/build_scout.py` then assembles `work/<id>/scout.json`, owning everything
-deterministic (title, duration, sentence count, stage timings) and rejecting an
-unknown verdict outright — the same split of labour `build_translation.py`
+deterministic (title, duration, sentence count, timings) and rejecting an
+unknown grade outright — the same split of labour `build_translation.py`
 enforces on route B.
+
+**Two kinds of timing, never summed together.** `*_sec` is the pipeline's wall
+clock for a stage, model load included — what the run cost. `*_work_sec` is the
+same stage measured from inside with the load and warmup excluded — what THAT
+video cost, and the only one of the pair that compares across builds, because the
+load lands on whichever video the sweep happened to start with (measured: 23.0 s
+wall vs 17.3 s of work on a 2:22 video). `summarize_sec` is one agent's own
+window from its marker, not the wave's — the wave start is shared by the whole
+spawn, so it would bill an agent for time it spent queued. Per-video figures
+overlap and their sum is meaningless; the report's strip carries only the wall
+clocks. Nothing is ever self-reported by a model: the filesystem stamps it.
 
 **The grade is about the MATERIAL, not about you.** `quality` (`high` / `medium` /
 `low`) scores three things and only these: substance, currency, delivery. It is
@@ -191,11 +204,14 @@ Then build the report — two lists over the same videos, **in queue order**:
 .venv-asr\Scripts\python.exe -X utf8 scripts\scout_report.py --queue queue.txt
 ```
 
-Writes `work/scout-report.html`: a verdict tally and a timing strip (download,
-transcribe, summarize, report build, total), a scan table (verdict · title ·
-duration · video id · one line), then a card per video with the full paragraph.
-Order is the queue's, never sorted — the report is read next to the playlist it
-came from, so position is information. A queued video with no `scout.json` gets
+Writes `work/scout-report.html`: a grade tally and a timing strip (download,
+transcribe, the summarize wave's wall clock, and the queue's own runtime — no
+grand total, because two sums plus a wall clock do not add up to anything), a
+scan table (№ · preview · title · runtime · what it is · what is most
+interesting, the grade a chip opening that last cell), then a card per video with
+the full paragraph. Order is the queue's, never sorted — the report is read next
+to the playlist it came from, so position is information. A queued video with no
+`scout.json` gets
 an explicit "не отсканировано" row rather than vanishing. The output is a body
 fragment (inline `<style>`, no `<html>`/`<head>`), so it publishes as a Claude
 Artifact unchanged and still opens locally.

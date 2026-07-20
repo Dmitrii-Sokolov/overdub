@@ -1,5 +1,50 @@
 # DECISIONS
 
+## 2026-07-20 (evening) — Two kinds of timing, kept apart; and the filesystem does the stamping
+
+PLAN item 2 asked for model-load time to be separated from processing time. The obvious fix —
+subtract the load from the stage wall clock — is wrong, because the two numbers answer different
+questions and both are wanted.
+
+**`stages[x]` and `detail[x]` both stay, and are never summed together.** The wall clock
+including the load is what the run actually cost; that is the honest answer to "how long did
+this batch take". The load-excluded figure is what one VIDEO cost; that is the only answer that
+compares across builds, because stage-major amortises one load across a sweep and it lands on
+whichever video happened to be first. Publishing one of them would have made the other
+unrecoverable. Rejected alternative: divide the load across the batch's videos. That invents a
+per-video cost nobody paid and makes a 1-video run incomparable to a 30-video one.
+
+**The warmup is in `load_whisper`, and it is the minor half — recorded so nobody re-litigates
+it.** Measured on this machine: large-v3 loads in 3.3-3.6 s, and its first decode runs 0.472 s
+against 0.30 s steady-state, i.e. kernel autotuning costs ~0.17 s. So the warmup removes ~0.17 s
+of contamination and costs ~0.4 s per load — break-even in time, worth it only because it makes
+the first video of a sweep comparable to the rest. The distortion that actually mattered was the
+3.3 s load, and `work_sec` excludes that without a warmup at all. It lives in `load_whisper`
+rather than in the transcribe stage because the session hands one model to transcribe, verify
+and the synthesize reseed loop alike: that is the one place that runs exactly once per load.
+
+**Per-agent summarize time comes from a marker file the agent touches, not from anything it
+says.** The objection that killed the first attempt at this (a model's claim about its own
+runtime is unverifiable and routinely invented) applies to a start time exactly as much as to a
+duration, so the sub-agent's only instruction is to create an empty `scout.started` — the OS
+supplies the timestamp. Rejected alternative: have the orchestrator stamp each agent's spawn.
+It does not work, and the reason is worth keeping: agents queue behind the concurrency cap, so
+spawn time measures the queue, not the work. Known and accepted floor: the marker lands after
+the agent's first tool round-trip, so a 20-minute window reads seconds short — it errs downward
+and degrades to ABSENT rather than to a wrong number.
+
+**The wave's wall clock is now summed per wave instead of spanned across the queue.** The old
+`max(draft) − min(start)` was correct only for a queue summarized in one shot. A resumed queue is
+the normal case — the skill re-summarizes only what needs it, so carried-forward videos keep an
+older wave's start forever — and the span then included the idle hours between waves. This is
+the same error as the per-video duration that was deleted this morning, one level up: a wall
+clock presented as work. Fixed the same way, by measuring only what was running.
+
+**Cost, paid knowingly:** no `summarize_sec` and only one `transcribe_work_sec` exist on disk.
+Every prior workdir has neither, and neither is backfilled from the wall clock — that would
+restate the model load as the video's cost, which is the exact confusion this whole entry is
+about. The baseline for measuring any optimization does not exist until the next full pass.
+
 ## 2026-07-20 — Scout grades the material, not the reader (a personal verdict cannot be checked)
 
 Scout shipped with a `watch`/`maybe`/`skip` verdict judged against `.claude/viewer-profile.md`.

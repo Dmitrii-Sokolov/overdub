@@ -1,5 +1,59 @@
 # CHANGELOG
 
+## 2026-07-20 (evening) — per-video timings, and a scan table that survives being read
+
+Two unrelated jobs in one pass: the report got the layout the morning's schema change had only
+half-finished, and the pipeline got the per-video numbers PLAN item 2 has been blocked on.
+
+**Report layout — supersedes the "Layout follows the schema" bullet below.**
+- **Runtime is its own column**, right after the title, instead of riding at the end of the
+  highlight prose. It is scanned down a column ("what fits in an evening"); buried in a sentence
+  it had to be hunted for.
+- **The grade chip moved out from under the title into the head of "самое интересное".** Under
+  the title it sat between the title and the description and split them; the grade and the
+  reason it earned read as one thought.
+- **The row's colour stripe is gone.** The chip already states the grade in words AND colour;
+  tinting the row said the same thing a third time, before the reader had read anything.
+- **Previews are 320px, not 160.** `build_scout._THUMB_W` and the renderer's CSS width are now
+  the same number, held together by a test — rendering wider than the file on disk is what made
+  the column soft. All 33 existing `thumb.jpg` were re-fetched. Cost, measured rather than
+  guessed: 4.2-8.3 KB each, ~0.8 MB for a 100-video queue. The old comment's claim that 320px
+  "triples" the page was never measured and was wrong.
+- **Page widened 1080 → 1240px** (six columns needed it) and the read cards capped at 62rem, so
+  a card is no longer a full-width box wrapped around a 66ch paragraph.
+- The card number is no longer a link back to the table: it duplicated the browser's own back
+  gesture and competed with the title.
+
+**Per-video timings — closes the measurement half of PLAN item 2.**
+- **`timings.json` grew a `detail` section.** `stages[x]` stays the pipeline's wall clock (load
+  included — what the run cost); `detail[x]` is what the stage measured about itself.
+  `scout.json` surfaces both as `transcribe_sec` / `transcribe_work_sec`, plus
+  `transcribe_asr_passes` (2 = the alignment guard re-ran ASR, so that video cost roughly
+  double and the outlier has an explanation six months from now).
+- **Measured on a real video: 23.0 s stage wall clock vs 17.3 s of work.** A 25% distortion,
+  and all of it model load — which lands on whichever video the sweep starts with.
+- **`load_whisper` now warms the model** with one throwaway decode, shaped like the real call so
+  the same kernels get tuned. Honest scoring: this buys ~0.17 s (large-v3 first decode 0.472 s
+  vs 0.30 s steady) and costs ~0.4 s per load. Roughly break-even; it makes video #1 comparable,
+  but the real win was excluding the 3.3-3.6 s load, which `work_sec` gets for free.
+- **Per-agent summarize time, from a marker file.** The sub-agent's first action is to touch
+  `work/<id>/scout.started`; `summarize_sec` is mtime(draft) − mtime(marker). Filesystem-stamped,
+  never self-reported. Better than the wave start, which is shared by the whole spawn and bills
+  an agent for time it sat behind the concurrency cap.
+- **The report's summarize figure no longer spans multiple waves.** It grouped by nothing and took
+  `max(draft) − min(start)` across the queue, so a resumed queue (the NORMAL case — the skill
+  re-summarizes only what needs it) charged the hours BETWEEN waves to summarization: two 20-min
+  waves five hours apart read as 5 h 25 m. Now one window per wave, windows summed.
+- **Fixed on the way past: `record_stage_timing` wrote `{"stages": …}` over the whole file**,
+  discarding every other top-level key. Invisible while `stages` was the only section; it would
+  have eaten `detail` on every stage write.
+
+**Verified:** 49 scout tests, full suite (17 files) green, one live `--scout --force` run end to
+end, warmup A/B measured on both large-v3 and small. **Not verified:** no sub-agent has yet run
+under the marker instruction, so every `summarize_sec` on disk is still `null`, and no workdir
+except one carries `transcribe_work_sec` — the baseline for any optimization comparison does not
+exist until the next full queue pass.
+
 ## 2026-07-20 — scout grades the MATERIAL, not the reader (supersedes the axes below)
 
 The first real scout queue came back **0 watch · 1 maybe · 9 skip**, and 28 of 30 videos took
