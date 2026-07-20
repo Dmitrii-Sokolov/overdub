@@ -485,6 +485,25 @@ def test_scout_fails_loud_on_an_ambiguous_media_glob() -> None:
     assert "source.audio.m4a" in msg and "source.audio.webm" in msg
 
 
+def test_scout_thumbnail_does_not_trip_the_ambiguous_media_glob() -> None:
+    # Regression: --write-thumbnail --convert-thumbnails jpg lands its output on the SAME
+    # source.audio.%(ext)s template as the audio fetch, so a real run produces both
+    # source.audio.webm and source.audio.jpg. Only the jpg is a preview (build_scout.py's
+    # _ensure_thumb globs source.audio*.jpg for exactly this file); the media picker must
+    # ignore it rather than counting it as a second candidate.
+    calls: list = []
+    with tempfile.TemporaryDirectory() as d:
+        ctx = _ctx(Path(d))
+
+        def body(dl):
+            dl.subprocess.run = _fake_ytdlp(calls, ctx.work.root, extra=["source.audio.jpg"])
+            _quiet(DownloadStage(audio_only=True).run, ctx)
+
+        _with_fake_subprocess(body)
+        assert ctx.work.source_audio.exists()
+        assert (ctx.work.root / "source.audio.jpg").exists()  # left alone for build_scout.py
+
+
 def test_scout_cleans_a_stale_audio_file_before_fetching() -> None:
     calls: list = []
     with tempfile.TemporaryDirectory() as d:

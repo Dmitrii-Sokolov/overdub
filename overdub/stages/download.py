@@ -124,7 +124,10 @@ class DownloadStage:
         )
         self._normalize_info_json(w)
         media = [p for p in sorted(w.root.glob("source.audio.*"))
-                 if not p.name.endswith(".info.json")]
+                 # .jpg is the --write-thumbnail/--convert-thumbnails sidecar (see build_scout.py's
+                 # _ensure_thumb, which globs source.audio*.jpg for exactly this file) — a preview,
+                 # never the fetched media, so it must not count toward the one-file invariant.
+                 if not p.name.endswith(".info.json") and p.suffix.lower() != ".jpg"]
         if len(media) != 1:
             # Picking the first would silently transcribe whichever container sorted lowest —
             # and on a two-file glob one of them is by definition not what yt-dlp just fetched.
