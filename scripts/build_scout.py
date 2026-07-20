@@ -17,18 +17,22 @@ unlike build_translation's `src`, which clamps because a bad anomaly label must 
 dub. Here the verdict IS the artifact: the report sorts, colours and recommends on it, so a
 clamped-to-"maybe" typo would silently downgrade a video the summarizer actually rated "watch".
 
-WHY THE SUMMARIZE TIME COMES FROM THE FILESYSTEM. Sub-agents run outside this process, in
-parallel, so timings.json cannot see them and there is no wall to record. The alternative --
-having the sub-agent stamp its own started_at/finished_at -- is model self-measurement: it is
-unverifiable and routinely invented. mtime(scout.draft.json) - wave_start is taken from the FS.
-What it honestly measures is TIME-UNTIL-DONE FROM THE WAVE START, which for a queued agent
-includes its wait for a slot; it is NOT the agent's own working time, and the report labels it
-that way. Per-video values therefore do not sum to the wave's wall clock, by construction.
+WHY THE SUMMARIZE TIMING IS TWO TIMESTAMPS AND NOT A DURATION. Sub-agents run outside this
+process and in parallel, so timings.json cannot see them. The obvious alternative -- the agent
+stamping its own started_at/finished_at -- is model self-measurement: unverifiable and routinely
+invented. So the stamps come from the filesystem.
 
-A draft OLDER than the wave start is a draft carried over from an earlier run (the skill's
-resume filter deliberately skips an up-to-date summary). That is not an error and not a zero:
-the timing is UNKNOWN, so it is written as null and warned about, never silently reported as
-instant.
+The first attempt stored a per-video duration, mtime(draft) - wave_start, and it was WRONG in a
+way only real data exposed (measured 2026-07-20): a 500-sentence transcript reported 1506 s and
+a 31-sentence one 1252 s. A 16x difference in input produced a 20% difference in "time", because
+every agent finished near the end of the wave and each was therefore reporting the WAVE's length
+rather than its own cost. The number looked per-video and was not.
+
+Now the raw pair is stored and nothing is derived here. The only figure the wave honestly
+supports is its WALL CLOCK -- last draft minus first start -- which needs the whole queue, so
+scout_report computes it. A draft older than the wave start is a carry-over (the skill's resume
+filter deliberately skips an up-to-date summary); its stamps are still recorded as the facts
+they are, warned about, and excluded from the wall clock by the report.
 
 Run with the .venv-asr python from the repo root:
 
@@ -225,14 +229,23 @@ def build(work: WorkDir, wave_start: float | None) -> dict:
         v = stages.get(name)
         return round(float(v), 1) if isinstance(v, (int, float)) and not isinstance(v, bool) else None
 
-    summarize_sec = None
+    # RAW STAMPS, not a derived per-video duration. Measured 2026-07-20 on a real wave: a
+    # 500-sentence transcript reported 1506 s and a 31-sentence one 1252 s -- a 16x difference in
+    # input producing a 20% difference in "time". Every agent finished near the end of the wave,
+    # so each was reporting the WAVE's length, not its own cost. Publishing that as a per-video
+    # number gave the appearance of data that was not there.
+    #
+    # Two timestamps are facts; the duration was an inference, and the wrong one. The only
+    # honest figure the wave supports is its wall clock, and that needs the LAST draft against
+    # the FIRST start -- neither of which this per-video script can see. scout_report derives it
+    # across the queue.
+    wave = None
     if wave_start is not None:
-        elapsed = os.path.getmtime(draft_path) - wave_start
-        if elapsed < 0:
+        draft_at = os.path.getmtime(draft_path)
+        if draft_at < wave_start:
             print(f"[warn] {work.root.name}: scout.draft.json predates the wave start -- carried "
-                  f"over from an earlier run, summarize time recorded as unknown")
-        else:
-            summarize_sec = round(elapsed, 1)
+                  f"over from an earlier run, excluded from the wave's wall clock")
+        wave = {"start": round(wave_start, 1), "draft_at": round(draft_at, 1)}
 
     return {
         "video_id": work.root.name,
@@ -249,10 +262,9 @@ def build(work: WorkDir, wave_start: float | None) -> dict:
         "timings": {
             "download_sec": stage_sec("download"),
             "transcribe_sec": stage_sec("transcribe"),
-            # time-until-done from the wave start, NOT the agent's own working time (see module
-            # docstring). null = unknown, never 0.
-            "summarize_sec": summarize_sec,
         },
+        # raw epochs, never a per-video duration -- see the comment above `wave`
+        "wave": wave,
     }
 
 
@@ -262,8 +274,9 @@ def main(argv: list[str] | None = None) -> int:
         description="Assemble work/<id>/scout.json from the sub-agent's scout.draft.json.")
     p.add_argument("workdir", type=Path, metavar="work/<id>")
     p.add_argument("--wave-start", type=float, default=None, metavar="EPOCH",
-                   help="unix epoch seconds when the summarizer wave was spawned; the draft's "
-                        "mtime minus this is the per-video summarize time. Omit and the timing "
+                   help="unix epoch seconds when the summarizer wave was spawned; stored with "
+                        "the draft's mtime so the report can derive the WAVE's wall clock "
+                        "(last draft minus first start). Omit and the wave is "
                         "is recorded as unknown rather than guessed.")
     args = p.parse_args(argv)
     if not args.workdir.is_dir():
@@ -281,7 +294,7 @@ def main(argv: list[str] | None = None) -> int:
     t = doc["timings"]
     print(f"[scout] {out}  verdict={doc['verdict']}/{doc['attention']}  "
           f"{doc['n_sentences']} sentences  "
-          f"dl={t['download_sec']}s tr={t['transcribe_sec']}s sum={t['summarize_sec']}s")
+          f"dl={t['download_sec']}s tr={t['transcribe_sec']}s")
     return 0
 
 

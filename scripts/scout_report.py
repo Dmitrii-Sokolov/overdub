@@ -398,17 +398,16 @@ def render(entries: list[dict], totals: dict, queue_name: str, stamp: str,
     # so it sits after the sum rather than inside the run of things that add up
     for label, val in (("скачивание", secs(t["download"])),
                        ("транскрибация", secs(t["transcribe"])),
-                       ("суммаризация", secs(t["summarize"])),
-                       ("итого обработка", secs(t["total"])),
+                       ("суммаризация, волна", secs(t["summarize"])),
                        ("хронометраж очереди", content)):
         out.append(f'<div class="t"><dt>{label}</dt><dd>{val}</dd></div>')
     out.append("</dl>")
-    # The one thing a timing strip must never do is imply the columns add up. They do not: the
-    # summarizers run in parallel, so their column is a WALL clock while the pipeline stages are
-    # sums -- stated here rather than left for the reader to discover as an arithmetic bug.
-    out.append('<p class="sub" style="margin-top:8px">Суммаризация шла параллельно — это '
-               'wall-clock всей волны, а не сумма по видео; поэтому колонки не складываются '
-               'в «итого» арифметически.</p>')
+    # No grand total any more, so the note no longer has to excuse one: it just says what the
+    # third figure IS, since a wall clock beside two sums is the one thing a reader would
+    # otherwise mis-add.
+    out.append('<p class="sub" style="margin-top:8px">Первые две колонки — суммарная работа по '
+               'видео. Суммаризация шла параллельно, поэтому там wall-clock всей волны: '
+               'складывать их между собой нельзя.</p>')
     out.append("</header>")
 
     out.append('<section class="sec"><div class="sechead"><h2>Список</h2>'
@@ -490,30 +489,44 @@ def collect(ids: list[str], work_root: Path) -> list[dict]:
             "reason": doc.get("reason") or "—",
             "paragraph": doc.get("paragraph") or "",
             "timings": doc.get("timings") if isinstance(doc.get("timings"), dict) else {},
+            "wave": doc.get("wave") if isinstance(doc.get("wave"), dict) else None,
         })
     return entries
 
 
 def totals_of(entries: list[dict]) -> dict:
-    """Pipeline stages are SUMS (they ran one after another); summarization is a MAX, because the
-    sub-agents ran concurrently and the wave's wall clock is the largest time-until-done, not the
-    sum of them. `total` adds those two different kinds together deliberately — it is the honest
-    approximation of the pass's wall clock, and the page says so in words."""
+    """Pipeline stages are SUMS — they ran one after another, so their sum is the work done.
+    Summarization is a WALL CLOCK, derived across the whole queue as `last draft − first wave
+    start`, because the sub-agents ran concurrently and no per-video figure survives contact
+    with that (2026-07-20: 500 sentences → 1506 s, 31 sentences → 1252 s, i.e. every agent was
+    reporting the wave, not itself).
+
+    THERE IS DELIBERATELY NO GRAND TOTAL. The previous version added the two sums to the wall
+    clock and called it "итого обработка"; that number is neither the work done nor the elapsed
+    time, and a footnote saying the columns do not add up does not rescue a number that should
+    not have been added. Anything wanting a true wall clock needs the pass stamped end to end,
+    which nothing does today."""
     def col(key, fn):
         vals = [e["timings"].get(key) for e in entries]
         vals = [v for v in vals if isinstance(v, (int, float)) and not isinstance(v, bool)]
         return fn(vals) if vals else None
 
     dl, tr = col("download_sec", sum), col("transcribe_sec", sum)
-    sm = col("summarize_sec", max)
-    total = sum(v for v in (dl, tr, sm) if isinstance(v, (int, float)))
+    # carry-overs (draft older than the start) are excluded: they were not part of this wave,
+    # and a stale draft would stretch the window to whenever it happened to be written
+    waves = [w for w in (e.get("wave") for e in entries)
+             if isinstance(w, dict)
+             and isinstance(w.get("start"), (int, float))
+             and isinstance(w.get("draft_at"), (int, float))
+             and w["draft_at"] >= w["start"]]
+    sm = (max(w["draft_at"] for w in waves) - min(w["start"] for w in waves)) if waves else None
     # Total runtime of the QUEUE itself — the number the operator budgets against ("do I have
     # 9 hours of watching here or 90 minutes"). Missing durations are skipped, not zeroed, and
     # the count of skipped rows travels with it so the figure can be read as a floor rather than
     # a measurement when part of the queue never scanned.
     durs = [e["duration"] for e in entries
             if isinstance(e.get("duration"), (int, float)) and not isinstance(e["duration"], bool)]
-    return {"download": dl, "transcribe": tr, "summarize": sm, "total": total,
+    return {"download": dl, "transcribe": tr, "summarize": sm,
             "content": sum(durs) if durs else None,
             "content_missing": len(entries) - len(durs)}
 

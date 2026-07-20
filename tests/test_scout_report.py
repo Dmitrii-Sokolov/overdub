@@ -182,27 +182,34 @@ def test_duration_falls_back_to_the_last_sentence_end() -> None:
     assert doc["duration_sec"] == 9.0 and doc["duration_source"] == "sentences"
 
 
-def test_summarize_time_is_measured_from_the_wave_start() -> None:
+def test_the_wave_is_stored_as_raw_stamps_never_a_per_video_duration() -> None:
+    # Measured 2026-07-20: 500 sentences reported 1506 s and 31 sentences 1252 s — every agent
+    # was reporting the WAVE's length, not its own cost, so a per-video duration was data that
+    # was not there. Two timestamps are facts; the duration was a wrong inference.
+    start = time.time() - 40
     with tempfile.TemporaryDirectory() as d:
         w = _workdir(Path(d), "vid00000001", draft=_DRAFT)
-        doc = _build(w, wave_start=time.time() - 40)
-    assert 35 <= doc["timings"]["summarize_sec"] <= 60
+        doc = _build(w, wave_start=start)
+    assert "summarize_sec" not in doc["timings"]
+    assert doc["wave"]["start"] == round(start, 1)
+    assert doc["wave"]["draft_at"] >= doc["wave"]["start"]
 
 
-def test_a_carried_over_draft_reports_unknown_not_zero() -> None:
+def test_a_carried_over_draft_keeps_its_stamps_and_leaves_the_wave() -> None:
     # The skill's resume filter deliberately skips an up-to-date summary, so a draft older than
-    # the wave is NORMAL — but its timing is unknown, and 0 would read as measured.
+    # the wave is NORMAL. Its stamps are still facts; it just must not stretch the wall clock.
     with tempfile.TemporaryDirectory() as d:
         w = _workdir(Path(d), "vid00000001", draft=_DRAFT)
         doc = _build(w, wave_start=time.time() + 600)
-    assert doc["timings"]["summarize_sec"] is None
+    assert doc["wave"]["draft_at"] < doc["wave"]["start"]
+    assert scout_report.totals_of([{"timings": {}, "wave": doc["wave"]}])["summarize"] is None
 
 
-def test_missing_wave_start_leaves_the_timing_unknown() -> None:
+def test_missing_wave_start_leaves_the_wave_absent() -> None:
     with tempfile.TemporaryDirectory() as d:
         w = _workdir(Path(d), "vid00000001", draft=_DRAFT)
         doc = _build(w)
-    assert doc["timings"]["summarize_sec"] is None
+    assert doc["wave"] is None
 
 
 def test_missing_sentences_is_fatal() -> None:
@@ -605,23 +612,26 @@ def test_both_themes_are_defined() -> None:
 
 
 # --- the timing strip must not lie ---------------------------------------------
-def test_stage_totals_sum_but_summarize_is_a_wall() -> None:
+def test_stage_totals_sum_and_the_wave_is_a_window_across_the_queue() -> None:
     entries = [
-        {"timings": {"download_sec": 10.0, "transcribe_sec": 100.0, "summarize_sec": 30.0}},
-        {"timings": {"download_sec": 20.0, "transcribe_sec": 200.0, "summarize_sec": 50.0}},
+        {"timings": {"download_sec": 10.0, "transcribe_sec": 100.0},
+         "wave": {"start": 1000.0, "draft_at": 1030.0}},
+        {"timings": {"download_sec": 20.0, "transcribe_sec": 200.0},
+         "wave": {"start": 1002.0, "draft_at": 1050.0}},
     ]
     t = scout_report.totals_of(entries)
     assert t["download"] == 30.0 and t["transcribe"] == 300.0
-    assert t["summarize"] == 50.0              # MAX: the agents ran concurrently, not 80.0
-    assert t["total"] == 380.0                 # stages only — the report's own build time is
-                                               # the reader's cost, not the pipeline's, and was
-                                               # dropped from the strip
+    # last draft (1050) minus FIRST start (1000) — the wave's wall clock, not any one agent's
+    assert t["summarize"] == 50.0
+    # deliberately no grand total: adding two sums to a wall clock produced a figure that was
+    # neither the work done nor the elapsed time
+    assert "total" not in t
 
 
 def test_unknown_timings_render_as_a_dash_not_a_zero() -> None:
     assert scout_report.secs(None) == "—"
     assert scout_report.clock(None) == "—"
-    entries = [{"timings": {}}]
+    entries = [{"timings": {}, "wave": None}]
     t = scout_report.totals_of(entries)
     assert t["download"] is None and t["summarize"] is None
     assert t["content"] is None                # no durations at all → not a zero-length queue
