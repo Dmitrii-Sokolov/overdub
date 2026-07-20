@@ -62,6 +62,18 @@ class Config:
                                           # band all 7 manual repairs worked in — a reported
                                           # range, not a calibrated threshold. Do not cite it
                                           # as measured.
+                                          # WHAT MOVING IT COSTS (measured 2026-07-20, ear-checked
+                                          # — DECISIONS): every second of widening pulls MORE
+                                          # unflagged neighbours into the replaced range, and the
+                                          # window's reading overwrites them. That cut both ways
+                                          # in one run: it corrected a sentence the human got
+                                          # wrong (DmgujoZ1mmk), and it is the mechanism by which
+                                          # a clean neighbour CAN be degraded. So: RAISING it
+                                          # buys the clip more audio to decode and widens the
+                                          # blast radius; LOWERING it below ~8 s starves the clip
+                                          # of the context that makes the re-ASR trustworthy at
+                                          # all. Not a free dial in either direction — that is
+                                          # the whole reason it is a key and not a constant.
                                           # There is NO matching max key: `repair_window_max_sec`
                                           # existed until 2026-07-20, when it was measured to be
                                           # inert — see repair.widen's docstring. A window that

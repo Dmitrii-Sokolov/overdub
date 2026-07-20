@@ -15,7 +15,14 @@
 #   slot at 294 char/s → atempo ×8.79). With it off: 0 degenerate, 0 dups, max 24 char/s,
 #   and no overlong terminator-free blocks came back. Per-source escape hatch, not a default.
 
-# repair_window_min_sec = 8.0   # --repair-asr: widen a defect window to at least this many seconds
+# repair_window_min_sec = 8.0   # --repair-asr: widen a defect window to at least this many seconds.
+#                               # NOT a free dial. Widening pulls unflagged neighbours into the
+#                               # replaced range and overwrites them with the window's own reading:
+#                               # measured once as a correction, once as a degradation (DECISIONS
+#                               # 2026-07-20). Raise it → more audio to decode, bigger blast radius.
+#                               # Lower it → the clip loses the context that makes re-ASR credible.
+#                               # 8-18 s is the band the 7 manual repairs worked in — a reported
+#                               # range, never a calibrated one.
 #                               # (no max key — a window has no upper bound; see repair.widen)
 
 # --- translation (Gemma-3-12B via Ollama native /api/chat) ---
