@@ -23,19 +23,41 @@ offline resume of 12 videos can sit in up to 6 minutes of timeouts in one block 
 **→ DO THIS BEFORE THE NEXT BATCH (opened 2026-07-20).** Items 1-3 below are implemented but
 **uncommitted and not ear-checked**. Three checks stand between the change set and trusting it:
 
-  a. **`--only synthesize` fast-skip on an existing workdir.** Item 1 widened the `translation.json`
-     record with `src`/`src_note`. `synthesize._write_manifest` fingerprints `(ids, text_tts,
-     samples)` field-selectively, so extra keys SHOULD be inert — static reading only, never
-     executed. If that is wrong, the next batch silently re-renders hours of audio. One cheap run
-     settles it. **Do this first; it is the only check that can waste a whole night.**
-  b. **Listen to a repaired window.** DECISIONS 2026-07-20: window re-ASR is a trade, not a free
-     improvement, and it regressed `Claude` → `Cloud` on real audio with both readings agreeing. A
-     repaired window now deserves the same listen a flagged one gets. Nothing automated can replace
-     this.
-  c. **Re-run the spec-blind contract tests knowingly.** `tests/test_repair_contract.py` exists and
-     passes, but the agent that wrote it died before reporting, so it is unknown whether it found
-     failures or quietly relaxed its assertions to go green. Read the file once against DECISIONS
-     before counting it as independent evidence. Until then it is a test file, not a verification.
+  a. ~~`--only synthesize` fast-skip~~ **CLOSED 2026-07-20 — and it never needed real media.** The
+     question was whether item 1's `src`/`src_note` keys make the synthesize stage think every
+     record changed and silently re-render hours of audio. But `SynthesizeStage.done()` reads only
+     files, and its congruence gate compares a field-selective projection
+     (`{id: text_tts}` vs the unit's joined `text_tts`) — so the whole question is answerable by a
+     unit test on a fabricated workdir. Three added to `tests/test_synthesize_done.py`, pinning
+     BOTH directions: report-only keys must not invalidate, and must not blind the staleness check
+     either. Mutation-verified — leaking `src_note` into the projection is caught, **and all eight
+     pre-existing tests passed under that mutation**, so this was genuinely uncovered ground.
+     Lesson: "needs a real run" was an assumption, not a finding. Check what the code actually
+     touches before booking GPU time.
+  b. **Listen to a repaired window — the only check still open, and no automation replaces it.**
+     DECISIONS 2026-07-20: window re-ASR is a trade, and it regressed `Claude` → `Cloud` with both
+     readings agreeing. Timestamps below are ABSOLUTE against `work/<id>/source.wav`, which is the
+     same audio the fixture ran on, so these survive any scratch cleanup:
+       - **`DmgujoZ1mmk` @ 2:42.90** — highest value. id32 was CLEAN before the repair and was
+         pulled in only by widening to the 8 s minimum: `you want it to use` → `you wanted to use`.
+         This is the collateral-damage class, the one that threatens the feature most.
+       - **`2YCaBqP8muw` @ 4:08.43** — the `Claude` → `Cloud` regression. The question the ear
+         answers is not which word is right (text already settles that) but whether the speaker
+         says it CLEARLY. Clear speech mis-heard is the worse finding.
+       - **`2YCaBqP8muw` @ 2:00.87** — boundary case: repaired sentences start exactly
+         `CLIP_PAD_SEC` (0.25 s) early. Code guarantees that span is silence; the ear checks it is
+         not a clipped word.
+     The two windows that reproduced the human result byte-for-byte (`W5cga7xipRI` 22-24,
+     `ytEN_iAk09c` 6-8) need no listen. Separately, after any `repair → resume`: the automation
+     merged two sentences where the human kept two, so that unit's TTS boundary and `atempo`
+     changed — that check rides along with the next ordinary batch.
+  c. ~~Re-run the spec-blind contract tests knowingly~~ **CLOSED 2026-07-20 — they are real.**
+     Read against DECISIONS and then mutation-tested, which is what settles "were the assertions
+     quietly relaxed to go green". Dropping the `+ t0` rebase in `offset_words` fails
+     `test_repaired_timestamps_are_absolute_not_clip_relative` with a precise message; forcing
+     `readings_agree` to always return True fails the gate tests. The file also independently
+     asserts the detector blind spot that the fixture later measured on real audio. **Counts as
+     independent evidence.**
 
 Also unreconciled (DECISIONS 2026-07-20, provenance section): this repo records
 `RyvXxApfHkk#11` at 246 ch/s while the preserved backup measures 35.9, and "7 repairs" against 12
