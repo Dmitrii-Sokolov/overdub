@@ -15,7 +15,9 @@ Audio, two modes:
     must stay next to work/ so `<id>/segments/<lead>.wav` resolves under file://.
 
 Read-only, no model / no GPU / no network (one best-effort ffprobe via build_run_report at most).
-A work dir with no readable run.json is a skipped note, never a crash.
+A work dir with no readable run.json is either a SCOUT CARD (a sentences.json and NO source.mkv,
+so --scout ran and stopped there) or a skipped note — never a crash. The source.mkv half of that
+test is load-bearing: a full run parked at the translate seam has the same run.json-absent shape.
 
 Run with the .venv-asr python from the repo root:
 
@@ -103,6 +105,7 @@ a{color:var(--en);text-decoration:none}a:hover{text-decoration:underline}
 .tag{display:inline-block;font-size:11px;font-weight:700;padding:1px 7px;border-radius:9px;
 color:#fff;vertical-align:middle;margin-left:6px}
 .tag.triage{background:var(--triage)}.tag.clean{background:var(--clean)}
+.tag.scout{background:#5f6c7b}
 .rollup{color:var(--muted);font-size:13px;margin:0 0 14px}
 .summary{background:var(--card);border:1px solid var(--line);border-left:3px solid var(--en);
 border-radius:0 8px 8px 0;padding:10px 14px;margin:0 0 16px;font-size:14px;line-height:1.55}
@@ -187,6 +190,109 @@ def _unit_html(u: dict, wav: Path, out_dir: Path, *, embed: bool) -> str:
     return "\n".join(lines)
 
 
+def _scout_entry(work: WorkDir, summary: str | None) -> dict | None:
+    """A scout workdir → an entry for render_page, or None when this dir is not one.
+
+    The discriminator is sentences.json AND NO source.mkv. sentences.json ALONE is not one:
+    build_run_report returns None whenever report.json and translation.json are both absent,
+    which is ALSO the shape of every full run that stopped after transcribe — route B's step 1
+    (`--only download transcribe`, the PRIMARY translate route: the whole batch sits like this
+    until Sonnet writes translation.json), a workdir between --repair-asr and its re-run
+    (invalidate_downstream drops report/translation/run.json and keeps source.mkv), and any
+    overnight batch killed mid-translate. Carding those reports a video that needs RE-RUNNING
+    as one that needs SUMMARIZING, counts it out of the page's video total, and makes this page
+    contradict scripts/run_report.py about identical bytes on disk.
+
+    source.mkv is the fact that settles it, and the only one on disk that does: scout writes
+    audio only and never a container (DownloadStage._fetch_audio — the video-ready gate depends
+    on it staying absent), and nothing in the pipeline ever deletes source.mkv
+    (invalidate_downstream keeps it as a named survivor). Its presence is therefore a permanent
+    record that the FULL download ran, so such a dir keeps falling through to `skipped`, which
+    is printed and honest. Rejected: carding it under a second "TRANSCRIBED" label — it buys a
+    second card vocabulary and a second state field to say what `skipped` already says, and the
+    page would still be claiming more than it knows.
+
+    Carries NO "run" key at all, rather than a synthesized run-shaped dict of zeros. Two
+    reasons: any path still doing e["run"] fails loudly instead of rendering a fabricated
+    zero, and a zero-filled run would present an undubbed video to the batch table as an
+    object with an RTF and a triage verdict it cannot have.
+
+    None when sentences.json is missing or unparseable — that dir is a typo or an empty
+    workdir and must keep landing in `skipped`. An EMPTY list is not None: it parses, so
+    transcribe ran and produced nothing, and "0 sentences" on a card is a louder report of
+    that than silently dropping the video out of the page.
+
+    Duration and sentence count are not decoration: "is this worth dubbing" is a question
+    about cost, and cost is linear in length."""
+    if work.source_video.exists():                     # cheap check first, before the JSON parse
+        return None
+    sents = _load_json(work.sentences)
+    if not isinstance(sents, list):
+        return None
+    info = _load_json(work.info_json)
+    info = info if isinstance(info, dict) else {}
+    video_sec = info.get("duration")
+    if not isinstance(video_sec, (int, float)) or isinstance(video_sec, bool) or video_sec <= 0:
+        ends = [s.get("end") for s in sents
+                if isinstance(s, dict) and isinstance(s.get("end"), (int, float))]
+        video_sec = max(ends) if ends else None
+    return {"scout": True, "work": work, "video_id": work.root.name,
+            "title": info.get("title"), "summary": summary,
+            "video_sec": video_sec, "n_sentences": len(sents)}
+
+
+def _summary_html(summary: str) -> str:
+    """summary.md is Markdown but this page has no markdown renderer (none is offline-safe to
+    add). runreport.read_summary already stripped heading markers, so paragraphs are the only
+    structure left. Escape first — this is raw LLM prose going straight into HTML.
+
+    Shared by the video block and the scout card. Rule of Three says don't extract at two uses;
+    the exception is earned here because the failure mode of a divergent second copy is
+    unescaped LLM output executing in the operator's browser."""
+    paras = [html.escape(p.strip()).replace("\n", " ")
+             for p in summary.split("\n\n") if p.strip()]
+    return '  <div class="summary">' + "".join(f"<p>{p}</p>" for p in paras) + '</div>'
+
+
+def _scout_html(e: dict) -> str:
+    """A scouted video rendered as a CARD, never as a batch-table row: a row promises RTF, wall,
+    flag counts and a triage verdict this run does not have, and ten "-" cells read as a broken
+    dub rather than as a different KIND of run.
+
+    Deliberately NO <audio> (nothing was synthesized), NO srcanom (no translation to have
+    anomalies in), NO TRIAGE/clean tag — borrowing the triage vocabulary would report an
+    undubbed video as clean.
+
+    The .rollup class IS reused, on purpose. The invariant is "fabricates no dub metrics", not
+    "carries no rollup": duration and sentence count are exactly what a promotion decision is
+    about, because the cost of dubbing is linear in length.
+    """
+    vid = html.escape(str(e.get("video_id")))
+    title = e.get("title")
+    head = vid + (f' — {html.escape(title)}' if title else '')
+    bits = ["scouted — transcript only"]
+    sec = e.get("video_sec")
+    if isinstance(sec, (int, float)):
+        mins = int(round(sec / 60))
+        bits.append(f"{mins} min" if mins else "<1 min")
+    n = e.get("n_sentences")
+    if n is not None:                                   # every clause is DROPPED when its field
+        bits.append(f"{n} sentences")                   # is None — never rendered as "None"
+    out = [f'<section class="video" id="v-{vid}">',
+           f'  <h2>{head} <span class="tag scout">SCOUT</span></h2>',
+           f'  <p class="rollup">{html.escape(" · ".join(bits))}</p>']
+    summary = e.get("summary")
+    if summary:
+        out.append(_summary_html(summary))
+    else:
+        # A transcribed-but-unsummarized video is a pipeline STATE, not an empty card. Saying so
+        # is what keeps a half-finished scout pass from reading as a video with nothing to say.
+        out.append('  <p class="clean-list">no summary.md yet — run the scout summarizer '
+                   '(overdub-scout skill, step S2).</p>')
+    out.append('</section>')
+    return "\n".join(out)
+
+
 def _video_html(run: dict, units: list[dict], work: WorkDir, out_dir: Path, *,
                 embed: bool, summary: str | None = None) -> str:
     vid = run.get("video_id")
@@ -209,13 +315,8 @@ def _video_html(run: dict, units: list[dict], work: WorkDir, out_dir: Path, *,
            f'  <h2>{head} {tag}</h2>',
            f'  <p class="rollup">{rollup}</p>']
     if summary:
-        # summary.md is Markdown but this page has no markdown renderer (none is offline-safe to
-        # add). runreport.read_summary already stripped heading markers, so paragraphs are the only
-        # structure left. Escape first — this is raw LLM prose going straight into HTML.
-        paras = [html.escape(p.strip()).replace("\n", " ")
-                 for p in summary.split("\n\n") if p.strip()]
-        out.append('  <div class="summary">' + "".join(f"<p>{p}</p>" for p in paras) + '</div>')
-    # Source anomalies (PLAN item 1) — content first, then defects. Rendered even when `units` is
+        out.append(_summary_html(summary))
+    # Source anomalies (DECISIONS 2026-07-19) — content first, then defects. Rendered even when `units` is
     # empty: a pre-synthesis workdir is exactly when this signal is most actionable (--repair-asr
     # is still cheap there). Deliberately NO <audio> player, and deliberately not routed through
     # flagged_units: the defect is in the ENGLISH source, so listening to the Russian tells the
@@ -278,23 +379,40 @@ def _batch_table(runs: list[dict]) -> str:
 
 
 def render_page(entries: list[dict], out_dir: Path, *, embed: bool) -> str:
-    """entries: [{run, units, work, summary}]. Videos needing triage sort first. Pure string assembly."""
-    entries = sorted(entries, key=lambda e: (not e["run"].get("needs_triage"),
-                                             str(e["run"].get("video_id"))))
+    """entries: [{run, units, work, summary}] for dubbed videos, plus scout entries
+    ({scout, work, video_id, title, summary, video_sec, n_sentences}) for workdirs that stopped
+    after transcribe. Videos needing triage sort first. Pure string assembly.
+
+    Scout entries are held OUT of `runs` and out of total_wall/throughput — mixing an audio-only
+    transcribe into dub throughput ruins the metric. Splitting the two lists up front also keeps
+    every e["run"] access below on the list that is guaranteed to have the key.
+
+    Scout cards sort LAST: this page answers "what do I re-listen to this morning", and a
+    promotion decision is a different, unhurried question (on a pure-scout page the order
+    degenerates anyway)."""
+    scouts = sorted((e for e in entries if e.get("scout")),
+                    key=lambda e: str(e.get("video_id")))
+    entries = sorted((e for e in entries if not e.get("scout")),
+                     key=lambda e: (not e["run"].get("needs_triage"),
+                                    str(e["run"].get("video_id"))))
     runs = [e["run"] for e in entries]
     n_triage = sum(1 for r in runs if r.get("needs_triage"))
     total_wall = round(sum((r.get("timings", {}) or {}).get("total_wall_s", 0) or 0 for r in runs), 1)
     sum_video = sum(((r.get("timings", {}) or {}).get("video_sec") or 0) for r in runs)
     thru = f"×{sum_video / total_wall:.2f}" if total_wall > 0 else "n/a"
     ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
-    meta = (f"generated {ts} · {len(runs)} video(s) · {n_triage} need triage · "
-            f"total wall {total_wall}s · throughput {thru}"
+    # the "· N scouted" clause is omitted at zero, so an ordinary batch's page is byte-identical
+    # to what this script produced before scout mode existed
+    meta = (f"generated {ts} · {len(runs)} video(s)"
+            + (f" · {len(scouts)} scouted" if scouts else "")
+            + f" · {n_triage} need triage · total wall {total_wall}s · throughput {thru}"
             + ("" if embed else " · audio: relative links (keep this file next to work/)"))
 
     body = [_batch_table(runs)] if runs else []
     for e in entries:
         body.append(_video_html(e["run"], e["units"], e["work"], out_dir,
                                 embed=embed, summary=e.get("summary")))
+    body.extend(_scout_html(e) for e in scouts)
 
     return (
         "<!doctype html>\n"
@@ -358,15 +476,26 @@ def main(argv: list[str] | None = None) -> int:
         work = WorkDir(d)
         run = _load_json(work.root / "run.json")
         if run is None:
-            run = runreport.build_run_report(work, cfg)
+            run = runreport.build_run_report(work, cfg)   # NOT pure — it unlinks a stale
+                                                          # run.json. Do not call it twice.
+        summary = runreport.read_summary(work)            # hoisted above the branch: a scout
+                                                          # workdir needs it too
         if run is None:
-            skipped.append(d.name)
+            # A scout workdir has NO run.json BY CONSTRUCTION — _build_run_report clears it when
+            # report.json and translation.json are both absent, which is exactly scout's shape.
+            # Before this branch the whole mode was invisible here: a pure-scout batch printed
+            # "nothing to render" and wrote no file at all. sentences.json is the discriminator —
+            # "we scouted this" vs "this path is a typo". No silent nothing in EITHER direction.
+            scout = _scout_entry(work, summary)
+            if scout is None:
+                skipped.append(d.name)
+            else:
+                entries.append(scout)
             continue
         report = _load_json(work.report)
         translation = _load_json(work.translation)
         units = runreport.flagged_units(report, translation, args.limit) if report else []
-        entries.append({"run": run, "units": units, "work": work,
-                        "summary": runreport.read_summary(work)})
+        entries.append({"run": run, "units": units, "work": work, "summary": summary})
 
     if not entries:
         print(f"[triage] nothing to render — no readable run.json in: {', '.join(skipped) or '(none)'}",
@@ -378,9 +507,15 @@ def main(argv: list[str] | None = None) -> int:
     tmp.write_text(render_page(entries, out_dir, embed=embed), encoding="utf-8")
     os.replace(tmp, out_path)
 
-    n_triage = sum(1 for e in entries if e["run"].get("needs_triage"))
-    n_units = sum(len(e["units"]) for e in entries)
-    print(f"[triage] {out_path}  ({len(entries)} video(s), {n_triage} need triage, "
+    # scouted videos are counted SEPARATELY, never as videos: "0 need triage" out of a count
+    # that includes 100 never-dubbed videos is a lie about 100 videos. The scout clause is
+    # omitted at zero, so an ordinary batch's line is byte-identical to the pre-scout string.
+    n_scout = sum(1 for e in entries if e.get("scout"))
+    n_triage = sum(1 for e in entries if not e.get("scout") and e["run"].get("needs_triage"))
+    n_units = sum(len(e.get("units") or []) for e in entries)
+    print(f"[triage] {out_path}  ({len(entries) - n_scout} video(s), "
+          + (f"{n_scout} scouted, " if n_scout else "")
+          + f"{n_triage} need triage, "
           f"{n_units} flagged unit(s){', embedded audio' if embed else ', linked audio'})")
     if skipped:
         print(f"[triage] skipped (no run.json): {', '.join(skipped)}")
