@@ -26,6 +26,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import re
 import sys
 import tempfile
 import time
@@ -511,11 +512,17 @@ def test_thumbnail_is_inlined_not_linked() -> None:
     assert "i.ytimg.com" not in page
 
 
-def test_the_rendered_preview_width_matches_the_file_written_to_disk() -> None:
+def test_the_rendered_preview_never_asks_for_more_pixels_than_are_stored() -> None:
     # Two files, one number, and nothing but a comment holding them together — which is exactly
-    # how the scan table ended up upscaling a 160px file into a 320px slot and going soft. The
-    # renderer may never ask for more pixels than build_scout stores.
-    assert f"width:{build_scout._THUMB_W}px" in scout_report._CSS
+    # how the scan table ended up upscaling a 160px file into a 320px slot and going soft.
+    #
+    # A CEILING, not an equality: rendering NARROWER than the file on disk is the 2x-source case
+    # (sharp on hi-DPI) and must stay allowed. Asserting equality would have failed the moment
+    # the preview was halved — a guard that fires on the safe direction gets deleted, and then
+    # the unsafe direction is unguarded too.
+    widths = [int(w) for w in re.findall(r"\.thumb\{[^}]*?width:(\d+)px", scout_report._CSS)]
+    assert widths, "no .thumb width in the CSS — the rule was renamed and this guard went blind"
+    assert max(widths) <= build_scout._THUMB_W
 
 
 def test_the_preview_opts_out_of_the_artifact_skeletons_img_reset() -> None:

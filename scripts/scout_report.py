@@ -236,18 +236,22 @@ _CSS = """
 .sr td.line a.jump{color:inherit;font-family:inherit;}
 .sr td.line a.jump:hover{color:var(--accent);}
 
-/* preview: fixed box so a missing one never shifts the column. Kept in lockstep with
-   build_scout._THUMB_W — render wider than the file on disk and the column goes soft.
+/* preview: fixed box so a missing one never shifts the column.
+
+   160 rendered from a 320px file (build_scout._THUMB_W) is DELIBERATE slack, not a leftover:
+   the file is the 2x source, so the preview stays sharp on a hi-DPI screen. Only the ceiling is
+   a rule — render WIDER than the file on disk and the column goes soft, which is what a 160px
+   file in a 320px slot looked like before 2026-07-20. Narrower is free.
 
    max-width:none is NOT decoration. The Artifact skeleton wraps this fragment in its own reset,
    which carries `img{max-width:100%}`; inside an auto-layout table that turns the preview's
    min-content contribution into ~0, so `td.pic{width:1%}` — which asks for the narrowest column
    that still fits the image — squeezes the thumbnail down to a sliver. The page looks fine
    opened locally (no reset) and wrong once published, which is the only place it is read. */
-.sr .thumb{display:block;width:320px;max-width:none;height:auto;border-radius:4px;
+.sr .thumb{display:block;width:160px;max-width:none;height:auto;border-radius:4px;
   background:var(--none-bg);}
 .sr .cardhead .thumb{width:84px;margin:0;border-radius:3px;}
-@media (max-width:640px){.sr .thumb{width:200px;}}
+@media (max-width:640px){.sr .thumb{width:100px;}}
 .sr p.why{font-family:var(--ui);font-size:.92rem;color:var(--dim);margin:0 0 10px;
   padding-left:10px;border-left:2px solid var(--line);max-width:66ch;}
 .sr .line{color:var(--dim);}
