@@ -1,0 +1,11 @@
+# Workflow scripts MUST keep LF endings.
+#
+# The Workflow tool's approval layer refuses a script containing control characters
+# ("script contains control characters that would be hidden in the approval"), and a CR is one.
+# Measured 2026-07-21: three of eight invocation attempts for .claude/workflows/scout-summarize.js
+# died on exactly that before the fan-out would launch.
+#
+# core.autocrlf is true on the machine this repo is developed on, so without this rule git
+# restores CRLF on every checkout and the fix survives only in one working copy. The global
+# normalize-postwrite hook already skips this directory; this is the other half.
+.claude/workflows/*.js text eol=lf

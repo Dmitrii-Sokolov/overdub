@@ -49,39 +49,59 @@ fast-skip while `download` re-runs.
   "broken" videos on demand — but the download stage's version is currently unpredictable and is
   not the one that was installed for it.
 
-**BASELINE COLLECTED 2026-07-21** (6 videos, 2:53:44, 1683 sentences — full numbers in CHANGELOG):
-download 162 s · transcribe 723 s wall / 718 s work (RTF 0.087) · summarize wave 842 s wall
-against 1113 s of agent windows. It is the only baseline on disk; a re-run of that queue
-overwrites it, so copy the six `scout.json` before repeating it.
+**MEASURED 2026-07-21** — four runs, same 6-video queue (2:53:44, 1683 sentences), one change at
+a time. Full table in CHANGELOG. Route C now costs, per pass over this queue:
+download 162 s · transcribe 723 s wall / 718 s work (RTF 0.087) · summarize wave **192 s**.
+Baselines preserved under `work-exp/wave-*-2026-07-21/`; a re-run of that queue overwrites the
+live artifacts, so copy the six `scout.json` before repeating it.
 
 ---
 
-1. **Verify the S2 fan-out fix — the fix is written, the confirmation is not.** The 2026-07-21
-   baseline (CHANGELOG) found the summarize wave was SERIAL: six Agent calls in six messages,
-   103 s apart, 1.32× effective parallelism, 588 s lost on six videos. S2 now mandates ~6
-   `tool_use` blocks in one message. **What remains is one controlled re-run**, and the whole
-   item closes or reopens on it:
-   - **Same queue, not a new one.** Same videos, same transcripts, same sentence counts — only
-     the spawn pattern differs, so the measurement is not confounded by content. `sentences.json`
-     stays, so transcribe fast-skips and the run isolates S2 (~4 min, six Sonnet agents).
-   - **Back up the six `scout.json` first.** They hold the only baseline that exists; a re-run
-     overwrites it. Delete only `summary.md`, `scout.draft.json` and `scout.started` per video —
-     the resume filter skips a video that still has the first two, so without this the wave is
-     empty and the run proves nothing.
-   - **Read the answer off the disk, never off the run's own account.** Marker mtimes seconds
-     apart = fixed; ~100 s apart = not fixed, whatever the orchestrator reports (DECISIONS
-     2026-07-21). Pass condition: wave wall clock ≈ the slowest agent (~250 s), not ~840.
-   - Dead ends, closed by the same measurement — do not re-litigate: **input size is not a
-     lever** (465 sentences → 132 s, 181 → 177 s, negative correlation), and **model-load
-     overhead is 0.6%**, not the 25% first claimed.
-   - **Then STOP and re-measure before optimizing further.** Summarize vs transcribe is already
-     only 1.16× on this queue, not the 5.5× recorded on an earlier short one; agent cost is flat
-     per video while transcribe scales with duration (crossover ≈ 35 min of video). After the
-     fan-out fix the GPU is the wall, and item 3 becomes the live one.
-   - Still open, unchanged by the above: **pipelining transcribe → summarize.** Now worth LESS
-     than it looked (the ceiling is `min(transcribe, summarize)`, and summarize is about to
-     shrink to ~254 s), and it still breaks the skill's three-step shape. Reassess after the
-     re-run rather than assuming it survives.
+1. **Optimize transcribe — it is the bottleneck now, and it is the only one left.** The summarize
+   wave went 842 → 192 s (Workflow fan-out, CHANGELOG 2026-07-21) and is now the slowest agent
+   plus two seconds: 4.51× parallel against a 4.55× ceiling, i.e. finished. Transcribe is 723 s
+   against it, 79% of the pass, serial on one GPU, and it scales with video length while agent
+   cost does not.
+   **RTF 0.087** on large-v3, fp16, `beam_size=5`, `vad_filter=True`, `word_timestamps=True`.
+   Levers, none of them measured yet — and the point of `detail.transcribe.work_sec` is that they
+   now CAN be, against a stored baseline rather than a wall clock that hides the model load:
+   (a) **`beam_size` 5 → 1.** Usually the largest single win and the cheapest to try. Costs
+   accuracy; the ASR round-trip in verify is not a check on the transcribe stage, so quality has
+   to be judged against `--repair-asr`'s golden fixture (`docs/repair-fixture.md`), not by ear.
+   (b) **Batched inference** (`faster_whisper.BatchedInferencePipeline`). Reported multi-× on long
+   audio, which is exactly this queue's shape (20-36 min videos). Unproven here, and it changes
+   how segments come back — check `word_timestamps` survives it, since `resegment` depends on
+   word-level boundaries and nothing downstream works without them.
+   (c) **`compute_type` fp16 → int8_float16.** Cheap to test, ~free VRAM, some accuracy cost.
+   (d) **distil-large-v3.** Biggest speedup, biggest quality question, and it is EN-only — which
+   this pipeline is anyway (EN→RU hard constraint).
+   **What NOT to touch:** `word_timestamps=True` is load-bearing, not a knob — sentence
+   resegmentation is built on word boundaries (`stages/transcribe.py`), and turning it off breaks
+   translation units, timing sync and `--repair-asr` at once.
+   **Measure one at a time against the stored baseline**, and watch `transcribe_asr_passes`: the
+   alignment guard re-runs ASR on a suspect video, so a 2 there doubles that video's cost for a
+   reason unrelated to whatever is being tested.
+   Second-order, only after the above: **the download outlier** — `Tu2cCEMwvHI` took 116.7 s
+   against 6-13 s for the rest of the same queue, undiagnosed. And **pipelining transcribe →
+   summarize** is now worth less than it ever looked: the ceiling is `min(transcribe, summarize)`
+   and summarize has shrunk to 192 s, so it buys ~192 s of a ~915 s pass while breaking the
+   skill's three-step shape.
+
+   **Dead levers — closed by measurement, do not re-litigate.** Input size does not drive agent
+   cost (465 sentences → 132 s, 181 → 177 s, negative correlation in that sample). Model-load
+   overhead is 0.64%, not the 25% first claimed off a 2:22 video. Prompt wording cannot produce a
+   fan-out. And run-to-run variance on identical configuration reached 272 s, so any lever worth
+   less than that needs more than one run to claim.
+
+1a. **Fix the report's summarize figure — it now overstates, and the data to fix it is already
+   on disk.** `totals_of` computes `max(draft_at) - wave.start`, and `wave.start` is stamped
+   before spawning. That gap used to be seconds; in run 4 it was 371 s of the orchestrator
+   retrying the Workflow invocation, so the report showed **9.4 min for a 192 s wave**. The label
+   reads as summarization time and no longer is. Each agent's true start is recoverable as
+   `draft_at - summarize_sec`, so the honest wave is `max(draft_at) - min(draft_at -
+   summarize_sec)`; the stamp is then only good for measuring orchestration overhead, which is
+   worth showing separately rather than folding in. Small, and it blocks trusting the one figure
+   an operator reads to decide whether the pass got faster.
 
 2. **Reconcile the two report renderers.** `triage_html.py` prints `completeness.n_flagged` where
    `run_report.py` prints `n_actionable` + `n_advisory`, and the batch tables have diverged to 10 vs

@@ -1,5 +1,71 @@
 # CHANGELOG
 
+## 2026-07-21 — S2 fan-out fixed: the summarize wave is 4x faster, and the GPU is next
+
+Four runs over the same 6-video queue (2:53:44 of material, 1683 sentences), changing one thing
+at a time. The whole table, because no single row of it means anything alone:
+
+| run | what changed | prompt | spawn gap | sum of agent windows | wave wall | slowest agent | parallelism |
+|---|---|---|---|---|---|---|---|
+| 1 | baseline, marker added | 21,507 | 103 s | 1113 s | 842 s | 254 s | 1.32x |
+| 2 | fan-out instruction added | 19,329 | 86 s | 1385 s | 647 s | 305 s | 2.14x |
+| 3 | Write-tool workaround added | 23,689 | 123 s | 981 s | 774 s | 202 s | 1.27x |
+| 4 | **fan-out moved to a Workflow** | **6,587** | **~0.4 s** | 865 s | **192 s** | 190 s | **4.51x** |
+
+**Run 4's wave is the slowest agent plus two seconds** — 4.51x against a ceiling of 4.55x for
+this queue, so this axis is finished. Markers 0-1.1 s apart against 85-123 s before.
+
+**What the failed attempts taught, in order:**
+- **Wording cannot produce a fan-out.** Runs 1-3 all emitted six Agent calls in six messages. In
+  run 3 the orchestrator explicitly reasoned *"spawning six sub-agents in a single message"*,
+  announced it, and did the opposite. Read, understood, acknowledged, not executed.
+- **The spawn cadence tracks PROMPT SIZE**, ~8.5 s per 1000 chars, because the orchestrator
+  generates the whole prompt token by token once per video. Run 3 is the proof by own goal: the
+  Write-tool fix cut agent time (sum of windows 1385 -> 981 s) and made the WAVE 127 s *slower*,
+  because it added 4.4k chars to a prompt paid six times.
+- **The wave equalled `spawn total + the last agent's window`.** Every other agent finished
+  inside the shadow of the next spawn, which is why agent-side speedups were worth zero while
+  spawning was serial.
+- **Input size does not drive agent cost.** 465 sentences -> 132 s, 181 -> 177 s; the longest
+  transcript was the fastest agent. Truncating or chunking the transcript is a dead lever.
+- **Run-to-run variance is as large as the effects being measured.** Runs 1 and 2 had identical
+  configuration and differed by 272 s; one video went 254 -> 280 -> 130 s on unchanged input.
+  An earlier attribution of that 272 s to the Write block was wrong — the block was in both.
+
+**Transcribe, now that it is measurable:** 722.8 s of stage wall clock against 718.2 s of work
+over the five instrumented videos (8255 s of video) — **RTF 0.087**, and the model load is 4.6 s,
+0.64%, all of it on video 1. Download 161.7 s with one unexplained outlier (116.7 s against 6-13).
+
+**The bottleneck moved, as predicted.** Transcribe 723 s against a 192 s summarize wave. The old
+roadmap item 1 is closed and the new item 1 is the GPU.
+
+**Also fixed along the way**
+- **Sub-agents cannot use the Write tool** ("Subagents should return findings as text, not write
+  report files"). Not a repo hook — the string exists nowhere under `~/.claude` — so there was
+  nothing to relax. All six agents in runs 1-3 discovered it themselves and worked around it with
+  PowerShell, ~45 s each. S2 now prescribes the working shape up front, UTF-8 without BOM
+  (`json.loads` breaks on a BOM) and `ConvertTo-Json` from a hashtable so PowerShell owns the
+  escaping.
+- **`summary pending` now outranks a present `scout.json`.** A re-measurement was set up by
+  deleting the drafts but leaving `scout.json`; the orchestrator found the contradiction,
+  investigated, judged the scout.json files complete, skipped S2 and published a flawless-looking
+  six-video report representing zero work. `scout.json` is derived from `scout.draft.json` and is
+  not covered by `invalidate_downstream`, so without its draft it is an orphan.
+- **The viewer profile is no longer pasted into the prompt** — 16.8k chars, 71% of its weight.
+  The sub-agent reads it off disk and returns `PROFILE-MISSING` rather than silently grading on
+  generic quality, which is what pasting was protecting against.
+- **`.claude/workflows/` is excluded from the global CRLF normalizer.** The Workflow approval
+  layer rejects a script containing control characters, and CR is one; three of run 4's eight
+  invocation attempts died on it.
+- **pytest**: one command for the suite (385 tests, ~5 s), config in `pyproject.toml`.
+
+**Known defect, not yet fixed: the report's summarize figure now overstates.** It is
+`max(draft_at) - wave.start`, and `wave.start` is stamped before spawning. In run 4 that window
+was 563 s (9.4 min) against a real wave of 192 s — the extra 371 s is the orchestrator's eight
+attempts to invoke the tool. The label reads as summarization time and no longer is. The markers
+make the honest figure derivable (`draft_at - summarize_sec` reconstructs each agent's start), so
+the fix is available and small.
+
 ## 2026-07-21 — the preview column: collapsed, then twice as heavy as it looked
 
 Started as "the picture column in the scan table is too narrow" and ended four measurements
