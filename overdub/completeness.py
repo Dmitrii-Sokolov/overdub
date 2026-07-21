@@ -71,8 +71,10 @@ entity_loss  (signal B) — a Latin proper NAME present in src_en but absent (ca
     such a name stays Latin in text_ru and substring-matches; a dropped or Cyrillicized one does
     not. Candidates are Titlecase Latin tokens (first letter upper, NOT all-caps) of base length
     >= 2, minus a stoplist (function words, pronouns incl. 'i', weekday/month names) and the
-    sentence-initial token. ALL-CAPS acronyms are excluded on purpose: the prompt allows them to
-    be Russianized (AI -> ИИ), so including them is near-pure noise.
+    sentence-initial token. ALL-CAPS acronyms are excluded on purpose — including their PLURAL
+    form (LLMs/GPUs/APIs: ALL-CAPS stem + trailing lowercase s, which reads as Titlecase to the
+    shape check): the prompt allows both to be Russianized (AI -> ИИ, LLMs -> нейросети), so
+    including them is near-pure noise.
     FALSE POSITIVE (dominant, irreducible): personal names, which the naming rule PERMITS to be
     Russified (Jimmy -> Джимми, Bruce Lee -> Брюс Ли). Also translated quoted work titles. No
     cheap person-vs-brand discriminator exists; this flag is triage-only, as designed.
@@ -243,6 +245,8 @@ def _missing_entities(src_phrased: str, text_ru: str) -> list[str]:
         if len(base) < 2:
             continue
         if not (base[0].isupper() and not base.isupper()):  # Titlecase only, exclude ALL-CAPS
+            continue
+        if len(base) >= 3 and base.endswith("s") and base[:-1].isupper():  # plural acronym: LLMs
             continue
         low = base.casefold()
         if idx == 0:                                      # sentence-initial belt-and-suspenders

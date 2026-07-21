@@ -170,6 +170,23 @@ def test_entity_acronym_russianized_not_flagged() -> None:
     assert "entity_loss" not in r["flags"]
 
 
+def test_entity_plural_acronym_russianized_not_flagged() -> None:
+    # "LLMs" = ALL-CAPS stem + lowercase plural s, which reads as Titlecase to the shape check
+    # and used to slip past the ALL-CAPS exclusion. Still an acronym the prompt allows to be
+    # Russianized (LLMs -> нейросети) -> must not fire. Non-initial so it reaches the filter.
+    r = _check("These LLMs keep improving fast.", "Эти нейросети быстро развиваются.")
+    assert r["missing_entities"] == []
+    assert "entity_loss" not in r["flags"]
+
+
+def test_entity_titlecase_name_ending_in_s_still_fires() -> None:
+    # Boundary of the plural-acronym exclusion: "Windows" ends in s but its stem is NOT
+    # ALL-CAPS, so it stays a name candidate and a dropped one must still fire.
+    r = _check("I switched from Windows to Linux.", "Я перешёл на другую систему.")
+    assert "Windows" in r["missing_entities"]
+    assert "entity_loss" in r["flags"]
+
+
 # --- length -------------------------------------------------------------------
 def test_length_short() -> None:
     src = "You choose what to play, when to play, and how long you keep going for."
