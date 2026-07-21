@@ -279,7 +279,7 @@ repair renumbers ids — re-derive them before a second explicit pass.
 .venv-asr\Scripts\python.exe -m pytest
 ```
 
-405 tests in ~5 s. No GPU, no network, no media, no model downloads — everything
+~400 tests in ~5 s. No GPU, no network, no media, no model downloads — everything
 is pure logic over temp dirs and injected stages, which is what makes a bare
 `pytest` a safe thing to run at any time, including while a batch is on the GPU.
 

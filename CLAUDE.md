@@ -72,7 +72,7 @@ One command, from the repo root:
 .venv-asr\Scripts\python.exe -m pytest
 ```
 
-405 tests, ~5 s, no GPU / network / media. `pytest` lives in `.venv-asr` only
+~400 tests, ~5 s, no GPU / network / media. `pytest` lives in `.venv-asr` only
 (`pip install -e ".[dev]"`); config is `[tool.pytest.ini_options]` in
 `pyproject.toml`. **Do not hand-roll a loop over `tests/*.py`** — that was the
 state before 2026-07-20 and it produced invented result lines. Run it from the
