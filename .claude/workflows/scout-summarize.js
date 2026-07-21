@@ -27,8 +27,22 @@ export const meta = {
 // depend on a model choosing to emit N tool_use blocks — and the prompt is assembled by this
 // script rather than generated, so its length costs nothing.
 
-const ROOT = (typeof args === 'object' && args && args.root) || 'D:\\code\\overdub'
-const IDS = (typeof args === 'object' && args && Array.isArray(args.ids)) ? args.ids : []
+// Accept `args` as either an object or a JSON string. The tool's docs are explicit that the
+// CALLER must pass real JSON values ("a stringified list reaches the script as one string, so
+// args.filter/args.map throw"), and the runtime does exactly that — it hands over whatever it
+// was given. But on the first real invocation the caller stringified it in all 8 attempts
+// (2026-07-21 transcript), which is evidently the easy mistake to make, and the failure mode is
+// an empty fan-out that throws a message about ids being missing when the real problem is the
+// argument's shape. So: parse it, and keep passing an object from the skill anyway.
+//
+// A failed parse becomes null on purpose — that falls through to the empty-ids throw below,
+// which is loud. Silently defaulting to the whole queue would be the dangerous repair here.
+let ARGS = args
+if (typeof ARGS === 'string') {
+  try { ARGS = JSON.parse(ARGS) } catch (e) { ARGS = null }
+}
+const ROOT = (typeof ARGS === 'object' && ARGS && ARGS.root) || 'D:\\code\\overdub'
+const IDS = (typeof ARGS === 'object' && ARGS && Array.isArray(ARGS.ids)) ? ARGS.ids : []
 
 if (!IDS.length) {
   throw new Error(
