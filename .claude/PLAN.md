@@ -93,15 +93,12 @@ live artifacts, so copy the six `scout.json` before repeating it.
    fan-out. And run-to-run variance on identical configuration reached 272 s, so any lever worth
    less than that needs more than one run to claim.
 
-1a. **Fix the report's summarize figure — it now overstates, and the data to fix it is already
-   on disk.** `totals_of` computes `max(draft_at) - wave.start`, and `wave.start` is stamped
-   before spawning. That gap used to be seconds; in run 4 it was 371 s of the orchestrator
-   retrying the Workflow invocation, so the report showed **9.4 min for a 192 s wave**. The label
-   reads as summarization time and no longer is. Each agent's true start is recoverable as
-   `draft_at - summarize_sec`, so the honest wave is `max(draft_at) - min(draft_at -
-   summarize_sec)`; the stamp is then only good for measuring orchestration overhead, which is
-   worth showing separately rather than folding in. Small, and it blocks trusting the one figure
-   an operator reads to decide whether the pass got faster.
+   **Summarize is CLOSED as an optimization target — do not reopen it without new evidence.**
+   Parallelism is at its ceiling (run 4: 4.51x of 4.55x; run 5: 3.39x of 3.40x), so the wave is
+   now exactly the slowest agent. And agent time varies ~2x run to run on identical input
+   (`16zrEPOsIcI`: 144 s then 310 s), with no known lever — input size was ruled out. The wave is
+   190-310 s against 723 s of transcribe; chasing a hundred seconds of jitter there is not worth
+   a day. Both runs are preserved under `work-exp/wave-run{4,5}-2026-07-21/`.
 
 2. **Reconcile the two report renderers.** `triage_html.py` prints `completeness.n_flagged` where
    `run_report.py` prints `n_actionable` + `n_advisory`, and the batch tables have diverged to 10 vs

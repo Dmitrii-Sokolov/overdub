@@ -212,12 +212,22 @@ Workflow: {name: "scout-summarize", args: {ids: [...$sumTodo], root: "D:\\code\\
 It returns `{done, failed, total}`. **`failed` is per video and actionable** — a `PROFILE-MISSING`
 agent or one the runtime dropped. Re-run the workflow with just those ids.
 
-**Verify from disk, not from the run's account.** After the wave the markers should be seconds
-apart:
+**Verify from disk, not from the run's account.** Two things, and the first is the one that goes
+missing quietly:
 
 ```powershell
-$sumTodo | ForEach-Object { (Get-Item "work\$_\scout.started").LastWriteTime } | Sort-Object
+# 1. every video got a marker — a missing one is a lost measurement, not a lost summary
+$sumTodo | Where-Object { -not (Test-Path "work\$_\scout.started") }     # must print nothing
+# 2. the markers are seconds apart, not ~100 s
+$sumTodo | Where-Object { Test-Path "work\$_\scout.started" } |
+  ForEach-Object { (Get-Item "work\$_\scout.started").LastWriteTime } | Sort-Object
 ```
+
+**A missing marker is not a failure to re-run.** The agent wrote both real artifacts and skipped
+its first instruction; the summary is good and only that video's timing is gone. Measured
+2026-07-21: 1 of 6 agents did this. `build_scout` warns per video, and the report marks the wave
+with a `+` to say it is a floor — but nothing re-summarizes for a timing, and doing so by hand
+would discard a valid summary to recover a number.
 
 Gaps near 100 s mean the fan-out did not happen, whatever the run felt like. This check is here
 because on 2026-07-20 the orchestrator's own account of a wave was wrong in both specifics it

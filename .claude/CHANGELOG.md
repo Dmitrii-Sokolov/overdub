@@ -59,12 +59,31 @@ roadmap item 1 is closed and the new item 1 is the GPU.
   invocation attempts died on it.
 - **pytest**: one command for the suite (385 tests, ~5 s), config in `pyproject.toml`.
 
-**Known defect, not yet fixed: the report's summarize figure now overstates.** It is
-`max(draft_at) - wave.start`, and `wave.start` is stamped before spawning. In run 4 that window
-was 563 s (9.4 min) against a real wave of 192 s — the extra 371 s is the orchestrator's eight
-attempts to invoke the tool. The label reads as summarization time and no longer is. The markers
-make the honest figure derivable (`draft_at - summarize_sec` reconstructs each agent's start), so
-the fix is available and small.
+**Run 5 reproduced it, and settled the report's summarize figure.** Nothing in the pipeline
+changed between runs 4 and 5 — only the two causes of run 4's eight invocation attempts were
+removed. Markers again 0-1 s apart, wave 311 s, parallelism 3.39x of a 3.40x ceiling.
+
+That made a recorded prediction testable: if the invocation landed first try, the gap between the
+`wave.start` stamp and the first agent should collapse and the report's figure should fall toward
+the wave. It did — **371 s → 15 s**, and the printed figure 9.4 min → 5.4 min (15 + 311 = 326
+against 325 printed). So the six missing minutes really were tool-call retries filed under
+"суммаризация".
+
+`totals_of` now derives the wave from the agents' own starts (`draft_at - summarize_sec`, both
+filesystem-stamped) instead of the operator's stamp, and the same data renders as **5.2 мин+**.
+The stamp is no longer part of the figure at all.
+
+**One agent skipped its marker** (1 of 6, run 5): it wrote both real artifacts and never created
+`scout.started`, so its `summarize_sec` is null. Working as designed — the marker degrades to
+absent rather than to a wrong number — but the loss was silent. `build_scout` now warns per
+video, the wave carries a `+` marking it a floor, and S2's verification checks marker presence
+before checking marker spacing. The workflow itself cannot do this: a workflow script has no
+filesystem access.
+
+**Summarize is closed as an optimization target.** Every agent was slower in run 5 on identical
+input (sum 865 → 1053 s, `16zrEPOsIcI` 144 → 310 s). With parallelism at its ceiling the wave is
+exactly the slowest agent, and agent time varies ~2x with no lever we know of. 190-310 s against
+723 s of transcribe is not worth chasing.
 
 ## 2026-07-21 — the preview column: collapsed, then twice as heavy as it looked
 

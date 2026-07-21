@@ -846,19 +846,21 @@ def test_both_themes_are_defined() -> None:
 
 
 # --- the timing strip must not lie ---------------------------------------------
-def test_stage_totals_sum_and_the_wave_is_a_window_across_the_queue() -> None:
-    # ONE start shared by both entries, because that is what a wave is: the skill passes the same
-    # $waveStart to every build_scout call it spawns.
+def test_the_wave_starts_at_the_first_AGENT_not_at_the_operator_stamp() -> None:
+    # `wave.start` (1000) is stamped before spawning, so the span from it also contains however
+    # long it took to get the agents running. Measured 2026-07-21: eight invocation attempts put
+    # 371 s of tool-call retries inside a 192 s wave and the report printed 9.4 min.
+    # The agents' own starts are 1005 and 1010 (draft_at - summarize_sec), so the wave is 45 s.
     entries = [
-        {"timings": {"download_sec": 10.0, "transcribe_sec": 100.0},
+        {"timings": {"download_sec": 10.0, "transcribe_sec": 100.0, "summarize_sec": 25.0},
          "wave": {"start": 1000.0, "draft_at": 1030.0}},
-        {"timings": {"download_sec": 20.0, "transcribe_sec": 200.0},
+        {"timings": {"download_sec": 20.0, "transcribe_sec": 200.0, "summarize_sec": 40.0},
          "wave": {"start": 1000.0, "draft_at": 1050.0}},
     ]
     t = scout_report.totals_of(entries)
     assert t["download"] == 30.0 and t["transcribe"] == 300.0
-    # last draft (1050) minus the start (1000) — the wave's wall clock, not any one agent's
-    assert t["summarize"] == 50.0
+    assert t["summarize"] == 45.0            # 1050 - 1005; the old definition gave 50
+    assert t["summarize_unmeasured"] == 0
     # deliberately no grand total: adding two sums to a wall clock produced a figure that was
     # neither the work done nor the elapsed time
     assert "total" not in t
@@ -867,17 +869,37 @@ def test_stage_totals_sum_and_the_wave_is_a_window_across_the_queue() -> None:
 def test_a_resumed_queue_does_not_bill_the_gap_between_waves_as_summarization() -> None:
     # The resume case, which is the NORMAL one: the skill re-runs build_scout only for videos
     # needing a new summary, so a carried-forward video keeps its original wave's start forever.
-    # Spanning min(start)..max(draft) across the queue then charges the hours BETWEEN waves to
-    # summarization — 40 s of work reported as 3640 s here.
+    # Spanning the whole queue would charge the hour BETWEEN the waves to summarization.
     entries = [
-        {"timings": {}, "wave": {"start": 1000.0, "draft_at": 1020.0}},   # wave A, 20 s
-        {"timings": {}, "wave": {"start": 4600.0, "draft_at": 4620.0}},   # wave B, an hour later
+        {"timings": {"summarize_sec": 15.0}, "wave": {"start": 1000.0, "draft_at": 1020.0}},
+        {"timings": {"summarize_sec": 12.0}, "wave": {"start": 4600.0, "draft_at": 4620.0}},
     ]
     t = scout_report.totals_of(entries)
-    assert t["summarize"] == 40.0            # 20 + 20, the two windows — never 3620
-    # and a single wave still behaves exactly as before
-    one = [{"timings": {}, "wave": {"start": 1000.0, "draft_at": 1020.0}}]
-    assert scout_report.totals_of(one)["summarize"] == 20.0
+    assert t["summarize"] == 27.0            # 15 + 12, the two windows — never ~3620
+    one = [{"timings": {"summarize_sec": 15.0}, "wave": {"start": 1000.0, "draft_at": 1020.0}}]
+    assert scout_report.totals_of(one)["summarize"] == 15.0
+
+
+def test_an_agent_without_a_marker_makes_the_wave_a_floor_not_a_lie() -> None:
+    # Measured 2026-07-21: 1 of 6 agents wrote both artifacts and skipped the marker. Its summary
+    # is intact and only its start is unknown — which can only make the real wave WIDER, so the
+    # figure is a floor and must be rendered as one rather than as an exact number.
+    entries = [
+        {"timings": {"summarize_sec": 40.0}, "wave": {"start": 1000.0, "draft_at": 1050.0}},
+        {"timings": {}, "wave": {"start": 1000.0, "draft_at": 1060.0}},      # no marker
+    ]
+    t = scout_report.totals_of(entries)
+    assert t["summarize"] == 50.0            # 1060 (its draft still ends the wave) - 1010
+    assert t["summarize_unmeasured"] == 1
+
+
+def test_a_wave_with_no_markers_at_all_reports_unknown_not_the_stamp() -> None:
+    # Every workdir summarized before the marker existed. Falling back to `wave.start` here would
+    # quietly reintroduce the orchestration overhead this whole change removes.
+    entries = [{"timings": {}, "wave": {"start": 1000.0, "draft_at": 1050.0}}]
+    t = scout_report.totals_of(entries)
+    assert t["summarize"] is None
+    assert t["summarize_unmeasured"] == 1
 
 
 def test_recording_a_stage_wall_clock_does_not_eat_the_per_video_detail() -> None:
@@ -900,17 +922,21 @@ def test_the_report_never_sums_the_per_video_figures() -> None:
     # Per-video summarize times OVERLAP — the agents run concurrently — so their sum exceeds the
     # wave's wall clock and means nothing. Same for work_sec against the stage wall clock. The
     # strip carries the wall clocks; totals_of must not learn to add the others.
+    # Two agents that overlap heavily, which is what a working fan-out looks like: 900 s and
+    # 800 s of work inside a 900 s wave. The fixture is coherent on purpose — the numbers here
+    # used to imply agents starting before the wave existed, which stopped being harmless once
+    # the wave was derived from them.
     entries = [
         {"timings": {"download_sec": 1.0, "transcribe_sec": 100.0,
                      "transcribe_work_sec": 60.0, "summarize_sec": 900.0},
-         "wave": {"start": 1000.0, "draft_at": 1030.0}},
+         "wave": {"start": 990.0, "draft_at": 1900.0}},     # ran 1000..1900
         {"timings": {"download_sec": 2.0, "transcribe_sec": 200.0,
                      "transcribe_work_sec": 180.0, "summarize_sec": 800.0},
-         "wave": {"start": 1000.0, "draft_at": 1050.0}},
+         "wave": {"start": 990.0, "draft_at": 1850.0}},     # ran 1050..1850
     ]
     t = scout_report.totals_of(entries)
     assert t["transcribe"] == 300.0          # the wall clocks, as before
-    assert t["summarize"] == 50.0            # the WAVE's window — never 1700
+    assert t["summarize"] == 900.0           # 1900 - 1000, the WAVE — never 1700
     assert not any(k.endswith("work") or k == "summarize_per_video" for k in t)
 
 

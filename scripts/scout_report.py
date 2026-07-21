@@ -466,12 +466,16 @@ def render(entries: list[dict], totals: dict, queue_name: str, stamp: str,
     # The queue's own runtime leads: it is what the reader budgets against. The pipeline columns
     # after it are what the machine spent, which is a different question and a smaller number.
     content = clock(t["content"]) + ("+" if t["content_missing"] else "")
+    # same '+' convention on the wave: an agent that wrote no marker has no known start, so it
+    # can only widen the window past what was measured. Measured 2026-07-21: 1 of 6 agents
+    # skipped the marker, and without this the figure would read as exact.
+    summarize = secs(t["summarize"]) + ("+" if t.get("summarize_unmeasured") else "")
     # pipeline stages in the order they ran, their total, then the queue's own runtime last —
     # it is a different KIND of number (what there is to watch, not what the machine spent),
     # so it sits after the sum rather than inside the run of things that add up
     for label, val in (("скачивание", secs(t["download"])),
                        ("транскрибация", secs(t["transcribe"])),
-                       ("суммаризация, волна", secs(t["summarize"])),
+                       ("суммаризация, волна", summarize),
                        ("хронометраж очереди", content)):
         out.append(f'<div class="t"><dt>{label}</dt><dd>{val}</dd></div>')
     out.append("</dl>")
@@ -570,10 +574,10 @@ def collect(ids: list[str], work_root: Path) -> list[dict]:
 
 def totals_of(entries: list[dict]) -> dict:
     """Pipeline stages are SUMS — they ran one after another, so their sum is the work done.
-    Summarization is a WALL CLOCK, derived across the whole queue as `last draft − first wave
-    start`, because the sub-agents ran concurrently and no per-video figure survives contact
-    with that (2026-07-20: 500 sentences → 1506 s, 31 sentences → 1252 s, i.e. every agent was
-    reporting the wave, not itself).
+    Summarization is a WALL CLOCK: the sub-agents run concurrently, so summing their windows
+    would exceed the elapsed time and mean nothing (2026-07-21: 1053 s of agent windows inside a
+    311 s wave). It spans the first agent's own start to the last draft — see the comment on the
+    grouping below for why the operator's `wave.start` stamp is NOT that start.
 
     THERE IS DELIBERATELY NO GRAND TOTAL. The previous version added the two sums to the wall
     clock and called it "итого обработка"; that number is neither the work done nor the elapsed
@@ -586,25 +590,48 @@ def totals_of(entries: list[dict]) -> dict:
         return fn(vals) if vals else None
 
     dl, tr = col("download_sec", sum), col("transcribe_sec", sum)
-    # carry-overs (draft older than the start) are excluded: they were not part of this wave,
-    # and a stale draft would stretch the window to whenever it happened to be written
-    waves = [w for w in (e.get("wave") for e in entries)
-             if isinstance(w, dict)
-             and isinstance(w.get("start"), (int, float))
-             and isinstance(w.get("draft_at"), (int, float))
-             and w["draft_at"] >= w["start"]]
-    # GROUPED BY START, one window per wave, windows summed. A queue is routinely summarized in
-    # SEVERAL waves -- the skill's resume filter re-runs build_scout only for the videos that
-    # need a new summary, so the ones carried forward keep the OLD wave's start forever. Taking
-    # `max(draft) - min(start)` across the whole queue then spans every wave AND the idle time
-    # between them: two 20-minute waves five hours apart reported five and a half hours of
-    # "summarization". That is the same mistake the per-video duration was (2026-07-20) -- a
-    # wall clock presented as work -- one level up, so it is fixed the same way: measure only
-    # what was actually running, never the gaps.
-    last: dict[float, float] = {}
-    for w in waves:
-        last[w["start"]] = max(last.get(w["start"], w["start"]), w["draft_at"])
-    sm = sum(end - start for start, end in last.items()) if last else None
+    # The wave runs from the FIRST AGENT'S OWN START, not from `wave.start`.
+    #
+    # `wave.start` is stamped by the operator before spawning, so the span from it to the last
+    # draft also contains however long it took to get the sub-agents running. That gap used to be
+    # seconds. Once S2 moved to a workflow it stopped being: on 2026-07-21 the invocation took
+    # eight attempts and the report printed 9.4 min for a 192 s wave -- 371 s of it was the
+    # orchestrator retrying a tool call, filed under "суммаризация". Fixing the invocation
+    # dropped the same figure to 5.4 min against a 311 s wave, which confirmed the split but
+    # left the definition wrong.
+    #
+    # Each agent's real start is recoverable from what build_scout already stores:
+    # `draft_at - summarize_sec`, both filesystem-stamped. So the wave is
+    # `max(draft_at) - min(draft_at - summarize_sec)` and the stamp is no longer part of it.
+    #
+    # STILL GROUPED BY START, one window per wave, windows summed -- a queue is routinely
+    # summarized in several waves (the resume filter re-runs only what needs it, so carried
+    # videos keep an older wave's start forever), and spanning them all would bill the idle
+    # hours between waves as summarization.
+    groups: dict[float, list[tuple[float, float | None]]] = {}
+    for e in entries:
+        w = e.get("wave")
+        if not isinstance(w, dict):
+            continue
+        st, dr = w.get("start"), w.get("draft_at")
+        if not all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in (st, dr)):
+            continue
+        if dr < st:                       # carry-over from an earlier wave, not part of this one
+            continue
+        sec = (e.get("timings") or {}).get("summarize_sec")
+        ok = isinstance(sec, (int, float)) and not isinstance(sec, bool) and sec >= 0
+        groups.setdefault(st, []).append((dr, sec if ok else None))
+
+    windows, sm_unmeasured = [], 0
+    for rows in groups.values():
+        starts = [dr - sec for dr, sec in rows if sec is not None]
+        # an agent that wrote no marker: its draft still bounds the END of the wave, but its
+        # start is unknown, so it can only make the window WIDER than measured -- counted, and
+        # rendered with a '+' the same way a missing duration marks the queue runtime a floor
+        sm_unmeasured += sum(1 for _, sec in rows if sec is None)
+        if starts:
+            windows.append(max(dr for dr, _ in rows) - min(starts))
+    sm = sum(windows) if windows else None
     # Total runtime of the QUEUE itself — the number the operator budgets against ("do I have
     # 9 hours of watching here or 90 minutes"). Missing durations are skipped, not zeroed, and
     # the count of skipped rows travels with it so the figure can be read as a floor rather than
@@ -612,6 +639,7 @@ def totals_of(entries: list[dict]) -> dict:
     durs = [e["duration"] for e in entries
             if isinstance(e.get("duration"), (int, float)) and not isinstance(e["duration"], bool)]
     return {"download": dl, "transcribe": tr, "summarize": sm,
+            "summarize_unmeasured": sm_unmeasured,
             "content": sum(durs) if durs else None,
             "content_missing": len(entries) - len(durs)}
 

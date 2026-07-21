@@ -321,14 +321,20 @@ def build(work: WorkDir, wave_start: float | None) -> dict:
         started_at = os.path.getmtime(started)
     except OSError:
         started_at = None
-    if started_at is not None:
-        if started_at <= draft_at:
-            summarize_sec = round(draft_at - started_at, 1)
-        else:
-            # marker newer than the draft: a re-run that touched the marker and then failed, or
-            # a carried-over draft. Either way the pair does not describe one agent's work.
-            print(f"[warn] {work.root.name}: scout.started is newer than scout.draft.json -- "
-                  f"the pair is not one agent's run, per-video summarize time recorded as unknown")
+    if started_at is None:
+        # The agent wrote its two real artifacts and skipped the marker — its summary is fine and
+        # only the timing is lost. SAID OUT LOUD because the loss is otherwise perfectly silent:
+        # the workdir looks complete, the report renders a full row, and the wave quietly rests
+        # on one fewer sample. Measured 2026-07-21: 1 of 6 agents did exactly this.
+        print(f"[warn] {work.root.name}: no scout.started marker -- the summary is intact, but "
+              f"this video contributes no per-video summarize time and the wave becomes a floor")
+    elif started_at <= draft_at:
+        summarize_sec = round(draft_at - started_at, 1)
+    else:
+        # marker newer than the draft: a re-run that touched the marker and then failed, or
+        # a carried-over draft. Either way the pair does not describe one agent's work.
+        print(f"[warn] {work.root.name}: scout.started is newer than scout.draft.json -- "
+              f"the pair is not one agent's run, per-video summarize time recorded as unknown")
 
     return {
         "video_id": work.root.name,
