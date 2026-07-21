@@ -433,6 +433,47 @@ def test_backup_written_once_and_never_clobbered() -> None:
         assert work.pre_repair_sentences.read_bytes() == original
 
 
+def test_translation_backup_tracks_the_latest_repair() -> None:
+    # Opposite policy to the sentences backup: the anomaly report must describe the transcript
+    # just before the LATEST repair, so a second pass OVERWRITES the preserved copy —
+    # write-once would keep a stale report while destroying the fresh one.
+    with tempfile.TemporaryDirectory() as d:
+        tmp = Path(d)
+        work = _work(tmp, _even(9, dur=4.0),
+                     **{"translation.json": '[{"id": 0, "src": "old-report"}]'})
+        first = work.translation.read_bytes()
+        _quiet(repair.repair_video, _ctx(work), ids=[4], dry_run=False,
+               window_asr=_fake_asr("First repair reading of this window."))
+        assert work.pre_repair_translation.read_bytes() == first
+        assert not work.translation.exists()
+        # translate re-ran and produced a NEW report; the next repair must preserve THAT one
+        second = b'[{"id": 0, "src": "new-report"}]'
+        work.translation.write_bytes(second)
+        _quiet(repair.repair_video, _ctx(work), ids=[2], dry_run=False,
+               window_asr=_fake_asr("Second repair reading of another window."))
+        assert work.pre_repair_translation.read_bytes() == second
+
+
+def test_dry_run_does_not_write_the_translation_backup() -> None:
+    # Same gating as the sentences backup: a dry run preserves nothing, invalidates nothing.
+    with tempfile.TemporaryDirectory() as d:
+        work = _work(Path(d), _even(9, dur=4.0), **{"translation.json": "[]"})
+        _quiet(repair.repair_video, _ctx(work), ids=[4], dry_run=True,
+               window_asr=_fake_asr("A brand new reading of this whole window."))
+        assert not work.pre_repair_translation.exists()
+        assert work.translation.exists()
+
+
+def test_no_translation_backup_when_translate_never_ran() -> None:
+    # Repair must keep working on a freshly transcribed queue with no translation.json at all
+    # (seed_ids_from_detectors) — and then there is no report to preserve.
+    with tempfile.TemporaryDirectory() as d:
+        work = _work(Path(d), _even(9, dur=4.0))
+        _quiet(repair.repair_video, _ctx(work), ids=[4], dry_run=False,
+               window_asr=_fake_asr("A completely different reading of the window."))
+        assert not work.pre_repair_translation.exists()
+
+
 def test_rejected_window_changes_nothing() -> None:
     # One accepted + one rejected: only the accepted range moved, the rejected texts are
     # byte-identical.

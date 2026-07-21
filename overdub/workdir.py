@@ -170,6 +170,12 @@ class WorkDir:
         return self.root / "_pre-repair-sentences.json"   # --repair-asr: the TRUE original,
                                                           # written once, never clobbered
 
+    @property
+    def pre_repair_translation(self) -> Path:
+        return self.root / "_pre-repair-translation.json"  # --repair-asr: the anomaly report
+                                                           # (translation.json) just before the
+                                                           # LATEST repair — overwritten per pass
+
     def invalidate_downstream(self) -> tuple[list[str], list[str]]:
         """Delete exactly the artifacts downstream of sentences.json. Returns (removed, failed)
         as workdir-relative names.

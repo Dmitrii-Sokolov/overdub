@@ -528,6 +528,21 @@ def repair_video(ctx: Context, *, ids: list[int] | None, dry_run: bool,
     else:
         print("       backup kept (earlier original preserved — not clobbered)")
 
+    if ctx.work.translation.exists():
+        # The source-anomaly worklist lives INSIDE translation.json (per-record "src" fields,
+        # route B), and invalidate_downstream() below deletes it — so repairing the first
+        # window off that report must not destroy the rest of the list. Unlike the sentences
+        # backup this one OVERWRITES on every repair: the preserved report must describe the
+        # transcript just before the LATEST repair — write-once would keep a stale report
+        # while destroying the fresh one, which is the same loss all over again. Byte-exact
+        # copy, gated exactly like the sentences backup (never on dry-run/unchanged), and
+        # skipped entirely when translate never ran (see seed_ids_from_detectors).
+        tmp = ctx.work.pre_repair_translation.with_suffix(".json.tmp")
+        tmp.write_bytes(ctx.work.translation.read_bytes())
+        os.replace(tmp, ctx.work.pre_repair_translation)
+        print(f"       backup: {ctx.work.pre_repair_translation.name} "
+              f"(overwritten per repair; its ids predate this renumbering)")
+
     out = splice(sentences, repls)
     n_after = len(out)
     tmp = ctx.work.sentences.with_suffix(".json.tmp")   # atomic: never a torn sentences.json
