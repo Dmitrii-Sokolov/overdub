@@ -1381,7 +1381,16 @@ def test_link_mode_survives_an_out_dir_on_another_drive() -> None:
         wav.write_bytes(b"RIFF")                        # existence is all the link arm checks
         other = "Z:\\elsewhere" if wav.drive.upper() != "Z:" else "Y:\\elsewhere"
         src = scout_report._audio_src(wav, Path(other), embed=False)
-    assert src == str(wav).replace(os.sep, "/")         # absolute, forward slashes, no raise
+        assert src == str(wav).replace(os.sep, "/")     # absolute in, absolute out, no raise
+        # The workdir usually arrives as a RELATIVE argv path (work\<id>) — the fallback must
+        # STILL come out absolute, or the href resolves against the page's own (wrong) drive.
+        old = os.getcwd()
+        os.chdir(d)
+        try:
+            rel_src = scout_report._audio_src(Path("00000.wav"), Path(other), embed=False)
+        finally:
+            os.chdir(old)
+    assert rel_src == str(wav).replace(os.sep, "/")     # relative in, absolute out
 
 
 def test_missing_wav_names_the_gap_not_a_dead_player() -> None:

@@ -475,7 +475,10 @@ def _audio_src(wav: Path, out_dir: Path, *, embed: bool) -> str | None:
         try:
             rel = os.path.relpath(str(wav), str(out_dir))
         except ValueError:
-            return str(wav).replace(os.sep, "/")
+            # abspath, not str(wav): the workdir usually arrives as a RELATIVE argv path
+            # (work\<id>), and a relative href would resolve against the PAGE's directory —
+            # exactly the drive the wav is not on.
+            return os.path.abspath(str(wav)).replace(os.sep, "/")
         return rel.replace(os.sep, "/")
     try:
         b = wav.read_bytes()
