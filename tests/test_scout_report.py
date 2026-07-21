@@ -548,7 +548,8 @@ def test_the_preview_is_out_of_reach_of_the_artifact_skeletons_img_reset() -> No
         out = root / "r.html"
         _report(["--queue", str(q), "--config", str(_cfg(root)), "--out", str(out)])
         page = out.read_text(encoding="utf-8")
-    if "<img" in page:
+    # same stripping as below: the sheet is prose about this very trap, not a rendered tag
+    if "<img" in page.replace(scout_report._CSS, ""):
         assert "max-width:none" in scout_report._CSS, (
             "the preview is an <img> again — the skeleton's reset can reach it, and without "
             "max-width:none the column collapses once published")
@@ -563,7 +564,10 @@ def test_a_missing_thumbnail_renders_nothing_at_all() -> None:
         code, _ = _report(["--queue", str(q), "--config", str(_cfg(root)), "--out", str(out)])
         page = out.read_text(encoding="utf-8")
     assert code == 0
-    assert "<img" not in page and "base64" not in page
+    # _CSS is stripped first: it discusses the preview in prose, and a tag NAMED in a comment is
+    # not the page rendering one. Without this the guard matched its own documentation.
+    assert "<img" not in page.replace(scout_report._CSS, "")
+    assert "base64" not in page and 'class="thumb' not in page
 
 
 def test_the_row_is_six_cells_and_the_jump_sits_on_the_description() -> None:

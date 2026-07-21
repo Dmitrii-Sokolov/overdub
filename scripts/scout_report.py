@@ -250,8 +250,10 @@ _CSS = """
    contribution to ~0, so `td.pic{width:1%}` — which asks for the narrowest column that still
    fits the picture — squeezed it down to a sliver. Invisible locally (the fragment has no
    reset), wrong once published, which is the only place this page is read. A div is out of that
-   selector's reach; go back to <img> here and `max-width:none` becomes load-bearing again. The
-   test enforces exactly that conditional, not the property.
+   selector's reach; make the preview an image element again and `max-width:none` becomes
+   load-bearing again. The test enforces exactly that conditional, not the property.
+   (Spelled out rather than written as a tag: this comment ships inside the page, and a literal
+   one here would read as markup to every substring check in the tests.)
 
    The size comes from CSS in both lists (160 in the table, 84 in the card) off one element type,
    and the per-video rule supplies aspect-ratio — see _thumb_css_of for why it must. */
