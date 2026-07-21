@@ -518,6 +518,15 @@ def test_the_rendered_preview_width_matches_the_file_written_to_disk() -> None:
     assert f"width:{build_scout._THUMB_W}px" in scout_report._CSS
 
 
+def test_the_preview_opts_out_of_the_artifact_skeletons_img_reset() -> None:
+    # The published page is wrapped in a skeleton carrying `img{max-width:100%}`. In an
+    # auto-layout table that drops the preview's min-content contribution to ~0, and
+    # `td.pic{width:1%}` then squeezes the column to a sliver — visible only after publishing,
+    # never when the fragment is opened locally. max-width:none is what keeps the column wide.
+    assert "max-width:none" in scout_report._CSS
+    assert "td.pic{width:1%" in scout_report._CSS      # the pairing this test exists to protect
+
+
 def test_a_missing_thumbnail_renders_nothing_at_all() -> None:
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)

@@ -237,8 +237,14 @@ _CSS = """
 .sr td.line a.jump:hover{color:var(--accent);}
 
 /* preview: fixed box so a missing one never shifts the column. Kept in lockstep with
-   build_scout._THUMB_W — render wider than the file on disk and the column goes soft. */
-.sr .thumb{display:block;width:320px;height:auto;border-radius:4px;
+   build_scout._THUMB_W — render wider than the file on disk and the column goes soft.
+
+   max-width:none is NOT decoration. The Artifact skeleton wraps this fragment in its own reset,
+   which carries `img{max-width:100%}`; inside an auto-layout table that turns the preview's
+   min-content contribution into ~0, so `td.pic{width:1%}` — which asks for the narrowest column
+   that still fits the image — squeezes the thumbnail down to a sliver. The page looks fine
+   opened locally (no reset) and wrong once published, which is the only place it is read. */
+.sr .thumb{display:block;width:320px;max-width:none;height:auto;border-radius:4px;
   background:var(--none-bg);}
 .sr .cardhead .thumb{width:84px;margin:0;border-radius:3px;}
 @media (max-width:640px){.sr .thumb{width:200px;}}
