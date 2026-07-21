@@ -227,6 +227,31 @@ Sub-agent prompt skeleton (fill `<id>`) — the prose half is **identical to the
 > INTO the file and do not report your own runtime anywhere: the filesystem stamps it, you only
 > touch it. If you skip this, the video simply has no per-video timing — never invent one.
 >
+> **Write both output files with PowerShell. Do NOT reach for the Write tool — it is blocked for
+> sub-agents** ("Subagents should return findings as text, not write report files"). That
+> guardrail is aimed at agents dumping their own reports to disk; these two files are pipeline
+> artifacts that `build_scout.py` consumes, but the block does not know the difference, and every
+> agent that tries Write first loses ~45 s discovering this (measured 2026-07-21, all six).
+> Use exactly this shape — UTF-8 **without BOM** in both cases, because `build_scout` reads them
+> with `json.loads` and a BOM breaks it:
+>
+> ```powershell
+> $summary = @'
+> ...the ~200-word Russian prose, verbatim...
+> '@
+> [System.IO.File]::WriteAllText("D:\code\overdub\work\<id>\summary.md", $summary,
+>   (New-Object System.Text.UTF8Encoding($false)))
+>
+> $obj = @{ quality = "low"; one_liner = $oneLiner; highlight = $highlight; paragraph = $paragraph }
+> [System.IO.File]::WriteAllText("D:\code\overdub\work\<id>\scout.draft.json",
+>   ($obj | ConvertTo-Json -Depth 5), (New-Object System.Text.UTF8Encoding($false)))
+> ```
+>
+> Build the JSON with a hashtable and `ConvertTo-Json`, never by hand — PowerShell then owns the
+> escaping of quotes and newlines inside your prose. In a `@'...'@` here-string the closing `'@`
+> MUST sit at column 0 on its own line, and nothing inside is interpolated (so `$` and backticks
+> in the text are safe).
+>
 > You are a triage summarizer for the overdub pipeline. Read
 > `D:\code\overdub\work\<id>\sentences.json` (list of `{id, text, start, end}` — the COMPLETE
 > English transcript, in order) and write `D:\code\overdub\work\<id>\summary.md`: a summary in
