@@ -116,6 +116,27 @@ a number to beat, and there is currently nothing on disk to compare against.
    the open question is whether the feature earns more investment at all, not whether its window
    could be prompted better. Polishing it ranks below every item that serves a route in daily use.
 
+6. **Investigate N parallel F5 workers — the one F5 speed lever absent from the ledger.** The
+   2026-07-19 ledger (DECISIONS) covers nfe, stage-major, fp16, `torch.compile`, cross-unit
+   batching, TF32, cudnn, SDPA, VRAM parking, ref clip and demucs — running several worker
+   PROCESSES concurrently is the gap. Rationale: F5 synthesizes one short unit at a time through
+   `infer_process`, small tensors, so the GPU is plausibly launch-bound rather than compute-bound.
+   **Gated on a five-minute measurement, not on code: `nvidia-smi dmon` during synthesize AT
+   nfe=16.** If SM occupancy is already 90%+ there is no lever and this item closes having cost
+   nothing. Caveat that decides the ceiling: Windows has no MPS, so N processes get WDDM
+   time-slicing, not concurrent kernels — the win only exists to the extent short units leave the
+   GPU idle. Budget ~0.8 GB per worker plus ~0.5 GB CUDA context each; three fit inside the 12 GB
+   rule with room. Applies to the DUB route (B); scout does not synthesize at all.
+
+7. **Investigate the shorter reference clip — bigger and already measured, but it moves the voice.**
+   DEFERRED in the 2026-07-19 ledger and still unexercised. F5 denoises `ref + gen` and throws the
+   ref part away (`utils_infer.py:508`); the reference is 9.164 s against a ~7 s mean unit, so over
+   half of every unit's compute is discarded. Worth ~158 s/batch after nfe=16 — larger than item 6
+   is likely to be, and it needs no occupancy measurement to justify. The cost is not compute but
+   quality: shortening the reference changes speaker conditioning, i.e. the narrator's voice, so it
+   needs an ear session. The ledger bundles it with the rights-clear narrator replacement, which
+   owes that same session — do them together or the ear cost is paid twice.
+
 Backlog (second tier) — **throughput / weaker hardware, unlocked by the Silero v5 audition
 (DECISIONS 2026-07-19):** Silero v5 synthesizes 12-19× faster than F5 on CPU alone (synth 11-14 s
 vs 128-250 s; whole-pipeline RTF 0.14-0.17 vs 0.70-0.92), at quality the user accepts as a
