@@ -1,5 +1,45 @@
 # CHANGELOG
 
+## 2026-07-21 — the preview column: collapsed, then twice as heavy as it looked
+
+Started as "the picture column in the scan table is too narrow" and ended four measurements
+later. Every number below is from the published page, not from reasoning about CSS.
+
+**The column collapsed under the Artifact skeleton's reset.** The published page is wrapped in
+`img{max-width:100%}`; inside an auto-layout table that drops the preview's min-content
+contribution to ~0, so `td.pic{width:1%}` — which asks for the narrowest column that still fits
+the picture — squeezed it to a sliver. Invisible locally (the fragment has no reset), wrong once
+published, which is the only place the page is read. It also explains why widening the preview to
+320px the day before changed nothing: the CSS width was capped by a rule nobody had looked at.
+
+**The preview was inlined TWICE per video** — scan row and card. A `data:` URI in a `src` is the
+bytes, not a reference, and HTML has no way to say "the same image as that one". Measured on the
+6-video Test queue: 177 KB of base64 in a 226 KB report, i.e. **78% of the page was previews, half
+of it a duplicate.** Now one CSS rule per video carries the bytes and both elements wear its
+class; the preview is a `<div>` with a background, so `loading="lazy"` is gone — accepted
+deliberately, and the reason it needs an explicit `aspect-ratio` (a background never sizes its own
+box) is why `jpeg_size` exists.
+
+**Previews are 160px again**, and `_ensure_thumb` now re-scales anything wider instead of
+returning on `exists()`. The old early return meant a change to `_THUMB_W` reached no workdir
+already on disk — the size of an artifact governed by a number in another file has to be
+self-correcting. Re-scaling needs no network: a wider preview is its own source. Measured over
+the 39 previews on disk, **268 KB → 94 KB (35%)**; the report's images, 177 KB → 31 KB.
+
+**What the user was measuring was mostly not the report.** `Ctrl+S` on an Artifact saves three
+files, and 185 KB of the ~400 KB bundle is claude.ai's own shell and JS. The report itself went
+226 KB → 137 KB on the first pass (−40%) while the bundle moved 410 KB → 322 KB (−21%), which is
+what "стало меньше, но совсем чуть-чуть" was measuring.
+
+**`main` was red for three commits.** The CSS comment documenting the reset trap spelled the
+element as a literal tag, that comment ships inside the page, and two tests looked for the tag by
+substring — so they matched the documentation instead of the markup. Found by running the suite
+at `HEAD` in a detached worktree, after the failure survived a full revert of the working tree.
+
+**Note on provenance:** `aae24b1` ("move S2 fan-out into a Workflow") also contains ~144 lines of
+this preview work in `scout_report.py` plus 30 in its tests — uncommitted changes swept up by a
+concurrent session. The commit message does not describe half of what it contains.
+
 ## 2026-07-21 — the first measured scout wave: the bottleneck was the spawn, not the agents
 
 Six videos, 2:53:44 of material, 1683 sentences. The first run under the `scout.started` marker,
@@ -91,6 +131,8 @@ half-finished, and the pipeline got the per-video numbers PLAN item 2 has been b
   the column soft. All 33 existing `thumb.jpg` were re-fetched. Cost, measured rather than
   guessed: 4.2-8.3 KB each, ~0.8 MB for a 100-video queue. The old comment's claim that 320px
   "triples" the page was never measured and was wrong.
+  *(Superseded the same week — back to 160px, and the cost figure here undercounted by half
+  because the preview was inlined twice per video. See "the preview column" below.)*
 - **Page widened 1080 → 1240px** (six columns needed it) and the read cards capped at 62rem, so
   a card is no longer a full-width box wrapped around a 66ch paragraph.
 - The card number is no longer a link back to the table: it duplicated the browser's own back

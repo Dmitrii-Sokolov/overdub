@@ -1,5 +1,38 @@
 # DECISIONS
 
+## 2026-07-21 — The scout preview: 160px, inlined once, and no 2x source
+
+Three choices about one thumbnail, recorded because each was argued and reversed at least once,
+and all three would otherwise be re-litigated from the same wrong intuitions.
+
+**160px, and no 2x source for hi-DPI.** It was briefly 320 rendered at 160, on the reasoning that
+the file is then a retina source. Rejected on what the image IS: a scan-table preview is glanced
+at to recognize a video, not studied. Three quarters of the page was being spent on detail nobody
+looks for. If a future change wants the preview LARGER, `_THUMB_W` must move with the CSS — the
+test enforces a ceiling (render no wider than the stored file), not an equality, so the narrow
+direction stays free.
+
+**The preview is a CSS background, not an `<img>`, and the lost `loading="lazy"` is the price.**
+It appears twice per video, a `data:` URI is bytes rather than a reference, and CSS is the only
+place in a static self-contained page where one blob can be declared once and used twice. The
+cheaper alternative — drop the preview from the read cards — saves identical bytes with zero code
+and was offered and declined; the cards keep their picture. Consequence to remember: a background
+box has no intrinsic size, hence `aspect-ratio`, hence `jpeg_size` parsing real dimensions instead
+of assuming 16:9 (ffmpeg scales with a derived height, so the ratio follows the source, and a 4:3
+frame guessed as 16:9 gets cropped).
+
+**Artifact page weight is not worth optimizing much further.** At 6 videos the report is now ~79
+KB and the images ~31 KB of it. The remaining lever is the text, and the saved-page bundle is
+dominated by claude.ai's shell (185 KB) which we do not control. Revisit only if queues reach
+~100 videos.
+
+**Method note, more durable than any of the above.** Every intuition in this thread was wrong
+until measured: "320px triples the page" (wrong, never measured), "the dedupe is free" (free in
+bytes, not in code — it cost a JPEG parser and lazy loading), "only re-running Sonnet can rebuild
+the report" (wrong — the summaries survived in the saved HTML), and the user's own "стало меньше,
+но совсем чуть-чуть" (the report had halved; the bundle they measured was 58% claude.ai's). The
+page is cheap to weigh. Weigh it before arguing about it.
+
 ## 2026-07-21 — An agent's report of what it DID is not evidence; the transcript is
 
 The first wave under the `scout.started` marker produced a contradiction worth recording, because

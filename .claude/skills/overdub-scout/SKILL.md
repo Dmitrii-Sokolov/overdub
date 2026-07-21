@@ -264,7 +264,8 @@ verdict is one you invented rather than derived from the transcript.
 ```
 
 Writes `work/scout-report.html`: a header with the grade tally and the timing strip, then the
-**scan table** (№ · превью · название с оценкой · о чём · самое интересное + длительность) and
+**scan table** (№ · превью · название · длительность · о чём · самое интересное — оценка это чип,
+открывающий последнюю колонку, а не подпись к названию) and
 the **read cards** (same videos, same order, the full write-up). The grade carries both colour
 and text, so the page survives being read in grayscale or by someone colour-blind.
 
