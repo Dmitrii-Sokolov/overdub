@@ -327,13 +327,21 @@ def _fake_ytdlp(calls, tmp_root: Path, *, ext: str = "webm", sidecar: bool = Tru
 
 
 def _with_fake_subprocess(fn):
-    """Swap subprocess.run inside the download module only — nothing else in the process."""
+    """Swap subprocess.run inside the download module only — nothing else in the process.
+
+    _tool_exe is neutralized to identity for the same reason subprocess.run is faked: the
+    real resolver probes the HOST's venv/PATH (this file's contract is "no yt-dlp, no
+    ffmpeg installed"), and every assertion below keys on the bare tool name in argv[0].
+    The resolver itself is covered by tests/test_download_preflight.py."""
     from overdub.stages import download as dl
     real = dl.subprocess.run
+    real_tool = dl._tool_exe
+    dl._tool_exe = lambda name: name
     try:
         return fn(dl)
     finally:
         dl.subprocess.run = real
+        dl._tool_exe = real_tool
 
 
 def test_scout_ytdlp_argv() -> None:

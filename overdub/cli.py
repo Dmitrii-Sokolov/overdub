@@ -16,6 +16,7 @@ from . import repair, runreport
 from .config import Config
 from .pipeline import Context, STOP_NAME, Session, StopRequested, check_stop, run_pipeline
 from .stages import all_stages, scout_stages
+from .stages.download import _tool_exe
 from .workdir import WorkDir, replace_retry, safe_filename, video_id
 
 
@@ -309,11 +310,16 @@ def _title_of(ctx: Context) -> str | None:
     try:                                            # --print implies --simulate: no download.
         # PYTHONUTF8=1: yt-dlp encodes piped stdout in the locale codepage — Cyrillic titles
         # get dropped/mangled on stock (non-UTF-8-ACP) Windows without it
-        r = subprocess.run(["yt-dlp", "--print", "title", ctx.url], capture_output=True,
+        r = subprocess.run([_tool_exe("yt-dlp"), "--print", "title", ctx.url],
+                           capture_output=True,
                            text=True, encoding="utf-8", errors="replace", timeout=30,
                            env={**os.environ, "PYTHONUTF8": "1"})
         title = r.stdout.strip() if r.returncode == 0 else ""
-    except (OSError, subprocess.TimeoutExpired):
+    except (OSError, subprocess.TimeoutExpired, RuntimeError):
+        # RuntimeError = _tool_exe found no yt-dlp anywhere. The download stage rightly dies
+        # on that; a TITLE backfill must not — this helper's contract is "never fails, None
+        # → caller names by video id", and a missing tool here is the same degradation as
+        # being offline.
         title = ""
     if title:
         # plain write: the read path treats a torn file as missing and re-backfills

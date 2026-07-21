@@ -2,11 +2,39 @@
 
 from __future__ import annotations
 
+import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 from ..pipeline import Context
 from ..workdir import replace_retry
+
+
+def _tool_exe(name: str) -> str:
+    """Resolve an external tool to a concrete path, venv Scripts dir first.
+
+    A bare "yt-dlp" in argv resolves via PATH, and running .venv-asr\\Scripts\\python.exe
+    does NOT activate the venv — so PATH's yt-dlp 2026.03.17 silently shadowed the
+    2026.07.04 installed in .venv-asr (two binaries, the pipeline picked the older one).
+    Probing next to sys.executable first pins the venv copy whenever it exists;
+    shutil.which handles the .exe/PATHEXT suffixing so this stays a name, not a filename.
+
+    sys.executable is read at CALL time, not import time (tests monkeypatch it), and the
+    result is deliberately uncached: a few os.stat calls per video is nothing, while a
+    cache would be one more thing tests must remember to reset.
+
+    Missing everywhere → RuntimeError, not a raw WinError 2 out of subprocess: the repo
+    rule is "verify availability before assuming; fail with a clear message" — and never
+    auto-install."""
+    found = shutil.which(name, path=str(Path(sys.executable).parent)) or shutil.which(name)
+    if found:
+        return found
+    raise RuntimeError(
+        f"required tool '{name}' not found — looked next to the running python "
+        f"({Path(sys.executable).parent}) and on PATH. Install it into .venv-asr or put "
+        f"it on PATH; this pipeline never auto-installs."
+    )
 
 
 # yt-dlp's OWN retry knobs, not a loop of our own: it already distinguishes an extractor
@@ -70,7 +98,7 @@ class DownloadStage:
         # video kept intact (stream-copied at mux time — never re-encoded)
         subprocess.run(
             [
-                "yt-dlp",
+                _tool_exe("yt-dlp"),
                 *_RETRY_ARGV,
                 "-f", "bv*[ext=mp4]+ba[ext=m4a]/bv*+ba/b",
                 "--merge-output-format", "mkv",
@@ -107,7 +135,7 @@ class DownloadStage:
             stale.unlink(missing_ok=True)              # would break the one-file invariant below
         subprocess.run(
             [
-                "yt-dlp",
+                _tool_exe("yt-dlp"),
                 *_RETRY_ARGV,
                 "-f", "bestaudio",
                 "--write-info-json",
@@ -181,7 +209,7 @@ def _extract_wav(src: Path, dst: Path) -> None:
     tmp.unlink(missing_ok=True)                        # orphan from a prior crash
     subprocess.run(
         [
-            "ffmpeg", "-y", "-loglevel", "error",
+            _tool_exe("ffmpeg"), "-y", "-loglevel", "error",
             "-i", str(src),
             "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le",
             # explicit "-f wav": ffmpeg picks its output muxer from the EXTENSION, and the
