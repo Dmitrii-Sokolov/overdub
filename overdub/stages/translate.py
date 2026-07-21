@@ -25,6 +25,7 @@ import os
 import re
 import sys
 import urllib.request
+from pathlib import Path
 
 from .. import pronounce
 from ..normalize import normalize_for_tts
@@ -221,6 +222,28 @@ class _Unloader:
         _unload(self._root, self._model)
 
 
+def _heal_torn_tail(path: Path) -> bool:
+    """Terminate a torn last line left by a crash mid-append. The tolerant READER already
+    skips a torn fragment — but the APPEND side would concatenate the first new record onto
+    it, merging both into one garbage line the reader then drops: a finished record lost,
+    not just the fragment. One newline makes the fragment its own skippable line — nothing
+    is invented, the sentence it belonged to simply re-translates. Binary mode on purpose:
+    a torn tail can end mid-UTF-8-sequence (text mode would choke) and text-mode append on
+    Windows would write \\r\\n. Missing or empty file: untouched, False — exists() is the
+    resume signal and must never be faked by the guard."""
+    if not path.exists():
+        return False
+    with path.open("rb+") as f:
+        f.seek(0, os.SEEK_END)
+        if f.tell() == 0:
+            return False
+        f.seek(-1, os.SEEK_END)
+        if f.read(1) == b"\n":
+            return False
+        f.write(b"\n")
+        return True
+
+
 class TranslateStage:
     name = "translate"
 
@@ -251,6 +274,9 @@ class TranslateStage:
                     continue  # tolerate a torn last line from a crash mid-write
 
         window: list[tuple[str, str]] = []      # rolling context of ok (en, ru) pairs
+        if _heal_torn_tail(partial):            # else the first append glues onto the fragment
+            print("       [warn] healed torn last line in translation.jsonl (crash mid-write); "
+                  "that sentence re-translates", file=sys.stderr)
         with partial.open("a", encoding="utf-8") as pf:
             for s in sentences:
                 sid = s["id"]
