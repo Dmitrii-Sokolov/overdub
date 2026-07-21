@@ -833,6 +833,24 @@ def test_page_is_a_body_fragment_for_the_artifact_publisher() -> None:
     assert "<style>" in low                    # but it IS self-contained
 
 
+def test_the_local_file_declares_its_own_charset() -> None:
+    # The Artifact publisher sets charset on its own skeleton, so the published copy never needed
+    # this -- but the module docstring promises the SAME file "opens locally by double-click", and
+    # a file:// URL carries no Content-Type header for a browser to read UTF-8 off of. Without this
+    # tag a browser guesses and mangles every Cyrillic character in the report. HTML5 only looks in
+    # the first 1024 bytes for a charset declaration, so it must lead -- not just be present.
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        _scouted(root, "vid00000001", "high")
+        q = _queue(root, ["vid00000001"])
+        out = root / "r.html"
+        _report(["--queue", str(q), "--config", str(_cfg(root)), "--out", str(out)])
+        page = out.read_text(encoding="utf-8")
+    assert '<meta charset="utf-8">' in page
+    assert page.index('<meta charset="utf-8">') < 1024
+    assert page.index('<meta charset="utf-8">') < page.index("<style>")
+
+
 def test_both_themes_are_defined() -> None:
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)

@@ -151,7 +151,17 @@ def secs(sec) -> str:
 # Tokens first, components through the tokens: the dark palette is a token redefinition, so no
 # component rule is ever duplicated per theme. Both the OS preference and the viewer's explicit
 # toggle ([data-theme]) must win, in both directions -- hence the three blocks.
+#
+# The leading <meta charset> is not decoration either. The Artifact skeleton declares its own
+# charset, so the published copy never needed one -- but this file is ALSO meant to be opened
+# directly (see the module docstring: "opens locally by double-click"), and a file:// URL carries
+# no Content-Type header for the browser to read UTF-8 off of. Without this tag a browser falls
+# back to guessing and mangles every Cyrillic character in the report; with it, HTML5's "look in
+# the first 1024 bytes" rule finds it before any Cyrillic byte does. Placing it before an explicit
+# <head> is valid: browsers hoist stray head-only elements (meta/title/style/link) that appear
+# before body content into an implicit head, same as the <style> tag right after it already relies on.
 _CSS = """
+<meta charset="utf-8">
 <style>
 .sr{--bg:#f7f8fa;--card:#ffffff;--ink:#141a21;--dim:#5b6875;--line:#dde3ea;
   --accent:#4a5b8c;--watch:#0d7f59;--maybe:#a86a10;--skip:#b03a52;
