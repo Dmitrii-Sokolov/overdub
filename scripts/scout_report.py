@@ -467,7 +467,15 @@ def _audio_src(wav: Path, out_dir: Path, *, embed: bool) -> str | None:
     if not wav.exists():
         return None
     if not embed:
-        rel = os.path.relpath(str(wav), str(out_dir))
+        # --out on another drive than work/ makes a relative path impossible on Windows
+        # (relpath raises ValueError across mounts). Fall back to the absolute path: --link
+        # only ever promised a player that works on THIS machine, and killing the whole
+        # render over one audio href is the wrong trade. Inherited crash from the retired
+        # triage page; bit the first real cross-drive --out.
+        try:
+            rel = os.path.relpath(str(wav), str(out_dir))
+        except ValueError:
+            return str(wav).replace(os.sep, "/")
         return rel.replace(os.sep, "/")
     try:
         b = wav.read_bytes()

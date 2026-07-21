@@ -1371,6 +1371,19 @@ def test_link_mode_references_audio_by_relative_path() -> None:
     assert "linked audio" in log                        # the mode is named on stdout too
 
 
+def test_link_mode_survives_an_out_dir_on_another_drive() -> None:
+    # os.path.relpath raises ValueError across Windows mounts, and --out on another drive is
+    # exactly that. The fallback is the absolute path: --link only ever promised a player that
+    # works on this machine, and one unrelativizable href must not kill the whole page (this
+    # crashed on the first real cross-drive --out, inherited from the retired triage page).
+    with tempfile.TemporaryDirectory() as d:
+        wav = Path(d) / "00000.wav"
+        wav.write_bytes(b"RIFF")                        # existence is all the link arm checks
+        other = "Z:\\elsewhere" if wav.drive.upper() != "Z:" else "Y:\\elsewhere"
+        src = scout_report._audio_src(wav, Path(other), embed=False)
+    assert src == str(wav).replace(os.sep, "/")         # absolute, forward slashes, no raise
+
+
 def test_missing_wav_names_the_gap_not_a_dead_player() -> None:
     # A flagged unit whose wav is gone gets a note, never a broken <audio> element.
     with tempfile.TemporaryDirectory() as d:
