@@ -76,9 +76,10 @@ Needs Ollama serving `gemma3:12b` on localhost. Agent or human:
   type, speed distribution, `needs_triage`) — or the raw `work/<id>/report.json` for any
   `*_flag` / `speed_factor > 1.8`. For a batch, the CLI prints a sweep after the summary;
   `scripts/run_report.py [work\<id> ...] [--queue queue.txt]` renders the text digest
-  (per-video block + batch table), and `scripts/triage_html.py [--queue queue.txt] [--link]`
-  writes `work/triage.html` — one page with the flagged units and an inline audio player per
-  unit (expected vs whisper-heard, click to listen).
+  (per-video block + batch table), and `scripts/scout_report.py [--queue queue.txt] [--link]`
+  writes `work/scout-report.html` — one page per queue with the flagged units and an inline
+  audio player per unit (expected vs whisper-heard, click to listen); the videos needing a
+  listen are surfaced by a nav block of anchors, never by re-sorting the queue.
 
 ### B. Batch with Sonnet translation (semi-automatic — the primary route)
 
@@ -115,7 +116,7 @@ cleanly at the translate seam and resumes from it. No Ollama needed.
 
    In the same wave, a second Sonnet sub-agent writes `work/<id>/summary.md` — a
    ~200-word Russian triage blurb read straight from the file by the digest and
-   the triage page; it is informational and gates nothing, and there is no helper
+   the queue page (`scout_report`); it is informational and gates nothing, and there is no helper
    script for it.
 
 3. **Resume the batch** with the exact command from route A — download/
@@ -123,10 +124,10 @@ cleanly at the translate seam and resumes from it. No Ollama needed.
    → separate → mux run as usual.
    - Morning triage: same as route A — `work/<id>/run.json` (the per-run rollup)
      and `scripts/run_report.py --queue queue.txt` for the text digest,
-     `scripts/triage_html.py --queue queue.txt` for the clickable page (flagged
-     units + inline audio); raw flags in `work/<id>/report.json`. The
-     `overdub-sonnet-batch` skill's Step 4 runs the digest and writes the Russian
-     triage summary for you.
+     `scripts/scout_report.py --queue queue.txt` for the clickable page (flagged
+     units + inline audio, a triage nav instead of a re-sort); raw flags in
+     `work/<id>/report.json`. The `overdub-sonnet-batch` skill's Step 4 runs the
+     digest and writes the Russian triage summary for you.
 
 Both routes are good: Gemma gives good quality locally and slowly; Sonnet needs
 a subscription and gives better quality in the cloud, much faster.
@@ -218,19 +219,16 @@ an explicit "не отсканировано" row rather than vanishing. The out
 fragment (inline `<style>`, no `<html>`/`<head>`), so it publishes as a Claude
 Artifact unchanged and still opens locally.
 
-The generic triage page also handles a scouted workdir. It has no `run.json` —
-nothing was dubbed — so it appears as a **scout card** instead of a batch-table
-row:
-
-```powershell
-.venv-asr\Scripts\python.exe -X utf8 scripts\triage_html.py --queue queue.txt
-```
-
-Cards carry the `SCOUT` tag, duration, sentence count and the summary — no audio
-player, no RTF, no triage verdict, because none of those exist for an undubbed
-video. They sort after any dubbed videos and are counted separately
-(`N scouted`), never folded into the video total or the throughput figure.
-`scripts/run_report.py` prints the same summaries in the text digest.
+The same page carries the dub side once a queue is (partly) promoted — there is
+one page per queue now, not a scout page plus a separate triage page. A dubbed
+video adds the batch-table row (the exact cell strings the text digest prints),
+its flagged units with inline audio and the source-anomaly block; a
+promoted-but-untranslated one shows an honest "в работе" state. A card never
+fabricates dub metrics for an undubbed video — no audio player, no RTF, no
+triage verdict, because none of those exist for it — and dubbed videos are
+counted apart from scouted ones, never folded into one total or the throughput
+figure. `scripts/run_report.py` prints the same numbers and summaries in the
+text digest.
 
 **Promotion** — trim `queue.txt` to the survivors and run the ordinary route A
 or B command, without `--scout`. `transcribe` fast-skips on the scout's

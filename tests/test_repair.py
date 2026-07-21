@@ -374,7 +374,7 @@ _DOWNSTREAM = ["summary.md", "translation.json", "translation.jsonl", "pronounce
                "output.mkv", "run.json"]
 # summary.md is DOWNSTREAM by decision (2026-07-20), not an oversight: its only input is
 # sentences.json, nothing in the Python code refreshes it, and both run_report.py and
-# triage_html.py render it unconditionally with no staleness marker. Listing it here — in
+# scout_report.py render it unconditionally with no staleness marker. Listing it here — in
 # EITHER list — is what makes the choice visible to a future edit; before this it appeared in
 # neither, so a change in either direction would have gone unnoticed by this file.
 _SURVIVORS = ["words.json", "sentences.json", "source.wav", "source.mkv",

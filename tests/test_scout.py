@@ -749,7 +749,8 @@ def test_scout_status_falls_back_to_sentence_ends_for_duration() -> None:
 
 
 def test_scout_finish_sweep_writes_no_run_json_and_no_output() -> None:
-    # The property the scout CARD in triage_html depends on: build_run_report returns None and
+    # The property the scout card on the queue page (scout_report) depends on:
+    # build_run_report returns None and
     # self-clears run.json when report.json and translation.json are both absent, which is
     # exactly a scout workdir's shape.
     trace: list = []

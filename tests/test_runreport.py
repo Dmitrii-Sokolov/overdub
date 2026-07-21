@@ -744,6 +744,254 @@ def test_flagged_units_empty_when_clean() -> None:
     assert runreport.flagged_units({"segments": segs}, None) == []
 
 
+# --- shared report data layer: classify_workdir / collect_entries / batch_* ----
+def _mkkind(root, vid, *, report=None, translation=None, sentences=None, info=None,
+            summary=None, scout=None, run_json=None, mkv=False, wav=False):
+    """Fabricate work/<vid> with exactly the named artifacts. Unlike _mkwork (one dir = the
+    whole tmp root), collect_entries tests need several SIBLING dirs under one work root."""
+    d = Path(root) / vid
+    d.mkdir(parents=True, exist_ok=True)
+    if report is not None:
+        (d / "report.json").write_text(json.dumps(report), encoding="utf-8")
+    if translation is not None:
+        (d / "translation.json").write_text(json.dumps(translation), encoding="utf-8")
+    if sentences is not None:
+        (d / "sentences.json").write_text(json.dumps(sentences), encoding="utf-8")
+    if info is not None:
+        (d / "source.info.json").write_text(json.dumps(info), encoding="utf-8")
+    if summary is not None:
+        (d / "summary.md").write_text(summary, encoding="utf-8")
+    if scout is not None:
+        (d / "scout.json").write_text(json.dumps(scout), encoding="utf-8")
+    if run_json is not None:
+        (d / "run.json").write_text(json.dumps(run_json), encoding="utf-8")
+    if mkv:
+        (d / "source.mkv").write_bytes(b"\x00")
+    if wav:
+        (d / "source.wav").write_bytes(b"\x00")
+    return d
+
+
+def test_classify_workdir_matrix() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        cases = {
+            "run-rep": dict(report={"segments": []}),           # report.json alone is a run
+            "run-tr": dict(translation=[]),                     # translation.json alone too
+            "pending": dict(sentences=[{"id": 0, "end": 1.0}], mkv=True),
+            "scout": dict(sentences=[{"id": 0, "end": 1.0}]),
+            "scout0": dict(sentences=[]),                       # EMPTY list parses -> still scout
+            "fetched": dict(wav=True),
+            "missing": dict(),
+        }
+        got = {vid: runreport.classify_workdir(WorkDir(_mkkind(root, vid, **files)))
+               for vid, files in cases.items()}
+        # torn sentences.json is NOT a transcript: with the audio present it stays "fetched"
+        torn = _mkkind(root, "torn", wav=True)
+        (torn / "sentences.json").write_text("{not json", encoding="utf-8")
+        got["torn"] = runreport.classify_workdir(WorkDir(torn))
+    assert got == {"run-rep": "run", "run-tr": "run", "pending": "pending", "scout": "scout",
+                   "scout0": "scout", "fetched": "fetched", "missing": "missing",
+                   "torn": "fetched"}
+
+
+def test_classify_workdir_source_mkv_flips_scout_to_pending() -> None:
+    # The discriminator itself: same transcript, the container's presence is the ONLY
+    # difference between "scout this" and "a parked full dub" (nothing ever deletes source.mkv).
+    with tempfile.TemporaryDirectory() as d:
+        wd = _mkkind(Path(d), "vidFLIP00000", sentences=[{"id": 0, "end": 5.0}])
+        work = WorkDir(wd)
+        assert runreport.classify_workdir(work) == "scout"
+        (wd / "source.mkv").write_bytes(b"\x00")
+        assert runreport.classify_workdir(work) == "pending"
+
+
+def test_collect_entries_queue_order_survives_a_missing_video() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        _mkkind(root, "vidAAAAAAAAA", report=_two_unit_report(),
+                translation=[{"id": i, "status": "ok"} for i in range(4)])
+        _mkkind(root, "vidCCCCCCCCC", sentences=[{"id": 0, "end": 62.0}])
+        # vidBBBBBBBBB has NO dir at all — the download never happened
+        entries, skipped = runreport.collect_entries(
+            ["vidAAAAAAAAA", "vidBBBBBBBBB", "vidCCCCCCCCC"], [], root, cfg=_CFG)
+    assert [e["vid"] for e in entries] == ["vidAAAAAAAAA", "vidBBBBBBBBB", "vidCCCCCCCCC"]
+    assert [e["n"] for e in entries] == [1, 2, 3]           # position preserved across the gap
+    assert [e["kind"] for e in entries] == ["run", "missing", "scout"]
+    assert all(e["from_queue"] for e in entries)
+    assert skipped == []                        # a queue id is NEVER dropped, whatever its kind
+    assert entries[0]["run"] is not None and entries[0]["run"]["video_id"] == "vidAAAAAAAAA"
+    assert entries[0]["units"] and entries[0]["offenders"]  # kind "run" carries triage rows
+    assert entries[2]["n_sentences"] == 1 and entries[2]["duration_sec"] == 62.0
+
+
+def test_collect_entries_argv_dedup_and_numbering_continue() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        _mkkind(root, "vidAAAAAAAAA", report=_two_unit_report(),
+                translation=[{"id": i, "status": "ok"} for i in range(4)])
+        _mkkind(root, "vidDDDDDDDDD", sentences=[{"id": 0, "end": 30.0}])
+        entries, skipped = runreport.collect_entries(
+            ["vidAAAAAAAAA"], [root / "vidAAAAAAAAA", root / "vidDDDDDDDDD"], root, cfg=_CFG)
+    # the argv duplicate of a queued id is absorbed (normcased-abs-path dedup, queue wins)
+    assert [(e["vid"], e["n"], e["from_queue"]) for e in entries] == [
+        ("vidAAAAAAAAA", 1, True), ("vidDDDDDDDDD", 2, False)]
+    assert skipped == []
+
+
+def test_collect_entries_scout_json_rides_on_a_run_entry() -> None:
+    # A dubbed video that was scouted first keeps its grade: scout.json is attached for ANY
+    # kind, not only for scout cards.
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        _mkkind(root, "vidAAAAAAAAA", report=_two_unit_report(),
+                translation=[{"id": i, "status": "ok"} for i in range(4)],
+                scout={"quality": "high", "one_liner": "x"})
+        entries, _ = runreport.collect_entries(None, [root / "vidAAAAAAAAA"], root, cfg=_CFG)
+    assert entries[0]["kind"] == "run"
+    assert entries[0]["scout"]["quality"] == "high"
+
+
+def test_collect_entries_argv_typo_and_fetched_go_to_skipped() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        _mkkind(root, "vidEMPTY0000")                       # nothing at all — a typo'd path
+        _mkkind(root, "vidFETCHED00", wav=True)             # audio only, never transcribed
+        entries, skipped = runreport.collect_entries(
+            None, [root / "vidEMPTY0000", root / "vidFETCHED00"], root, cfg=_CFG)
+    assert entries == []
+    assert skipped == ["vidEMPTY0000", "vidFETCHED00"]
+
+
+def test_collect_entries_rebuild_forces_recompute() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        wd = _mkkind(root, "vidAAAAAAAAA", report=_two_unit_report(),
+                     translation=[{"id": i, "status": "ok"} for i in range(4)],
+                     run_json={"video_id": "stale"})
+        loaded, _ = runreport.collect_entries(None, [wd], root, cfg=_CFG)
+        rebuilt, _ = runreport.collect_entries(None, [wd], root, cfg=_CFG, rebuild=True)
+    assert loaded[0]["run"]["video_id"] == "stale"          # the fast path trusts run.json
+    assert rebuilt[0]["run"]["video_id"] == "vidAAAAAAAAA"  # --rebuild recomputes from artifacts
+
+
+def test_batch_row_golden_cells() -> None:
+    # These exact strings are the cross-surface contract (both renderers print them verbatim);
+    # golden-pinned from a fabricated run.json so a formatting drift fails HERE, not in a
+    # morning diff between the two surfaces.
+    run = {
+        "video_id": "vid00000001", "title": "Talk", "needs_triage": True,
+        "timings": {"total_wall_s": 123.4, "rtf": 0.256, "video_sec": 482.0},
+        "asr": {"floor_ratio": 0.0342},
+        "translate": {"n_failed": 2, "n_sentences": 40},
+        "verify": {"n_flagged": 1},
+        "completeness": {"n_flagged": 8, "n_actionable": 3, "n_advisory": 5},
+        "source": {"scanned": True, "n_flagged": 4},
+        "speed": {"max": 2.13, "n_over_1_8": 1},
+    }
+    row = runreport.batch_row(run)
+    assert row["video_id"] == "vid00000001"
+    assert row["title"] == "Talk"                           # RAW — truncation is per-medium
+    assert row["needs_triage"] is True
+    assert row["cells"] == [
+        ("wall_s", "123.4"), ("rtf", "0.256"), ("floor", "3.4%"), ("tr", "2"),
+        ("vf", "1"), ("cp", "3"), ("adv", "5"), ("src", "4"),
+        ("spd_max", "2.13"), ("n_over", "1"),
+    ]
+
+
+def test_batch_row_floor_na_src_dash_and_blank_wall() -> None:
+    # A partial / route-A run: no words.json (floor n/a), src not scanned ("-", which must
+    # never read as a clean 0), no timings (wall_s prints empty, rtf prints None — today's
+    # exact strings, pinned).
+    row = runreport.batch_row({"video_id": "v", "asr": {"floor_ratio": None},
+                               "source": {"scanned": False, "n_flagged": 0}, "speed": {}})
+    cells = dict(row["cells"])
+    assert cells["floor"] == "n/a"
+    assert cells["src"] == "-"
+    assert cells["wall_s"] == ""
+    assert cells["rtf"] == "None"
+    assert cells["spd_max"] == "None"
+    assert cells["n_over"] == "0"
+    assert row["needs_triage"] is False
+
+
+def test_batch_row_cp_falls_back_to_n_flagged_on_a_pre_schema_run() -> None:
+    # A run.json written before the actionable/advisory split carried only completeness.n_flagged.
+    # batch_row's cp cell must fall back to it (adv to 0) through the SAME chain
+    # render_run_report's flags line uses — otherwise, on an old run, the digest's flags line said
+    # 3 while both batch tables and the card rollup said 0 (the cross-surface divergence PLAN item
+    # 2 kills). Assert both the cell and the digest line agree on the pre-schema number.
+    run = {"video_id": "vid00000001", "needs_triage": True,
+           "completeness": {"n_flagged": 3},           # pre-schema: no n_actionable / n_advisory
+           "asr": {"floor_ratio": None},
+           "source": {"scanned": False, "n_flagged": 0}, "speed": {}}
+    cells = dict(runreport.batch_row(run)["cells"])
+    assert cells["cp"] == "3"                           # fell back to n_flagged, not defaulted to 0
+    assert cells["adv"] == "0"
+    # and render_run_report's flags line reads the SAME 3 through its own fallback chain
+    assert "completeness 3 (+0 advisory)" in runreport.render_run_report(run, [])
+
+
+def test_batch_totals() -> None:
+    runs = [
+        {"timings": {"total_wall_s": 100.0, "video_sec": 300.0}, "needs_triage": True},
+        {"timings": {"total_wall_s": 50.0, "video_sec": None}, "needs_triage": False},
+    ]
+    tot = runreport.batch_totals(runs)
+    assert tot == {"total_wall": 150.0, "throughput": "×2.00", "n_triage": 1}
+    assert runreport.batch_totals([])["throughput"] == "n/a"    # zero wall — nothing to divide
+
+
+def test_batch_columns_is_the_single_header_source() -> None:
+    # The header the digest prints IS " | ".join of BATCH_COLUMNS labels — one constant, no
+    # second list to drift. Both the literal and the script's stdout are pinned.
+    header = " | ".join(label for _key, label in runreport.BATCH_COLUMNS)
+    assert header == ("video | title | wall_s | rtf | floor | tr | vf | cp | adv | src | "
+                      "spd_max | >1.8 | triage")
+    with tempfile.TemporaryDirectory() as d:
+        work = _mkwork(d, report=_two_unit_report(),
+                       translation=[{"id": i, "status": "ok"} for i in range(4)])
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            assert run_report.main([str(work.root)]) == 0
+    assert header in buf.getvalue()
+
+
+def test_run_report_main_renders_a_scout_block() -> None:
+    # The third divergence PLAN item 2 names: a scouted dir used to print "run the pipeline
+    # first" — an instruction to dub a video the operator only asked to scout.
+    with tempfile.TemporaryDirectory() as d:
+        work = _mkwork(d, sentences=[{"id": 0, "end": 3.0}, {"id": 1, "end": 9.0}],
+                       info={"title": "Scouted Talk", "duration": 2530.0},
+                       summary="Видео про GPU. Стоит смотреть.")
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            assert run_report.main([str(work.root)]) == 0
+    out = buf.getvalue()
+    assert "[scouted — transcript only, no dub]" in out
+    assert "- 2 sentences · 42 min" in out
+    assert "- summary (5 words):" in out                    # the scout deliverable is attached
+    assert "run the pipeline first" not in out
+    assert "── batch" not in out                            # and no fabricated batch row
+
+
+def test_run_report_main_renders_a_pending_block() -> None:
+    # A promoted video parked between download and translate (route B step 1) — previously
+    # indistinguishable from a typo'd path in this digest. Duration falls back to sentence
+    # ends (9 s → "<1 min", never a literal "None").
+    with tempfile.TemporaryDirectory() as d:
+        work = _mkwork(d, sentences=[{"id": 0, "end": 3.0}, {"id": 1, "end": 9.0}])
+        (Path(d) / "source.mkv").write_bytes(b"\x00")
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            assert run_report.main([str(work.root)]) == 0
+    out = buf.getvalue()
+    assert "[promoted — downloaded in full, translate has not started]" in out
+    assert "- 2 sentences · <1 min" in out
+    assert "run the pipeline first" not in out
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):

@@ -1,4 +1,9 @@
-"""Unit tests for scripts/build_scout.py + scripts/scout_report.py — the route-C report.
+"""Unit tests for scripts/build_scout.py + scripts/scout_report.py — the queue report.
+
+ONE page per queue since 2026-07-21 (PLAN item 2), so this suite covers all three surfaces it
+merges: the scout grades, the dub-triage surface folded in from the retired morning-triage page,
+and the cross-surface parity that keeps the digest (scripts/run_report.py) and this page agreeing
+about the same bytes on disk.
 
 Run: .venv-asr/Scripts/python.exe -X utf8 tests/test_scout_report.py   (or via pytest)
 
@@ -7,7 +12,8 @@ load-bearing invariants, in the order they would silently break the deliverable:
 
   ORDER IS THE QUEUE'S. The report exists to be read next to the playlist it came from, so a
   re-sorted row is a wrong row even when every field in it is right. Verdicts are shown, never
-  sorted on — the opposite of triage_html, which sorts the worst first on purpose.
+  sorted on — the morning-listen job the retired triage page served by sorting the worst first
+  is served here by the nav block of anchors, without touching the order.
 
   A QUEUED VIDEO NEVER VANISHES. No scout.json → an explicit "не отсканировано" row, because a
   report that silently renders only the videos that worked reads as complete.
@@ -23,6 +29,7 @@ load-bearing invariants, in the order they would silently break the deliverable:
 
 from __future__ import annotations
 
+import html
 import io
 import json
 import os
@@ -31,7 +38,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[1]
@@ -39,7 +46,9 @@ sys.path.insert(0, str(_ROOT))
 sys.path.insert(0, str(_ROOT / "scripts"))
 
 import build_scout  # noqa: E402
+import run_report  # noqa: E402  — the cross-surface tests run both renderers over one workdir
 import scout_report  # noqa: E402
+from overdub import runreport  # noqa: E402
 from overdub.workdir import WorkDir, jpeg_size  # noqa: E402
 
 _DRAFT = {"quality": "high", "one_liner": "Однофразовое описание.",
@@ -975,6 +984,671 @@ def test_queue_order_dedupes_but_keeps_first_position() -> None:
                      "https://www.youtube.com/watch?v=vid00000002\n"
                      "https://www.youtube.com/watch?v=vid00000001\n", encoding="utf-8")
         assert scout_report.queue_ids(q) == ["vid00000001", "vid00000002"]
+
+
+# --- the merged dub surface ------------------------------------------------------
+# Migrated from the retired morning-triage page's own suite when that page was folded into
+# this one (2026-07-21, PLAN item 2). Each test keeps its parent's INTENT — escaping, the
+# "-"-vs-"0" src cell, no fabricated dub metrics on a scout card, skip-vs-card discrimination,
+# the exact no-summary phrase, embed vs --link, --limit — re-pinned against the merged markup.
+
+def _dubbed(root: Path, vid: str, *, verify_flags=("low_similarity", None), translation=None,
+            summary=None, wav=(), title="Dub Talk", duration=300.0) -> Path:
+    """A dubbed workdir: report.json + translation.json (+ info/timings) — the exact input
+    shape build_run_report rolls up, so the page exercises the REAL data path, not a
+    hand-shaped run dict. One report unit per verify_flags entry (unit i = sentence i);
+    a flagged unit is also fast (combined 2.0) so it carries a speed reason too."""
+    d = root / vid
+    (d / "segments").mkdir(parents=True, exist_ok=True)
+    segs = []
+    for i, vf in enumerate(verify_flags):
+        segs.append({"id": i, "group_id": i, "status": "ok", "verify_flag": vf,
+                     "combined_factor": 2.0 if vf else 1.0, "speed_factor": 1.5 if vf else 1.0,
+                     "assemble_flag": None, "completeness_flags": [], "translate_flag": None,
+                     "similarity": 0.42 if vf else 0.98,
+                     "hypothesis": "что-то не то" if vf else None})
+    n_fl = sum(1 for vf in verify_flags if vf)
+    report = {"segments": segs,
+              "verify": {"model": "small", "n_units": len(segs), "n_segments": len(segs),
+                         "n_flagged": n_fl, "n_retried": 0, "n_repaired": 0},
+              "completeness": {"n_sentences": len(segs), "n_flagged": 0, "n_num_loss": 0,
+                               "n_neg_loss": 0, "n_entity_loss": 0, "n_length": 0},
+              "assemble": {"duration_sec": duration, "n_sped": n_fl,
+                           "in_span_silence_sec": 0.0},
+              "mux": {"dub_mix": "bed", "dub_gain_db": 3.0}}
+    if translation is None:
+        translation = [{"id": i, "status": "ok", "src_en": f"EN {i}", "text_ru": f"РУ {i}",
+                       "text_tts": f"тэ-тэ-эс {i}", "start": float(i) * 3.0,
+                        "end": float(i) * 3.0 + 3.0, "src": "ok"}
+                       for i in range(len(segs))]
+    (d / "report.json").write_text(json.dumps(report, ensure_ascii=False), encoding="utf-8")
+    (d / "translation.json").write_text(json.dumps(translation, ensure_ascii=False),
+                                        encoding="utf-8")
+    (d / "source.info.json").write_text(json.dumps({"title": title, "duration": duration}),
+                                        encoding="utf-8")
+    (d / "timings.json").write_text(json.dumps({"stages": {"download": 5.0,
+                                                           "synthesize": 55.0}}),
+                                    encoding="utf-8")
+    for sid in wav:
+        (d / "segments" / f"{sid:05d}.wav").write_bytes(b"RIFF-fake-wav-bytes")
+    if summary is not None:
+        (d / "summary.md").write_text(summary, encoding="utf-8")
+    return d
+
+
+def _transcribed(root: Path, vid: str, *, n=431, info=True, ends=True, summary=None,
+                 mkv=False) -> Path:
+    """A transcript-only workdir (scout shape; add mkv=True for the promoted 'pending' shape).
+    `ends` off = sentences with no numeric `end`, the only shape from which no duration at all
+    can be derived."""
+    d = root / vid
+    (d / "segments").mkdir(parents=True, exist_ok=True)
+    (d / "sentences.json").write_text(json.dumps(
+        [{"id": i, "text": f"s{i}", "start": float(i),
+          **({"end": float(i) + 1.0} if ends else {})} for i in range(n)]), encoding="utf-8")
+    if info:
+        (d / "source.info.json").write_text(
+            json.dumps({"title": "Scouted Talk", "duration": 2530.0}), encoding="utf-8")
+    if summary is not None:
+        (d / "summary.md").write_text(summary, encoding="utf-8")
+    if mkv:
+        (d / "source.mkv").write_bytes(b"mkv")
+    return d
+
+
+def _card_of(page: str, n: int) -> str:
+    """The card slice for queue position n — everything between its anchor and its close."""
+    return page.split(f'id="v{n}"', 1)[1].split("</article>", 1)[0]
+
+
+def test_run_card_summary_is_escaped_and_paragraphed() -> None:
+    # Raw LLM prose going into HTML: unescaped, a stray tag would break the page (or worse).
+    # Blank lines are the only structure read_summary leaves, so they become <p> boundaries.
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        _dubbed(root, "vid00000001", summary="Первый <b>абзац</b>.\n\nВторой & третий.")
+        q = _queue(root, ["vid00000001"])
+        out = root / "r.html"
+        _report(["--queue", str(q), "--config", str(_cfg(root)), "--out", str(out)])
+        card = _card_of(out.read_text(encoding="utf-8"), 1)
+    assert "&lt;b&gt;" in card and "&amp;" in card
+    assert "<b>абзац" not in card                       # never the live tag
+    assert card.count("<p>") == 2                       # two paragraphs, not one blob
+    # (only _paragraphs emits bare <p>; the rollup/state lines all carry a class)
+
+
+def test_run_card_without_summary_renders_no_prose() -> None:
+    # A video with no summary.md is the normal case, not an error — the card keeps its rollup
+    # and units and grows no empty prose container.
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        _dubbed(root, "vid00000001")
+        q = _queue(root, ["vid00000001"])
+        out = root / "r.html"
+        _report(["--queue", str(q), "--config", str(_cfg(root)), "--out", str(out)])
+        card = _card_of(out.read_text(encoding="utf-8"), 1)
+    assert 'class="rollup"' in card                     # the dub block is untouched
+    assert card.count("<p>") == 0                       # and no prose block appeared
+
+
+def test_main_reads_summary_md_off_a_dubbed_workdir() -> None:
+    # main() is the only place the summary is read off the workdir — and this is also the
+    # positional-workdirs-without---queue entry point the merge made optional.
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        wd = _dubbed(root, "vid00000001", summary="Стоит смотреть целиком.")
+        out = root / "r.html"
+        code, _ = _report([str(wd), "--config", str(_cfg(root)), "--out", str(out)])
+        page = out.read_text(encoding="utf-8")
+    assert code == 0
+    assert "Стоит смотреть целиком." in page
+
+
+def test_cli_requires_a_queue_or_a_workdir() -> None:
+    # Neither positional workdirs nor --queue: there is no report to render and guessing a
+    # queue file would be worse than saying so.
+    buf = io.StringIO()
+    try:
+        with redirect_stdout(buf), redirect_stderr(buf):
+            scout_report.main([])
+    except SystemExit as e:
+        assert e.code == 2                              # argparse usage-error exit code
+    else:
+        raise AssertionError("no --queue and no workdirs must be a usage error")
+
+
+# --- source anomalies on the card (DECISIONS 2026-07-19, migrated) ----------------
+def _src_translation():
+    """Two OK-dub sentences, one carrying a source anomaly with hostile prose in the note."""
+    return [{"id": 0, "status": "ok", "src_en": "EN 0", "text_ru": "РУ 0", "text_tts": "т 0",
+             "start": 0.0, "end": 3.0, "src": "truncated",
+             "src_note": "ends <script>alert(1)</script> & mid-thought"},
+            {"id": 1, "status": "ok", "src_en": "EN 1", "text_ru": "РУ 1", "text_tts": "т 1",
+             "start": 3.0, "end": 6.0, "src": "ok"}]
+
+
+def test_srcanom_absent_when_source_is_clean() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        _dubbed(root, "vid00000001")                    # every src is "ok"
+        q = _queue(root, ["vid00000001"])
+        out = root / "r.html"
+        _report(["--queue", str(q), "--config", str(_cfg(root)), "--out", str(out)])
+        page = out.read_text(encoding="utf-8")
+    # the static sheet is stripped first: _CSS carries the .srcanom RULE on every page; the
+    # invariant is that no srcanom ELEMENT renders when the scan found nothing
+    assert "srcanom" not in page.replace(scout_report._CSS, "")
+
+
+def test_srcanom_rendered_and_escaped() -> None:
+    # The note is raw LLM prose going into HTML — same escape rule as every other prose field.
+    # Deliberately NO <audio> anywhere near it: the defect is in the ENGLISH source, so
+    # listening to the Russian tells the operator nothing.
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        _dubbed(root, "vid00000001", verify_flags=(None, None), translation=_src_translation())
+        q = _queue(root, ["vid00000001"])
+        out = root / "r.html"
+        _report(["--queue", str(q), "--config", str(_cfg(root)), "--out", str(out)])
+        page = out.read_text(encoding="utf-8")
+    block = page.split('<div class="srcanom">', 1)[1].split("</div>", 1)[0]
+    assert "аномалии источника (1)" in block and "truncated" in block
+    assert "&lt;script&gt;" in block and "&amp;" in block
+    assert "<script>" not in block
+    assert "<audio" not in block
+
+
+def test_srcanom_renders_without_flagged_units() -> None:
+    # A clean-verify run can still carry a source anomaly, and that is exactly when the signal
+    # is most actionable (--repair-asr is still cheap). The clean-units note stays too.
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        _dubbed(root, "vid00000001", verify_flags=(None, None), translation=_src_translation())
+        q = _queue(root, ["vid00000001"])
+        out = root / "r.html"
+        _report(["--queue", str(q), "--config", str(_cfg(root)), "--out", str(out)])
+        page = out.read_text(encoding="utf-8")
+    assert "srcanom" in page
+    assert "проблемных юнитов нет — слушать нечего." in page
+
+
+def _dub_row_cells(page: str, n: int) -> list[str]:
+    """The ten verbatim data cells of the dub-table row for queue position n."""
+    m = re.search(rf'<td><a class="jump" href="#v{n}">[^<]*</a></td>(.*?)</tr>', page, re.S)
+    assert m, f"no dub-table row for position {n}"
+    return re.findall(r'<td class="num">([^<]*)</td>', m.group(1))
+
+
+def test_dub_table_src_dash_when_unscanned() -> None:
+    # "-" means NOT SCANNED (route A / pre-schema); "0" means scanned AND clean. Conflating the
+    # two would report a Gemma-route video as source-checked when nothing ever read it.
+    no_src = [{"id": i, "status": "ok", "src_en": f"EN {i}", "text_ru": f"РУ {i}",
+               "text_tts": f"т {i}", "start": float(i), "end": float(i) + 1.0}
+              for i in range(2)]                        # route A: no src field at all
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        _dubbed(root, "vidNOSRC000", translation=no_src)
+        _dubbed(root, "vidOKSRC000")                   # all src "ok" → scanned, clean
+        q = _queue(root, ["vidNOSRC000", "vidOKSRC000"])
+        out = root / "r.html"
+        _report(["--queue", str(q), "--config", str(_cfg(root)), "--out", str(out)])
+        page = out.read_text(encoding="utf-8")
+    src_i = [k for k, _l in runreport.BATCH_COLUMNS].index("src") - 2   # minus video+title
+    assert _dub_row_cells(page, 1)[src_i] == "-"
+    assert _dub_row_cells(page, 2)[src_i] == "0"
+
+
+def test_scout_card_fabricates_no_dub_metrics() -> None:
+    # A scouted video has no RTF, no flags, no triage verdict. The merged page must not leak
+    # ANY dub component onto its card or fabricate a dub table/nav around it — borrowing the
+    # «чисто» chip would report an undubbed video as verified. Pinned in both parents; forever.
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        _scouted(root, "vid00000001", "high")
+        q = _queue(root, ["vid00000001"])
+        out = root / "r.html"
+        _report(["--queue", str(q), "--config", str(_cfg(root)), "--out", str(out)])
+        page = out.read_text(encoding="utf-8")
+    card = _card_of(page, 1)
+    for forbidden in ("<audio", "srcanom", "RTF", 'class="unit"', "слушать", "чисто"):
+        assert forbidden not in card, forbidden
+    assert "<th>wall_s</th>" not in page                # no dub table on a pure-scout page
+    assert "требуют прослушивания" not in page          # no dub totals, no nav
+
+
+def test_counters_exclude_scouts_from_the_video_count() -> None:
+    # "0 need triage" out of a count that includes never-dubbed videos is a lie about them.
+    # Kept from the retired page: stdout counts dubbed videos, scouts ride separately, and the
+    # page's dub totals line counts only the dubbed.
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        _dubbed(root, "vidDUBBED00", verify_flags=(None, None))
+        _scouted(root, "vidSCOUTED0", "high")
+        q = _queue(root, ["vidDUBBED00", "vidSCOUTED0"])
+        out = root / "r.html"
+        code, log = _report(["--queue", str(q), "--config", str(_cfg(root)),
+                             "--out", str(out)])
+        page = out.read_text(encoding="utf-8")
+    assert code == 0
+    assert "1 video(s), 1 scouted," in log
+    assert "2 video(s)" not in log
+    assert "1 видео · wall" in page                     # dub totals: the dubbed one only
+    assert "2 видео · wall" not in page
+
+
+def test_argv_typo_is_a_named_skip_but_a_queue_id_is_always_carded() -> None:
+    # Both directions of "no silent nothing": an argv path with nothing to report is a named
+    # skip and no page; the SAME empty dir named by the queue keeps its row — the queue is the
+    # deliverable and position is information.
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        empty = root / "vidEMPTY000"
+        (empty / "segments").mkdir(parents=True)
+        out = root / "r.html"
+        code, log = _report([str(empty), "--config", str(_cfg(root)), "--out", str(out)])
+        assert code == 0
+        assert "nothing to render" in log and "skipped (nothing to report)" in log
+        assert "vidEMPTY000" in log
+        assert not out.exists()                         # nothing renderable → no page
+        q = _queue(root, ["vidEMPTY000"])
+        code, log = _report(["--queue", str(q), "--config", str(_cfg(root)),
+                             "--out", str(out)])
+        page = out.read_text(encoding="utf-8")
+    assert code == 0
+    assert "не скачано" in page and "не скачано" in log
+
+
+def test_empty_sentences_renders_a_zero_card_not_a_skip() -> None:
+    # A MISSING sentences.json is a typo'd path, but an EMPTY one PARSED, so transcribe RAN and
+    # found nothing — a real promotion answer (don't dub it). The count is reported, never
+    # suppressed. (Reachable: resegment([]) → [] under vad_filter=True on a speech-free video.)
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        _transcribed(root, "vidEMPTY000", n=0, info=False, summary="Пустой транскрипт.")
+        q = _queue(root, ["vidEMPTY000"])
+        out = root / "r.html"
+        code, log = _report(["--queue", str(q), "--config", str(_cfg(root)),
+                             "--out", str(out)])
+        page = out.read_text(encoding="utf-8")
+    assert code == 0
+    assert "предложений: 0" in page
+    assert "не отсканировано" in page                   # a scout STATE, not a typo'd path
+    assert "nothing to render" not in log
+
+
+def test_pending_card_names_the_promoted_state() -> None:
+    # source.mkv + a partial translation.jsonl is a full run parked at (or killed in) the
+    # translate seam — route B step 1 parks the WHOLE batch like this. The retired triage page
+    # SKIPPED it and the old scout page mislabelled it "не отсканировано"; the merged page
+    # closes that promoted-video-invisible gap with an honest state, and still fabricates no
+    # dub chip for it.
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        wd = _transcribed(root, "vidPARKED00", n=1, summary="prose", mkv=True)
+        (wd / "translation.jsonl").write_text('{"id": 0}\n', encoding="utf-8")
+        q = _queue(root, ["vidPARKED00"])
+        out = root / "r.html"
+        code, log = _report(["--queue", str(q), "--config", str(_cfg(root)),
+                             "--out", str(out)])
+        page = out.read_text(encoding="utf-8")
+    assert code == 0
+    assert "в работе — скачано полностью, перевод ещё не начат" in page
+    assert "в работе" in log                            # and the operator is told
+    assert "слушать" not in page and "чисто" not in page
+    assert "не отсканировано" not in page               # never mislabelled as an S2 gap
+
+
+def test_scout_card_duration_falls_back_to_sentence_ends() -> None:
+    # No info.json sidecar → the duration comes from the last sentence `end` (431 s → 7:11),
+    # the title falls back to the id, and nothing crashes.
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        _transcribed(root, "vid00000001", info=False, summary="s")
+        q = _queue(root, ["vid00000001"])
+        out = root / "r.html"
+        _report(["--queue", str(q), "--config", str(_cfg(root)), "--out", str(out)])
+        page = out.read_text(encoding="utf-8")
+    assert "7:11" in page                               # 431 s of sentences, not the sidecar
+    assert "предложений: 431" in page
+    assert "Scouted Talk" not in page                   # no sidecar → no title, and no crash
+
+
+def test_scout_card_without_any_duration_shows_a_dash_not_none() -> None:
+    # Neither a sidecar nor a numeric sentence `end`: the duration is unknown, and the page's
+    # convention for unknown is '—' — never a fabricated figure and never the literal "None".
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        _transcribed(root, "vid00000001", info=False, ends=False, summary="s")
+        q = _queue(root, ["vid00000001"])
+        out = root / "r.html"
+        _report(["--queue", str(q), "--config", str(_cfg(root)), "--out", str(out)])
+        page = out.read_text(encoding="utf-8")
+    card = _card_of(page, 1)
+    assert "предложений: 431" in card                   # the card still renders
+    assert "None" not in card
+
+
+def test_ungraded_scout_without_summary_keeps_the_exact_phrase() -> None:
+    # A transcribed-but-unsummarized video is a pipeline STATE, not an empty card. The phrase
+    # names the exact fix (respawn S2) and is pinned verbatim across the merge.
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        _transcribed(root, "vid00000001")               # no summary.md, no scout.json
+        q = _queue(root, ["vid00000001"])
+        out = root / "r.html"
+        _report(["--queue", str(q), "--config", str(_cfg(root)), "--out", str(out)])
+        page = out.read_text(encoding="utf-8")
+    assert "no summary.md yet — run the scout summarizer (overdub-scout skill, step S2)." in page
+
+
+# --- audio: embed vs --link (migrated) --------------------------------------------
+def test_audio_is_embedded_by_default() -> None:
+    # Embedded = the page is portable and publishable; only FLAGGED units pay the base64 cost.
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        _dubbed(root, "vid00000001", wav=(0,))
+        q = _queue(root, ["vid00000001"])
+        out = root / "r.html"
+        _report(["--queue", str(q), "--config", str(_cfg(root)), "--out", str(out)])
+        page = out.read_text(encoding="utf-8")
+    assert page.count("data:audio/wav;base64,") == 1    # the one flagged unit, nothing else
+
+
+def test_link_mode_references_audio_by_relative_path() -> None:
+    # --link keeps the page tiny but chains it to work/: the src must be a forward-slash
+    # relative path that resolves from the page's own directory under file://.
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        _dubbed(root, "vid00000001", wav=(0,))
+        q = _queue(root, ["vid00000001"])
+        out = root / "r.html"
+        code, log = _report(["--queue", str(q), "--config", str(_cfg(root)),
+                             "--out", str(out), "--link"])
+        page = out.read_text(encoding="utf-8")
+    assert code == 0
+    assert 'src="vid00000001/segments/00000.wav"' in page
+    assert "data:audio/wav" not in page
+    assert "linked audio" in log                        # the mode is named on stdout too
+
+
+def test_missing_wav_names_the_gap_not_a_dead_player() -> None:
+    # A flagged unit whose wav is gone gets a note, never a broken <audio> element.
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        _dubbed(root, "vid00000001")                    # flagged unit, no wav on disk
+        q = _queue(root, ["vid00000001"])
+        out = root / "r.html"
+        _report(["--queue", str(q), "--config", str(_cfg(root)), "--out", str(out)])
+        page = out.read_text(encoding="utf-8")
+    assert "нет аудио (wav отсутствует)" in page
+    assert "<audio" not in page
+
+
+def test_limit_caps_flagged_units_per_video() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        _dubbed(root, "vid00000001", verify_flags=("low_similarity", "low_similarity"))
+        q = _queue(root, ["vid00000001"])
+        out = root / "r.html"
+        _report(["--queue", str(q), "--config", str(_cfg(root)), "--out", str(out),
+                 "--limit", "1"])
+        page = out.read_text(encoding="utf-8")
+    assert page.count('class="unit"') == 1
+
+
+def test_triage_nav_links_flagged_videos_and_is_absent_when_clean() -> None:
+    # The morning-listen job moved from re-sorting the queue to a nav block of anchors: the
+    # worst videos are one click away and the queue keeps its order. A clean batch gets none.
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        _dubbed(root, "vidFLAGGED0")
+        _dubbed(root, "vidCLEAN000", verify_flags=(None, None))
+        q = _queue(root, ["vidFLAGGED0", "vidCLEAN000"])
+        out = root / "r.html"
+        _report(["--queue", str(q), "--config", str(_cfg(root)), "--out", str(out)])
+        page = out.read_text(encoding="utf-8")
+        nav = page.split('<div class="nav">', 1)[1].split("</div>", 1)[0]
+        assert "Требуют прослушивания:" in nav
+        assert 'href="#v1"' in nav and "Dub Talk" in nav
+        assert 'href="#v2"' not in nav                  # the clean video earns no anchor
+        # and a fully clean batch renders no nav at all
+        q2 = _queue(root, ["vidCLEAN000"])
+        out2 = root / "r2.html"
+        _report(["--queue", str(q2), "--config", str(_cfg(root)), "--out", str(out2)])
+        page2 = out2.read_text(encoding="utf-8")
+    assert "Требуют прослушивания" not in page2
+
+
+# --- cross-surface divergence (the acceptance test for PLAN item 2) ----------------
+def test_the_two_surfaces_print_identical_batch_cells() -> None:
+    # ONE dub workdir, BOTH renderers: the ten data cells of the batch row must be IDENTICAL
+    # strings, and both headers must come from runreport.BATCH_COLUMNS. This is the whole point
+    # of the merge — the digest and the page can no longer disagree about the same bytes.
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        _dubbed(root, "vid00000001")
+        q = _queue(root, ["vid00000001"])
+        cfgp = _cfg(root)
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            assert run_report.main(["--queue", str(q), "--config", str(cfgp)]) == 0
+        digest = buf.getvalue()
+        out = root / "r.html"
+        code, _ = _report(["--queue", str(q), "--config", str(cfgp), "--out", str(out)])
+        page = out.read_text(encoding="utf-8")
+    assert code == 0
+    assert " | ".join(lbl for _k, lbl in runreport.BATCH_COLUMNS) in digest
+    for _k, lbl in runreport.BATCH_COLUMNS:
+        assert f"<th>{html.escape(lbl)}</th>" in page
+    row_line = next(ln for ln in digest.splitlines() if ln.startswith("vid00000001 | "))
+    digest_cells = row_line.split(" | ")[2:-1]          # video, title | TEN CELLS | triage
+    page_cells = _dub_row_cells(page, 1)
+    assert len(digest_cells) == len(page_cells) == 10
+    assert digest_cells == page_cells
+
+
+def test_card_rollup_shows_actionable_never_flagged() -> None:
+    # The original two-numbers-one-batch bug, pinned forever: the retired page printed
+    # completeness.n_flagged where the digest printed n_actionable (+n_advisory). The merged
+    # card must show the split — never the pooled count.
+    run_json = {
+        "video_id": "vid00000001", "title": "T", "needs_triage": True,
+        "timings": {"total_wall_s": 60.0, "rtf": 0.2, "video_sec": 300.0,
+                    "video_sec_source": "info_json"},
+        "asr": {"floor_ratio": 0.01},
+        "translate": {"n_failed": 0, "n_sentences": 10},
+        "verify": {"n_flagged": 0},
+        "completeness": {"n_flagged": 8, "n_actionable": 3, "n_advisory": 5},
+        "speed": {"median": 1.0, "p95": 1.1, "max": 1.2, "n_over_1_8": 0},
+        "source": {"scanned": True, "n_flagged": 0},
+    }
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        wd = root / "vid00000001"
+        (wd / "segments").mkdir(parents=True)
+        (wd / "report.json").write_text(json.dumps({"segments": []}), encoding="utf-8")
+        (wd / "run.json").write_text(json.dumps(run_json), encoding="utf-8")
+        q = _queue(root, ["vid00000001"])
+        out = root / "r.html"
+        _report(["--queue", str(q), "--config", str(_cfg(root)), "--out", str(out)])
+        card = _card_of(out.read_text(encoding="utf-8"), 1)
+    assert "completeness 3 (+5 advisory)" in card
+    assert "completeness 8" not in card
+
+
+def test_torn_rollup_beside_a_grade_still_counts_as_without_rollup() -> None:
+    # A scouted-then-dubbed video whose run.json failed to build (torn report.json) used to let
+    # the surviving grade chip win the row: the «без свода» state vanished from the tally and the
+    # unfinished list (both key on `e["v"] is _NO_ROLLUP`), a silent failure. The torn dub layer
+    # is the news — it must claim the v-slot and be counted, with the grade chip riding beside it.
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        _scouted(root, "vid00000001", "high")              # valid scout.json + sentences/info
+        (root / "vid00000001" / "report.json").write_text("{not json", encoding="utf-8")
+        q = _queue(root, ["vid00000001"])
+        out = root / "r.html"
+        code, log = _report(["--queue", str(q), "--config", str(_cfg(root)), "--out", str(out)])
+        page = out.read_text(encoding="utf-8")
+    assert code == 0
+    assert "без свода: 1" in page                          # the page tally counts it
+    assert "без свода" in log                               # stdout unfinished list names it
+    card = _card_of(page, 1)
+    assert '<span class="chip v-none">без свода</span>' in card   # the state chip is on the card
+    assert "высокое" in card                               # ...beside the surviving grade chip
+
+
+def test_duration_ladder_reads_scout_json_before_sentence_ends() -> None:
+    # With no info.json, the digest re-derived duration from sentence ends while the card read
+    # scout.json's duration_sec — two durations for one dir. collect_entries now reads the SAME
+    # scout.json number the card does, so both surfaces show one duration.
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        vid = "vid00000001"
+        wd = root / vid
+        (wd / "segments").mkdir(parents=True)
+        (wd / "sentences.json").write_text(json.dumps(
+            [{"id": 0, "text": "s", "start": 0.0, "end": 30.5}]), encoding="utf-8")
+        # scout.json carries duration_sec=300; NO info.json; sentence ends top out at 30.5
+        (wd / "scout.json").write_text(json.dumps(
+            {**_DRAFT, "video_id": vid, "quality": "high", "duration_sec": 300.0,
+             "n_sentences": 1, "timings": {}, "wave": None}, ensure_ascii=False),
+            encoding="utf-8")
+        q = _queue(root, [vid])
+        cfgp = _cfg(root)
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            assert run_report.main(["--queue", str(q), "--config", str(cfgp)]) == 0
+        digest = buf.getvalue()
+        out = root / "r.html"
+        _report(["--queue", str(q), "--config", str(cfgp), "--out", str(out)])
+        card = _card_of(out.read_text(encoding="utf-8"), 1)
+    assert "5 min" in digest              # 300 s from scout.json, not the 30.5-derived "1 min"
+    assert "1 min" not in digest
+    assert "5:00" in card                 # and the card shows the same 300 s
+
+
+# --- migrated pins re-asserted against the merged page ----------------------------
+def test_ungraded_scout_summary_is_rendered_and_escaped() -> None:
+    # T1: an ungraded scout card (sentences + summary.md, NO scout.json) still renders its prose,
+    # and that prose is raw LLM output going into HTML — a stray tag must never render live.
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        _transcribed(root, "vid00000001",
+                     summary="Опасно <script>alert(1)</script> & прочее.\n\nВторой абзац.")
+        q = _queue(root, ["vid00000001"])
+        out = root / "r.html"
+        _report(["--queue", str(q), "--config", str(_cfg(root)), "--out", str(out)])
+        card = _card_of(out.read_text(encoding="utf-8"), 1)
+    assert "&lt;script&gt;" in card and "&amp;" in card
+    assert "<script>" not in card                          # never the live tag
+    assert "Второй абзац." in card                         # the prose is visible
+
+
+def test_no_duration_card_renders_no_clock_at_all() -> None:
+    # T2: neither info.json nor a numeric sentence `end` nor a scout duration — the duration is
+    # unknown, and the page's convention for unknown is '—'. Stronger than "no literal None":
+    # forbid the rendered clock SHAPE (M:SS / H:MM:SS), which is what a fabricated duration is.
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        _transcribed(root, "vid00000001", info=False, ends=False, summary="s")
+        q = _queue(root, ["vid00000001"])
+        out = root / "r.html"
+        _report(["--queue", str(q), "--config", str(_cfg(root)), "--out", str(out)])
+        card = _card_of(out.read_text(encoding="utf-8"), 1)
+    assert "предложений: 431" in card                      # the card still renders
+    assert not re.search(r"\d+:\d\d", card)                # no fabricated clock anywhere on it
+    assert "—" in card                                     # the unknown-duration dash instead
+
+
+def test_transcript_only_card_takes_duration_from_info_json() -> None:
+    # T3: with an info.json sidecar present, a transcript-only (ungraded scout) card shows the
+    # clock-formatted info duration — the old "42 min" pin, now the merged card's clock 42:10.
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        _transcribed(root, "vid00000001", summary="s")     # info=True → duration 2530.0
+        q = _queue(root, ["vid00000001"])
+        out = root / "r.html"
+        _report(["--queue", str(q), "--config", str(_cfg(root)), "--out", str(out)])
+        card = _card_of(out.read_text(encoding="utf-8"), 1)
+    assert "42:10" in card                                 # 2530 s from info.json, clock-formatted
+
+
+def test_srcanom_item_renders_the_sentence_id() -> None:
+    # T4: the source-anomaly block prints the offending sentence id (the old "#19" pin) so the
+    # operator can find it in translation.json / the transcript.
+    translation = [
+        {"id": 19, "status": "ok", "src_en": "EN", "text_ru": "РУ", "text_tts": "т",
+         "start": 0.0, "end": 3.0, "src": "truncated", "src_note": "ends mid-thought"},
+        {"id": 1, "status": "ok", "src_en": "EN 1", "text_ru": "РУ 1", "text_tts": "т 1",
+         "start": 3.0, "end": 6.0, "src": "ok"}]
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        _dubbed(root, "vid00000001", verify_flags=(None, None), translation=translation)
+        q = _queue(root, ["vid00000001"])
+        out = root / "r.html"
+        _report(["--queue", str(q), "--config", str(_cfg(root)), "--out", str(out)])
+        page = out.read_text(encoding="utf-8")
+    block = page.split('<div class="srcanom">', 1)[1].split("</div>", 1)[0]
+    assert "#19" in block and "truncated" in block
+
+
+def test_scouted_clause_absent_on_a_scout_free_report() -> None:
+    # T5 (absence direction): a report with no scout entries must not print a "scouted" clause on
+    # stdout — the count only appears when scouts are actually present.
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        _dubbed(root, "vid00000001", verify_flags=(None, None))
+        q = _queue(root, ["vid00000001"])
+        out = root / "r.html"
+        code, log = _report(["--queue", str(q), "--config", str(_cfg(root)), "--out", str(out)])
+    assert code == 0
+    assert "scouted" not in log
+
+
+# --- new pins mutation testing proved unguarded ----------------------------------
+def test_flagged_unit_embeds_a_playable_source_in_both_modes() -> None:
+    # T6: a flagged unit's raw segment wav is playable from the card — a base64 data URI by
+    # default, a relative path under --link with no base64. A real (tiny) WAV, so the payload is a
+    # decodable file rather than arbitrary bytes.
+    import wave
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        wd = _dubbed(root, "vid00000001", wav=())          # flagged unit 0; write its wav below
+        with wave.open(str(wd / "segments" / "00000.wav"), "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(16000)
+            w.writeframes(b"\x00\x00" * 160)               # 10 ms of silence
+        q = _queue(root, ["vid00000001"])
+        cfgp = _cfg(root)
+        out = root / "r.html"
+        _report(["--queue", str(q), "--config", str(cfgp), "--out", str(out)])
+        embedded = out.read_text(encoding="utf-8")
+        out2 = root / "r2.html"
+        _report(["--queue", str(q), "--config", str(cfgp), "--out", str(out2), "--link"])
+        linked = out2.read_text(encoding="utf-8")
+    assert "data:audio/wav;base64," in embedded
+    assert 'src="vid00000001/segments/00000.wav"' in linked
+    assert "data:audio/wav" not in linked
+
+
+def test_dub_table_colours_the_status_cell_by_column_key_not_index() -> None:
+    # T7: the triage colour class rides the «слушать»/«чисто» STATUS cell, keyed by column KEY —
+    # never by cell index. The retired page hard-coded the index and the src column silently
+    # landed on it, so adding a column mis-coloured a data cell. The status cell carries
+    # t-triage/t-clean; the first data cell (wall_s) must not.
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        _dubbed(root, "vid00000001")                       # flagged → needs triage → «слушать»
+        q = _queue(root, ["vid00000001"])
+        out = root / "r.html"
+        _report(["--queue", str(q), "--config", str(_cfg(root)), "--out", str(out)])
+        page = out.read_text(encoding="utf-8")
+    row = re.search(r'<td><a class="jump" href="#v1">[^<]*</a></td>(.*?)</tr>', page, re.S).group(1)
+    assert '<td class="t-triage">слушать</td>' in row       # the STATUS cell carries the colour
+    # the first data cell (wall_s) is a plain num cell — the colour did not land on it by index
+    first_cell = re.search(r'<td class="num">[^<]*</td>', row).group(0)
+    assert "t-triage" not in first_cell and "t-clean" not in first_cell
 
 
 if __name__ == "__main__":

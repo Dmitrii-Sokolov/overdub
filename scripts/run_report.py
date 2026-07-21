@@ -5,10 +5,13 @@ block per video (header + timings + flags + offenders) plus a batch table and to
 is the DATA the overdub-sonnet-batch skill agent reads to write its Russian triage narrative —
 the script computes, the agent narrates.
 
-Read-only: it loads run.json if present, else builds it from the already-persisted artifacts via
-runreport.build_run_report (which itself runs no model / no GPU / no network — one best-effort
-ffprobe at most). A work dir with no readable run.json is a skipped ROW with a note, never a
-crash; the only non-zero exit is a usage error.
+Read-only, and thin by design: queue parsing, workdir classification and the batch-table cells
+all come from overdub.runreport's shared data layer (collect_entries / batch_row /
+batch_totals), so this script and the triage HTML can never again disagree about the same bytes
+on disk (PLAN item 2). What is left here is the per-medium rendering: a dubbed video gets the
+full block, a scouted or promoted-but-untranslated workdir gets an honest state header instead
+of the old misleading "run the pipeline first" note, and an argv path with nothing to report is
+a named skip, never a crash. The only non-zero exit is a usage error.
 
 Run with the .venv-asr python from the repo root:
 
@@ -19,9 +22,6 @@ Run with the .venv-asr python from the repo root:
 from __future__ import annotations
 
 import argparse
-import json
-import os
-import re
 import sys
 from pathlib import Path
 
@@ -30,33 +30,19 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from overdub import runreport                              # noqa: E402
 from overdub.config import Config                          # noqa: E402
-from overdub.workdir import WorkDir                        # noqa: E402
-
-# Same 11-char YouTube-id shape the skill / workdir.video_id use — queue URLs → work/<id>.
-_YT_ID = re.compile(r"(?:v=|/shorts/|youtu\.be/|/embed/)([A-Za-z0-9_-]{11})")
 
 
-def _load_json(path: Path):
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
-
-
-def _queue_ids(path: Path) -> list[str]:
-    """Parse 11-char YouTube ids from a queue file (utf-8-sig strips a PowerShell BOM; '#'
-    comments and blanks skipped). Lines the regex misses are silently dropped here — this is a
-    read-only digest, not the pipeline gate (the skill's step-1 gate is where an unmatched URL
-    must fail loud)."""
-    ids: list[str] = []
-    for line in path.read_text(encoding="utf-8-sig").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        m = _YT_ID.search(line)
-        if m:
-            ids.append(m.group(1))
-    return ids
+def _transcript_line(e: dict) -> str:
+    """The one data line under a scout/pending header: sentence count + duration. The duration
+    clause is DROPPED when unknown — never rendered as "None" — and a sub-minute video reads
+    "<1 min", mirroring the triage scout card. Cost is the point of both numbers: whether a
+    video earns a dub is a question about length."""
+    bits = [f"{e.get('n_sentences', 0)} sentences"]
+    dur = e.get("duration_sec")
+    if isinstance(dur, (int, float)):
+        mins = int(round(dur / 60))
+        bits.append(f"{mins} min" if mins else "<1 min")
+    return "- " + " · ".join(bits)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -77,89 +63,77 @@ def main(argv: list[str] | None = None) -> int:
 
     cfg = Config.load(args.config)
 
-    dirs: list[Path] = []
-    seen: set[str] = set()
-
-    def add(d: Path) -> None:
-        key = os.path.normcase(os.path.abspath(str(d)))
-        if key not in seen:
-            seen.add(key)
-            dirs.append(d)
-
-    for wd in args.workdirs:
-        add(wd)
+    queue: list[str] | None = None
     if args.queue is not None:
         if not args.queue.is_file():
             p.error(f"queue file not found: {args.queue}")
-        for vid in _queue_ids(args.queue):
-            add(cfg.work_root / vid)
-
-    if not dirs:
+        # Shared parse instead of a local copy: the old local _queue_ids did not dedup; the
+        # shared one dedupes keeping first position — an improvement here (a doubled queue
+        # line no longer prints the same video twice).
+        queue = runreport.queue_ids(args.queue)
+    if not args.workdirs and not queue:
         p.error("give at least one work/<id> dir and/or --queue FILE")
+
+    entries, skipped = runreport.collect_entries(
+        queue, args.workdirs, cfg.work_root, rebuild=args.rebuild, cfg=cfg)
 
     blocks: list[str] = []
     runs: list[dict] = []
-    for d in dirs:
-        work = WorkDir(d)
-        run = None if args.rebuild else _load_json(work.root / "run.json")
-        if run is None:
-            run = runreport.build_run_report(work, cfg)
-        summary = runreport.read_summary(work)      # sidecar, deliberately not a run.json field
-        if run is None:
-            # A transcribe+summary-only workdir has no run.json by construction (runreport
-            # clears it when report.json + translation.json are both absent) — still print its
-            # summary, so the scout-shaped prefix of this route is readable (PLAN item 3 → 4).
-            block = (f"### {d.name}  [no run.json — skipped]\n"
-                     f"- no report.json / translation.json in {d} (run the pipeline first)")
+    for e in entries:
+        kind, summary = e["kind"], e["summary"]
+        if kind == "run" and e["run"] is not None:
+            blocks.append(runreport.render_run_report(e["run"], e["offenders"], summary))
+            runs.append(e["run"])
+        elif kind == "scout":
+            # An honest state header instead of the old "run the pipeline first" note, which
+            # told the operator to dub a video they had only asked to scout (the third
+            # divergence PLAN item 2 names). The summary IS the scout deliverable — attach it.
+            block = (f"### {e['vid']}  [scouted — transcript only, no dub]\n"
+                     + _transcript_line(e))
             if summary:
                 block += "\n" + runreport.render_summary_block(summary)
             blocks.append(block)
-            continue
-        report = _load_json(work.report)
-        translation = _load_json(work.translation)
-        offenders = runreport.summarize_offenders(report, translation) if report else []
-        blocks.append(runreport.render_run_report(run, offenders, summary))
-        runs.append(run)
+        elif kind == "pending":
+            block = (f"### {e['vid']}  [promoted — downloaded in full, "
+                     f"translate has not started]\n" + _transcript_line(e))
+            if summary:
+                block += "\n" + runreport.render_summary_block(summary)
+            blocks.append(block)
+        else:
+            # kind "run" whose rollup degraded to None (torn artifacts), or a queued id that
+            # never downloaded — from_queue entries are never dropped, the queue is the
+            # deliverable. Same block this script always printed for that shape.
+            block = (f"### {e['vid']}  [no run.json — skipped]\n"
+                     f"- no report.json / translation.json in {e['work'].root} "
+                     f"(run the pipeline first)")
+            if summary:
+                block += "\n" + runreport.render_summary_block(summary)
+            blocks.append(block)
 
-    print("\n\n".join(blocks))
+    if blocks:
+        print("\n\n".join(blocks))
 
     if runs:
         print("\n── batch " + "─" * 40)
-        # cp = ACTIONABLE completeness flags; adv = advisory-only ones (entity_loss /
-        # length_short), counted but never a reason to open the video — see runreport.
-        header = ("video", "title", "wall_s", "rtf", "floor", "tr", "vf", "cp", "adv", "src",
-                  "spd_max", ">1.8", "triage")
-        print(" | ".join(header))
+        # ONE header source — runreport.BATCH_COLUMNS. No second list to drift (PLAN item 2).
+        print(" | ".join(label for _key, label in runreport.BATCH_COLUMNS))
         for r in runs:
-            t = r.get("timings", {}) or {}
-            sp = r.get("speed", {}) or {}
-            fr = (r.get("asr", {}) or {}).get("floor_ratio")
-            row = (
-                str(r.get("video_id")),
-                (r.get("title") or "")[:24],
-                str(t.get("total_wall_s", "")),
-                str(t.get("rtf")),
-                f"{fr:.1%}" if fr is not None else "n/a",
-                str((r.get("translate", {}) or {}).get("n_failed", 0)),
-                str((r.get("verify", {}) or {}).get("n_flagged", 0)),
-                str((r.get("completeness", {}) or {}).get("n_actionable", 0)),
-                str((r.get("completeness", {}) or {}).get("n_advisory", 0)),
-                # src: advisory source-anomaly count. "-" means NOT SCANNED (route A, or a
-                # pre-schema run.json) -- never conflate that with a scanned-and-clean "0".
-                # --rebuild backfills the block for runs that predate it.
-                (str((r.get("source", {}) or {}).get("n_flagged", 0))
-                 if (r.get("source", {}) or {}).get("scanned") else "-"),
-                str(sp.get("max")),
-                str(sp.get("n_over_1_8", 0)),
-                "yes" if r.get("needs_triage") else "no",
-            )
-            print(" | ".join(row))
-        total_wall = round(sum((r.get("timings", {}) or {}).get("total_wall_s", 0) or 0
-                               for r in runs), 1)
-        sum_video = sum(((r.get("timings", {}) or {}).get("video_sec") or 0) for r in runs)
-        thru = f"×{sum_video / total_wall:.2f}" if total_wall > 0 else "n/a"
-        n_triage = sum(1 for r in runs if r.get("needs_triage"))
-        print(f"totals: wall {total_wall}s · throughput {thru} · {n_triage} need triage")
+            row = runreport.batch_row(r)
+            # video/title/triage are the per-medium ends of the row: this digest truncates the
+            # title to 24 chars and prints yes/no where the HTML colours a cell. The ten data
+            # cells between them are printed verbatim — the cross-surface contract.
+            out = [row["video_id"], (row["title"] or "")[:24]]
+            out += [text for _key, text in row["cells"]]
+            out.append("yes" if row["needs_triage"] else "no")
+            print(" | ".join(out))
+        tot = runreport.batch_totals(runs)
+        print(f"totals: wall {tot['total_wall']}s · throughput {tot['throughput']}"
+              f" · {tot['n_triage']} need triage")
+
+    if skipped:
+        # argv paths that are neither a run nor a transcript (typo'd path / audio-only fetch):
+        # named, never silently dropped — the same "skipped" semantics as the queue page.
+        print(f"\nskipped (nothing to report): {', '.join(skipped)}")
 
     return 0
 

@@ -157,7 +157,7 @@ $sumTodo = @($ids | Where-Object {
 
 **There is NO helper script for this one, deliberately.** The summary derives no machine-consumed
 field, so there is no contract for a helper to own — unlike `text_tts` / `src_en` / id-contiguity,
-which is exactly why `build_translation.py` is not optional. The digest and the triage page read
+which is exactly why `build_translation.py` is not optional. The digest and the queue page (`scout_report`) read
 `summary.md` directly and sanitize it on read (heading markers stripped, runaway text truncated,
 empty treated as absent), so a malformed summary can never break either surface.
 
@@ -241,7 +241,8 @@ Then summarize for the user in Russian, grounded ONLY in that output (do not inv
   flag headline (translate / verify / completeness counts); and any speed offenders ≥ 1.8×
   (`n>1.8`, and the offender ids/reasons the block lists).
 - **The summary, when present:** the digest prints it as a `- summary (N words):` section per video
-  and the triage page shows it above the audio units. Use it as the *content* half of your narrative
+  and the queue page (scout_report) shows it on the card above the audio units. Use it as the
+  *content* half of your narrative
   (what the video is about, is it worth the user's time) alongside the *quality* half the flags
   give you — quote or paraphrase it instead of re-deriving one, say nothing about a video that has
   none, and never let it soften a `TRIAGE` marker.
@@ -265,11 +266,13 @@ audio player per flagged unit (expected vs whisper-heard, click to listen), so t
 actually LISTEN instead of reading ids:
 
 ```powershell
-.venv-asr\Scripts\python.exe -X utf8 scripts\triage_html.py --queue queue.txt
+.venv-asr\Scripts\python.exe -X utf8 scripts\scout_report.py --queue queue.txt
 ```
 
-Writes `work/triage.html` (audio base64-embedded → portable, every player works). Mention the
-path in your summary. Skip it for a fully clean batch (nothing to listen to).
+Writes `work/scout-report.html` (audio base64-embedded → portable, every player works; the
+videos needing a listen sit in the nav block at the top, in queue order — the page never
+re-sorts the queue). Mention the path in your summary. Skip it for a fully clean batch
+(nothing to listen to).
 
 ## Guardrails (the failure modes this skill exists to prevent)
 

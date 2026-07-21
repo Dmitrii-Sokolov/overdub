@@ -204,7 +204,7 @@ class WorkDir:
         is sentences.json, so a repair makes the prose describe a transcript that no longer
         exists. Nothing in the Python code refreshes it — the only staleness check that exists is
         the mtime filter in the route-B skill, which never runs on the local Gemma route, while
-        scripts/run_report.py and scripts/triage_html.py both render it unconditionally and with
+        scripts/run_report.py and scripts/scout_report.py both render it unconditionally and with
         no staleness marker. D2 makes the summary informational, so deleting it costs nothing a
         re-run cannot rebuild; keeping it would let the operator triage a repaired dub against a
         description of the hallucination that was repaired out.

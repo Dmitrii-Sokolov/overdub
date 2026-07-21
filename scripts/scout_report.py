@@ -1,29 +1,39 @@
-"""Render the scout report: work/scout-report.html, ready to publish as a Claude Artifact.
+"""Render the queue report: work/scout-report.html — scout grades AND dub triage on ONE page,
+ready to publish as a Claude Artifact.
 
-Reads work/<id>/scout.json (written by build_scout.py) for every id in the QUEUE and renders two
-lists over the same videos:
-
-  1. a scan table  -- verdict, title, duration, video id, one-line description
-  2. read cards    -- same order, verdict, title, the full paragraph
+One page per queue (the separate morning-triage page was retired into this one on 2026-07-21,
+PLAN item 2): entries come from
+runreport.collect_entries — queue ids first, argv workdirs appended — and every workdir renders
+exactly what it has earned. A scouted video keeps its grade and write-up; a dubbed one adds the
+batch-table row, the flagged units with inline audio and the source-anomaly block; a
+promoted-but-untranslated one gets an honest "в работе" state; a hole in the queue gets an
+explicit state row, never a gap.
 
 ORDER IS THE QUEUE'S ORDER, never a sort. The queue is the playlist the user handed over, and a
-report that reorders it forces them to re-map every row onto the thing they actually have open.
-This is a deliberate departure from triage_html.py, which sorts needs-triage first -- that page
-answers "what is broken", where surfacing the worst first IS the job; this one answers "what is
-in my queue", where position is information. Verdicts are shown, never sorted on.
+report that reorders it forces them to re-map every row onto the thing they actually have open —
+position is information. The retired triage page sorted needs-triage first because its whole job
+was "what is broken"; that morning-listen job is served here by the NAV BLOCK of anchors at the
+top, which surfaces the worst without touching the order everything else is read in.
 
 BODY-ONLY HTML, on purpose: the output carries an inline <style> but no doctype/html/head/body,
 because the Artifact publisher wraps the file in its own skeleton. Browsers render the fragment
-fine on their own, so the same file opens locally by double-click. (triage_html.py emits a full
-standalone page; it is not published, so it has no reason to be a fragment.)
+fine on their own, so the same file opens locally by double-click.
 
-A queued video with NO scout.json is rendered as an explicit "не отсканировано" row, never
-dropped: silently shortening the deliverable to the videos that happened to work is the exact
-failure the scout mode exists to prevent.
+Audio, two modes (flagged units only — triage is a small fraction of a run, so the page stays
+MBs, not gigabytes):
+  - DEFAULT (embed): each flagged unit's wav is base64-inlined as a data: URI, so every player
+    plays and the page is portable (move it, share it, publish it).
+  - --link: reference the wavs by relative path instead (tiny page, zero copy) — but then the
+    HTML must stay next to work/ so `<id>/segments/<lead>.wav` resolves under file://.
+
+A queued video with NO artifacts at all is rendered as an explicit state row, never dropped:
+silently shortening the deliverable to the videos that happened to work is the exact failure
+the scout mode exists to prevent. An argv path with nothing to report is a named skip.
 
 Run with the .venv-asr python from the repo root:
 
     .venv-asr\\Scripts\\python.exe -X utf8 scripts\\scout_report.py --queue queue.txt
+    .venv-asr\\Scripts\\python.exe -X utf8 scripts\\scout_report.py work\\<id> --link
 """
 
 from __future__ import annotations
@@ -32,6 +42,7 @@ import argparse
 import base64
 import html
 import json
+import os
 import re
 import sys
 import time
@@ -40,33 +51,54 @@ from pathlib import Path
 # scripts/ is sys.path[0] when run as a file -- put the repo root first so `import overdub` resolves
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from overdub import runreport                              # noqa: E402
 from overdub.config import Config                          # noqa: E402
 from overdub.workdir import jpeg_size, replace_retry       # noqa: E402
 
-# Same 11-char YouTube-id shape workdir.video_id and the other reporters use.
-_YT_ID = re.compile(r"(?:v=|/shorts/|youtu\.be/|/embed/)([A-Za-z0-9_-]{11})")
+# Queue parsing is the shared data layer's now (one parse, three consumers) — the module-level
+# aliases keep the public seam tests and callers already use.
+queue_ids = runreport.queue_ids
+queue_playlist = runreport.queue_playlist
 
 # The closed verdict vocabulary of build_scout.py, mapped to presentation. Labels live HERE and
 # not in scout.json on purpose: relabelling is a rendering change and must not invalidate every
-# artifact on disk. `rank` orders the SUMMARY counts only -- never the lists themselves.
+# artifact on disk. Each dict is (label, cls) and nothing more: the tally and the unfinished
+# counters iterate these in DECLARATION ORDER, so no ordering field rides along.
 _VERDICT = {
-    "high":   {"label": "высокое", "cls": "v-watch", "rank": 0},
-    "medium": {"label": "среднее", "cls": "v-maybe", "rank": 1},
-    "low":    {"label": "слабое", "cls": "v-skip", "rank": 2},
+    "high":   {"label": "высокое", "cls": "v-watch"},
+    "medium": {"label": "среднее", "cls": "v-maybe"},
+    "low":    {"label": "слабое", "cls": "v-skip"},
 }
-# A queued video with no scout.json is not one state but three, told apart by which artifact is
-# missing. They need different actions from the operator, and collapsing them into one row hides
-# which one applies: a failed download is re-run, a failed transcribe is investigated, a missing
-# summary is a sub-agent to respawn.
-_NOT_DOWNLOADED = {"label": "не скачано", "cls": "v-none", "rank": 3,
+# A queued video with no grade is not one state but several, told apart by classify_workdir.
+# They need different actions from the operator, and collapsing them into one row hides which
+# one applies: a failed download is re-run, a failed transcribe is investigated, a missing
+# summary is a sub-agent to respawn, a promoted video is a pipeline to resume.
+_NOT_DOWNLOADED = {"label": "не скачано", "cls": "v-none",
                    "why": "видео не скачалось — перезапусти команду S1 (обычно это транзиентная "
                           "ошибка YouTube и со второго раза проходит)"}
-_NOT_TRANSCRIBED = {"label": "не расшифровано", "cls": "v-none", "rank": 3,
+_NOT_TRANSCRIBED = {"label": "не расшифровано", "cls": "v-none",
                     "why": "аудио есть, транскрипта нет — transcribe для этого видео не "
                            "отработал; смотри вывод S1"}
-_MISSING = {"label": "не отсканировано", "cls": "v-none", "rank": 3,
+_MISSING = {"label": "не отсканировано", "cls": "v-none",
             "why": "транскрипт есть, оценки нет — суммаризатор (S2) для этого видео не "
                    "отработал; перезапусти его и пересобери отчёт"}
+# kind "pending": a promoted video parked between download and translate (route B step 1 parks
+# the WHOLE batch like this). Until this state existed the video was invisible on the triage
+# page — the known gap this merge closes.
+_PENDING = {"label": "в работе", "cls": "v-none",
+            "why": "скачано полностью, перевод ещё не начат — видео продвинуто в дубляж; "
+                   "прогони пайплайн дальше (маршрут A/B)"}
+# kind "run" whose rollup degraded to None (torn artifacts) — rendered as a state, never as a
+# fabricated row of zeros.
+_NO_ROLLUP = {"label": "без свода", "cls": "v-none",
+              "why": "артефакты дубляжа на месте, но run.json не собрался — битые "
+                     "report.json/translation.json; смотри вывод пайплайна"}
+# Dub states for a run that was never scouted: the row chip IS the dub verdict then, because
+# it is the only assessment this video has.
+_DUB_TRIAGE = {"label": "слушать", "cls": "t-triage",
+               "why": "задублировано без разведки — есть проблемные юниты, слушай на карточке"}
+_DUB_CLEAN = {"label": "чисто", "cls": "t-clean",
+              "why": "задублировано без разведки — проверка чистая, слушать нечего"}
 
 # The cost axis USED to live here as focus/background. Dropped 2026-07-20: on the first real
 # queue 28 of 30 videos took the same value, and a field that never varies is a column that
@@ -83,52 +115,6 @@ def _load_json(path: Path):
         return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
-
-
-_PLAYLIST_RE = re.compile(r"^#\s*playlist:\s*(?P<rest>.+)$", re.IGNORECASE)
-
-
-def queue_playlist(path: Path) -> dict | None:
-    """`# playlist: <title> | <url>` header → {title, url}. Either half may be omitted.
-
-    A COMMENT rather than a CLI argument or a sidecar: the queue's provenance belongs with the
-    queue, so rebuilding the report needs no remembered flag and no network. The parser already
-    skips '#' lines, so every queue written before this existed keeps working, and one written
-    with the header stays valid input to the pipeline itself.
-
-    Only the FIRST match is used — a second header would be an edit someone forgot to finish,
-    and picking one silently is better than concatenating two conflicting provenances."""
-    for line in path.read_text(encoding="utf-8-sig").splitlines():
-        m = _PLAYLIST_RE.match(line.strip())
-        if not m:
-            continue
-        rest = m.group("rest").strip()
-        title, _, url = rest.partition("|")
-        title, url = title.strip(), url.strip()
-        if not url and title.startswith(("http://", "https://")):
-            title, url = "", title          # url-only header
-        if not (title or url):
-            return None
-        return {"title": title or url, "url": url or None}
-    return None
-
-
-def queue_ids(path: Path) -> list[str]:
-    """Queue order, preserved, deduped. Same parse as run_report/triage_html (utf-8-sig strips a
-    PowerShell BOM, '#' comments and blanks skipped). A line the regex misses is DROPPED here and
-    counted by the caller -- this is a read-only renderer, and the skill's S1 gate is where an
-    unmatched URL has to fail loud."""
-    ids: list[str] = []
-    seen: set[str] = set()
-    for line in path.read_text(encoding="utf-8-sig").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        m = _YT_ID.search(line)
-        if m and m.group(1) not in seen:
-            seen.add(m.group(1))
-            ids.append(m.group(1))
-    return ids
 
 
 def clock(sec) -> str:
@@ -150,7 +136,9 @@ def secs(sec) -> str:
 # --------------------------------------------------------------------------- style
 # Tokens first, components through the tokens: the dark palette is a token redefinition, so no
 # component rule is ever duplicated per theme. Both the OS preference and the viewer's explicit
-# toggle ([data-theme]) must win, in both directions -- hence the three blocks.
+# toggle ([data-theme]) must win, in both directions -- hence the three blocks. Every colour the
+# dub components brought over (badges, srcanom, ASR aside) is a token with a value in all three,
+# same rule.
 #
 # The leading <meta charset> is not decoration either. The Artifact skeleton declares its own
 # charset, so the published copy never needed one -- but this file is ALSO meant to be opened
@@ -166,6 +154,8 @@ _CSS = """
 .sr{--bg:#f7f8fa;--card:#ffffff;--ink:#141a21;--dim:#5b6875;--line:#dde3ea;
   --accent:#4a5b8c;--watch:#0d7f59;--maybe:#a86a10;--skip:#b03a52;
   --watch-bg:#e7f5ef;--maybe-bg:#fbf1de;--skip-bg:#fbeaee;--none-bg:#eef1f5;
+  --purp:#7a4fa8;--purp-bg:#f2eafa;--orng:#b25415;--orng-bg:#fdeee2;
+  --teal:#0b7285;--teal-bg:#e3f4f8;
   --ui:ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif;
   --read:ui-serif,Georgia,"Times New Roman",serif;
   --mono:ui-monospace,"Cascadia Code",Consolas,monospace;
@@ -173,13 +163,19 @@ _CSS = """
   padding:clamp(20px,4vw,48px);max-width:1240px;margin:0 auto;}
 @media (prefers-color-scheme:dark){.sr{--bg:#0f1419;--card:#171e26;--ink:#e6ecf2;--dim:#93a1b0;
   --line:#2a3541;--accent:#8fa3d8;--watch:#4cc79a;--maybe:#e0a84b;--skip:#e8798f;
-  --watch-bg:#132a22;--maybe-bg:#2b2213;--skip-bg:#2b171d;--none-bg:#1c242d;}}
+  --watch-bg:#132a22;--maybe-bg:#2b2213;--skip-bg:#2b171d;--none-bg:#1c242d;
+  --purp:#c9a7ee;--purp-bg:#251b31;--orng:#e8985c;--orng-bg:#2e1f14;
+  --teal:#5fc6dd;--teal-bg:#12262c;}}
 :root[data-theme="dark"] .sr{--bg:#0f1419;--card:#171e26;--ink:#e6ecf2;--dim:#93a1b0;
   --line:#2a3541;--accent:#8fa3d8;--watch:#4cc79a;--maybe:#e0a84b;--skip:#e8798f;
-  --watch-bg:#132a22;--maybe-bg:#2b2213;--skip-bg:#2b171d;--none-bg:#1c242d;}
+  --watch-bg:#132a22;--maybe-bg:#2b2213;--skip-bg:#2b171d;--none-bg:#1c242d;
+  --purp:#c9a7ee;--purp-bg:#251b31;--orng:#e8985c;--orng-bg:#2e1f14;
+  --teal:#5fc6dd;--teal-bg:#12262c;}
 :root[data-theme="light"] .sr{--bg:#f7f8fa;--card:#ffffff;--ink:#141a21;--dim:#5b6875;
   --line:#dde3ea;--accent:#4a5b8c;--watch:#0d7f59;--maybe:#a86a10;--skip:#b03a52;
-  --watch-bg:#e7f5ef;--maybe-bg:#fbf1de;--skip-bg:#fbeaee;--none-bg:#eef1f5;}
+  --watch-bg:#e7f5ef;--maybe-bg:#fbf1de;--skip-bg:#fbeaee;--none-bg:#eef1f5;
+  --purp:#7a4fa8;--purp-bg:#f2eafa;--orng:#b25415;--orng-bg:#fdeee2;
+  --teal:#0b7285;--teal-bg:#e3f4f8;}
 
 .sr h1{font-size:clamp(1.5rem,3.4vw,2.1rem);font-weight:650;letter-spacing:-.02em;
   text-wrap:balance;margin:0 0 6px;}
@@ -274,6 +270,7 @@ _CSS = """
 .sr p.why{font-family:var(--ui);font-size:.92rem;color:var(--dim);margin:0 0 10px;
   padding-left:10px;border-left:2px solid var(--line);max-width:66ch;}
 .sr .line{color:var(--dim);}
+.sr p.line{margin:0 0 10px;font-size:.92rem;max-width:66ch;}
 
 /* verdict chip: colour AND text, never colour alone */
 .sr .chip{display:inline-block;white-space:nowrap;font-size:.76rem;font-weight:640;
@@ -282,6 +279,10 @@ _CSS = """
 .sr .v-maybe{background:var(--maybe-bg);color:var(--maybe);}
 .sr .v-skip{background:var(--skip-bg);color:var(--skip);}
 .sr .v-none{background:var(--none-bg);color:var(--dim);}
+/* dub verdict chips: triage borrows the skip palette, clean the watch one — same two colours
+   the reader already decoded for the grades, no third meaning of red/green on one page */
+.sr .t-triage{background:var(--skip-bg);color:var(--skip);}
+.sr .t-clean{background:var(--watch-bg);color:var(--watch);}
 
 /* cost axis: outline, no fill — quieter than the verdict on purpose */
 .sr .tag{display:inline-block;white-space:nowrap;font-size:.72rem;font-weight:560;
@@ -289,6 +290,13 @@ _CSS = """
   color:var(--dim);}
 .sr .a-focus{border-color:var(--accent);color:var(--accent);}
 .sr .a-trust{border-style:dashed;}
+
+/* triage nav: the morning-listen entry points, an index instead of a re-sort */
+.sr .nav{margin-top:14px;padding:10px 14px;border:1px solid var(--line);border-radius:8px;
+  background:var(--card);font-size:.92rem;}
+.sr .nav .lbl{color:var(--dim);margin-right:6px;}
+.sr .nav a{color:var(--accent);text-decoration:none;}
+.sr .nav a:hover{text-decoration:underline;}
 
 /* read cards: the severity stripe encodes the same verdict the chip states.
    The BOX is capped, not just the text inside it. The page widened to 1240px for the table's six
@@ -300,6 +308,8 @@ _CSS = """
 .sr .card.v-watch{border-left-color:var(--watch);}
 .sr .card.v-maybe{border-left-color:var(--maybe);}
 .sr .card.v-skip{border-left-color:var(--skip);}
+.sr .card.t-triage{border-left-color:var(--skip);}
+.sr .card.t-clean{border-left-color:var(--watch);}
 /* the card's header line: bigger type against a smaller preview, so number, title and runtime
    carry the row rather than the thumbnail dwarfing all three */
 .sr .cardhead{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:10px;}
@@ -313,6 +323,44 @@ _CSS = """
 /* the summarizer splits by meaning; without a visible gap that split does nothing for the
    reader, which is what it looked like on the first real report */
 .sr .card p + p{margin-top:1.1em;}
+
+/* dub components, restyled onto the scout tokens (ported from the retired triage page):
+   the rollup and unit meta are data → mono; prose stays serif via .card p */
+.sr .rollup{font-family:var(--mono);font-size:.85rem;color:var(--dim);
+  font-variant-numeric:tabular-nums;margin:0 0 10px;max-width:none;}
+.sr .unit{border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:0 0 10px;
+  background:var(--bg);}
+.sr .reasons{margin-bottom:6px;}
+/* reason badges keep the MACHINE codes (verify:low_similarity …) — the vocabulary the operator
+   greps report.json with; a translated label would break that round-trip */
+.sr .badge{display:inline-block;font-size:.72rem;font-weight:640;letter-spacing:.02em;
+  padding:2px 8px;border-radius:999px;margin:0 5px 4px 0;font-family:var(--mono);}
+.sr .badge.verify{background:var(--maybe-bg);color:var(--maybe);}
+.sr .badge.speed{background:var(--skip-bg);color:var(--skip);}
+.sr .badge.complete{background:var(--purp-bg);color:var(--purp);}
+.sr .badge.translate{background:var(--orng-bg);color:var(--orng);}
+.sr .badge.assemble{background:var(--none-bg);color:var(--dim);}
+.sr .badge.src{background:var(--teal-bg);color:var(--teal);}
+.sr .uid{font-family:var(--mono);font-size:.8rem;color:var(--dim);margin-bottom:6px;}
+.sr .unit .en{display:block;color:var(--accent);font-size:.92rem;font-family:var(--ui);}
+.sr .unit .ru{display:block;font-size:.95rem;font-family:var(--ui);}
+/* the verify round-trip: what the TTS was asked to say vs what whisper heard back */
+.sr .asr{font-size:.85rem;color:var(--dim);margin-top:8px;padding:6px 10px;
+  border-left:2px solid var(--maybe);background:var(--maybe-bg);border-radius:0 6px 6px 0;}
+.sr .asr b{color:var(--ink);font-weight:600;}
+.sr audio{width:100%;margin-top:10px;height:34px;}
+.sr .noaudio{display:inline-block;margin-top:8px;font-size:.8rem;color:var(--skip);}
+/* source anomalies: a defect in the ENGLISH source — deliberately no player anywhere near it */
+.sr .srcanom{margin:0 0 12px;padding:10px 12px;border:1px solid var(--line);
+  border-left:3px solid var(--teal);border-radius:0 8px 8px 0;background:var(--card);
+  font-size:.9rem;}
+.sr .srcanom .lbl{color:var(--dim);font-size:.78rem;letter-spacing:.04em;
+  text-transform:uppercase;margin:0 0 6px;max-width:none;font-family:var(--ui);}
+.sr .srcanom ul{margin:0;padding-left:18px;}
+.sr .srcanom li{margin-bottom:6px;}
+.sr .srcanom .k{color:var(--teal);font-weight:600;}
+.sr .srcanom .en{display:block;color:var(--accent);font-size:.85rem;}
+
 .sr .foot{margin-top:40px;padding-top:14px;border-top:1px solid var(--line);
   color:var(--dim);font-size:.82rem;}
 </style>
@@ -320,8 +368,8 @@ _CSS = """
 
 
 def _row(e: dict) -> str:
-    """One scan-table row. Everything that came from an LLM or a video title is escaped -- same
-    rule as triage_html: raw prose into HTML is the one place a report can break itself."""
+    """One scan-table row. Everything that came from an LLM or a video title is escaped -- raw
+    prose into HTML is the one place a report can break itself."""
     # The grade is a CHIP opening the highlight cell, not a column of its own and no longer a
     # tint on the row: it is one short word, and giving it a column cost width the prose columns
     # needed. It leads the highlight because the grade and the reason it earned are one thought —
@@ -410,58 +458,276 @@ def _title_link(e: dict) -> str:
             f'{html.escape(e["title"])}</a>')
 
 
+# --- audio (ported from the retired triage page) --------------------------------
+def _audio_src(wav: Path, out_dir: Path, *, embed: bool) -> str | None:
+    """A value for <audio src=...>: a base64 data: URI (embed) or a relative path (link). None
+    when the wav is missing/unreadable — the caller renders a 'no audio' note instead of a broken
+    player. Only FLAGGED units are ever passed here, so embed size stays bounded — the page
+    stays MBs, not GBs."""
+    if not wav.exists():
+        return None
+    if not embed:
+        rel = os.path.relpath(str(wav), str(out_dir))
+        return rel.replace(os.sep, "/")
+    try:
+        b = wav.read_bytes()
+    except OSError:
+        return None
+    return "data:audio/wav;base64," + base64.b64encode(b).decode("ascii")
 
-def _card(e: dict) -> str:
+
+def _badges(reasons: list[str]) -> str:
+    """Reason badges carry the MACHINE codes verbatim (verify:low_similarity, speed:2.13 …) —
+    the same vocabulary report.json and the digest use, so the operator can grep across all
+    three surfaces. An unknown category falls into the neutral assemble style rather than
+    being dropped."""
+    out = []
+    for r in reasons:
+        cat = r.split(":", 1)[0]
+        cls = (cat if cat in ("verify", "speed", "complete", "translate", "assemble", "src")
+               else "assemble")
+        out.append(f'<span class="badge {cls}">{html.escape(r)}</span>')
+    return "".join(out)
+
+
+def _fmt_span(a, b) -> str:
+    def clk(t):
+        t = int(round(t))
+        return f"{t // 60}:{t % 60:02d}"
+    if isinstance(a, (int, float)) and isinstance(b, (int, float)):
+        return f"{clk(a)}–{clk(b)}"
+    return "—"
+
+
+def _unit_html(u: dict, wav: Path, out_dir: Path, *, embed: bool) -> str:
+    """One flagged render unit: reasons, meta, EN/RU text, the verify round-trip pair, and the
+    player for the RAW segment wav (pre-atempo — what verification actually heard)."""
+    ids = u.get("ids") or []
+    span = _fmt_span(u.get("start"), u.get("end"))
+    parts = [f'#{u.get("lead")}', f'ids {ids}', span]
+    if u.get("speed") is not None:
+        parts.append(f'speed ×{u["speed"]}')
+    if u.get("similarity") is not None:
+        parts.append(f'sim {u["similarity"]}')
+    meta = " · ".join(html.escape(str(p)) for p in parts)
+
+    lines = ['<div class="unit">',
+             f'<div class="reasons">{_badges(u.get("reasons") or [])}</div>',
+             f'<div class="uid">{meta}</div>']
+    if u.get("src_en"):
+        lines.append(f'<span class="en">EN: {html.escape(u["src_en"])}</span>')
+    if u.get("text_ru"):
+        lines.append(f'<span class="ru">RU: {html.escape(u["text_ru"])}</span>')
+    # verify triage: what the round-trip EXPECTED vs what whisper HEARD back
+    if u.get("hypothesis") is not None and any(r.startswith("verify:")
+                                               for r in (u.get("reasons") or [])):
+        exp = html.escape(u.get("text_tts") or "")
+        heard = html.escape(u.get("hypothesis") or "")
+        lines.append(f'<div class="asr"><b>ожидалось:</b> {exp}<br>'
+                     f'<b>услышано:</b> {heard}</div>')
+    src = _audio_src(wav, out_dir, embed=embed)
+    if src is not None:
+        lines.append(f'<audio controls preload="none" src="{src}"></audio>')
+    else:
+        lines.append('<div class="noaudio">нет аудио (wav отсутствует)</div>')
+    lines.append("</div>")
+    return "".join(lines)
+
+
+def _srcanom_html(run: dict) -> str:
+    """The source-anomaly block, or "" when the scan found nothing. Rendered even when there are
+    no flagged units: a pre-synthesis workdir is exactly when this signal is most actionable
+    (--repair-asr is still cheap there). Deliberately NO <audio> player and deliberately not
+    routed through flagged_units: the defect is in the ENGLISH source, so listening to the
+    Russian tells the operator nothing. html.escape on every field — raw LLM prose into HTML."""
+    s = run.get("source", {}) or {}
+    items = s.get("items") or []
+    if not items:
+        return ""
+    li = []
+    for it in items:
+        li.append(f'<li><b>#{html.escape(str(it.get("id")))}</b> '
+                  f'<span class="k">{html.escape(str(it.get("kind")))}</span> — '
+                  f'{html.escape(it.get("note") or "")}'
+                  f'<span class="en">EN: {html.escape(it.get("src_en") or "")}</span></li>')
+    return (f'<div class="srcanom"><p class="lbl">аномалии источника ({len(items)}) — '
+            f'дефект в английском исходнике, слушать русское аудио бессмысленно</p>'
+            f'<ul>{"".join(li)}</ul></div>')
+
+
+def _dub_table(dubs: list[dict]) -> str:
+    """The dub batch table. Header labels come from runreport.BATCH_COLUMNS and the ten data
+    cells are printed VERBATIM from batch_row(run)["cells"] — the same strings the text digest
+    prints, so the two surfaces can never again disagree about the same run (PLAN item 2). The
+    cell vocabulary is machine-formatted numbers ("123.4", "n/a", "-", "3.4%"), no HTML-active
+    characters by construction, hence no escape on them."""
+    ths = "".join(f"<th>{html.escape(label)}</th>" for _key, label in runreport.BATCH_COLUMNS)
+    rows = [f"<thead><tr>{ths}</tr></thead>", "<tbody>"]
+    for e in dubs:
+        row = runreport.batch_row(e["run"])
+        needs = row["needs_triage"]
+        # video/title/triage are the per-medium ends of the row: the digest truncates to 24 and
+        # prints yes/no; this page links, escapes and colours. The middle is the contract.
+        cells: list[tuple[str, str]] = [
+            ("video", f'<a class="jump" href="#v{e["n"]}">{html.escape(row["video_id"])}</a>'),
+            ("title", html.escape((row["title"] or "")[:40])),
+        ]
+        cells += row["cells"]
+        cells.append(("triage", "слушать" if needs else "чисто"))
+        tds = []
+        for key, val in cells:
+            if key == "triage":
+                # coloured via a class keyed BY COLUMN KEY, never by cell index: the retired
+                # page hard-coded the triage cell's index and the src column landed on it
+                # silently (PLAN item 2) — adding a column here cannot mis-colour anything
+                tds.append(f'<td class="{"t-triage" if needs else "t-clean"}">{val}</td>')
+            elif key in ("video", "title"):
+                tds.append(f"<td>{val}</td>")
+            else:
+                tds.append(f'<td class="num">{val}</td>')
+        rows.append(f"<tr>{''.join(tds)}</tr>")
+    rows.append("</tbody>")
+    return f'<div class="wrap"><table>{"".join(rows)}</table></div>'
+
+
+def _chip(d: dict) -> str:
+    return f'<span class="chip {d["cls"]}">{html.escape(d["label"])}</span>'
+
+
+def _card(e: dict, out_dir: Path, *, embed: bool) -> str:
+    """One card, whatever the workdir has earned. The invariant inherited from both parents: a
+    card NEVER fabricates dub metrics for a non-run kind — no RTF, no audio, no triage/clean
+    chip. A scouted video keeps its grade next to its dub chips (scout.json survives promotion;
+    it is not in invalidate_downstream's target list)."""
     v = e["v"]
-    return (
-        f'<article class="card {v["cls"]}" id="v{e["n"]}">'
-        f'<div class="cardhead">'
+    chips = []
+    if e.get("grade"):
+        chips.append(_chip(e["grade"]))
+    if e.get("dub"):
+        chips.append(_chip(e["dub"]))
+    if not chips:
+        chips.append(_chip(v))          # pipeline state — the only assessment this video has
+    elif v is _NO_ROLLUP:
+        # ...but a torn rollup rides ALONGSIDE a surviving grade chip: run.json failed to build
+        # though the dub artifacts are on disk, and that «без свода» state is news the grade
+        # cannot carry. Everywhere else v already equals the grade/dub chip, so this only fires
+        # for a scouted-then-torn video.
+        chips.append(_chip(v))
+    if e.get("author") == "trusted":
+        chips.append('<span class="tag a-trust">' + html.escape(_TRUSTED["label"]) + "</span>")
+
+    out = [
+        f'<article class="card {v["cls"]}" id="v{e["n"]}">',
+        '<div class="cardhead">',
         # the number is a LABEL here, not a link: the reader arrived from the table and their
         # own back gesture already returns them, so a jump back was a link that never earned
         # its underline and one more thing competing with the title
-        f'<span class="idx">{e["n"]}</span>'
-        f'{_thumb_box(e)}'
-        f'<span class="name">{_title_link(e)}</span>'
-        f'<span class="chip {v["cls"]}">{html.escape(v["label"])}</span>'
-        # same markers the table row carries: two lists that show different signals for one
-        # video make the reader wonder which of them is out of date
-        + ('<span class="tag a-trust">' + html.escape(_TRUSTED["label"]) + "</span>"
-           if e.get("author") == "trusted" else "") +
-        f'<span class="num">{clock(e["duration"])}</span></div>'
-        # what the video actually offers leads, before the description: it is the reason the
-        # reader followed the link here
-        f'<p class="why">{html.escape(e["highlight"])}</p>'
-        f'{_paragraphs(e["paragraph"])}'
-        "</article>"
-    )
+        f'<span class="idx">{e["n"]}</span>',
+        _thumb_box(e),
+        f'<span class="name">{_title_link(e)}</span>',
+        "".join(chips),
+        f'<span class="num">{clock(e["duration"])}</span></div>',
+    ]
+
+    if e["kind"] == "run" and e["run"] is not None:
+        run = e["run"]
+        row = runreport.batch_row(run)
+        c = dict(row["cells"])
+        sp = run.get("speed", {}) or {}
+        # The rollup REUSES batch_row's cell strings (cp/adv are the actionable/advisory split —
+        # never n_flagged: printing the pooled count here while the digest prints the split was
+        # the original two-numbers-one-batch bug, PLAN item 2). med/p95 are card-only depth the
+        # table deliberately omits, read off the same run.json.
+        n_sent = (run.get("translate", {}) or {}).get("n_sentences", 0)
+        rollup = (f"translate {c['tr']}/{n_sent}"
+                  f" · verify {c['vf']} · completeness {c['cp']} (+{c['adv']} advisory)"
+                  f" · speed med {sp.get('median')}/p95 {sp.get('p95')}/max {c['spd_max']}"
+                  f" (n>1.8 {c['n_over']})")
+        out.append(f'<p class="rollup">{html.escape(rollup)}</p>')
+        out.append(_srcanom_html(run))
+        if e["summary"]:
+            out.append(_paragraphs(e["summary"]))
+        elif e.get("paragraph"):
+            out.append(_paragraphs(e["paragraph"]))
+        if e["units"]:
+            out.extend(_unit_html(u, e["work"].seg_wav(u.get("lead")), out_dir, embed=embed)
+                       for u in e["units"])
+        else:
+            out.append('<p class="line">проблемных юнитов нет — слушать нечего.</p>')
+    elif e["kind"] == "pending":
+        # The promoted-video state line — before the merge this workdir was invisible on the
+        # triage page (skipped as "no run.json") and mislabelled on the scout page.
+        out.append('<p class="line">в работе — скачано полностью, перевод ещё не начат</p>')
+        out.append(_meta_line(e))
+        if e["summary"]:
+            out.append(_paragraphs(e["summary"]))
+        elif e.get("paragraph"):
+            out.append(_paragraphs(e["paragraph"]))
+    elif e["kind"] == "scout":
+        out.append(f'<p class="why">{html.escape(e["highlight"])}</p>')
+        out.append(_meta_line(e))
+        if e.get("grade"):
+            out.append(_paragraphs(e["paragraph"]))
+        elif e["summary"]:
+            out.append(_paragraphs(e["summary"]))
+        else:
+            # A transcribed-but-unsummarized video is a pipeline STATE, not an empty card.
+            # Saying so keeps a half-finished scout pass from reading as a video with nothing
+            # to say. (Exact phrase pinned by the migrated tests.)
+            out.append('<p class="line">no summary.md yet — run the scout summarizer '
+                       '(overdub-scout skill, step S2).</p>')
+    else:
+        # missing / fetched / run-without-rollup: the state is the whole story
+        out.append(f'<p class="why">{html.escape(e["highlight"])}</p>')
+        out.append(_paragraphs(e["paragraph"]))
+    out.append("</article>")
+    return "".join(out)
+
+
+def _meta_line(e: dict) -> str:
+    """Sentence count for a transcript-only card. Cost is the point: whether a video earns a dub
+    is a question about length, and an EMPTY transcript ("предложений: 0") is a real answer —
+    transcribe ran and found nothing — never a reason to drop the card."""
+    n = e.get("n_sentences")
+    return f'<p class="line">предложений: {n}</p>' if n is not None else ""
 
 
 def _paragraphs(text: str) -> str:
-    """Blank-line-separated blocks → separate <p>. The SPLIT IS THE SUMMARIZER'S: it is the only
-    party that knows where the meaning turns, and a renderer chopping every N sentences would
-    cut mid-thought. A single-block paragraph still renders — as one <p>, exactly as before —
-    so an older scout.json is never mangled to force a shape onto it."""
+    """Blank-line-separated blocks → separate <p>. The SPLIT IS THE WRITER'S (summarizer or
+    scout agent): it is the only party that knows where the meaning turns, and a renderer
+    chopping every N sentences would cut mid-thought. A single-block paragraph still renders —
+    as one <p>, exactly as before — so an older artifact is never mangled to force a shape."""
     parts = [p.strip() for p in text.replace("\r\n", "\n").split("\n\n") if p.strip()]
     return "".join(f"<p>{html.escape(p)}</p>" for p in parts or [text])
 
 
-def render(entries: list[dict], totals: dict, queue_name: str, stamp: str,
-           playlist: dict | None = None) -> str:
+def render(entries: list[dict], totals: dict, queue_name: str | None, stamp: str,
+           playlist: dict | None = None, *, out_dir: Path | None = None,
+           embed: bool = True) -> str:
     counts = {k: sum(1 for e in entries if e["v"] is _VERDICT[k]) for k in _VERDICT}
     tally = " · ".join(f'{_VERDICT[k]["label"]}: {counts[k]}' for k in _VERDICT)
     # each unfinished state counted under its OWN name: "не отсканировано: 3" hiding a failed
     # download would send the operator to respawn a summarizer that has nothing to read
-    for state in (_NOT_DOWNLOADED, _NOT_TRANSCRIBED, _MISSING):
+    for state in (_NOT_DOWNLOADED, _NOT_TRANSCRIBED, _MISSING, _NO_ROLLUP):
         n = sum(1 for e in entries if e["v"] is state)
         if n:
             tally += f' · {state["label"]}: {n}'
+    # pending is counted by KIND, not by chip identity: a graded pending wears its grade chip
+    # but is still a video parked mid-promotion, and hiding that count hides the resume work
+    n_pending = sum(1 for e in entries if e["kind"] == "pending")
+    if n_pending:
+        tally += f' · {_PENDING["label"]}: {n_pending}'
+    dubs = [e for e in entries if e["kind"] == "run" and e["run"] is not None]
+    n_triage = sum(1 for e in dubs if e["run"].get("needs_triage"))
+    if dubs:
+        tally += f' · слушать: {n_triage} · чисто: {len(dubs) - n_triage}'
 
     t = totals
     # the per-video preview rules ride right behind the static sheet: they are generated CSS, and
     # separating them keeps _CSS a constant the tests can assert against
     out = [_CSS, _thumb_css(entries), '<div class="sr">']
     out.append('<header class="head">')
-    out.append("<h1>Разведка очереди</h1>")
+    out.append("<h1>Очередь</h1>")
     if playlist:
         # the source the queue came from, named at the top: without it the report is a list of
         # videos with no answer to "which playlist was this again"
@@ -469,48 +735,77 @@ def render(entries: list[dict], totals: dict, queue_name: str, stamp: str,
         src = (f'<a class="ext" href="{html.escape(playlist["url"])}" target="_blank" '
                f'rel="noopener">{name}</a>' if playlist.get("url") else name)
         out.append(f'<p class="src">{src}</p>')
-    out.append(f'<p class="sub">{len(entries)} видео из <code>{html.escape(queue_name)}</code> · '
-               f'{html.escape(stamp)}</p>')
+    source_note = (f'из <code>{html.escape(queue_name)}</code> · ' if queue_name else "")
+    out.append(f'<p class="sub">{len(entries)} видео {source_note}{html.escape(stamp)}</p>')
     out.append(f'<p class="sub">{html.escape(tally)}</p>')
-    out.append('<dl class="times">')
-    # The queue's own runtime leads: it is what the reader budgets against. The pipeline columns
-    # after it are what the machine spent, which is a different question and a smaller number.
-    content = clock(t["content"]) + ("+" if t["content_missing"] else "")
-    # same '+' convention on the wave: an agent that wrote no marker has no known start, so it
-    # can only widen the window past what was measured. Measured 2026-07-21: 1 of 6 agents
-    # skipped the marker, and without this the figure would read as exact.
-    summarize = secs(t["summarize"]) + ("+" if t.get("summarize_unmeasured") else "")
-    # pipeline stages in the order they ran, their total, then the queue's own runtime last —
-    # it is a different KIND of number (what there is to watch, not what the machine spent),
-    # so it sits after the sum rather than inside the run of things that add up
-    for label, val in (("скачивание", secs(t["download"])),
-                       ("транскрибация", secs(t["transcribe"])),
-                       ("суммаризация, волна", summarize),
-                       ("хронометраж очереди", content)):
-        out.append(f'<div class="t"><dt>{label}</dt><dd>{val}</dd></div>')
-    out.append("</dl>")
-    # No grand total any more, so the note no longer has to excuse one: it just says what the
-    # third figure IS, since a wall clock beside two sums is the one thing a reader would
-    # otherwise mis-add.
-    out.append('<p class="sub" style="margin-top:8px">Первые две колонки — суммарная работа по '
-               'видео. Суммаризация шла параллельно, поэтому там wall-clock всей волны: '
-               'складывать их между собой нельзя.</p>')
+    # The scout timing strip renders only when scout timings exist: on a pure-dub queue every
+    # figure would be a dash, and a strip of dashes reads as a broken report, not as "no scout".
+    if any(t[k] is not None for k in ("download", "transcribe", "summarize")):
+        out.append('<dl class="times">')
+        # The queue's own runtime leads: it is what the reader budgets against. The pipeline
+        # columns after it are what the machine spent, which is a different question.
+        content = clock(t["content"]) + ("+" if t["content_missing"] else "")
+        # same '+' convention on the wave: an agent that wrote no marker has no known start, so
+        # it can only widen the window past what was measured. Measured 2026-07-21: 1 of 6
+        # agents skipped the marker, and without this the figure would read as exact.
+        summarize = secs(t["summarize"]) + ("+" if t.get("summarize_unmeasured") else "")
+        # pipeline stages in the order they ran, their total, then the queue's own runtime last —
+        # it is a different KIND of number (what there is to watch, not what the machine spent),
+        # so it sits after the sum rather than inside the run of things that add up
+        for label, val in (("скачивание", secs(t["download"])),
+                           ("транскрибация", secs(t["transcribe"])),
+                           ("суммаризация, волна", summarize),
+                           ("хронометраж очереди", content)):
+            out.append(f'<div class="t"><dt>{label}</dt><dd>{val}</dd></div>')
+        out.append("</dl>")
+        # No grand total any more, so the note no longer has to excuse one: it just says what the
+        # third figure IS, since a wall clock beside two sums is the one thing a reader would
+        # otherwise mis-add.
+        out.append('<p class="sub" style="margin-top:8px">Первые две колонки — суммарная работа '
+                   'по видео. Суммаризация шла параллельно, поэтому там wall-clock всей волны: '
+                   'складывать их между собой нельзя.</p>')
+    if dubs:
+        # dub totals from the shared layer — the same numbers the digest's totals line prints
+        tot = runreport.batch_totals([e["run"] for e in dubs])
+        out.append(f'<p class="sub">{len(dubs)} видео · wall {tot["total_wall"]}s · '
+                   f'throughput {tot["throughput"]} · '
+                   f'{tot["n_triage"]} требуют прослушивания</p>')
     out.append("</header>")
 
-    out.append('<section class="sec"><div class="sechead"><h2>Список</h2>'
-               '<p class="sub">В порядке очереди — так же, как в плейлисте.</p></div>')
-    out.append('<div class="wrap"><table><thead><tr>'
-               # the number and preview columns carry no label: "№" over a column of numbers,
-               # and a word over a column of images, say nothing the contents do not
-               "<th></th><th></th><th>Название</th><th>Время</th><th>О чём</th>"
-               "<th>Самое интересное</th>"
-               "</tr></thead><tbody>")
-    out.extend(_row(e) for e in entries)
-    out.append("</tbody></table></div></section>")
+    if n_triage:
+        # The morning-listen job, served by NAVIGATION instead of by re-sorting the queue: the
+        # worst videos get anchors, the queue keeps its order.
+        links = " · ".join(
+            f'<a href="#v{e["n"]}">{e["n"]} — {html.escape((e["title"] or e["vid"])[:40])}</a>'
+            for e in dubs if e["run"].get("needs_triage"))
+        out.append(f'<div class="nav"><span class="lbl">Требуют прослушивания:</span> '
+                   f'{links}</div>')
+
+    # The scan table needs at least one scout.json to have anything scout-shaped to say; a
+    # pure-dub queue skips it (states still show on the cards) rather than rendering a table
+    # of dashes.
+    if any(e.get("scout_doc") for e in entries):
+        out.append('<section class="sec"><div class="sechead"><h2>Список</h2>'
+                   '<p class="sub">В порядке очереди — так же, как в плейлисте.</p></div>')
+        out.append('<div class="wrap"><table><thead><tr>'
+                   # the number and preview columns carry no label: "№" over a column of numbers,
+                   # and a word over a column of images, say nothing the contents do not
+                   "<th></th><th></th><th>Название</th><th>Время</th><th>О чём</th>"
+                   "<th>Самое интересное</th>"
+                   "</tr></thead><tbody>")
+        out.extend(_row(e) for e in entries)
+        out.append("</tbody></table></div></section>")
+
+    if dubs:
+        out.append('<section class="sec"><div class="sechead"><h2>Дубляж</h2>'
+                   '<p class="sub">Те же ячейки, что печатает текстовый дайджест — цифры '
+                   'совпадают по построению.</p></div>')
+        out.append(_dub_table(dubs))
+        out.append("</section>")
 
     out.append('<section class="sec"><div class="sechead"><h2>Подробно</h2>'
-               '<p class="sub">Тот же порядок, абзац на видео.</p></div>')
-    out.extend(_card(e) for e in entries)
+               '<p class="sub">Тот же порядок, карточка на видео.</p></div>')
+    out.extend(_card(e, out_dir or Path("."), embed=embed) for e in entries)
     out.append("</section>")
 
     out.append('<p class="foot">overdub · scout · вердикты выставлены по '
@@ -528,58 +823,80 @@ def _thumb_b64(path: Path) -> str | None:
         return None
 
 
-def collect(ids: list[str], work_root: Path) -> list[dict]:
-    """Queue order in, render-ready entries out. A missing/unreadable scout.json becomes a
-    MISSING entry rather than a gap, so the report's row count always equals the queue's."""
-    entries = []
-    # 1-based position in the QUEUE, assigned before any state branch: the number is the reader's
-    # index into the playlist they have open, so it must survive a video that failed to download
-    # — a report that renumbers around gaps stops matching the thing it is read against.
-    for n, vid in enumerate(ids, 1):
-        doc = _load_json(work_root / vid / "scout.json")
-        if not isinstance(doc, dict) or doc.get("quality") not in _VERDICT:
-            d = work_root / vid
-            # Strongest evidence first: a transcript proves the download happened, whatever the
-            # media looks like now (a promotion rewrites source.wav; a cleanup can delete it).
-            # Probing source.wav first would report a scouted video as "not downloaded" and send
-            # the operator to re-fetch something that is already transcribed.
-            if (d / "sentences.json").exists():
-                state = _MISSING
-            elif (d / "source.wav").exists():
-                state = _NOT_TRANSCRIBED
-            else:
-                state = _NOT_DOWNLOADED
-            # A title may still exist even when nothing else does: the info.json sidecar lands
-            # before the media on a partial fetch, and _title_of backfills one. Showing it beats
-            # showing a bare id for a row whose whole job is to be actioned.
-            info = _load_json(d / "source.info.json")
-            title = info.get("title") if isinstance(info, dict) else None
-            entries.append({
-                "n": n, "vid": vid, "v": state, "title": title or vid, "duration": None,
-                "one_liner": "—", "highlight": state["why"], "paragraph": state["why"],
-                "timings": {},
-            })
-            continue
-        entries.append({
-            "n": n,
-            "vid": doc.get("video_id") or vid,
-            "v": _VERDICT[doc["quality"]],
-            # tolerated as absent: a scout.json written before the cost axis existed still
-            # renders, it just carries no tag (build_scout requires the field going forward)
-            "author": doc.get("author"),
-            "thumb_b64": _thumb_b64(work_root / vid / "thumb.jpg"),
-            "thumb_wh": jpeg_size(work_root / vid / "thumb.jpg"),
-            "title": doc.get("title") or vid,
-            "duration": doc.get("duration_sec"),
-            "one_liner": doc.get("one_liner") or "",
-            # tolerated as absent so a scout.json written before this field existed still
-            # renders; build_scout requires it going forward
-            "highlight": doc.get("highlight") or "—",
-            "paragraph": doc.get("paragraph") or "",
-            "timings": doc.get("timings") if isinstance(doc.get("timings"), dict) else {},
-            "wave": doc.get("wave") if isinstance(doc.get("wave"), dict) else None,
+def _views(entries: list[dict]) -> list[dict]:
+    """collect_entries rows → render-ready view dicts. The shared layer answers WHAT each
+    workdir is; this resolves how it LOOKS: which chip leads the row (grade > dub state >
+    pipeline state), which title/duration ladder applies, and which scout presentation fields
+    ride along."""
+    views = []
+    for e in entries:
+        work, kind, run = e["work"], e["kind"], e["run"]
+        doc = e["scout"] if isinstance(e.get("scout"), dict) else None
+        grade = _VERDICT.get(doc.get("quality")) if doc else None
+        dub = None
+        if kind == "run" and run is not None:
+            dub = _DUB_TRIAGE if run.get("needs_triage") else _DUB_CLEAN
+        # A TORN dub layer is the news and must win the v-slot even when a surviving scout.json
+        # could otherwise colour the row a grade: report.json / translation.json are on disk but
+        # run.json did not build. The tally and main()'s unfinished list both key on
+        # `e["v"] is _NO_ROLLUP`, so letting a grade win here would silently drop the video from
+        # the «без свода» count — a torn dub reported as a healthy graded scout. The grade CHIP
+        # still renders beside the state on the card (e["grade"] is kept below); only v is claimed.
+        if kind == "run" and run is None:
+            v = _NO_ROLLUP
+        elif grade:
+            v = grade
+        elif dub:
+            v = dub
+        elif kind == "pending":
+            v = _PENDING
+        elif kind == "scout":
+            v = _MISSING
+        elif kind == "fetched":
+            v = _NOT_TRANSCRIBED
+        else:
+            v = _NOT_DOWNLOADED
+        # A title may exist even when nothing else does: the info.json sidecar lands before the
+        # media on a partial fetch. Showing it beats a bare id for a row whose job is action.
+        info = _load_json(work.info_json)
+        info_title = info.get("title") if isinstance(info, dict) else None
+        title = ((doc or {}).get("title") or (run or {}).get("title")
+                 or info_title or e["vid"])
+        # duration ladder: the scout artifact first (it survives promotion and was already
+        # sanity-checked), then the run's measured video_sec, then the collector's fallback
+        duration = (doc or {}).get("duration_sec")
+        if duration is None and run is not None:
+            duration = (run.get("timings", {}) or {}).get("video_sec")
+        if duration is None:
+            duration = e.get("duration_sec")
+        # The card's fallback prose. ONLY the pure-state cards (missing/fetched/torn rollup)
+        # reuse the state's why text as their body; run/pending/scout cards have their own
+        # prose logic (summary → scout paragraph → state phrase) and echoing the why here
+        # would print the pipeline state as if it were a write-up about the video.
+        if grade:
+            paragraph = (doc or {}).get("paragraph") or ""
+        elif kind in ("missing", "fetched") or (kind == "run" and run is None):
+            paragraph = v["why"]
+        else:
+            paragraph = ""
+        views.append({
+            "n": e["n"], "vid": e["vid"], "work": work, "kind": kind, "v": v,
+            "grade": grade, "dub": dub, "run": run, "units": e["units"],
+            "summary": e["summary"], "scout_doc": doc,
+            "author": (doc or {}).get("author"),
+            "thumb_b64": _thumb_b64(work.root / "thumb.jpg"),
+            "thumb_wh": jpeg_size(work.root / "thumb.jpg"),
+            "title": title, "duration": duration,
+            "one_liner": ((doc or {}).get("one_liner") or "—") if grade else "—",
+            "highlight": ((doc or {}).get("highlight") or "—") if grade else v["why"],
+            "paragraph": paragraph,
+            "n_sentences": e.get("n_sentences"),
+            "timings": (doc or {}).get("timings") if isinstance((doc or {}).get("timings"), dict)
+                       else {},
+            "wave": (doc or {}).get("wave") if isinstance((doc or {}).get("wave"), dict)
+                    else None,
         })
-    return entries
+    return views
 
 
 def totals_of(entries: list[dict]) -> dict:
@@ -657,26 +974,51 @@ def totals_of(entries: list[dict]) -> dict:
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(
         prog="scout_report",
-        description="Render the scout report (two lists, queue order) as publishable HTML.")
-    p.add_argument("--queue", type=Path, required=True,
+        description="Render the queue report (scout grades + dub triage, queue order) as "
+                    "publishable HTML.")
+    p.add_argument("workdirs", nargs="*", type=Path, metavar="work/<id>",
+                   help="per-video work dirs (appended after the queue)")
+    p.add_argument("--queue", type=Path, default=None,
                    help="queue file — ALSO the report's row order")
     p.add_argument("--config", type=Path, default=Path("overdub.toml"))
     p.add_argument("--out", type=Path, default=None,
                    help="output path (default: <work_root>/scout-report.html)")
+    p.add_argument("--link", action="store_true",
+                   help="reference wavs by relative path instead of embedding (smaller page; "
+                        "the HTML must then stay next to work/)")
+    p.add_argument("--limit", type=int, default=500,
+                   help="max flagged units rendered per video (default 500)")
     args = p.parse_args(argv)
-    if not args.queue.is_file():
-        p.error(f"queue file not found: {args.queue}")
 
     cfg = Config.load(args.config)
-    ids = queue_ids(args.queue)
-    if not ids:
-        p.error(f"queue file has no recognizable video ids: {args.queue}")
+    queue: list[str] | None = None
+    playlist = None
+    if args.queue is not None:
+        if not args.queue.is_file():
+            p.error(f"queue file not found: {args.queue}")
+        queue = queue_ids(args.queue)
+        playlist = queue_playlist(args.queue)
+        if not queue:
+            p.error(f"queue file has no recognizable video ids: {args.queue}")
+    if not args.workdirs and not queue:
+        p.error("give at least one work/<id> dir and/or --queue FILE")
 
-    entries = collect(ids, cfg.work_root)
+    entries_raw, skipped = runreport.collect_entries(
+        queue, args.workdirs, cfg.work_root, limit=args.limit, cfg=cfg)
+    if not entries_raw:
+        # argv paths that are neither a run nor a transcript: named, never a silent empty page
+        print("[scout-report] nothing to render — "
+              f"skipped (nothing to report): {', '.join(skipped) or '(none)'}")
+        return 0
+    entries = _views(entries_raw)
+
     out_path = args.out or (cfg.work_root / "scout-report.html")
+    out_dir = out_path.resolve().parent
+    embed = not args.link
     stamp = time.strftime("%Y-%m-%d %H:%M")
-    page = render(entries, totals_of(entries), args.queue.name, stamp,
-                  queue_playlist(args.queue))
+    page = render(entries, totals_of(entries),
+                  args.queue.name if args.queue is not None else None, stamp, playlist,
+                  out_dir=out_dir, embed=embed)
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     tmp = out_path.with_suffix(out_path.suffix + ".tmp")
@@ -684,15 +1026,29 @@ def main(argv: list[str] | None = None) -> int:
     replace_retry(tmp, out_path)
 
     # Each unfinished state named on stdout too, with the action it needs — the operator reads
-    # this line before opening the page, and "3 incomplete" would not say which of the three
+    # this line before opening the page, and "3 incomplete" would not say which of the
     # different fixes applies.
     unfinished = [(s, sum(1 for e in entries if e["v"] is s))
-                  for s in (_NOT_DOWNLOADED, _NOT_TRANSCRIBED, _MISSING)]
+                  for s in (_NOT_DOWNLOADED, _NOT_TRANSCRIBED, _MISSING, _NO_ROLLUP)]
+    n_pending = sum(1 for e in entries if e["kind"] == "pending")
+    if n_pending:
+        unfinished.append((_PENDING, n_pending))
     unfinished = [(s, n) for s, n in unfinished if n]
     note = "".join(f', {n} {s["label"]}' for s, n in unfinished)
-    print(f"[scout-report] {out_path}  ({len(entries)} video(s){note})")
+    # dubbed videos counted apart from scouted ones: "0 need triage" out of a count that
+    # includes never-dubbed videos would be a lie about them (the retired page's rule, kept)
+    dubs = [e for e in entries if e["kind"] == "run" and e["run"] is not None]
+    n_triage = sum(1 for e in dubs if e["run"].get("needs_triage"))
+    n_scouts = sum(1 for e in entries if e["kind"] == "scout")
+    n_units = sum(len(e["units"]) for e in entries)
+    print(f"[scout-report] {out_path}  ({len(dubs)} video(s), "
+          + (f"{n_scouts} scouted, " if n_scouts else "")
+          + f"{n_triage} need triage, {n_units} flagged unit(s), "
+          + ("embedded" if embed else "linked") + f" audio{note})")
     for s, n in unfinished:
         print(f'[scout-report] {n} × "{s["label"]}" — {s["why"]}')
+    if skipped:
+        print(f"[scout-report] skipped (nothing to report): {', '.join(skipped)}")
     return 0
 
 

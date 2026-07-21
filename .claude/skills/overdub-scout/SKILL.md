@@ -288,8 +288,8 @@ and text, so the page survives being read in grayscale or by someone colour-blin
 
 **Row order is the queue's order, never sorted.** The report is read next to the playlist it
 came from, so position is information; a re-sorted row is a wrong row even when its fields are
-right. (This is the opposite of `triage_html.py`, which sorts the worst first on purpose — that
-page answers "what is broken", this one answers "what is in my queue".)
+right. (The morning-listen job — "what is broken" — is served by the triage nav block of
+anchors that appears when dubbed videos need a listen, not by reordering the queue.)
 
 A queued video with no `scout.json` renders as an explicit `не отсканировано` row and the script
 says so on stdout. That is an unfinished S2 — re-run its sub-agent and rebuild, do not publish a
@@ -305,8 +305,8 @@ because the publisher supplies that skeleton:
   and the link the user already has keeps working. Only a genuinely new queue gets a new URL.
 
 Finally, write the user a short **Russian** rundown in chat, grounded ONLY in `scout.json` —
-never re-derived from the transcript. Lead with the link, then the tally (сколько watch/maybe/
-skip), then name the videos you would drop and why, and flag anything the report cannot say for
+never re-derived from the transcript. Lead with the link, then the tally (сколько high/medium/
+low), then name the videos you would drop and why, and flag anything the report cannot say for
 itself (a suspiciously uniform set of grades usually means the prompt is drifting, not that the
 queue is uniform — check a few against the transcripts before trusting the shape).
 
