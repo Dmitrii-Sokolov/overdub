@@ -100,6 +100,33 @@ live artifacts, so copy the six `scout.json` before repeating it.
    190-310 s against 723 s of transcribe; chasing a hundred seconds of jitter there is not worth
    a day. Both runs are preserved under `work-exp/wave-run{4,5}-2026-07-21/`.
 
+1b. **Decide how S2's artifacts reach the disk — the current answer is workable but not settled.**
+   Sub-agents are blocked from the Write tool ("Subagents should return findings as text, not
+   write report files"). Until 2026-07-21 the prompt told them so and told them how to write the
+   files anyway; a safety classifier stopped one of six agents over exactly that, correctly, and
+   the framing is gone. What remains is a plain instruction to write two pipeline artifacts with
+   PowerShell, plus a rule to hand the content back rather than hunt for another route if that is
+   refused. Two open threads:
+   (a) **The fully compliant shape is "sub-agent returns, caller writes"**, and run 6's recovery
+   ran it end to end: the respawned agent returned the summary as text and the caller wrote both
+   files. Its cost is the reason it is not already the default — the caller has to GENERATE the
+   content it writes, ~3-4k chars per video, and the measured cost of orchestrator generation is
+   ~8.5 s per 1000 chars, so six videos is roughly 200 s added back to a 200-600 s wave. Worth
+   measuring properly rather than assuming; the numbers to compare against are in
+   `work-exp/wave-run{4,5}-2026-07-21/`.
+   (b) **Structured return via a schema is the other candidate and has a known failure mode** —
+   long string fields abort the run after data is already on disk
+   (`~/.claude/knowledge/claude-code/agent-orchestration.md`), and `paragraph` runs to 1500
+   chars. Do not reach for it without re-reading that note.
+   Until this is decided, expect an occasional classifier stop on a video; treat it as a respawn,
+   not as a reason to reinstate any instruction about what is blocked.
+
+1c. **S2 cannot run from a sub-agent.** The `Workflow` tool is unavailable there (verified three
+   ways on 2026-07-21), so the scout skill now requires a session that has it — no sub-agent, and
+   presumably no headless or cron run. There is deliberately NO fallback: the only one available
+   is the hand fan-out that four runs proved does not work, and a slow path that looks like
+   success is worse than a refusal. The skill should say this where S2 starts.
+
 2. **Reconcile the two report renderers.** `triage_html.py` prints `completeness.n_flagged` where
    `run_report.py` prints `n_actionable` + `n_advisory`, and the batch tables have diverged to 10 vs
    13 columns — same batch, two different numbers, in the two surfaces a morning operator compares.

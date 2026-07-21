@@ -177,6 +177,13 @@ marker and reports the gap between runs as summarization:
 $sumTodo | ForEach-Object { Remove-Item "work\$_\scout.started" -ErrorAction SilentlyContinue }
 ```
 
+**This step needs a session that has the `Workflow` tool.** It is NOT available to sub-agents
+(verified three ways, 2026-07-21), so a sub-agent, and presumably a headless or scheduled run,
+cannot perform S2. If you do not have the tool: **stop here and say so.** Do not substitute
+anything. There is deliberately no fallback — the only one available is the hand fan-out below,
+which four runs proved does not work, and a slow path that looks like success is worse than an
+honest refusal.
+
 **DO NOT spawn the sub-agents yourself. Run the workflow.** Fan-out by hand does not work here,
 and that is measured, not suspected:
 

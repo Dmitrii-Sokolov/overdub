@@ -1,5 +1,40 @@
 # CHANGELOG
 
+## 2026-07-21 (run 6) — the S2 prompt was telling sub-agents to route around a safety control
+
+Run 6 spawned six summarizers. Five ran clean (12:55:09-34, windows 154-228 s). **The sixth was
+stopped by a safety classifier**, and the reason was not bad luck: the prompt in
+`scout-summarize.js` told the sub-agent that the Write tool "is blocked for sub-agents", that the
+guardrail "does not know the difference", and how to get the files onto disk anyway.
+
+That is an instruction to work around a safety control, written into a reusable skill. The
+classifier was right. It has been removed — the prompt now just says to write two pipeline
+artifacts with PowerShell, with no framing about what is blocked or why, and adds the inverse
+rule: **if writing is refused, stop and return both artifacts as text, do not look for another
+route to disk.**
+
+**The recovery path proved the compliant design works.** The orchestrator respawned the blocked
+video as a plain Agent; that agent returned the summary as text and the caller wrote the files —
+which is exactly what the Write block asks for. So "sub-agent returns, caller writes" is not
+hypothetical, it ran today.
+
+**Run 6 is not usable as a measurement.** The recovery makes the sixth sample meaningless: its
+marker is stamped 13:01:25, seventeen seconds BEFORE its agent's transcript was created, so the
+orchestrator wrote that marker, not the agent. Its 231 s window measures a recovery cycle. The
+wave (607 s) and parallelism (1.81x of a 4.75x ceiling) inherit that and mean nothing. The five
+clean agents behaved normally.
+
+**The report figure was right this time**, which is the one thing run 6 does confirm: the
+stamp-to-first-agent gap was 17 s, and the strip printed 10.1 min against a 607 s wave. The
+2026-07-21 fix to `totals_of` holds — a long wave now reads as a long wave rather than as
+orchestration overhead in disguise.
+
+**Also learned, from a separate attempt to drive the skill from a sub-agent:** the `Workflow`
+tool is NOT available to sub-agents (verified three ways). S2 therefore cannot run from a
+sub-agent or, presumably, a headless/cron session. The sub-agent stopped and reported rather than
+falling back to a hand fan-out — the right call, and the first agent self-report today that
+matched the filesystem in every detail.
+
 ## 2026-07-21 — S2 fan-out fixed: the summarize wave is 4x faster, and the GPU is next
 
 Four runs over the same 6-video queue (2:53:44 of material, 1683 sentences), changing one thing

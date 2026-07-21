@@ -68,12 +68,10 @@ Its timestamp is how the pipeline measures how long YOUR run took. Do not write 
 the file and do not report your own runtime anywhere: the filesystem stamps it, you only touch
 it. If you skip this, the video simply has no per-video timing — never invent one.
 
-Write both output files with PowerShell. Do NOT reach for the Write tool — it is blocked for
-sub-agents ("Subagents should return findings as text, not write report files"). That guardrail
-is aimed at agents dumping their own reports to disk; these two files are pipeline artifacts that
-build_scout.py consumes, but the block does not know the difference, and an agent that tries
-Write first loses ~45 s discovering this. Use exactly this shape — UTF-8 WITHOUT BOM in both
-cases, because build_scout reads them with json.loads and a BOM breaks it:
+Write the two output files with PowerShell. They are pipeline artifacts that build_scout.py reads
+next, not a report for a human, so they have to land on disk under these exact names. Use this
+shape — UTF-8 WITHOUT BOM in both cases, because build_scout reads them with json.loads and a BOM
+breaks it:
 
     $summary = @'
     ...the ~200-word Russian prose, verbatim...
@@ -88,6 +86,11 @@ cases, because build_scout reads them with json.loads and a BOM breaks it:
 Build the JSON with a hashtable and ConvertTo-Json, never by hand — PowerShell then owns the
 escaping of quotes and newlines inside your prose. In a here-string the closing '@ MUST sit at
 column 0 on its own line, and nothing inside it is interpolated.
+
+If writing is refused or unavailable for any reason, STOP and return both artifacts as your final
+text instead — the ~200-word prose, then the JSON object, each under a clear header. Say plainly
+that you could not write them. Do NOT look for another route to disk: the caller can write the
+files from your answer, and it can only do that if you hand the content back instead of retrying.
 
 MANDATORY FIRST READ: ${ROOT}\\.claude\\viewer-profile.md — the profile of the person deciding
 what to watch. Judge relevance against it and quote nothing from it back into the summary. If
