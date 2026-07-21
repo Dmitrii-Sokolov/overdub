@@ -123,7 +123,30 @@ the bytes. That video is dubbed in full mode deliberately, or dropped from the q
 
 One sub-agent per video, Agent tool (`general-purpose`) + **`model: "sonnet"` — set it
 explicitly** (a summary written by an inherited session model is not the artifact this route was
-verified with, DECISIONS 2026-07-18/19). Spawn in waves of ~6.
+verified with, DECISIONS 2026-07-18/19).
+
+**Spawn a wave of ~6 as ~6 Agent tool_use blocks in ONE assistant message.** Not one call per
+turn. This is the single most expensive mistake available in this skill and it is invisible from
+the inside: six sequential calls still look like "a wave of six" to the orchestrator that made
+them, and it will report a parallel fan-out afterwards in good faith.
+
+MEASURED 2026-07-20 on the 6-video queue, from the session transcript: six separate messages,
+one block each, **103 s apart** — a turn's worth of latency between every agent. Effective
+parallelism **1.32×** where 6 was intended; the wave took 842 s against the 254 s its slowest
+agent needed. **588 s — nearly ten minutes — lost on six videos**, and it scales with queue
+length.
+
+**Verify it from disk, not from memory.** After the wave, the markers should be seconds apart:
+
+```powershell
+$sumTodo | ForEach-Object { (Get-Item "work\$_\scout.started").LastWriteTime } | Sort-Object
+```
+
+Gaps of ~100 s mean the fan-out did not happen, whatever the run felt like. This check exists
+because on 2026-07-20 the orchestrator's own account of that wave was wrong in both specifics it
+offered — it reported one call with six blocks (there were six calls) and a blocked Write that
+the transcript does not contain. The completion times it gave were accurate. An agent's report
+of what it OBSERVED is worth more than its report of what it DID.
 
 **Resume filter first**, keyed on its own artifact — a prior interrupted S2 may have finished
 some videos, and the mtime clause catches summaries gone stale via a re-transcribe

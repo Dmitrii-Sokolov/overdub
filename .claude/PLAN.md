@@ -49,34 +49,39 @@ fast-skip while `download` re-runs.
   "broken" videos on demand — but the download stage's version is currently unpredictable and is
   not the one that was installed for it.
 
-**IN FLIGHT (2026-07-20 evening): a scout pass is running to collect the speed baseline.** It is
-the first wave under the `scout.started` marker, so it is also the first run that produces any
-`summarize_sec` at all. Do not start item 1 until it lands — the whole point of item 1 is to have
-a number to beat, and there is currently nothing on disk to compare against.
+**BASELINE COLLECTED 2026-07-21** (6 videos, 2:53:44, 1683 sentences — full numbers in CHANGELOG):
+download 162 s · transcribe 723 s wall / 718 s work (RTF 0.087) · summarize wave 842 s wall
+against 1113 s of agent windows. It is the only baseline on disk; a re-run of that queue
+overwrites it, so copy the six `scout.json` before repeating it.
 
 ---
 
-1. **Cut the summarize wave — the scout bottleneck, 5× and not the tie it was assumed to be.**
-   Measured 2026-07-20 on a 10-video queue: download 34 s, transcribe 4.6 min (both sums),
-   summarize **25.1 min** (wall clock of the wave). Two consequences, and the second is the
-   bigger one:
-   (a) **Pipelining transcribe → summarize buys ~15%, not a third.** The ceiling is
-   `min(transcribe, summarize)` = 4.6 min of 30. Still worth doing — the dependency is strictly
-   per video (`sentences.json` → its sub-agent), so it is a barrier-free pipeline — but it
-   breaks the skill's three-step shape: S1 must finish before S2 starts today, and the pipeline
-   needs the Python run and the sub-agent wave alive at once. Cheapest form: cut the queue into
-   batches of 3-4 and interleave, rather than a true streaming orchestrator.
-   (b) **Attack the wave itself first.** 25 min for one wave of sub-agents, each reading a
-   transcript and writing five short fields, is the actual cost. Levers, cheapest first: wave
-   width (how many concurrent agents), and input size (a 500-sentence transcript is fed whole —
-   nothing has tested whether a truncated or chunked input changes the grade).
-   **The measurement now exists — collect the baseline before touching either lever.** Each
-   sub-agent touches `work/<id>/scout.started` and `summarize_sec` is the mtime delta
-   (DECISIONS 2026-07-20 evening). Note the plan above was wrong about the mechanism: having the
-   ORCHESTRATOR stamp each spawn does not work, because agents queue behind the concurrency cap
-   and spawn time then measures the queue. Nothing on disk carries the field yet — every
-   `summarize_sec` is `null` until a wave runs under the new prompt, so the first pass IS the
-   baseline and there is nothing to compare against before it.
+1. **Verify the S2 fan-out fix — the fix is written, the confirmation is not.** The 2026-07-21
+   baseline (CHANGELOG) found the summarize wave was SERIAL: six Agent calls in six messages,
+   103 s apart, 1.32× effective parallelism, 588 s lost on six videos. S2 now mandates ~6
+   `tool_use` blocks in one message. **What remains is one controlled re-run**, and the whole
+   item closes or reopens on it:
+   - **Same queue, not a new one.** Same videos, same transcripts, same sentence counts — only
+     the spawn pattern differs, so the measurement is not confounded by content. `sentences.json`
+     stays, so transcribe fast-skips and the run isolates S2 (~4 min, six Sonnet agents).
+   - **Back up the six `scout.json` first.** They hold the only baseline that exists; a re-run
+     overwrites it. Delete only `summary.md`, `scout.draft.json` and `scout.started` per video —
+     the resume filter skips a video that still has the first two, so without this the wave is
+     empty and the run proves nothing.
+   - **Read the answer off the disk, never off the run's own account.** Marker mtimes seconds
+     apart = fixed; ~100 s apart = not fixed, whatever the orchestrator reports (DECISIONS
+     2026-07-21). Pass condition: wave wall clock ≈ the slowest agent (~250 s), not ~840.
+   - Dead ends, closed by the same measurement — do not re-litigate: **input size is not a
+     lever** (465 sentences → 132 s, 181 → 177 s, negative correlation), and **model-load
+     overhead is 0.6%**, not the 25% first claimed.
+   - **Then STOP and re-measure before optimizing further.** Summarize vs transcribe is already
+     only 1.16× on this queue, not the 5.5× recorded on an earlier short one; agent cost is flat
+     per video while transcribe scales with duration (crossover ≈ 35 min of video). After the
+     fan-out fix the GPU is the wall, and item 3 becomes the live one.
+   - Still open, unchanged by the above: **pipelining transcribe → summarize.** Now worth LESS
+     than it looked (the ceiling is `min(transcribe, summarize)`, and summarize is about to
+     shrink to ~254 s), and it still breaks the skill's three-step shape. Reassess after the
+     re-run rather than assuming it survives.
 
 2. **Reconcile the two report renderers.** `triage_html.py` prints `completeness.n_flagged` where
    `run_report.py` prints `n_actionable` + `n_advisory`, and the batch tables have diverged to 10 vs

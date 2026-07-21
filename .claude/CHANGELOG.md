@@ -1,5 +1,46 @@
 # CHANGELOG
 
+## 2026-07-21 — the first measured scout wave: the bottleneck was the spawn, not the agents
+
+Six videos, 2:53:44 of material, 1683 sentences. The first run under the `scout.started` marker,
+and it overturned most of what roadmap item 1 assumed.
+
+**The wave was serial, and the skill's wording caused it.** Six Agent calls in six separate
+messages, 103 s apart — confirmed from the session transcript, not inferred. Effective
+parallelism **1.32×** where 6 was intended; 842 s of wall clock against 254 s for the slowest
+agent, i.e. **588 s lost**. S2 now requires ~6 `tool_use` blocks in ONE message and carries a
+disk-side check, because "Spawn in waves of ~6" specified a size and not a method.
+
+**Input size does not drive agent cost — the other half of item 1(b) is dead.** Per video:
+
+| sentences | 181 | 212 | 251 | 255 | 319 | 465 |
+|---|---|---|---|---|---|---|
+| seconds | 177 | 178 | 159 | 254 | 213 | **132** |
+
+The longest transcript was the FASTEST agent. Correlation in this sample is negative; agent time
+is 130-255 s of fixed overhead regardless of input. Truncating or chunking the transcript would
+buy nothing, and it was the lever the roadmap listed second.
+
+**Model-load distortion is 0.6%, not the 25% claimed yesterday.** Across the five instrumented
+videos: 722.8 s of stage wall clock vs 718.2 s of work — a 4.6 s gap, all of it on video #1, and
+exactly the measured large-v3 load (3.3-3.6 s) plus warmup (0.4 s). Yesterday's 25% came from a
+2:22 video, the shortest case available; these run 20-36 min, where 4.5 s is noise. The
+instrumentation was still worth building — proving the overhead is negligible IS the result — but
+it is not a source of speed. Transcribe RTF, work only: **0.087**.
+
+**The bottleneck inverted.** Summarize 842 s vs transcribe 723 s = 1.16×, against the 5.5× the
+roadmap recorded on an earlier, shorter queue. Agent cost is flat per video while transcribe
+scales with duration (crossover ≈ 35 min of video). With the fan-out fixed, this queue would run
+723 + 254 s instead of 723 + 842 s — **38% off the pass, after which the GPU is the wall.**
+
+**Also measured:** one download outlier, `Tu2cCEMwvHI` at 116.7 s against 6-13 s for the rest.
+Not diagnosed; watch whether it recurs.
+
+**Method note.** The orchestrator, asked directly, reported a parallel fan-out and a blocked
+Write; the transcript contains six sequential calls and no blocked Write. Its completion times
+were accurate. See DECISIONS 2026-07-21 — this is why the marker is filesystem-stamped, and it is
+now an observed failure rather than a precaution.
+
 ## 2026-07-20 (evening) — pytest: the suite finally has one command
 
 Closes roadmap item 2. Before this, `tests/` was 17 self-driving scripts run one file at a time,
