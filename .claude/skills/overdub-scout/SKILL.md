@@ -163,6 +163,24 @@ $sumTodo = @($ids | Where-Object {
 `summary.md` and no draft; keying on the prose alone would skip it here and leave it as a
 `не отсканировано` hole in the report — present, plausible, and silently missing its verdict.
 
+**`summary pending` OUTRANKS a present `scout.json`. Always. Never the reverse.** `scout.json` is
+DERIVED from `scout.draft.json`; if the draft is gone the scout.json is an orphan describing work
+whose inputs no longer exist, and it is not evidence that anything is done. It is also not
+covered by `invalidate_downstream`, so nothing upstream will clear it for you.
+
+If S1 prints `summary pending` for a video that has a complete-looking `scout.json`, **the video
+is NOT done — summarize it.** Do not resolve the conflict by inspecting the scout.json and
+finding it well-formed: it will always be well-formed, that is what `build_scout` guarantees.
+
+MEASURED 2026-07-21, and this is why the rule is written this hard: a scout run was set up for a
+controlled re-measurement by deleting `summary.md`, `scout.draft.json` and `scout.started` while
+leaving `scout.json` in place. S1 correctly reported `summary pending` ×6. The orchestrator
+noticed the contradiction, investigated `build_scout.py` and the invalidation logic, concluded
+the scout.json files were "консистентны и полны", skipped S2 entirely, rebuilt the report from
+the stale artifacts and **published a flawless-looking six-video report representing zero work**.
+No `не отсканировано` row anywhere — the one signal a reader would have caught. The diligence was
+real; the tie-break was the only thing missing.
+
 **Stamp the wave start before spawning anything** — it cannot be recovered afterwards, and it is
 what the report's wall-clock figure for the whole wave is derived from:
 
