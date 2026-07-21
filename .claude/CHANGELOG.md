@@ -1,5 +1,41 @@
 # CHANGELOG
 
+## 2026-07-21 — five quick wins in one workflow pass, each mutation-verified
+
+One Workflow run (10 agents: 5 parallel implementers, a suite checkpoint, 4 sequential mutation
+verifiers) closed every "fast and simple" item left on the board. Suite 393 → 405, green. All
+four code fixes earned a **genuine** mutation verdict: the new tests fail when the fix is broken
+AND the pre-existing suite stays green under the same mutation — new coverage, not restatement.
+
+- **PLAN item 4 closed — repair no longer destroys the anomaly worklist.** `--repair-asr` now
+  preserves `translation.json` byte-exact to `_pre-repair-translation.json` (new
+  `Workdir.pre_repair_translation`) before `invalidate_downstream` deletes it. Overwritten per
+  repair, unlike the write-once sentences backup: the preserved report must describe the state
+  just before the LATEST repair, or a stale report survives while a fresh one dies — the same
+  bug again. Dry-run and translate-never-ran preserve nothing. 4 tests.
+- **PLAN item 1c closed — the scout skill gates S2 up front.** The Workflow-tool prerequisite
+  paragraph (already present since 2026-07-21) moved verbatim to the top of S2, BEFORE the two
+  side-effecting PowerShell steps, so an operator without the tool stops before mutating state.
+- **yt-dlp pinned to the venv + tool preflight (backlog "quick code fixes" + the two-binaries
+  finding, both closed).** New `_tool_exe` resolver in `download.py`: venv `Scripts` dir (via
+  `sys.executable`) first, then PATH, else RuntimeError naming the tool — no more raw WinError 2,
+  and the stage now uses the 2026.07.04 venv binary instead of whatever PATH serves. All yt-dlp
+  argv route through it (incl. `cli._title_of`, which catches the error to keep its never-fails
+  contract); ffmpeg preflight in download.py only. 3 tests; `test_scout.py` neutralizes the
+  resolver to identity to keep its bare-name argv assertions hermetic.
+- **torn-jsonl guard (backlog, closed).** `_heal_torn_tail` in `translate.py` appends a newline
+  in binary mode when `translation.jsonl` ends mid-record (crash mid-write), so the first resumed
+  append no longer merges with the torn fragment into one garbage line that swallows both
+  records. The tolerant reader already skips the healed fragment. 5 tests, incl. a fixture torn
+  mid-UTF-8-byte to pin the binary-mode requirement.
+- **entity_loss plural-acronym false positive (backlog, closed).** "LLMs"/"GPUs"/"APIs" (ALL-CAPS
+  stem + trailing s) no longer pass the Titlecase candidate filter in `completeness.py`, so a
+  correctly Russianized plural acronym stops firing an advisory flag. Boundary pinned: a
+  Titlecase name ending in s ("Windows") still fires. 2 tests.
+- **PLAN hygiene:** dead backlog line about `work-exp/gemma-ab/gemma.toml` removed (the directory
+  no longer exists), and the closed items above pruned from roadmap/backlog. Item numbering keeps
+  its gaps (no 1c, no 4) so existing DECISIONS cross-references stay valid.
+
 ## 2026-07-21 (run 6) — the S2 prompt was telling sub-agents to route around a safety control
 
 Run 6 spawned six summarizers. Five ran clean (12:55:09-34, windows 154-228 s). **The sixth was

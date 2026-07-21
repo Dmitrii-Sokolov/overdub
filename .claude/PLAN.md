@@ -42,13 +42,6 @@ networked title lookup); grades read as reasonable against real material. Still 
 real media, because nothing has needed it yet: **one promotion end to end** — `transcribe` must
 fast-skip while `download` re-runs.
 
-**One scout finding from 2026-07-20 that is not an item yet:**
-- **Two yt-dlp binaries are installed and the pipeline picks the older one.** `2026.03.17` on
-  PATH (used, because running `.venv-asr\Scripts\python.exe` does NOT activate the venv) and
-  `2026.07.04` inside `.venv-asr` (unused). Not implicated in any failure — both fetched the two
-  "broken" videos on demand — but the download stage's version is currently unpredictable and is
-  not the one that was installed for it.
-
 **MEASURED 2026-07-21** — four runs, same 6-video queue (2:53:44, 1683 sentences), one change at
 a time. Full table in CHANGELOG. Route C now costs, per pass over this queue:
 download 162 s · transcribe 723 s wall / 718 s work (RTF 0.087) · summarize wave **192 s**.
@@ -121,12 +114,6 @@ live artifacts, so copy the six `scout.json` before repeating it.
    Until this is decided, expect an occasional classifier stop on a video; treat it as a respawn,
    not as a reason to reinstate any instruction about what is blocked.
 
-1c. **S2 cannot run from a sub-agent.** The `Workflow` tool is unavailable there (verified three
-   ways on 2026-07-21), so the scout skill now requires a session that has it — no sub-agent, and
-   presumably no headless or cron run. There is deliberately NO fallback: the only one available
-   is the hand fan-out that four runs proved does not work, and a slow path that looks like
-   success is worse than a refusal. The skill should say this where S2 starts.
-
 2. **Reconcile the two report renderers.** `triage_html.py` prints `completeness.n_flagged` where
    `run_report.py` prints `n_actionable` + `n_advisory`, and the batch tables have diverged to 10 vs
    13 columns — same batch, two different numbers, in the two surfaces a morning operator compares.
@@ -147,14 +134,6 @@ live artifacts, so copy the six `scout.json` before repeating it.
    **Dropped from 2nd:** the half that mattered for the route in daily use (transcribe, and
    scout runs only download+transcribe) is shipped. What is left serves the DUB route, which is
    not the current bottleneck — but (c) is a live landmine: do not quote an old speed number.
-
-4. **A repair destroys the worklist that motivated it.** `--repair-asr` deletes `translation.json`,
-   which is where the source-anomaly report lives — and the anomaly report is exactly the input
-   for explicit-id repairs, since the detectors are blind to that class. It also renumbers ids, so
-   any remaining ids from that report are stale. Repairing the first window from a report therefore
-   destroys the rest of the list. The renumbering is already warned about; the report loss is not.
-   Cheapest fix is probably preserving the report alongside `_pre-repair-sentences.json`.
-   Ahead of the item below because it prevents LOSS; that one only improves a result.
 
 5. **Feed the repair window `hotwords` / `initial_prompt`.** Fixes the one confirmed regression from
    the 2026-07-20 ear check (rationale + why this does NOT reopen the repetition loop: DECISIONS
@@ -248,12 +227,9 @@ track (one-flag quality upgrade over aac); singing/music detection → keep orig
 singing); loudnorm/EQ on the dub; `--subs-only` fast path; cross-video stage pipelining (translate
 GPU ∥ synth/verify) if nights get tight;
 fix the out/ export name collision (identical `<title> [<id>].mkv` across models overwrites — namespace
-exports per run/model or per work_root); `entity_loss` acronym+s bug ("LLMs" bypasses the ALL-CAPS
-exclusion — one-line fix, advisory noise only; was item-0h); RU analogue for the "four Ds" mnemonic
+exports per run/model or per work_root); RU analogue for the "four Ds" mnemonic
 (Д/Ф/К/Д does not spell "4D" — prompt unpacking or a RU mnemonic, translation-quality class; was
-item-0i); quick code fixes: torn-jsonl newline guard on first append, `download.py` shutil.which
-preflight for yt-dlp/ffmpeg (raw WinError 2 today), drop the removed config keys from
-`work-exp/gemma-ab/gemma.toml`; whisper anti-repetition decoder params — REJECTED 2026-07-19 on a
+item-0i); whisper anti-repetition decoder params — REJECTED 2026-07-19 on a
 60-run sweep (DECISIONS/CHANGELOG), retry ONLY with a content comparison against a reference
 transcript (the word-count axis cannot tell "removed a duplicate" from "ate real speech"; probe
 script: `scratchpad/floor_variance.py`, extend it rather than starting over). — tail (lowest

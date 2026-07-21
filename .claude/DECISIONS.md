@@ -1,5 +1,18 @@
 # DECISIONS
 
+## 2026-07-21 — `_pre-repair-translation.json` overwrites; the sentences backup stays write-once
+
+A repair now preserves `translation.json` (the source-anomaly worklist — PLAN item 4) before
+`invalidate_downstream` deletes it. The two backups deliberately differ in retention.
+`_pre-repair-sentences.json` is write-once: its job is the golden fixture, the TRUE original
+before the FIRST repair. The translation backup's job is the operator's NEXT action — the
+worklist that motivated THIS repair — so it must track the latest pre-repair state: write-once
+would keep a stale report while destroying a fresh one, which is exactly the loss the feature
+exists to prevent. Consequence to remember: ids inside the preserved report predate the
+renumbering the repair just performed (the runtime backup line says so). Rejected alternative:
+extracting only the anomaly rows — a byte-exact copy keeps every field the operator might want
+and costs one small file.
+
 ## 2026-07-21 — The scout preview: 160px, inlined once, and no 2x source
 
 Three choices about one thumbnail, recorded because each was argued and reversed at least once,
