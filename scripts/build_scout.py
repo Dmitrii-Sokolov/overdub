@@ -90,17 +90,22 @@ _HIGHLIGHT_MAX = 240        # one sentence; the scan table's widest text column
 _PARAGRAPH_MAX = 1500
 
 
-_THUMB_W = 320              # MUST be >= the width scout_report renders the preview at, or the
-                            # scan table upscales a 160px file into a 320px slot and the result is
-                            # soft (which is exactly what 160 here looked like). 320 is also
-                            # YouTube's own `mqdefault` width, so the picker below usually finds
-                            # an exact match and ffmpeg re-encodes nothing it has to resize.
-                            # Inlined as a data-URI, so this is page weight -- but far less than
-                            # the old comment here feared. MEASURED on the 5-video Claude 3 queue
-                            # after the bump: 4.2-8.3 KB per file, ~7.7 KB once base64'd, i.e.
-                            # ~0.8 MB for a 100-video queue. The claim that 320px "triples" the
-                            # page was never measured and was wrong: -q:v 6 on a photographic
-                            # 320x180 frame lands near where 160x90 did.
+_THUMB_W = 160              # MUST be >= the width scout_report renders the preview at, or the
+                            # scan table upscales the file into a wider slot and the result is
+                            # soft. That is the ONLY hard rule here; everything else is weight.
+                            #
+                            # Inlined as a data-URI (the Artifact CSP blocks a remote src), and
+                            # inlined TWICE per video -- scan row and card -- so this number is
+                            # page weight, doubled. MEASURED on the 6-video Test queue, same
+                            # frames re-encoded at both widths: 320px -> 66 KB on disk, 177 KB
+                            # once base64'd into the page, which was 78% of a 226 KB report.
+                            # 160px -> 23 KB and 63 KB, i.e. 35% of the bytes for the same
+                            # rendered size, because scout_report draws the preview at 160.
+                            #
+                            # 320 was briefly kept as a 2x source for hi-DPI sharpness. Dropped:
+                            # a scan-table preview is a thumbnail the reader glances at to
+                            # recognize a video, not an image they study, and 3/4 of the page
+                            # was being spent on retina detail nobody looks for.
 
 
 def _ensure_thumb(work: WorkDir, info: dict) -> None:

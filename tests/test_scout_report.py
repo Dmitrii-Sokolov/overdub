@@ -508,7 +508,11 @@ def test_thumbnail_is_inlined_not_linked() -> None:
         out = root / "r.html"
         _report(["--queue", str(q), "--config", str(_cfg(root)), "--out", str(out)])
         page = out.read_text(encoding="utf-8")
-    assert page.count("data:image/jpeg;base64,") == 2          # table row + card
+    # ONCE, though the preview is shown twice (scan row and card). A data-URI in a src is the
+    # bytes themselves, so two <img> tags meant two copies of every preview — 78% of a 226 KB
+    # report. The CSS rule is declared once and both elements wear its class.
+    assert page.count("data:image/jpeg;base64,") == 1
+    assert page.count('class="thumb t1"') == 2                 # ...and it IS still shown twice
     assert "i.ytimg.com" not in page
 
 
@@ -525,13 +529,29 @@ def test_the_rendered_preview_never_asks_for_more_pixels_than_are_stored() -> No
     assert max(widths) <= build_scout._THUMB_W
 
 
-def test_the_preview_opts_out_of_the_artifact_skeletons_img_reset() -> None:
+def test_the_preview_is_out_of_reach_of_the_artifact_skeletons_img_reset() -> None:
     # The published page is wrapped in a skeleton carrying `img{max-width:100%}`. In an
     # auto-layout table that drops the preview's min-content contribution to ~0, and
     # `td.pic{width:1%}` then squeezes the column to a sliver — visible only after publishing,
-    # never when the fragment is opened locally. max-width:none is what keeps the column wide.
-    assert "max-width:none" in scout_report._CSS
-    assert "td.pic{width:1%" in scout_report._CSS      # the pairing this test exists to protect
+    # never when the fragment is opened locally.
+    #
+    # A CONDITIONAL, because the defusing moved: the preview is a <div> now, which that selector
+    # cannot reach, so `max-width:none` became dead weight and was dropped. Asserting the
+    # property would pin a fix to a mechanism that no longer applies; asserting the implication
+    # keeps the guard true whichever element the preview goes back to being.
+    assert "td.pic{width:1%" in scout_report._CSS      # the half that makes the trap possible
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        _scouted(root, "vid00000001", "high")
+        (root / "vid00000001" / "thumb.jpg").write_bytes(b"\xff\xd8\xff\xdb-fake-jpeg")
+        q = _queue(root, ["vid00000001"])
+        out = root / "r.html"
+        _report(["--queue", str(q), "--config", str(_cfg(root)), "--out", str(out)])
+        page = out.read_text(encoding="utf-8")
+    if "<img" in page:
+        assert "max-width:none" in scout_report._CSS, (
+            "the preview is an <img> again — the skeleton's reset can reach it, and without "
+            "max-width:none the column collapses once published")
 
 
 def test_a_missing_thumbnail_renders_nothing_at_all() -> None:

@@ -238,18 +238,25 @@ _CSS = """
 
 /* preview: fixed box so a missing one never shifts the column.
 
-   160 rendered from a 320px file (build_scout._THUMB_W) is DELIBERATE slack, not a leftover:
-   the file is the 2x source, so the preview stays sharp on a hi-DPI screen. Only the ceiling is
-   a rule — render WIDER than the file on disk and the column goes soft, which is what a 160px
-   file in a 320px slot looked like before 2026-07-20. Narrower is free.
+   160 here matches build_scout._THUMB_W exactly, and the guard in the tests is a CEILING, not
+   an equality: rendering NARROWER than the file on disk stays legal (the card does it, at 84),
+   rendering WIDER is what makes the column go soft. Raise this number and you must raise
+   _THUMB_W with it — and re-fetch every preview already on disk, since _ensure_thumb skips a
+   thumb.jpg that exists and will happily keep serving the old, now-too-small file.
 
-   max-width:none is NOT decoration. The Artifact skeleton wraps this fragment in its own reset,
-   which carries `img{max-width:100%}`; inside an auto-layout table that turns the preview's
-   min-content contribution into ~0, so `td.pic{width:1%}` — which asks for the narrowest column
-   that still fits the image — squeezes the thumbnail down to a sliver. The page looks fine
-   opened locally (no reset) and wrong once published, which is the only place it is read. */
-.sr .thumb{display:block;width:160px;max-width:none;height:auto;border-radius:4px;
-  background:var(--none-bg);}
+   THE TRAP THIS BOX USED TO FALL INTO, kept written down because the element type is the only
+   thing that defuses it: the Artifact skeleton wraps this fragment in its own reset, which
+   carries `img{max-width:100%}`. Inside an auto-layout table that drops a preview's min-content
+   contribution to ~0, so `td.pic{width:1%}` — which asks for the narrowest column that still
+   fits the picture — squeezed it down to a sliver. Invisible locally (the fragment has no
+   reset), wrong once published, which is the only place this page is read. A div is out of that
+   selector's reach; go back to <img> here and `max-width:none` becomes load-bearing again. The
+   test enforces exactly that conditional, not the property.
+
+   The size comes from CSS in both lists (160 in the table, 84 in the card) off one element type,
+   and the per-video rule supplies aspect-ratio — see _thumb_css_of for why it must. */
+.sr .thumb{display:block;width:160px;border-radius:4px;aspect-ratio:16/9;
+  background:var(--none-bg) center/cover no-repeat;}
 .sr .cardhead .thumb{width:84px;margin:0;border-radius:3px;}
 @media (max-width:640px){.sr .thumb{width:100px;}}
 .sr p.why{font-family:var(--ui);font-size:.92rem;color:var(--dim);margin:0 0 10px;
@@ -313,7 +320,7 @@ def _row(e: dict) -> str:
     return (
         f'<tr id="r{e["n"]}">'
         f'<td class="idx">{e["n"]}</td>'
-        f'<td class="pic">{_thumb_img(e)}</td>'
+        f'<td class="pic">{_thumb_box(e)}</td>'
         f'<td class="name">{_title_link(e)}{trusted}</td>'
         # runtime next to the title, not at the end of a prose cell: it is scanned down the
         # column ("what fits in an evening"), which a value buried in text cannot be
@@ -328,17 +335,57 @@ def _row(e: dict) -> str:
     )
 
 
-def _thumb_img(e: dict) -> str:
-    """The preview, inlined as a data-URI. A remote src would be blocked outright by the
-    Artifact CSP — i.e. invisible in the one place this page is meant to be read — so the bytes
-    travel with the page or not at all. Absent preview renders nothing: the row still carries
-    verdict, reason and a link, and an empty placeholder box would be noise."""
-    b64 = e.get("thumb_b64")
-    if not b64:
+# base64's whole alphabet, and nothing that could close a CSS url() or open a comment. The bytes
+# are ours (base64 of a file we wrote), so this is belt-and-braces rather than a live threat --
+# but a data URI goes into a <style> block now, where a stray ')' would end the rule and leave
+# the rest of the page as garbage CSS instead of a missing picture.
+_B64 = re.compile(r"^[A-Za-z0-9+/]+={0,2}$")
+
+
+def _thumb_box(e: dict) -> str:
+    """The preview ELEMENT — a div painted by a per-video CSS rule, not an <img>.
+
+    Why not <img>: the preview appears twice per video (scan row and card), and a data-URI in a
+    src is the bytes themselves, not a reference to them. HTML has no way to say "the same image
+    as that one", so two <img> tags meant two copies of every preview in the file — measured at
+    78% of a 226 KB report. A CSS rule is declared once and applies to as many elements as carry
+    the class, so the bytes land in the page exactly once.
+
+    The cost, accepted deliberately: loading="lazy" is an <img> attribute and has no background
+    equivalent, so every preview now decodes at load instead of on scroll.
+
+    Absent preview renders nothing: the row still carries verdict, reason and a link, and an
+    empty placeholder box would be noise."""
+    if not _thumb_css_of(e):
         return ""
-    # No width ATTRIBUTE: the table and the card want different sizes off one helper, and an
-    # attribute would fight the CSS that sets each. The width still comes from CSS in both.
-    return f'<img class="thumb" src="data:image/jpeg;base64,{b64}" alt="" loading="lazy">'
+    # the position, not the video id: an id may start with a digit or '-', neither of which is a
+    # valid CSS identifier start, and escaping them is a rule nobody would remember to keep
+    return f'<div class="thumb t{e["n"]}"></div>'
+
+
+def _thumb_css_of(e: dict) -> str:
+    """The per-video rule, or "" when there is no usable preview.
+
+    aspect-ratio is NOT optional here and not decoration: a background image never contributes
+    to the size of its box, so without it the div is zero pixels tall and the preview is simply
+    invisible. <img> needed none of this -- it reads its own dimensions out of the file -- which
+    is exactly the convenience given up in exchange for inlining the bytes once."""
+    b64 = e.get("thumb_b64")
+    if not b64 or not _B64.match(b64):
+        return ""
+    wh = e.get("thumb_wh")
+    # 16/9 is the fallback, not the assumption: ffmpeg scales to _THUMB_W with a derived height,
+    # so the ratio follows the SOURCE. Guessing wrong crops the preview (background-size:cover),
+    # which is why the real numbers are parsed out of the file and this line is the last resort.
+    w, h = wh if wh else (16, 9)
+    return (f'.sr .t{e["n"]}{{aspect-ratio:{w}/{h};'
+            f'background-image:url(data:image/jpeg;base64,{b64});}}')
+
+
+def _thumb_css(entries: list[dict]) -> str:
+    """All per-video rules as one <style> block, or "" when no entry has a preview."""
+    rules = [css for css in (_thumb_css_of(e) for e in entries) if css]
+    return f"<style>{''.join(rules)}</style>" if rules else ""
 
 
 def _title_link(e: dict) -> str:
@@ -361,7 +408,7 @@ def _card(e: dict) -> str:
         # own back gesture already returns them, so a jump back was a link that never earned
         # its underline and one more thing competing with the title
         f'<span class="idx">{e["n"]}</span>'
-        f'{_thumb_img(e)}'
+        f'{_thumb_box(e)}'
         f'<span class="name">{_title_link(e)}</span>'
         f'<span class="chip {v["cls"]}">{html.escape(v["label"])}</span>'
         # same markers the table row carries: two lists that show different signals for one
@@ -398,7 +445,9 @@ def render(entries: list[dict], totals: dict, queue_name: str, stamp: str,
             tally += f' · {state["label"]}: {n}'
 
     t = totals
-    out = [_CSS, '<div class="sr">']
+    # the per-video preview rules ride right behind the static sheet: they are generated CSS, and
+    # separating them keeps _CSS a constant the tests can assert against
+    out = [_CSS, _thumb_css(entries), '<div class="sr">']
     out.append('<header class="head">')
     out.append("<h1>Разведка очереди</h1>")
     if playlist:
@@ -463,6 +512,52 @@ def _thumb_b64(path: Path) -> str | None:
         return None
 
 
+def jpeg_size(path: Path) -> tuple[int, int] | None:
+    """(width, height) out of a JPEG's frame header, or None for anything unreadable.
+
+    Exists because the preview is painted as a CSS background so one copy of the bytes can serve
+    both lists, and a background never sizes its own box — the div needs an explicit aspect-ratio
+    or it renders zero pixels tall. <img> read these numbers itself; this is the price of the
+    single copy.
+
+    A PARSE, not an assumption: _ensure_thumb scales to _THUMB_W with a derived height, so the
+    ratio is the SOURCE's. 16:9 covers nearly every YouTube preview and is the caller's fallback,
+    but a 4:3 frame guessed as 16:9 gets cropped, and cropping the one picture in a row is worse
+    than a few lines of header walking.
+
+    Never raises — same contract as everything else on the preview path."""
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return None
+    if not data.startswith(b"\xff\xd8"):
+        return None
+    i, n = 2, len(data)
+    while i + 9 < n:
+        if data[i] != 0xFF:
+            i += 1
+            continue
+        marker = data[i + 1]
+        if marker == 0xFF:                                  # fill byte, skip one and re-read
+            i += 1
+            continue
+        if marker in (0x01, 0xD8, 0xD9) or 0xD0 <= marker <= 0xD7:      # standalone, no length
+            i += 2
+            continue
+        seg = int.from_bytes(data[i + 2:i + 4], "big")
+        if seg < 2:                                         # malformed: a length must cover itself
+            return None
+        # SOF0..SOF15 carry the frame header. C4/C8/CC share the range and are NOT frame headers
+        # (Huffman table, JPEG extension, arithmetic coding conditioning) — reading dimensions out
+        # of one of those yields two plausible-looking numbers that are not the image's size.
+        if 0xC0 <= marker <= 0xCF and marker not in (0xC4, 0xC8, 0xCC):
+            h = int.from_bytes(data[i + 5:i + 7], "big")
+            w = int.from_bytes(data[i + 7:i + 9], "big")
+            return (w, h) if w and h else None
+        i += 2 + seg
+    return None
+
+
 def collect(ids: list[str], work_root: Path) -> list[dict]:
     """Queue order in, render-ready entries out. A missing/unreadable scout.json becomes a
     MISSING entry rather than a gap, so the report's row count always equals the queue's."""
@@ -503,6 +598,7 @@ def collect(ids: list[str], work_root: Path) -> list[dict]:
             # renders, it just carries no tag (build_scout requires the field going forward)
             "author": doc.get("author"),
             "thumb_b64": _thumb_b64(work_root / vid / "thumb.jpg"),
+            "thumb_wh": jpeg_size(work_root / vid / "thumb.jpg"),
             "title": doc.get("title") or vid,
             "duration": doc.get("duration_sec"),
             "one_liner": doc.get("one_liner") or "",

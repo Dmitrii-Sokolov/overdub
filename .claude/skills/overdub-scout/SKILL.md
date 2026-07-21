@@ -125,29 +125,6 @@ One sub-agent per video, Agent tool (`general-purpose`) + **`model: "sonnet"` �
 explicitly** (a summary written by an inherited session model is not the artifact this route was
 verified with, DECISIONS 2026-07-18/19).
 
-**Spawn a wave of ~6 as ~6 Agent tool_use blocks in ONE assistant message.** Not one call per
-turn. This is the single most expensive mistake available in this skill and it is invisible from
-the inside: six sequential calls still look like "a wave of six" to the orchestrator that made
-them, and it will report a parallel fan-out afterwards in good faith.
-
-MEASURED 2026-07-20 on the 6-video queue, from the session transcript: six separate messages,
-one block each, **103 s apart** — a turn's worth of latency between every agent. Effective
-parallelism **1.32×** where 6 was intended; the wave took 842 s against the 254 s its slowest
-agent needed. **588 s — nearly ten minutes — lost on six videos**, and it scales with queue
-length.
-
-**Verify it from disk, not from memory.** After the wave, the markers should be seconds apart:
-
-```powershell
-$sumTodo | ForEach-Object { (Get-Item "work\$_\scout.started").LastWriteTime } | Sort-Object
-```
-
-Gaps of ~100 s mean the fan-out did not happen, whatever the run felt like. This check exists
-because on 2026-07-20 the orchestrator's own account of that wave was wrong in both specifics it
-offered — it reported one call with six blocks (there were six calls) and a blocked Write that
-the transcript does not contain. The completion times it gave were accurate. An agent's report
-of what it OBSERVED is worth more than its report of what it DID.
-
 **Resume filter first**, keyed on its own artifact — a prior interrupted S2 may have finished
 some videos, and the mtime clause catches summaries gone stale via a re-transcribe
 (`--scout --force`, or a `--repair-asr` pass):
@@ -190,7 +167,8 @@ $waveStart = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
 
 The wave start is NOT the per-video summarize timing. It is shared by every agent in the spawn,
 so for an agent that waited behind the concurrency cap it measures the queue, not the work. The
-per-video number comes from each agent's own `scout.started` marker (see the prompt below); the
+per-video number comes from each agent's own `scout.started` marker (the workflow's prompt makes
+touching it the sub-agent's first action); the
 two are different measurements and the report keeps them apart. **Delete stale markers for the
 videos about to be respawned**, or a re-run pairs a fresh draft with the previous attempt's
 marker and reports the gap between runs as summarization:
@@ -198,6 +176,54 @@ marker and reports the gap between runs as summarization:
 ```powershell
 $sumTodo | ForEach-Object { Remove-Item "work\$_\scout.started" -ErrorAction SilentlyContinue }
 ```
+
+**DO NOT spawn the sub-agents yourself. Run the workflow.** Fan-out by hand does not work here,
+and that is measured, not suspected:
+
+```
+run 1  prompt 21,507 chars   spawn gap 103 s   spawn total 514 s   wave 842 s
+run 2  prompt 19,329 chars   spawn gap  86 s   spawn total 428 s   wave 647 s
+run 3  prompt 23,689 chars   spawn gap 123 s   spawn total 614 s   wave 774 s
+```
+
+Three runs, same queue, six Agent calls in six separate messages every time. Run 3 settles it:
+the orchestrator explicitly reasoned *"spawning six sub-agents in a single message"*, announced
+it out loud, and then emitted six messages anyway. **Read, understood, acknowledged, not
+executed** — so no wording fixes this.
+
+The table also shows what the cadence actually tracks: **prompt size**, at roughly 8.5 s per
+1000 characters, because the orchestrator generates the whole prompt token by token once per
+video. And the wave came to `spawn total + the last agent's own window` — every other agent
+finished inside the shadow of the next spawn, which is why making the agents faster bought
+nothing.
+
+`Workflow` removes both costs: `parallel()` is deterministic fan-out that does not depend on a
+model emitting N blocks, and the script assembles the prompt instead of generating it. The
+sub-agent reads `viewer-profile.md` off disk itself, so the prompt drops from 23.7k to 6.6k
+chars and nothing large is generated at all.
+
+```powershell
+# args.ids is the RESUME-FILTERED list from below — never the whole queue
+```
+```
+Workflow: {name: "scout-summarize", args: {ids: [...$sumTodo], root: "D:\\code\\overdub"}}
+```
+
+It returns `{done, failed, total}`. **`failed` is per video and actionable** — a `PROFILE-MISSING`
+agent or one the runtime dropped. Re-run the workflow with just those ids.
+
+**Verify from disk, not from the run's account.** After the wave the markers should be seconds
+apart:
+
+```powershell
+$sumTodo | ForEach-Object { (Get-Item "work\$_\scout.started").LastWriteTime } | Sort-Object
+```
+
+Gaps near 100 s mean the fan-out did not happen, whatever the run felt like. This check is here
+because on 2026-07-20 the orchestrator's own account of a wave was wrong in both specifics it
+offered — it reported one call with six blocks (there were six) and a blocked Write the
+transcript did not contain, while the completion times it gave were accurate. **An agent's
+report of what it OBSERVED is worth more than its report of what it DID.**
 
 Each sub-agent writes TWO files: `summary.md` (the ~200-word prose, unchanged — route B reuses
 it on promotion) and `scout.draft.json` (the machine-consumed judgement the report renders).
@@ -211,110 +237,19 @@ $sumTodo | ForEach-Object {
   .venv-asr\Scripts\python.exe -X utf8 scripts\build_scout.py "work\$_" --wave-start $waveStart }
 ```
 
-**Feed every sub-agent `.claude/viewer-profile.md` whole** — the file S0 confirmed. Paste its
-CONTENTS into each prompt rather than pointing the sub-agent at the path: a sub-agent that
-cannot read it rates on generic quality and says nothing about having done so, which is exactly
-the ungrounded verdict S0 exists to prevent. If you somehow reach this step without the file,
-go back to S0; do not improvise one.
+**The sub-agent prompt lives in `.claude/workflows/scout-summarize.js`, not here.** It used to be
+pasted into this file and re-typed by the orchestrator for every video; that is exactly the cost
+the workflow removes, and two copies of one prompt drift. Edit the script.
 
-Sub-agent prompt skeleton (fill `<id>`) — the prose half is **identical to the summarizer in the
-`overdub-sonnet-batch` skill's Step 2**; if you change that half, change it there too:
+**The profile is no longer pasted into the prompt.** The sub-agent reads
+`.claude/viewer-profile.md` off disk itself — 16.8k chars, 71% of the old prompt's weight, for a
+file the agent can open in one call. The old instruction to paste it existed because a sub-agent
+that cannot read the profile would silently grade on generic quality; that risk is now handled
+where it belongs, by making the read MANDATORY and having the agent return `PROFILE-MISSING` and
+stop rather than carry on without it. The workflow surfaces those ids in `failed`.
 
-> Your FIRST action, before reading anything: create the empty marker file
-> `D:\code\overdub\work\<id>\scout.started`. Its timestamp is how the pipeline measures how long
-> YOUR run took — the wave start cannot, because it is shared by every agent in the spawn and so
-> charges you for the time you spent queued behind the concurrency cap. Do not write a timestamp
-> INTO the file and do not report your own runtime anywhere: the filesystem stamps it, you only
-> touch it. If you skip this, the video simply has no per-video timing — never invent one.
->
-> **Write both output files with PowerShell. Do NOT reach for the Write tool — it is blocked for
-> sub-agents** ("Subagents should return findings as text, not write report files"). That
-> guardrail is aimed at agents dumping their own reports to disk; these two files are pipeline
-> artifacts that `build_scout.py` consumes, but the block does not know the difference, and every
-> agent that tries Write first loses ~45 s discovering this (measured 2026-07-21, all six).
-> Use exactly this shape — UTF-8 **without BOM** in both cases, because `build_scout` reads them
-> with `json.loads` and a BOM breaks it:
->
-> ```powershell
-> $summary = @'
-> ...the ~200-word Russian prose, verbatim...
-> '@
-> [System.IO.File]::WriteAllText("D:\code\overdub\work\<id>\summary.md", $summary,
->   (New-Object System.Text.UTF8Encoding($false)))
->
-> $obj = @{ quality = "low"; one_liner = $oneLiner; highlight = $highlight; paragraph = $paragraph }
-> [System.IO.File]::WriteAllText("D:\code\overdub\work\<id>\scout.draft.json",
->   ($obj | ConvertTo-Json -Depth 5), (New-Object System.Text.UTF8Encoding($false)))
-> ```
->
-> Build the JSON with a hashtable and `ConvertTo-Json`, never by hand — PowerShell then owns the
-> escaping of quotes and newlines inside your prose. In a `@'...'@` here-string the closing `'@`
-> MUST sit at column 0 on its own line, and nothing inside is interpolated (so `$` and backticks
-> in the text are safe).
->
-> You are a triage summarizer for the overdub pipeline. Read
-> `D:\code\overdub\work\<id>\sentences.json` (list of `{id, text, start, end}` — the COMPLETE
-> English transcript, in order) and write `D:\code\overdub\work\<id>\summary.md`: a summary in
-> RUSSIAN of about 200 words. The reader has NOT watched the video and is deciding whether to. So
-> answer two things, in prose: (a) is this worth watching at all, and for whom — say so plainly,
-> including "смотреть не стоит" if that is the honest read; (b) what is the single most interesting
-> thing in it / what to look out for, and roughly where (use the `start` timestamps, `M:SS`).
-> Ground every claim in the transcript — do not invent facts, names, or numbers that are not there,
-> and if the transcript is too garbled or thin to judge, say that instead of guessing. Plain
-> paragraphs only: no markdown headings, no bullet lists, no title, no preamble like "Вот краткое
-> содержание" — the file's whole content is the summary text. Read the file in one pass; write it
-> in one pass.
->
-> Also read `D:\code\overdub\work\<id>\source.info.json` — the yt-dlp metadata sidecar. Take
-> `title`, `channel`, `upload_date` (`YYYYMMDD`) and `description` from it. The transcript alone
-> carries none of these, and without them a profile's staleness rules and any author rule are
-> dead letters. Treat `description` as the author's own framing, i.e. promotional: useful for
-> what the video CLAIMS to be, never as evidence that it delivers. **If the file is absent or
-> carries only a title, say so in the paragraph and do not infer an age** — an invented upload
-> date is worse than an acknowledged gap.
->
-> Then write `D:\code\overdub\work\<id>\scout.draft.json`, a JSON OBJECT (not a list) with these
-> keys:
-> - `quality` — one of exactly `"high"` / `"medium"` / `"low"`. **Judge the MATERIAL, not the
->   reader.** Three things and only these three: substance (is there real information, with
->   mechanism, numbers, method — or is it one tip padded out), currency (is what it shows still
->   true, judged from `upload_date` and from what it demonstrates), and delivery (density,
->   structure, whether the presenter knows the subject). `high` = strong on all three.
->   `medium` = solid but undercut by one of them. `low` = fails on substance, or is superseded,
->   or the delivery makes it not worth extracting from. **Do NOT factor in whether this
->   particular person should watch it** — a well-made video on a topic they do not need is
->   still well made. When torn, choose the lower grade and name the reason in `highlight`.
->   (Superseded 2026-07-20: this used to be a personal watch/maybe/skip verdict and the first
->   real queue came back 0/1/9. A grade about the material can be checked; a verdict about a
->   person cannot.)
-> - `author` — OPTIONAL, `"trusted"` or `"new"`. Emit it ONLY if the profile carries a
->   non-empty list of trusted authors and you can match `channel` against it. With no such list
->   there is nothing to compare against: omit the key entirely rather than labelling everything
->   `"new"`, which would add a column of one repeated value.
-> - `one_liner` — ONE sentence in Russian, what the video is about. It goes in a table cell;
->   keep it under ~140 characters and do not restate the title.
-> - `highlight` — ONE sentence in Russian: **the most interesting or useful thing IN the video**,
->   plus what decided the grade. A different question from `one_liner` and it must not repeat
->   it: "разбор оркестрации агентов" says what the video is, "замеры с описанной методологией и
->   разбор случаев, где схема ломается" says what you would actually get out of it. For a `low`,
->   name the concrete defect rather than a mood. Under ~200 characters.
->   **Add "требует концентрации" here when the video needs undivided attention** (a deep dive
->   you have to follow with practice, rather than something that survives being background
->   listening). This used to be a separate enum and 28 of 30 videos took the same value, so it
->   is now a clause that appears only when it is true.
->   This is the ONE field where the viewer profile is allowed to steer: what counts as
->   "interesting" and what is already known to this reader come from it. The GRADE does not.
-> - `paragraph` — the full write-up in Russian, what is actually covered and why it earned that
->   grade. Name the concrete thing that decided it (what specifically is dated, thin or strong).
->   This is what the person reads when the one-liner interests them. **Split it into 2–3 paragraphs separated by a BLANK LINE**, where
->   the meaning turns — a wall of text is what this field looked like before and it was hard to
->   read. The split is yours: the renderer honours blank lines and never invents its own, so an
->   unsplit block simply renders as one paragraph.
->
-> VIEWER PROFILE (the person deciding what to watch) — judge relevance against THIS, and quote
-> nothing from it back into the summary:
->
-> <<< paste the entire contents of D:\code\overdub\.claude\viewer-profile.md here >>>
+The prose half of that prompt is **identical to the summarizer in the `overdub-sonnet-batch`
+skill's Step 2** — if you change that half, change it there too.
 
 **Completion check — re-run the S1 command.** It is free (both stages fast-skip, seconds) and
 every line flips to `summary ok`. A line still reading `summary pending` is a video whose
