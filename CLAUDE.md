@@ -15,7 +15,9 @@ segments are tolerated, silent failures are not.
   for PyTorch TTS.
 - External binaries expected but not guaranteed: `ffmpeg`, `yt-dlp`, Ollama
   serving on localhost. Verify availability before assuming; fail with a clear
-  message, don't auto-install.
+  message, don't auto-install. The download stage implements this: `yt-dlp` /
+  `ffmpeg` resolve venv-`Scripts`-first, then PATH (`stages/download.py`,
+  `_tool_exe`), and a missing tool raises a clear RuntimeError.
 - Laptop thermals: hundred-hour batches run overnight at sustained load —
   batch mode must survive interruption (resume) and should support a reduced
   power limit / cooldown pauses.
@@ -70,7 +72,7 @@ One command, from the repo root:
 .venv-asr\Scripts\python.exe -m pytest
 ```
 
-380 tests, ~5 s, no GPU / network / media. `pytest` lives in `.venv-asr` only
+405 tests, ~5 s, no GPU / network / media. `pytest` lives in `.venv-asr` only
 (`pip install -e ".[dev]"`); config is `[tool.pytest.ini_options]` in
 `pyproject.toml`. **Do not hand-roll a loop over `tests/*.py`** — that was the
 state before 2026-07-20 and it produced invented result lines. Run it from the

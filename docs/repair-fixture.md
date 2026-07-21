@@ -16,6 +16,9 @@ In July 2026 a human manually repaired defect windows across 6 videos using exac
 | `_pre-repair-sentences.json` | the DEFECTIVE transcript — the input |
 | `sentences.json` | the human-verified repaired transcript — the comparison |
 
+(Since 2026-07-21 a repair also writes `_pre-repair-translation.json` — the preserved
+source-anomaly worklist, overwritten per repair. It is NOT part of the fixture pairs.)
+
 The 6 ids: `2YCaBqP8muw`, `DmgujoZ1mmk`, `RyvXxApfHkk`, `W4Ua6XFfX9w`, `W5cga7xipRI`, `ytEN_iAk09c`.
 All six `source.wav` are present, ~75 MB total.
 

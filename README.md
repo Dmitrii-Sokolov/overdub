@@ -45,7 +45,9 @@ hundreds of hours of single-speaker content.
 ## Running
 
 Prereqs (SETUP.md): `.venv-asr` + `.venv-f5tts` (+ `.venv-demucs` for the
-default bed mix), F5 assets under `models/`, `ffmpeg`/`yt-dlp` on PATH.
+default bed mix), F5 assets under `models/`, `ffmpeg` on PATH. `yt-dlp` is
+resolved from `.venv-asr\Scripts` first, PATH second; both tools are preflighted
+with a clear error instead of a raw WinError 2.
 
 ### A. Batch with local translation (Gemma) — fully turn-key
 
@@ -253,8 +255,10 @@ Repair clips the window out of `source.wav`, reads it twice (with context
 feedback off and on) and **accepts only if the two readings say the same
 words**. On accept it merges the window into its own reading, renumbers every
 id so they stay contiguous, keeps the original at
-`work/<id>/_pre-repair-sentences.json` (written once, never clobbered), and
-deletes exactly the artifacts downstream of `sentences.json`. It never re-runs a
+`work/<id>/_pre-repair-sentences.json` (written once, never clobbered),
+preserves the source-anomaly worklist at `work/<id>/_pre-repair-translation.json`
+(byte-exact `translation.json`, overwritten on every repair; its ids predate the
+renumbering), and deletes exactly the artifacts downstream of `sentences.json`. It never re-runs a
 stage itself — the next ordinary run redoes translate → mux honestly, and
 completed stages still fast-skip. `words.json` is deliberately left alone: it is
 the raw record of what the ASR actually did.
@@ -275,7 +279,7 @@ repair renumbers ids — re-derive them before a second explicit pass.
 .venv-asr\Scripts\python.exe -m pytest
 ```
 
-380 tests in ~5 s. No GPU, no network, no media, no model downloads — everything
+405 tests in ~5 s. No GPU, no network, no media, no model downloads — everything
 is pure logic over temp dirs and injected stages, which is what makes a bare
 `pytest` a safe thing to run at any time, including while a batch is on the GPU.
 

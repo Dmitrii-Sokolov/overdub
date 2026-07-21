@@ -77,11 +77,11 @@ python -c "import torch; print(torch.__version__, torch.version.cuda, torch.cuda
 ### External binaries (verify, don't auto-install — project rule)
 ```powershell
 winget install Gyan.FFmpeg              # ffmpeg + ffprobe on PATH
-python -m pip install -U yt-dlp
+.venv-asr\Scripts\python.exe -m pip install -U yt-dlp   # the pipeline resolves yt-dlp venv-first; a PATH copy is only the fallback
 # Ollama: install from ollama.com, then:
 ollama pull gemma3:12b
 setx OLLAMA_KEEP_ALIVE -1               # keep model resident across a long batch
-ffmpeg -version ; ffprobe -version ; yt-dlp --version ; curl http://localhost:11434/api/tags
+ffmpeg -version ; ffprobe -version ; .venv-asr\Scripts\yt-dlp.exe --version ; curl http://localhost:11434/api/tags
 ```
 
 ## `--index-url` scoping (critical)

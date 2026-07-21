@@ -15,7 +15,8 @@ do not skip the helper, do not let a sub-agent hand-write `text_tts`.
 
 ## Preconditions (check, fail loud, do not auto-install)
 
-- `.venv-asr` exists; `ffmpeg` + `yt-dlp` on PATH. (`.venv-f5tts` + `.venv-demucs` are needed
+- `.venv-asr` exists; `ffmpeg` on PATH; `yt-dlp` in `.venv-asr` (venv-first resolution, PATH
+  fallback, missing → clear error). (`.venv-f5tts` + `.venv-demucs` are needed
   only from synthesize onward — step 3, not step 1/2.)
 - A queue: `queue.txt` (one URL per line, `#` comments and blanks skipped) **or** a single URL.
 - Run everything from the repo root `D:\code\overdub`. Never merge venvs.

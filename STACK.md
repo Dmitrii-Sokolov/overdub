@@ -12,10 +12,12 @@ Pipeline: `yt-dlp → faster-whisper large-v3 → Gemma-3-12B (Ollama) → ESpee
 
 **Install**
 ```powershell
-python -m pip install -U yt-dlp        # latest 2026.07.04, pure-Python
+.venv-asr\Scripts\python.exe -m pip install -U yt-dlp   # latest 2026.07.04, pure-Python
 winget install Gyan.FFmpeg             # ffmpeg + ffprobe on PATH (both required)
 # Verify, do not auto-install:
-ffmpeg -version ; ffprobe -version ; yt-dlp --version
+ffmpeg -version ; ffprobe -version ; .venv-asr\Scripts\yt-dlp.exe --version
+# The pipeline resolves both tools venv-Scripts-first, then PATH (stages/download.py, _tool_exe);
+# the bare names in the snippets below are illustrative.
 ```
 
 **Verified API — download, extract, tempo-fit, assemble, mux**
