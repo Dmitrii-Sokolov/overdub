@@ -41,7 +41,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from overdub.config import Config                          # noqa: E402
-from overdub.workdir import replace_retry                  # noqa: E402
+from overdub.workdir import jpeg_size, replace_retry       # noqa: E402
 
 # Same 11-char YouTube-id shape workdir.video_id and the other reporters use.
 _YT_ID = re.compile(r"(?:v=|/shorts/|youtu\.be/|/embed/)([A-Za-z0-9_-]{11})")
@@ -512,52 +512,6 @@ def _thumb_b64(path: Path) -> str | None:
         return base64.b64encode(path.read_bytes()).decode("ascii")
     except OSError:
         return None
-
-
-def jpeg_size(path: Path) -> tuple[int, int] | None:
-    """(width, height) out of a JPEG's frame header, or None for anything unreadable.
-
-    Exists because the preview is painted as a CSS background so one copy of the bytes can serve
-    both lists, and a background never sizes its own box — the div needs an explicit aspect-ratio
-    or it renders zero pixels tall. <img> read these numbers itself; this is the price of the
-    single copy.
-
-    A PARSE, not an assumption: _ensure_thumb scales to _THUMB_W with a derived height, so the
-    ratio is the SOURCE's. 16:9 covers nearly every YouTube preview and is the caller's fallback,
-    but a 4:3 frame guessed as 16:9 gets cropped, and cropping the one picture in a row is worse
-    than a few lines of header walking.
-
-    Never raises — same contract as everything else on the preview path."""
-    try:
-        data = path.read_bytes()
-    except OSError:
-        return None
-    if not data.startswith(b"\xff\xd8"):
-        return None
-    i, n = 2, len(data)
-    while i + 9 < n:
-        if data[i] != 0xFF:
-            i += 1
-            continue
-        marker = data[i + 1]
-        if marker == 0xFF:                                  # fill byte, skip one and re-read
-            i += 1
-            continue
-        if marker in (0x01, 0xD8, 0xD9) or 0xD0 <= marker <= 0xD7:      # standalone, no length
-            i += 2
-            continue
-        seg = int.from_bytes(data[i + 2:i + 4], "big")
-        if seg < 2:                                         # malformed: a length must cover itself
-            return None
-        # SOF0..SOF15 carry the frame header. C4/C8/CC share the range and are NOT frame headers
-        # (Huffman table, JPEG extension, arithmetic coding conditioning) — reading dimensions out
-        # of one of those yields two plausible-looking numbers that are not the image's size.
-        if 0xC0 <= marker <= 0xCF and marker not in (0xC4, 0xC8, 0xCC):
-            h = int.from_bytes(data[i + 5:i + 7], "big")
-            w = int.from_bytes(data[i + 7:i + 9], "big")
-            return (w, h) if w and h else None
-        i += 2 + seg
-    return None
 
 
 def collect(ids: list[str], work_root: Path) -> list[dict]:

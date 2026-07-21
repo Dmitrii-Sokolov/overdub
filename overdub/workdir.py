@@ -23,6 +23,53 @@ def replace_retry(src, dst) -> None:
                 raise
             time.sleep(0.1)
 
+def jpeg_size(path: Path) -> tuple[int, int] | None:
+    """(width, height) out of a JPEG's frame header, or None for anything unreadable.
+
+    Lives here rather than in either script because BOTH ends of the scout preview need it and
+    both already import this module: build_scout asks "is the thumb.jpg on disk wider than the
+    width I now produce" before deciding to re-scale it, and scout_report needs the real ratio to
+    give the preview's box an aspect-ratio -- it is painted as a CSS background so one copy of
+    the bytes can serve both lists, and a background never sizes its own box.
+
+    A PARSE, not an assumption: previews are scaled to a fixed width with a derived height, so
+    the ratio follows the SOURCE. 16:9 covers nearly every YouTube preview and is a fine caller's
+    fallback, but a 4:3 frame guessed as 16:9 gets cropped.
+
+    NEVER RAISES. The preview is the one artifact nothing else depends on, so every failure here
+    is a None the caller falls back on, not an exception that costs a report."""
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return None
+    if not data.startswith(b"\xff\xd8"):
+        return None
+    i, n = 2, len(data)
+    while i + 9 < n:
+        if data[i] != 0xFF:
+            i += 1
+            continue
+        marker = data[i + 1]
+        if marker == 0xFF:                                  # fill byte, skip one and re-read
+            i += 1
+            continue
+        if marker in (0x01, 0xD8, 0xD9) or 0xD0 <= marker <= 0xD7:      # standalone, no length
+            i += 2
+            continue
+        seg = int.from_bytes(data[i + 2:i + 4], "big")
+        if seg < 2:                                         # malformed: a length must cover itself
+            return None
+        # SOF0..SOF15 carry the frame header. C4/C8/CC share the range and are NOT frame headers
+        # (Huffman table, JPEG extension, arithmetic coding conditioning) -- reading dimensions
+        # out of one of those yields two plausible-looking numbers that are not the image's size.
+        if 0xC0 <= marker <= 0xCF and marker not in (0xC4, 0xC8, 0xCC):
+            h = int.from_bytes(data[i + 5:i + 7], "big")
+            w = int.from_bytes(data[i + 7:i + 9], "big")
+            return (w, h) if w and h else None
+        i += 2 + seg
+    return None
+
+
 _YT_ID = re.compile(r"(?:v=|/shorts/|youtu\.be/|/embed/)([A-Za-z0-9_-]{11})")
 
 

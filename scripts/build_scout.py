@@ -61,7 +61,7 @@ from pathlib import Path
 # scripts/ is sys.path[0] when run as a file -- put the repo root first so `import overdub` resolves
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from overdub.workdir import WorkDir, replace_retry        # noqa: E402
+from overdub.workdir import WorkDir, jpeg_size, replace_retry        # noqa: E402
 
 # Closed verdict vocabulary. Mirrored by scout_report.py's colour map and by the prompt in the
 # overdub-scout skill -- three copies of one list, so changing it means changing all three. Kept
@@ -111,21 +111,36 @@ _THUMB_W = 160              # MUST be >= the width scout_report renders the prev
 def _ensure_thumb(work: WorkDir, info: dict) -> None:
     """Normalize whatever preview exists into work/<id>/thumb.jpg at _THUMB_W wide.
 
-    ONE output, three possible inputs, because the report must not care which era a workdir
-    comes from: a scout run after 2026-07-20 has yt-dlp's `source.audio.jpg` sitting there; an
-    older one has nothing and gets a single best-effort fetch from the URL info.json already
-    carries; and a workdir built by an earlier report run already has thumb.jpg and is left
-    alone.
+    ONE output, four possible inputs, because the report must not care which era a workdir comes
+    from: a scout run after 2026-07-20 has yt-dlp's `source.audio.jpg` sitting there; an older
+    one has nothing and gets a single best-effort fetch from the URL info.json already carries; a
+    workdir whose thumb.jpg is already at most _THUMB_W wide is left alone; and one whose
+    thumb.jpg is WIDER is re-scaled from itself.
+
+    THAT LAST CASE IS THE WHOLE REASON THIS IS NOT `if exists: return` (2026-07-21). It was, and
+    the result was that lowering _THUMB_W changed nothing for any workdir already on disk: every
+    existing preview kept its old width forever and the reports kept carrying the old bytes. The
+    size of this artifact has to be self-correcting, because the number that defines it lives in
+    a different file from the files it governs. Re-scaling needs NO NETWORK -- a wider preview is
+    its own best source.
 
     NEVER RAISES. A missing preview is cosmetic — the row still carries the grade, the highlight
-    and a
-    link — so no failure here may cost the operator a scanned video. This is also the only
-    network call in this script, and it is skipped entirely for the common case.
+    and a link — so no failure here may cost the operator a scanned video. A failed re-scale
+    leaves the existing preview untouched rather than destroying a working one: ffmpeg writes to
+    a temp path and the flip is atomic. The network call is skipped entirely for every case but
+    the empty workdir.
     """
+    fetched = work.root / "thumb.src.jpg"       # only written on the network path
+    src = None
     if work.thumb.exists():
-        return
-    src = next((p for p in sorted(work.root.glob("source.audio*.jpg"))), None)
-    tmp = work.root / "thumb.src.jpg"
+        wh = jpeg_size(work.thumb)
+        # unreadable header -> leave it alone. The bytes may still decode in a browser, and
+        # re-encoding something we cannot measure could as easily make it worse as better.
+        if wh is None or wh[0] <= _THUMB_W:
+            return
+        src = work.thumb
+    if src is None:
+        src = next((p for p in sorted(work.root.glob("source.audio*.jpg"))), None)
     if src is None:
         # smallest variant at least _THUMB_W wide beats `thumbnail`, which is maxresdefault
         # (~100 KB) — we are about to scale it down anyway
@@ -138,23 +153,28 @@ def _ensure_thumb(work: WorkDir, info: dict) -> None:
             return
         try:
             with urllib.request.urlopen(url, timeout=15) as r:      # noqa: S310 — https, from yt-dlp
-                tmp.write_bytes(r.read())
+                fetched.write_bytes(r.read())
         except Exception as e:                                       # noqa: BLE001 — cosmetic
             print(f"[warn] {work.root.name}: preview fetch failed ({e}) — row renders without one")
-            tmp.unlink(missing_ok=True)
+            fetched.unlink(missing_ok=True)
             return
-        src = tmp
+        src = fetched
+    # ffmpeg cannot read and write one path, and on the re-scale path src IS the destination --
+    # so the output always goes to a temp and only replaces the real file once it exists
+    out = work.root / "thumb.out.jpg"
     try:
         subprocess.run(
             ["ffmpeg", "-y", "-loglevel", "error", "-i", str(src),
-             "-vf", f"scale={_THUMB_W}:-2", "-q:v", "6", str(work.thumb)],
+             "-vf", f"scale={_THUMB_W}:-2", "-q:v", "6", str(out)],
             check=True)
     except (OSError, subprocess.CalledProcessError) as e:
         print(f"[warn] {work.root.name}: preview scale failed ({e}) — row renders without one")
-        work.thumb.unlink(missing_ok=True)
+        out.unlink(missing_ok=True)
+    else:
+        replace_retry(out, work.thumb)
     finally:
-        tmp.unlink(missing_ok=True)
-        if src is not None and src != tmp:
+        fetched.unlink(missing_ok=True)
+        if src not in (work.thumb, fetched):
             src.unlink(missing_ok=True)          # the full-size original is scrap once scaled
 
 

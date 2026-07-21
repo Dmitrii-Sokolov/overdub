@@ -27,6 +27,7 @@ import io
 import json
 import os
 import re
+import subprocess
 import sys
 import tempfile
 import time
@@ -39,7 +40,7 @@ sys.path.insert(0, str(_ROOT / "scripts"))
 
 import build_scout  # noqa: E402
 import scout_report  # noqa: E402
-from overdub.workdir import WorkDir  # noqa: E402
+from overdub.workdir import WorkDir, jpeg_size  # noqa: E402
 
 _DRAFT = {"quality": "high", "one_liner": "Однофразовое описание.",
           "highlight": "Замеры с описанной методологией и случаи, где схема ломается.",
@@ -548,11 +549,129 @@ def test_the_preview_is_out_of_reach_of_the_artifact_skeletons_img_reset() -> No
         out = root / "r.html"
         _report(["--queue", str(q), "--config", str(_cfg(root)), "--out", str(out)])
         page = out.read_text(encoding="utf-8")
-    # same stripping as below: the sheet is prose about this very trap, not a rendered tag
+    # the static sheet is stripped first: it is prose about this very trap, and a tag named
+    # inside a comment is not the page rendering one
     if "<img" in page.replace(scout_report._CSS, ""):
         assert "max-width:none" in scout_report._CSS, (
             "the preview is an <img> again — the skeleton's reset can reach it, and without "
             "max-width:none the column collapses once published")
+
+
+def _jpeg(w: int, h: int, marker: bytes = b"\xc0") -> bytes:
+    """Minimal JPEG carrying nothing but a frame header of the given size."""
+    sof = b"\xff" + marker + b"\x00\x11\x08" + h.to_bytes(2, "big") + w.to_bytes(2, "big")
+    return b"\xff\xd8" + sof + b"\x03\x01\x22\x00\x02\x11\x01\x03\x11\x01" + b"\xff\xd9"
+
+
+def test_jpeg_size_reads_the_frame_header() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        p = Path(d) / "t.jpg"
+        p.write_bytes(_jpeg(160, 90))
+        assert jpeg_size(p) == (160, 90)
+        p.write_bytes(_jpeg(160, 120))                    # a 4:3 source, the case 16/9 would crop
+        assert jpeg_size(p) == (160, 120)
+
+
+def test_jpeg_size_never_raises_and_never_guesses() -> None:
+    # The preview is the one thing on the page nothing depends on — every failure here has to be
+    # a None the caller falls back on, never an exception that costs the operator a report.
+    with tempfile.TemporaryDirectory() as d:
+        p = Path(d) / "t.jpg"
+        assert jpeg_size(p) is None                      # absent
+        p.write_bytes(b"not a jpeg at all")
+        assert jpeg_size(p) is None                      # wrong magic
+        p.write_bytes(b"\xff\xd8" + b"\xff\xc0\x00\x01")              # length that cannot self-cover
+        assert jpeg_size(p) is None
+        # 0xC4 lives in the SOF range and is NOT a frame header — reading it would yield two
+        # plausible numbers that are not the image's size, which is worse than admitting nothing
+        p.write_bytes(_jpeg(160, 90, marker=b"\xc4"))
+        assert jpeg_size(p) is None
+
+
+def _ffmpeg() -> bool:
+    """ffmpeg is an external binary the suite must not require — these two cases skip without it
+    rather than fail, since everything else here is pure string assembly over tmp dirs."""
+    import shutil
+    return shutil.which("ffmpeg") is not None
+
+
+def test_an_oversized_preview_on_disk_is_rescaled_not_kept() -> None:
+    # `if exists: return` meant lowering _THUMB_W changed nothing for any workdir already on
+    # disk: every preview kept its old width forever and the reports kept carrying the old bytes.
+    # The artifact's size has to be self-correcting -- the number defining it lives in a
+    # different file from the files it governs.
+    if not _ffmpeg():
+        return
+    with tempfile.TemporaryDirectory() as d:
+        work = WorkDir(Path(d) / "vid00000001")
+        work.root.mkdir(parents=True)
+        wide = build_scout._THUMB_W * 2
+        subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi",
+                        "-i", f"color=c=red:s={wide}x{wide // 16 * 9}:d=1", "-frames:v", "1",
+                        str(work.thumb)], check=True)
+        assert jpeg_size(work.thumb)[0] == wide                  # precondition
+        build_scout._ensure_thumb(work, {})
+        assert jpeg_size(work.thumb)[0] == build_scout._THUMB_W
+        # no scrap left behind, and above all the preview still exists
+        assert not (work.root / "thumb.out.jpg").exists()
+        assert not (work.root / "thumb.src.jpg").exists()
+
+
+def test_a_preview_already_small_enough_is_left_untouched() -> None:
+    # Re-encoding a correct file every run would be lossy for nothing.
+    if not _ffmpeg():
+        return
+    with tempfile.TemporaryDirectory() as d:
+        work = WorkDir(Path(d) / "vid00000001")
+        work.root.mkdir(parents=True)
+        subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi",
+                        "-i", f"color=c=red:s={build_scout._THUMB_W}x90:d=1", "-frames:v", "1",
+                        str(work.thumb)], check=True)
+        before = work.thumb.read_bytes()
+        build_scout._ensure_thumb(work, {})
+        assert work.thumb.read_bytes() == before
+
+
+def test_an_unmeasurable_preview_is_left_alone_rather_than_re_encoded() -> None:
+    # No ffmpeg needed: the guard returns before any subprocess. An unreadable header may still
+    # be bytes a browser decodes, and re-encoding what we cannot measure can only guess.
+    with tempfile.TemporaryDirectory() as d:
+        work = WorkDir(Path(d) / "vid00000001")
+        work.root.mkdir(parents=True)
+        work.thumb.write_bytes(b"\xff\xd8 truncated before any SOF")
+        before = work.thumb.read_bytes()
+        build_scout._ensure_thumb(work, {})
+        assert work.thumb.read_bytes() == before
+
+
+def test_the_preview_rule_carries_the_real_aspect_not_a_guess() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        _scouted(root, "vid00000001", "high")
+        (root / "vid00000001" / "thumb.jpg").write_bytes(_jpeg(160, 120))
+        q = _queue(root, ["vid00000001"])
+        out = root / "r.html"
+        _report(["--queue", str(q), "--config", str(_cfg(root)), "--out", str(out)])
+        page = out.read_text(encoding="utf-8")
+    # a background box has no size of its own: get this wrong and the preview is either cropped
+    # or zero pixels tall
+    assert "aspect-ratio:160/120" in page
+    assert "aspect-ratio:16/9;background-image" not in page       # the fallback did not fire
+
+
+def test_an_unparseable_preview_still_renders_on_the_fallback_ratio() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        _scouted(root, "vid00000001", "high")
+        (root / "vid00000001" / "thumb.jpg").write_bytes(b"\xff\xd8 truncated before any SOF")
+        q = _queue(root, ["vid00000001"])
+        out = root / "r.html"
+        _report(["--queue", str(q), "--config", str(_cfg(root)), "--out", str(out)])
+        page = out.read_text(encoding="utf-8")
+    # unreadable header is not a missing preview: the bytes may still be a picture the browser
+    # can decode, so it is shown at 16:9 rather than dropped
+    assert "aspect-ratio:16/9" in page
+    assert page.count("data:image/jpeg;base64,") == 1
 
 
 def test_a_missing_thumbnail_renders_nothing_at_all() -> None:
@@ -564,8 +683,9 @@ def test_a_missing_thumbnail_renders_nothing_at_all() -> None:
         code, _ = _report(["--queue", str(q), "--config", str(_cfg(root)), "--out", str(out)])
         page = out.read_text(encoding="utf-8")
     assert code == 0
-    # _CSS is stripped first: it discusses the preview in prose, and a tag NAMED in a comment is
-    # not the page rendering one. Without this the guard matched its own documentation.
+    # same stripping as the reset guard: _CSS discusses the preview in prose, the page must not
+    # RENDER one — no element, and above all no per-video rule carrying bytes for a file that
+    # does not exist
     assert "<img" not in page.replace(scout_report._CSS, "")
     assert "base64" not in page and 'class="thumb' not in page
 
