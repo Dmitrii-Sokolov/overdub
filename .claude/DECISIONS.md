@@ -1,6 +1,27 @@
 # DECISIONS
 
-## 2026-07-21 — `_pre-repair-translation.json` overwrites; the sentences backup stays write-once
+## 2026-07-21 — One queue page: the scout report is the base, the triage page merged into it
+
+PLAN item 2 (reconcile the renderers) could be closed two ways: a shared data layer under two
+thin renderers, or one merged surface. The user chose the merge with the scout report as the
+base — its formatting is the one tuned on real queues — and dub data as ADDED layers on the
+same cards. What made it coherent: the shared derivation layer (`runreport.collect_entries` /
+`batch_row`) was built FIRST either way; the merge is a presentation decision on top, and the
+text digest still exists (it feeds the route-B skill agent), so cross-surface agreement had to
+be solved regardless.
+
+Settled tensions, for the record: (1) the two pages answered different questions with opposite
+orderings — queue order won as the page-wide law (position is information), and the morning-listen
+job is served by a triage nav block with anchors, never by re-sorting; (2) the completeness number
+is `n_actionable` everywhere, advisory shown separately, with the pre-schema `n_flagged` fallback
+shared by every surface — «completeness 0» beside «completeness 5» on the same bytes was the
+original bug; (3) a card never fabricates dub metrics for a non-dubbed video, and a torn dub
+rollup OUTRANKS the grade chip («без свода») — a healthy-looking graded card over broken artifacts
+is the silent failure this repo exists to prevent. Rejected: renaming to `queue_report.py`
+(reference churn across two skills and the published-artifact flow buys only naming honesty;
+revisit if the "scout" name starts misleading operators). Reconsider the merge itself only if the
+page grows a second job that fights queue order, or embedded audio makes the published artifact
+impractically heavy.
 
 A repair now preserves `translation.json` (the source-anomaly worklist — PLAN item 4) before
 `invalidate_downstream` deletes it. The two backups deliberately differ in retention.

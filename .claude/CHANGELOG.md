@@ -1,6 +1,43 @@
 # CHANGELOG
 
-## 2026-07-21 — five quick wins in one workflow pass, each mutation-verified
+## 2026-07-21 — one queue page: the report renderers reconciled by merging them (roadmap item 2)
+
+Item 2 asked to reconcile `run_report.py` and `triage_html.py`; the fix that shipped is larger —
+per the user's call, the scout report became the BASE and the triage page merged into it. Suite
+405 → 431, green. Three-workflow pass (4 readers → 2 implementers → 5 reviewers + 5 mutation
+agents in worktrees) plus a fixer for the confirmed findings.
+
+- **Shared data layer in `overdub/runreport.py`** — the root-cause fix: `queue_ids`/`queue_playlist`
+  (single queue parse), `classify_workdir` (run/pending/scout/fetched/missing; `source.mkv` is the
+  scout discriminator), `collect_entries` (queue-first order, 1-based numbering that survives gaps,
+  from_queue rows never dropped, `build_run_report` called at most once — it is NOT pure),
+  `BATCH_COLUMNS` + `batch_row` + `batch_totals` — ONE column spec and ONE set of formatted cell
+  strings for both batch tables. The two surfaces can no longer disagree by construction; a
+  cross-surface test parses both outputs and asserts the 10 data cells identical.
+- **`scripts/scout_report.py` is the one HTML surface** — queue order stays law (position is
+  information); the morning-listen job moved from worst-first SORTING to a triage NAV block with
+  anchors. Cards gained layers: grade chip (scout.json survives promotion), dub chip
+  «слушать»/«чисто», rollup from the same `batch_row` cells, source-anomaly block, flagged units
+  with EN/RU + «ожидалось/услышано» + base64 audio (`--link` for relative paths), and a «в работе»
+  state for promoted-but-untranslated workdirs — closing the backlog gap where a promoted video
+  was invisible between download and translate. New CLI: positional workdirs, `--queue` optional,
+  `--link`, `--limit`.
+- **`scripts/triage_html.py` and its test file retired**; 20 pins migrated by intent into
+  `test_scout_report.py` (a migration audit then restored 5 dropped/weakened pins). References
+  swept: README routes A/B/C, both skills' SKILL.md (incl. the stale S3 watch/maybe/skip tally →
+  high/medium/low), `workdir.py` docstring, test comments.
+- **Completeness number unified**: `n_actionable` (+`n_advisory` shown separately) everywhere,
+  with the `n_flagged` fallback for pre-schema run.json now shared by the flags line, both batch
+  tables and the card rollup — review caught the fallback living only in the digest (HIGH, fixed).
+  Also fixed: a torn dub rollup no longer hides behind the grade chip («без свода» wins the state);
+  `collect_entries` duration ladder now consults scout.json before sentence ends; dead `rank`
+  fields dropped.
+- **Mutation verdicts** (with a caveat kept honest): `classify_workdir` and the never-drop rule
+  are genuinely guarded (mutations fail only the new/migrated tests); three mutation agents got
+  STALE worktrees (worktree = HEAD, the layer was uncommitted) and their "gap" verdicts were
+  discarded as invalid; the two contracts they could not test at HEAD — audio-player presence and
+  status-cell colouring keyed by column, not index — got NEW pins instead (both were unguarded
+  since birth).
 
 One Workflow run (10 agents: 5 parallel implementers, a suite checkpoint, 4 sequential mutation
 verifiers) closed every "fast and simple" item left on the board. Suite 393 → 405, green. All

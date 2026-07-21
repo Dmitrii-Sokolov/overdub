@@ -114,13 +114,6 @@ live artifacts, so copy the six `scout.json` before repeating it.
    Until this is decided, expect an occasional classifier stop on a video; treat it as a respawn,
    not as a reason to reinstate any instruction about what is blocked.
 
-2. **Reconcile the two report renderers.** `triage_html.py` prints `completeness.n_flagged` where
-   `run_report.py` prints `n_actionable` + `n_advisory`, and the batch tables have diverged to 10 vs
-   13 columns — same batch, two different numbers, in the two surfaces a morning operator compares.
-   One root cause, one fix. Note `_batch_table`'s cell classes are index-based, so column changes
-   there mis-colour silently (the `src` column bit exactly this; now `len(cells)-1`). Scout added a
-   third divergence to fold in: both surfaces now special-case a run.json-less workdir, separately.
-
 3. **Finish the timing accounting — transcribe is DONE, the rest is not.** `timings.json` carries
    `detail.transcribe.work_sec` (load and warmup excluded) alongside the stage wall clock, and
    `scout.json` surfaces both. Remaining:
@@ -220,9 +213,7 @@ re-fetching it inside the merged MKV (~5% waste, accepted 2026-07-20 — but ans
 question first: a promoted run OVERWRITES `source.wav` with a differently-decoded file, ba[ext=m4a]
 vs the scout's opus, while `sentences.json` was read off the old one and `--repair-asr` clips
 windows from the new one; same master and same timeline, so believed benign, never checked);
-a promoted video's summary is invisible on the triage page between the full download and translate
-(`source.mkv` present + no `run.json` → `skipped` — printed, but not carded; it was invisible before
-scout mode too, so this is a gap scout made worth closing, not one it opened); `libopus` for the dub
+`libopus` for the dub
 track (one-flag quality upgrade over aac); singing/music detection → keep original (no robot
 singing); loudnorm/EQ on the dub; `--subs-only` fast path; cross-video stage pipelining (translate
 GPU ∥ synth/verify) if nights get tight;
@@ -301,7 +292,10 @@ the translate seam ✅ (2026-07-20)** · **Scout mode `--scout` ✅ (2026-07-20;
 download gates, scout cards in both report surfaces — 44 new tests; the "never run on real media"
 caveat is CLOSED 2026-07-20 evening: multiple real queues fetched, graded and published)** ·
 **Scout report + per-video timing instrumentation ✅ (2026-07-20 evening; two kinds of timing kept
-apart, filesystem-stamped summarize marker, 49 tests)**.
+apart, filesystem-stamped summarize marker, 49 tests)** · **One queue page ✅ (2026-07-21; roadmap
+item 2 closed by MERGING the renderers: `triage_html.py` retired into `scout_report.py`, shared
+data layer in `runreport.py`, cp/adv semantics unified across all surfaces, promoted-but-untranslated
+videos now visible as «в работе» cards; 405→431 tests)**.
 The `--repair-asr` entry above is the only one still carrying an unsolved problem; the pre-batch
 checks at the top of this file apply to the next DUBBING batch, not to a scout pass.
 
