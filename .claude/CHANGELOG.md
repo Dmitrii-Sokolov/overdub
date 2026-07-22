@@ -1,5 +1,30 @@
 # CHANGELOG
 
+## 2026-07-22 — queue-page fix round: first real use + operator review
+
+The merged page's first day in real hands. Suite 431 → 434. Three findings, all fixed same-day:
+
+- **`--link` with `--out` on another drive crashed the whole render** (`os.path.relpath`
+  ValueError across Windows mounts) — hit on the FIRST real cross-drive render, after review had
+  filed it as low/pre-existing (inherited verbatim from the retired triage page). Two-step fix:
+  fall back past relpath, then anchor the fallback with `os.path.abspath` — the first version
+  returned the relative argv shape (`work\<id>\...`), which resolved against the page's own
+  (wrong) drive. Test pins both arms: absolute in / relative in, absolute out.
+- **Operator report, scan table**: a dubbed-but-never-scouted row printed the pipeline-state
+  sentence («задублировано без разведки…») in the «самое интересное» cell — status where the
+  reader scans for content. Now: the dub chip plus a dash; the dub states lost their dead `why`
+  keys. The pin needed a MIXED fixture — the scan table only renders when a scout.json exists,
+  so a dub-only page has no why cell to assert on.
+- **Operator report, cosmetics (predates the merge)**: white gutters beside the 1240px column —
+  the body behind the fragment belonged to the host page. Explicit `body` background rules
+  (light / dark / theme-toggle), raw colours duplicated from the `.sr` tokens on purpose (body
+  sits outside their scope).
+
+Not bugs, filed to INBOX as [feature]: thumbs and «о чём» one-liners for dubbed-without-scout
+rows — both are scout artifacts, the full download never writes them, and the page is
+network-free by contract. Silent players in a published `--link` artifact are by design (dub
+audio never uploaded — narrator rights gate); README now says all of this out loud.
+
 ## 2026-07-21 — one queue page: the report renderers reconciled by merging them (roadmap item 2)
 
 Item 2 asked to reconcile `run_report.py` and `triage_html.py`; the fix that shipped is larger —

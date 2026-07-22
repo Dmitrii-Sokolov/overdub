@@ -79,7 +79,11 @@ Needs Ollama serving `gemma3:12b` on localhost. Agent or human:
   (per-video block + batch table), and `scripts/scout_report.py [--queue queue.txt] [--link]`
   writes `work/scout-report.html` — one page per queue with the flagged units and an inline
   audio player per unit (expected vs whisper-heard, click to listen); the videos needing a
-  listen are surfaced by a nav block of anchors, never by re-sorting the queue.
+  listen are surfaced by a nav block of anchors, never by re-sorting the queue. Audio is
+  base64-embedded by default (portable page, every player works); `--link` keeps the page
+  small but ties it to this machine — relative paths next to `work/`, absolute ones when
+  `--out` sits on another drive. A published copy built with `--link` shows silent players
+  by design: dub audio is never uploaded (narrator rights, DECISIONS).
 
 ### B. Batch with Sonnet translation (semi-automatic — the primary route)
 
@@ -223,7 +227,10 @@ The same page carries the dub side once a queue is (partly) promoted — there i
 one page per queue now, not a scout page plus a separate triage page. A dubbed
 video adds the batch-table row (the exact cell strings the text digest prints),
 its flagged units with inline audio and the source-anomaly block; a
-promoted-but-untranslated one shows an honest "в работе" state. A card never
+promoted-but-untranslated one shows an honest "в работе" state. In the scan
+table a dubbed-but-never-scouted row keeps its dub chip and dashes out the
+content cells — "о чём" and "самое интересное" are the scout's answers, and
+nothing fills them in after the fact. A card never
 fabricates dub metrics for an undubbed video — no audio player, no RTF, no
 triage verdict, because none of those exist for it — and dubbed videos are
 counted apart from scouted ones, never folded into one total or the throughput
