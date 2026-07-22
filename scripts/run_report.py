@@ -28,7 +28,7 @@ from pathlib import Path
 # scripts/ is sys.path[0] when run as a file -- put the repo root first so `import overdub` resolves
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from overdub import runreport                              # noqa: E402
+from overdub import queueview                              # noqa: E402
 from overdub.config import Config                          # noqa: E402
 
 
@@ -70,11 +70,11 @@ def main(argv: list[str] | None = None) -> int:
         # Shared parse instead of a local copy: the old local _queue_ids did not dedup; the
         # shared one dedupes keeping first position — an improvement here (a doubled queue
         # line no longer prints the same video twice).
-        queue = runreport.queue_ids(args.queue)
+        queue = queueview.queue_ids(args.queue)
     if not args.workdirs and not queue:
         p.error("give at least one work/<id> dir and/or --queue FILE")
 
-    entries, skipped = runreport.collect_entries(
+    entries, skipped = queueview.collect_entries(
         queue, args.workdirs, cfg.work_root, rebuild=args.rebuild, cfg=cfg)
 
     blocks: list[str] = []
@@ -82,7 +82,7 @@ def main(argv: list[str] | None = None) -> int:
     for e in entries:
         kind, summary = e["kind"], e["summary"]
         if kind == "run" and e["run"] is not None:
-            blocks.append(runreport.render_run_report(e["run"], e["offenders"], summary))
+            blocks.append(queueview.render_run_report(e["run"], e["offenders"], summary))
             runs.append(e["run"])
         elif kind == "scout":
             # An honest state header instead of the old "run the pipeline first" note, which
@@ -91,13 +91,13 @@ def main(argv: list[str] | None = None) -> int:
             block = (f"### {e['vid']}  [scouted — transcript only, no dub]\n"
                      + _transcript_line(e))
             if summary:
-                block += "\n" + runreport.render_summary_block(summary)
+                block += "\n" + queueview.render_summary_block(summary)
             blocks.append(block)
         elif kind == "pending":
             block = (f"### {e['vid']}  [promoted — downloaded in full, "
                      f"translate has not started]\n" + _transcript_line(e))
             if summary:
-                block += "\n" + runreport.render_summary_block(summary)
+                block += "\n" + queueview.render_summary_block(summary)
             blocks.append(block)
         else:
             # kind "run" whose rollup degraded to None (torn artifacts), or a queued id that
@@ -107,7 +107,7 @@ def main(argv: list[str] | None = None) -> int:
                      f"- no report.json / translation.json in {e['work'].root} "
                      f"(run the pipeline first)")
             if summary:
-                block += "\n" + runreport.render_summary_block(summary)
+                block += "\n" + queueview.render_summary_block(summary)
             blocks.append(block)
 
     if blocks:
@@ -115,10 +115,10 @@ def main(argv: list[str] | None = None) -> int:
 
     if runs:
         print("\n── batch " + "─" * 40)
-        # ONE header source — runreport.BATCH_COLUMNS. No second list to drift.
-        print(" | ".join(label for _key, label in runreport.BATCH_COLUMNS))
+        # ONE header source — queueview.BATCH_COLUMNS. No second list to drift.
+        print(" | ".join(label for _key, label in queueview.BATCH_COLUMNS))
         for r in runs:
-            row = runreport.batch_row(r)
+            row = queueview.batch_row(r)
             # video/title/triage are the per-medium ends of the row: this digest truncates the
             # title to 24 chars and prints yes/no where the HTML colours a cell. The ten data
             # cells between them are printed verbatim — the cross-surface contract.
@@ -126,7 +126,7 @@ def main(argv: list[str] | None = None) -> int:
             out += [text for _key, text in row["cells"]]
             out.append("yes" if row["needs_triage"] else "no")
             print(" | ".join(out))
-        tot = runreport.batch_totals(runs)
+        tot = queueview.batch_totals(runs)
         print(f"totals: wall {tot['total_wall']}s · throughput {tot['throughput']}"
               f" · {tot['n_triage']} need triage")
 

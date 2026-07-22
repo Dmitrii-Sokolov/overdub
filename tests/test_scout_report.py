@@ -46,9 +46,10 @@ sys.path.insert(0, str(_ROOT))
 sys.path.insert(0, str(_ROOT / "scripts"))
 
 import build_scout  # noqa: E402
+import dub_blocks  # noqa: E402
 import run_report  # noqa: E402  — the cross-surface tests run both renderers over one workdir
 import scout_report  # noqa: E402
-from overdub import runreport  # noqa: E402
+from overdub import queueview, runreport  # noqa: E402
 from overdub.workdir import WorkDir, ensure_thumb_local, jpeg_size  # noqa: E402
 
 _DRAFT = {"quality": "high", "one_liner": "Однофразовое описание.",
@@ -1247,7 +1248,7 @@ def test_dub_table_src_dash_when_unscanned() -> None:
         out = root / "r.html"
         _report(["--queue", str(q), "--config", str(_cfg(root)), "--out", str(out)])
         page = out.read_text(encoding="utf-8")
-    src_i = [k for k, _l in runreport.BATCH_COLUMNS].index("src") - 2   # minus video+title
+    src_i = [k for k, _l in queueview.BATCH_COLUMNS].index("src") - 2   # minus video+title
     assert _dub_row_cells(page, 1)[src_i] == "-"
     assert _dub_row_cells(page, 2)[src_i] == "0"
 
@@ -1434,14 +1435,14 @@ def test_link_mode_survives_an_out_dir_on_another_drive() -> None:
         wav = Path(d) / "00000.wav"
         wav.write_bytes(b"RIFF")                        # existence is all the link arm checks
         other = "Z:\\elsewhere" if wav.drive.upper() != "Z:" else "Y:\\elsewhere"
-        src = scout_report._audio_src(wav, Path(other), embed=False)
+        src = dub_blocks._audio_src(wav, Path(other), embed=False)
         assert src == str(wav).replace(os.sep, "/")     # absolute in, absolute out, no raise
         # The workdir usually arrives as a RELATIVE argv path (work\<id>) — the fallback must
         # STILL come out absolute, or the href resolves against the page's own (wrong) drive.
         old = os.getcwd()
         os.chdir(d)
         try:
-            rel_src = scout_report._audio_src(Path("00000.wav"), Path(other), embed=False)
+            rel_src = dub_blocks._audio_src(Path("00000.wav"), Path(other), embed=False)
         finally:
             os.chdir(old)
     assert rel_src == str(wav).replace(os.sep, "/")     # relative in, absolute out
@@ -1527,7 +1528,7 @@ def test_triage_nav_links_flagged_videos_and_is_absent_when_clean() -> None:
 # --- cross-surface divergence (the acceptance test for the queue-page merge) -------
 def test_the_two_surfaces_print_identical_batch_cells() -> None:
     # ONE dub workdir, BOTH renderers: the ten data cells of the batch row must be IDENTICAL
-    # strings, and both headers must come from runreport.BATCH_COLUMNS. This is the whole point
+    # strings, and both headers must come from queueview.BATCH_COLUMNS. This is the whole point
     # of the merge — the digest and the page can no longer disagree about the same bytes.
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
@@ -1542,8 +1543,8 @@ def test_the_two_surfaces_print_identical_batch_cells() -> None:
         code, _ = _report(["--queue", str(q), "--config", str(cfgp), "--out", str(out)])
         page = out.read_text(encoding="utf-8")
     assert code == 0
-    assert " | ".join(lbl for _k, lbl in runreport.BATCH_COLUMNS) in digest
-    for _k, lbl in runreport.BATCH_COLUMNS:
+    assert " | ".join(lbl for _k, lbl in queueview.BATCH_COLUMNS) in digest
+    for _k, lbl in queueview.BATCH_COLUMNS:
         assert f"<th>{html.escape(lbl)}</th>" in page
     row_line = next(ln for ln in digest.splitlines() if ln.startswith("vid00000001 | "))
     digest_cells = row_line.split(" | ")[2:-1]          # video, title | TEN CELLS | triage

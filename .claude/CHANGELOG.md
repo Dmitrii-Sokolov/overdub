@@ -1,6 +1,32 @@
 # CHANGELOG
 
-## 2026-07-22 (later) — timing accounting finished, the roadmap de-numbered, two INBOX entries built
+## 2026-07-22 (last) — two files split along seams that already existed
+
+No behaviour change; 445 tests green before and after, which is the whole claim being made.
+
+**`overdub/runreport.py` 955 → 662 + `overdub/queueview.py` 328.** The cut is the
+`# --- shared report data layer` marker that was already in the file: everything above reads ONE
+workdir during a run (the pipeline's caller), everything below resolves a QUEUE after one (the
+two report scripts). `queue_ids`, `queue_playlist`, `classify_workdir`, `collect_entries`,
+`BATCH_COLUMNS`, `batch_row`, `batch_totals`, `render_summary_block`, `render_run_report` moved.
+The dependency is one-way — queueview imports runreport, never the reverse — and runreport now
+has NO package imports at all (`WorkDir`, `Path` and `textwrap` went with the moved half).
+Callers updated: both report scripts and two test files.
+
+**`scripts/scout_report.py` 1000 → 879 + `scripts/dub_blocks.py` 150.** The six functions that
+render what a DUBBED video earned — `_audio_src`, `_badges`, `_fmt_span`, `_unit_html`,
+`_srcanom_html`, `_dub_table` — came in as a group when the triage page was merged here and
+still are one. They are re-bound under their old private names in scout_report, so no call site
+inside the renderer changed. dub_blocks must never import back; the temptation is `_title_link`,
+and the batch table links by video id instead, which is what makes the group self-contained.
+
+**The CSS extraction proposed alongside this was NOT done, and the reason is a correction to the
+proposal.** It was pitched as "pure data, zero risk". It is not: `_CSS` is a 240-line literal, a
+verbatim move has to reproduce it exactly, and the test suite checks only a couple of width
+numbers by regex — so a mangled rule would ship green. That makes it the one change here that
+could break the page silently, which is the opposite of near-free. It stays until either the
+move can be verified byte-for-byte against the previous revision, or the page grows a rendering
+test worth the name. `scout_report.py` therefore sits at 879, still above the 800 advisory.
 
 Suite 434 → 445. Three unrelated pieces of work that happened to share one session.
 
