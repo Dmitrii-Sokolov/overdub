@@ -94,11 +94,12 @@ _NO_ROLLUP = {"label": "без свода", "cls": "v-none",
               "why": "артефакты дубляжа на месте, но run.json не собрался — битые "
                      "report.json/translation.json; смотри вывод пайплайна"}
 # Dub states for a run that was never scouted: the row chip IS the dub verdict then, because
-# it is the only assessment this video has.
-_DUB_TRIAGE = {"label": "слушать", "cls": "t-triage",
-               "why": "задублировано без разведки — есть проблемные юниты, слушай на карточке"}
-_DUB_CLEAN = {"label": "чисто", "cls": "t-clean",
-              "why": "задублировано без разведки — проверка чистая, слушать нечего"}
+# it is the only assessment this video has. Deliberately NO "why": the unfinished states carry
+# guidance text because they demand an ACTION, but a dub verdict is status — spelling it out in
+# the «самое интересное» cell put pipeline state where content belongs (operator report
+# 2026-07-22). The chip says it all; details live in the dub table and on the card.
+_DUB_TRIAGE = {"label": "слушать", "cls": "t-triage"}
+_DUB_CLEAN = {"label": "чисто", "cls": "t-clean"}
 
 # The cost axis USED to live here as focus/background. Dropped 2026-07-20: on the first real
 # queue 28 of 30 videos took the same value, and a field that never varies is a column that
@@ -151,6 +152,15 @@ def secs(sec) -> str:
 _CSS = """
 <meta charset="utf-8">
 <style>
+/* Full-bleed background. The tokens live on .sr (a fragment must not restyle :root), but the
+   BODY behind the 1240px column belongs to the host page — which painted white gutters beside
+   the content in every light host and worse in dark ones (operator report 2026-07-22, bug
+   predates the merge). Body sits outside .sr's token scope, so these four raw colours are
+   deliberate duplicates of --bg below; change one, change both. */
+body{margin:0;background:#f7f8fa;}
+@media (prefers-color-scheme:dark){body{background:#0f1419;}}
+:root[data-theme="dark"] body{background:#0f1419;}
+:root[data-theme="light"] body{background:#f7f8fa;}
 .sr{--bg:#f7f8fa;--card:#ffffff;--ink:#141a21;--dim:#5b6875;--line:#dde3ea;
   --accent:#4a5b8c;--watch:#0d7f59;--maybe:#a86a10;--skip:#b03a52;
   --watch-bg:#e7f5ef;--maybe-bg:#fbf1de;--skip-bg:#fbeaee;--none-bg:#eef1f5;
@@ -899,7 +909,8 @@ def _views(entries: list[dict]) -> list[dict]:
             "thumb_wh": jpeg_size(work.root / "thumb.jpg"),
             "title": title, "duration": duration,
             "one_liner": ((doc or {}).get("one_liner") or "—") if grade else "—",
-            "highlight": ((doc or {}).get("highlight") or "—") if grade else v["why"],
+            # states without a "why" (the dub verdicts) render a dash: the chip is the message
+            "highlight": ((doc or {}).get("highlight") or "—") if grade else (v.get("why") or "—"),
             "paragraph": paragraph,
             "n_sentences": e.get("n_sentences"),
             "timings": (doc or {}).get("timings") if isinstance((doc or {}).get("timings"), dict)

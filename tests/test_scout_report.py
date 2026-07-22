@@ -1393,6 +1393,35 @@ def test_link_mode_survives_an_out_dir_on_another_drive() -> None:
     assert rel_src == str(wav).replace(os.sep, "/")     # relative in, absolute out
 
 
+def test_dub_row_highlight_is_a_dash_not_pipeline_state() -> None:
+    # The «самое интересное» column is about CONTENT; a dubbed-but-never-scouted row has none,
+    # and the old state sentence («задублировано без разведки…») put pipeline status where the
+    # reader scans for substance (operator report 2026-07-22). The chip already carries the
+    # verdict; details live in the dub table and on the card.
+    # The queue MUST be mixed: the scan table only renders when at least one entry carries a
+    # scout.json, so a dub-only fixture has no why cell at all and asserts nothing.
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        _dubbed(root, "vid00000001")
+        _scouted(root, "vid00000002", "medium")
+        q = _queue(root, ["vid00000001", "vid00000002"])
+        out = root / "r.html"
+        _report(["--queue", str(q), "--config", str(_cfg(root)), "--out", str(out)])
+        page = out.read_text(encoding="utf-8")
+    assert "задублировано без разведки" not in page
+    assert "</span>—</td>" in page              # the chip, then the dash, nothing between
+
+
+def test_page_background_bleeds_past_the_content_column() -> None:
+    # The .sr column caps at 1240px; the body behind it belongs to the host page, which painted
+    # gutters beside the content (white in light hosts) — reported 2026-07-22, predates the
+    # merge. Raw colours, not var(--bg): body sits outside .sr's token scope.
+    assert "body{margin:0;background:#f7f8fa;}" in scout_report._CSS
+    assert "@media (prefers-color-scheme:dark){body{background:#0f1419;}}" in scout_report._CSS
+    assert ':root[data-theme="dark"] body{background:#0f1419;}' in scout_report._CSS
+    assert ':root[data-theme="light"] body{background:#f7f8fa;}' in scout_report._CSS
+
+
 def test_missing_wav_names_the_gap_not_a_dead_player() -> None:
     # A flagged unit whose wav is gone gets a note, never a broken <audio> element.
     with tempfile.TemporaryDirectory() as d:
