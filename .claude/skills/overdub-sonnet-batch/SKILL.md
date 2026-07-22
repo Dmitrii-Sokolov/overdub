@@ -146,7 +146,7 @@ leave `translation.json` unwritten and hand that video to the silent Gemma path)
 same `general-purpose` + **`model: "sonnet"` — set it explicitly** (a summary written by an
 inherited session model is not the artifact this route was verified with, DECISIONS 2026-07-18/19).
 It is INFORMATIONAL — it gates nothing, skips nothing, and no code reads a verdict out of it
-(PLAN item 3, decided 2026-07-19). Its own resume filter, keyed on its own artifact:
+(decided 2026-07-19). Its own resume filter, keyed on its own artifact:
 
 ```powershell
 $sumTodo = @($ids | Where-Object {
@@ -290,7 +290,7 @@ re-sorts the queue). Mention the path in your summary. Skip it for a fully clean
 - If `sentences.json` is re-transcribed (e.g. `--force transcribe`), the drafts are stale —
   re-run step 2 for that video (the `$todo` mtime clause catches this automatically).
 - **A missing `summary.md` is never a reason not to resume.** Do NOT add a `summary.md` clause to
-  the step-3 gate: the summary is informational in v1 (PLAN item 3, decided 2026-07-19) — it gates
+  the step-3 gate: the summary is informational in v1 (decided 2026-07-19) — it gates
   nothing and skips nothing, and a gate here would be exactly the model-decides-what-to-drop
   behaviour that decision rejected. That gate exists to catch a silent Gemma substitution; widening
   it would let a failed summarizer block a dub that has everything it needs. Both report surfaces
@@ -313,7 +313,7 @@ re-sorts the queue). Mention the path in your summary. Skip it for a fully clean
   signal, and forging it is the silent failure in miniature.
 - **Source anomalies gate nothing.** Do not add a `src` clause to the step-3 gate, do not let
   them delay a resume, and do not treat a `[warn]` from the helper as a failure — same reasoning
-  as the summary bullet above (PLAN item 3 D2). They are advisory in v1 and do not move
+  as the summary bullet above (DECISIONS 2026-07-20, D2). They are advisory in v1 and do not move
   `needs_triage`; their action is `--repair-asr`, taken deliberately by a human. Promote them
   into `needs_triage` only after one batch has measured their fire rate — an unmeasured detector
   promoted early is how `entity_loss` came to mark 11 of 12 videos.

@@ -18,7 +18,7 @@ the translate-seam contract never rides on an LLM's discipline:
                            (DECISIONS 2026-07-17 item F)
 
 The ONE judgement field beyond text_ru the sub-agent also owns is `src` -- its reading of the
-ENGLISH source (PLAN item 1). A good translator is a defect BLEACHER: DECISIONS 2026-07-19,
+ENGLISH source (the source-anomaly pass). A good translator is a defect BLEACHER: DECISIONS 2026-07-19,
 RyvXxApfHkk id11's ASR garbage came back as plausible Russian on the first pass and vanished
 from everything downstream, and rate_implausible / dup_adjacent are blind BY CONSTRUCTION to a
 semantic garble that carries no timing anomaly and no repeated span. This script copies `src`
@@ -54,7 +54,7 @@ from overdub.normalize import normalize_for_tts         # noqa: E402
 from overdub.stages.translate import _is_bad            # noqa: E402
 from overdub.workdir import WorkDir                      # noqa: E402
 
-# Closed source-anomaly vocabulary (PLAN item 1). Mirrored in runreport._SOURCE_KINDS, which adds
+# Closed source-anomaly vocabulary. Mirrored in runreport._SOURCE_KINDS, which adds
 # the "unknown" bucket this file clamps into -- keep the two in sync, one is the writer and the
 # other the reader. See references/translate-contract.md for what each kind means.
 _SRC_KINDS = ("ok", "garbled", "truncated", "dup_neighbour", "enum_repeat",
@@ -138,7 +138,8 @@ def build(work: WorkDir, draft_path: Path, cfg: Config
             n_scanned += 1
             if src not in _SRC_KINDS:
                 # clamp, never drop: an unknown kind must not vanish, and must not fail the
-                # build either -- a report never gates a dub (PLAN item 1 / item 3 D2).
+                # build either -- a report never gates a dub (the source-anomaly pass and the
+                # video summary are both informational, DECISIONS 2026-07-20 D2).
                 print(f"[warn] id {sid}: unknown src {src!r} -> unknown")
                 note = f"[raw src={src!r}] {note}".strip()
                 src = "unknown"

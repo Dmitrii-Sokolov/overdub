@@ -1,5 +1,69 @@
 # CHANGELOG
 
+## 2026-07-22 (later) — timing accounting finished, the roadmap de-numbered, two INBOX entries built
+
+Suite 434 → 445. Three unrelated pieces of work that happened to share one session.
+
+**Load-excluded accounting reaches the stages that were missing it.** `synthesize` and
+`translate` now write a `detail` entry beside their stage wall, the way `transcribe` has since
+2026-07-20:
+
+- `detail.synthesize` = `work_sec` (clock starts after the worker spawn and the verifier load),
+  `n_units`, `n_rendered`, `n_synth_calls`. **`n_rendered` is the one that pays for itself**: it
+  closes the gotcha DECISIONS 2026-07-19 recorded, where a resumed run's timings covered only the
+  units it re-rendered and the only way to notice was comparing segment wav mtimes against
+  `timings.json`. `n_synth_calls` counts THIS session's engine calls rather than summing the
+  manifest's `attempts`, which would bill a reused unit's old retries to the current run.
+- `detail.translate` = `work_sec` (preflight excluded), `n_sentences`, `n_api`, `first_call_sec`.
+  Ollama loads Gemma inside the FIRST `/api/chat` call, so that load cannot be excluded from the
+  loop — `first_call_sec` records it separately instead of pretending it away, and `n_api` is
+  translate's resume counter.
+- `run.json.timings` gains `overhead_s` (per stage: wall − work), `total_overhead_s`,
+  `total_work_s`, `rtf_work`, `work_coverage`, `work_complete`. `rtf` is untouched — it is what
+  the run cost. The digest prints the new pair only when it exists and marks a partial figure
+  `RTF~`, since five stages still report no `detail` and `total_work_s` is therefore an upper
+  bound.
+
+**A stale claim in the roadmap item itself, corrected.** The item said every recorded speed
+number was suspect "including `nfe` 48→16's 2.16×". Wrong about that number:
+`scripts/exp_nfe_sweep.py` times each cell around `engine.synthesize` alone and records the
+worker spawn separately as `startup_s`, so it never billed a model load to a video. What IS
+contaminated is anything read off a stage wall — the ~72 s/video fixed cost, the Silero-vs-F5
+whole-pipeline RTF pair, every `breakdown_pct`. Noted in the harness docstring so the next reader
+does not re-derive it.
+
+**The roadmap is de-numbered, and the numbers were actively lying.** Items are now named
+(Transcribe speed, S2 artifact route, Timing accounting, Repair-window hotwords, Parallel F5
+workers, Shorter reference clip). 34 "PLAN item N" references across 12 code and test files were
+renamed to their TOPIC, because the numbers were re-cut with each roadmap and the references
+never moved: "PLAN item 1" simultaneously meant the F5 speedup in `exp_nfe_sweep.py`, the
+source-anomaly pass in `runreport.py`, proper nouns in DECISIONS, and transcribe in PLAN. Entries
+in CHANGELOG and DECISIONS keep their numbers — they are dated records of what was true then.
+
+**Both 2026-07-22 INBOX entries built, neither needing a roadmap slot.**
+
+- **Previews for dubbed-without-scout videos.** `--write-thumbnail --convert-thumbnails jpg` was
+  on the audio branch only, so a video dubbed without a scout pass had no preview bytes anywhere.
+  The full fetch now takes one too (it lands as `source.jpg`, since that `-o` template is
+  `source.mkv`), and the normalizer moved out of `scripts/build_scout.py` into
+  `overdub/workdir.py` as `THUMB_W` / `scale_thumb` / `ensure_thumb_local` — beside `jpeg_size`,
+  which already lives there for the same both-ends reason. The glob widened from
+  `source.audio*.jpg` to `source*.jpg`; that one character was the whole defect. build_scout keeps
+  the network fallback for pre-2026-07-22 workdirs, so the pipeline never grows a second reason to
+  talk to YouTube. `scale_thumb` also gained an `out.exists()` check — ffmpeg exiting 0 with no
+  output file would have raised `FileNotFoundError` out of a function whose contract is that it
+  cannot.
+- **«О чём» for the same rows.** The scan cell falls back to `summary.md`'s first sentence when
+  there is no `scout.json`. Deliberately not a sentence tokenizer: it splits on terminal
+  punctuation plus whitespace, so an abbreviation would cut early — a SHORT cell, never a wrong
+  one. Still a dash when neither exists, which is what keeps the 2026-07-22 defect (a pipeline
+  state sentence in the content column) from returning by another route.
+
+Known limits, stated rather than discovered later: existing workdirs get no preview until their
+next download (`done()` fast-skips), and `work_complete` is False on every real run until
+`separate`/`verify`/`assemble`/`mux`/`download` report `detail` — `separate` first, since
+DECISIONS 2026-07-19 measured its length-slope at R²=0.000, meaning its entire wall is overhead.
+
 ## 2026-07-22 — queue-page fix round: first real use + operator review
 
 The merged page's first day in real hands. Suite 431 → 434. Three findings, all fixed same-day:

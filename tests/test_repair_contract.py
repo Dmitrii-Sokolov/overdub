@@ -4,7 +4,7 @@ Run: .venv-asr/Scripts/python.exe -X utf8 tests/test_repair_contract.py
 
 Every case below is derived from the SPEC, not from the code: DECISIONS 2026-07-19
 ("Repairing a whisper hallucination: isolated-window re-ASR, not a full re-run"),
-PLAN roadmap item 2, and the README "Repairing an ASR defect" runbook. The author of
+the `--repair-asr` design, and the README "Repairing an ASR defect" runbook. The author of
 this file deliberately never read `overdub/repair.py` or `tests/test_repair.py` — a test
 derived from the implementation can only pin what the implementation happens to do, and
 the point of this file is to pin what was PROMISED.
@@ -346,7 +346,7 @@ def test_the_original_is_preserved_and_a_second_pass_does_not_clobber_it() -> No
 
 
 def test_the_anomaly_report_survives_its_own_repair() -> None:
-    """PLAN item 4: the source-anomaly worklist lives INSIDE translation.json, and an
+    """The source-anomaly worklist lives INSIDE translation.json, and an
     accepted repair invalidates translation.json — so repairing the FIRST window off the
     report must leave the rest of the worklist readable, byte-exact, at
     _pre-repair-translation.json, while translation.json itself still goes."""

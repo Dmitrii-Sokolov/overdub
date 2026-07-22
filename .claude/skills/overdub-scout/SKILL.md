@@ -295,6 +295,12 @@ A queued video with no `scout.json` renders as an explicit `не отскани�
 says so on stdout. That is an unfinished S2 — re-run its sub-agent and rebuild, do not publish a
 report with holes in it and hope they go unnoticed.
 
+**A dubbed-but-never-scouted row is NOT that case, and must not be treated as one.** It has no
+`scout.json` by design — it came off the dubbing route, which never runs S2 — so it keeps its dub
+chip, borrows «о чём» from the first sentence of its `summary.md` (2026-07-22) and leaves «самое
+интересное» a dash, since that one is the scout's own judgement. Running S2 over it would produce
+a grade nobody asked for; the row is complete as it stands.
+
 **Then publish it as an Artifact** so it is readable from anywhere, not just this machine. The
 file is deliberately a BODY FRAGMENT (inline `<style>`, no doctype/`<html>`/`<head>`/`<body>`)
 because the publisher supplies that skeleton:

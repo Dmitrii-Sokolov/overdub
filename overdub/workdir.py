@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import os
 import re
+import subprocess
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -70,6 +71,85 @@ def jpeg_size(path: Path) -> tuple[int, int] | None:
     return None
 
 
+THUMB_W = 160
+"""Width every preview is normalized to, in pixels — the ONE number that governs thumb.jpg.
+
+Lives here, beside `jpeg_size`, for the same reason that function does: both ENDS of the preview
+need it and neither owns the other. The download stage produces the file; `scripts/build_scout.py`
+re-normalizes older workdirs and owns the network fallback; `scripts/scout_report.py` renders it.
+It used to live in build_scout alone, which made the width a property of the SUMMARIZER step —
+so a video that was dubbed without ever being scouted had no preview at all, because nothing on
+that path ever ran the summarizer (INBOX 2026-07-22).
+
+HARD RULE, unchanged by the move: this must stay >= the width scout_report renders at, or the
+scan table upscales the file into a wider slot and the result is soft. Everything else about the
+number is page weight — the rationale for 160 specifically (and for rejecting a 2x hi-DPI source)
+is DECISIONS 2026-07-21."""
+
+
+def scale_thumb(src: Path, dst: Path) -> bool:
+    """ffmpeg-scale `src` to THUMB_W wide → `dst`, atomically. True when dst was written.
+
+    NEVER RAISES and never leaves a half-written destination: the preview is the one artifact
+    nothing depends on, so every failure here degrades to a row without a picture, never to a lost
+    download or a lost report.
+
+    The output always goes through a temp beside `dst`, because ffmpeg cannot read and write one
+    path and the re-scale case passes src == dst (a wider preview is its own best source — see
+    build_scout._ensure_thumb)."""
+    out = dst.with_suffix(".out.jpg")
+    try:
+        subprocess.run(
+            ["ffmpeg", "-y", "-loglevel", "error", "-i", str(src),
+             "-vf", f"scale={THUMB_W}:-2", "-q:v", "6", str(out)],
+            check=True)
+        # exit 0 with no output file is a real ffmpeg shape (a decode that produced no frame),
+        # and the flip would then raise FileNotFoundError out of a function whose whole contract
+        # is that it cannot. Checked rather than caught, so the [warn] says what happened.
+        if not out.exists():
+            raise OSError("ffmpeg wrote no output")
+        replace_retry(out, dst)
+    except (OSError, subprocess.CalledProcessError) as e:
+        print(f"[warn] {dst.parent.name}: preview scale failed ({e}) — row renders without one")
+        out.unlink(missing_ok=True)
+        return False
+    return True
+
+
+def ensure_thumb_local(work: "WorkDir") -> bool:
+    """Normalize whatever preview already sits in the workdir into thumb.jpg at THUMB_W. Offline.
+
+    True when thumb.jpg is present and at most THUMB_W wide afterwards. Three cases, in order:
+    an existing thumb.jpg that is already narrow enough (or whose header will not parse) is left
+    alone; a WIDER one is re-scaled from itself; otherwise yt-dlp's `source*.jpg` sidecar is
+    scaled into place.
+
+    The glob is `source*.jpg`, not `source.audio*.jpg`: the sidecar's name follows the -o
+    template, so a scout fetch lands `source.audio.jpg` and a full video fetch lands `source.jpg`.
+    Matching only the first shape is why a dubbed-without-scout video had no preview. Nothing else
+    in a workdir is named `source*.jpg` — thumb.src.jpg / thumb.out.jpg are build_scout's and this
+    function's own temporaries and deliberately do not start with `source`.
+
+    NO NETWORK, by design. This is called from the download stage (where a fetch just happened
+    anyway) and from build_scout, which keeps the one networked fallback for pre-2026-07-22
+    workdirs that have no sidecar at all. Splitting it that way means the pipeline never grows a
+    second reason to talk to YouTube, and the report surfaces stay network-free."""
+    if work.thumb.exists():
+        wh = jpeg_size(work.thumb)
+        # unreadable header -> leave it alone. The bytes may still decode in a browser, and
+        # re-encoding something we cannot measure could as easily make it worse as better.
+        if wh is None or wh[0] <= THUMB_W:
+            return True
+        return scale_thumb(work.thumb, work.thumb)
+    src = next((p for p in sorted(work.root.glob("source*.jpg"))), None)
+    if src is None:
+        return False
+    ok = scale_thumb(src, work.thumb)
+    if ok:
+        src.unlink(missing_ok=True)                # the full-size original is scrap once scaled
+    return ok
+
+
 _YT_ID = re.compile(r"(?:v=|/shorts/|youtu\.be/|/embed/)([A-Za-z0-9_-]{11})")
 
 
@@ -122,7 +202,7 @@ class WorkDir:
     def sentences(self) -> Path: return self.root / "sentences.json"      # transcribe
 
     @property
-    def summary(self) -> Path: return self.root / "summary.md"            # sonnet seam (informational, PLAN item 3)
+    def summary(self) -> Path: return self.root / "summary.md"            # sonnet seam (informational)
 
     @property
     def thumb(self) -> Path: return self.root / "thumb.jpg"               # scout report: 160px preview, data-URI'd into the page

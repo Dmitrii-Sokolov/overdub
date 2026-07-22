@@ -24,6 +24,7 @@ import json
 import os
 import re
 import sys
+import time
 import urllib.request
 from pathlib import Path
 
@@ -251,6 +252,8 @@ class TranslateStage:
         return ctx.work.translation.exists()
 
     def run(self, ctx: Context) -> None:
+        from .. import runreport            # local: runreport imports stages lazily too
+
         cfg = ctx.cfg
         sentences = json.loads(ctx.work.sentences.read_text(encoding="utf-8"))
         root = _root(cfg.ollama_base_url)
@@ -277,6 +280,19 @@ class TranslateStage:
         if _heal_torn_tail(partial):            # else the first append glues onto the fragment
             print("       [warn] healed torn last line in translation.jsonl (crash mid-write); "
                   "that sentence re-translates", file=sys.stderr)
+        # THE CLOCK STARTS HERE, after _preflight — the same boundary transcribe and synthesize
+        # draw around their model load. What CANNOT be excluded is Ollama's own load: the model
+        # comes up inside the first /api/chat call, so on the local Gemma route (~8-9 GB) the
+        # first sentence carries tens of seconds of it. `first_call_sec` is therefore recorded
+        # separately rather than pretended away — work_sec MINUS it is the load-excluded figure,
+        # and neither number is invented.
+        #
+        # `n_api` is the resume counter, the analogue of synthesize's n_rendered: a resumed
+        # translate replays translation.jsonl and touches the network for nothing, so its wall
+        # clock says the stage was free when in truth it did not run.
+        t0 = time.perf_counter()
+        n_api = 0
+        first_call_s: float | None = None
         with partial.open("a", encoding="utf-8") as pf:
             for s in sentences:
                 sid = s["id"]
@@ -289,7 +305,11 @@ class TranslateStage:
                     continue                                      # source changed -> re-translate
                 user = _build_user(s["text"], window[-cfg.context_window:],
                                    cfg.translate_context_char_cap)
+                t_call = time.perf_counter()
                 text_ru, status, attempts, flag = _translate_one(root, cfg, user, s["text"])
+                n_api += 1
+                if first_call_s is None:
+                    first_call_s = time.perf_counter() - t_call
                 obj = {
                     "id": sid, "start": s["start"], "end": s["end"], "src_en": s["text"],
                     "text_ru": text_ru, "text_tts": normalize_for_tts(text_ru),
@@ -306,6 +326,7 @@ class TranslateStage:
                 else:
                     print(f"       [flag] id{sid}: {flag}", file=sys.stderr)
 
+        work_s = time.perf_counter() - t0
         # finalize: enforce the contract (raise, not assert — a never-drop invariant must not be
         # stripped under `python -O`), then atomic write
         out = [done[s["id"]] for s in sentences]
@@ -324,5 +345,10 @@ class TranslateStage:
         atmp.write_text(json.dumps(audit, ensure_ascii=False, indent=2), encoding="utf-8")
         os.replace(atmp, ctx.work.pronounce_audit)
 
+        runreport.record_stage_detail(
+            ctx.work, "translate", work_sec=round(work_s, 3), n_sentences=len(out),
+            n_api=n_api,
+            first_call_sec=(round(first_call_s, 3) if first_call_s is not None else None))
         n_fail = sum(1 for o in out if o.get("status") != "ok")
-        print(f"       {len(out)} sentences → translation.json ({n_fail} flagged)")
+        print(f"       {len(out)} sentences → translation.json ({n_fail} flagged; "
+              f"{work_s:.1f}s excl. preflight, {n_api}/{len(out)} sentences hit the API)")

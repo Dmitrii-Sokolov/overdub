@@ -9,6 +9,13 @@ longer an open item (see Deferred for the improvement question). Route B (Sonnet
 primary dubbing route and unchanged. What is NOT settled is speed: the summarize wave dominates
 scout, and until this evening there was no per-video number to optimize against.
 
+**Updated 2026-07-22.** The timing accounting is finished as a mechanism: `synthesize` and
+`translate` now carry `detail` entries beside their stage walls, and `run.json` publishes
+`rtf_work` alongside `rtf`. So "measure one lever at a time against a stored baseline" — which
+the transcribe item asks for — now has an instrument that a resumed run or a batch position
+cannot quietly corrupt. One claim in the old accounting item was itself wrong and is corrected
+below: the `nfe` 48→16 = 2.16× figure was never wall-clock contaminated.
+
 Sample workdirs: `work/` (33 dirs — Silero baselines, the AI-Fluency batch, and the scouted
 queues, read-only).
 **Corrected 2026-07-20 — the rest of this line was stale:** `work-exp/context-earcheck/`,
@@ -50,7 +57,18 @@ live artifacts, so copy the six `scout.json` before repeating it.
 
 ---
 
-1. **Optimize transcribe — it is the bottleneck now, and it is the only one left.** The summarize
+**Items are NAMED, not numbered (2026-07-22).** The numbers were re-cut with every roadmap and
+the references in code never moved with them, so by this week "PLAN item 1" meant the F5 speedup
+in `exp_nfe_sweep.py`, the source-anomaly pass in `runreport.py`, proper nouns in DECISIONS, and
+transcribe here — four different things, one label. Every such reference in code and tests now
+names its TOPIC (the queue-page merge, the source-anomaly pass, the video summary), which cannot
+rot when this list is re-ordered. Do not reintroduce numbering; CHANGELOG and DECISIONS entries
+that carry the old numbers are historical records and stay as written.
+
+---
+
+### Transcribe speed
+**It is the bottleneck now, and it is the only one left.** The summarize
    wave went 842 → 192 s (Workflow fan-out, CHANGELOG 2026-07-21) and is now the slowest agent
    plus two seconds: 4.51× parallel against a 4.55× ceiling, i.e. finished. Transcribe is 723 s
    against it, 79% of the pass, serial on one GPU, and it scales with video length while agent
@@ -93,7 +111,8 @@ live artifacts, so copy the six `scout.json` before repeating it.
    190-310 s against 723 s of transcribe; chasing a hundred seconds of jitter there is not worth
    a day. Both runs are preserved under `work-exp/wave-run{4,5}-2026-07-21/`.
 
-1b. **Decide how S2's artifacts reach the disk — the current answer is workable but not settled.**
+### S2 artifact route
+**Decide how S2's artifacts reach the disk — the current answer is workable but not settled.**
    Sub-agents are blocked from the Write tool ("Subagents should return findings as text, not
    write report files"). Until 2026-07-21 the prompt told them so and told them how to write the
    files anyway; a safety classifier stopped one of six agents over exactly that, correctly, and
@@ -114,21 +133,43 @@ live artifacts, so copy the six `scout.json` before repeating it.
    Until this is decided, expect an occasional classifier stop on a video; treat it as a respawn,
    not as a reason to reinstate any instruction about what is blocked.
 
-3. **Finish the timing accounting — transcribe is DONE, the rest is not.** `timings.json` carries
-   `detail.transcribe.work_sec` (load and warmup excluded) alongside the stage wall clock, and
-   `scout.json` surfaces both. Remaining:
-   (a) **`synthesize` and `translate` have no `detail` entry**, so the same distortion still
-   applies to them — and synthesize is the expensive one on the dubbing route.
-   (b) **`run.json` / RTF still bill per video off the wall clock.** `runreport` computes
-   `total_wall` and the percentage breakdown from `stages` alone, so every RTF number remains
-   incomparable across batch positions and across `--video-major`.
-   (c) **Blocks trusting any recorded speed number, including `nfe` 48→16's "2.16×"**; those
-   were measured under the old accounting and must be re-checked before reuse.
-   **Dropped from 2nd:** the half that mattered for the route in daily use (transcribe, and
-   scout runs only download+transcribe) is shipped. What is left serves the DUB route, which is
-   not the current bottleneck — but (c) is a live landmine: do not quote an old speed number.
+### Timing accounting
+**SHIPPED 2026-07-22 — the mechanism is complete; what remains is one measurement on real
+media.** `timings.json` carries a `detail.<stage>` entry beside every stage wall clock for the
+three heavy stages, and `run.json` no longer bills exclusively off the wall:
 
-5. **Feed the repair window `hotwords` / `initial_prompt`.** Fixes the one confirmed regression from
+- `detail.transcribe` — `work_sec` (load and warmup excluded), `asr_passes`.
+- `detail.synthesize` — `work_sec` (worker spawn and model excluded), `n_units`, **`n_rendered`**,
+  `n_synth_calls`. `n_rendered` closes the gotcha DECISIONS 2026-07-19 recorded: a resumed run
+  re-renders a fraction of the units and nothing in the file said which fraction, so the only way
+  to spot a poisoned number was comparing segment wav mtimes against `timings.json`.
+- `detail.translate` — `work_sec` (preflight excluded), `n_sentences`, **`n_api`**,
+  `first_call_sec`. Ollama loads Gemma INSIDE the first `/api/chat` call, so that load cannot be
+  excluded; `first_call_sec` is recorded separately rather than pretended away, and `n_api` is
+  translate's resume counter.
+- `run.json.timings` gains `overhead_s` (per stage: wall − work), `total_overhead_s`,
+  `total_work_s`, **`rtf_work`**, `work_coverage`, `work_complete`. `rtf` is unchanged and still
+  bills the whole wall — it is what the run cost. The digest prints the pair only when it exists
+  and marks a partial figure `RTF~`.
+
+**The correction that matters, and it reverses this item's own claim.** This item used to say
+every recorded speed number was suspect "including `nfe` 48→16's 2.16×". **That is wrong about
+that number.** `scripts/exp_nfe_sweep.py` times each cell around `engine.synthesize` alone and
+records the worker spawn separately as `startup_s`; it never billed a model load to a video, so
+the 2.16× needs no re-check. What IS wall-clock contaminated is anything derived from
+`timings.json` stage walls before this change — the ~72 s/video fixed cost, the Silero-vs-F5
+whole-pipeline RTF pair (0.14-0.17 vs 0.70-0.92), and every `breakdown_pct`. Re-derive those
+from `rtf_work` on the next pass rather than quoting them.
+
+**Still open, and it is a measurement not code:** `download`, `separate`, `verify`, `assemble`
+and `mux` report no `detail`, so `work_complete` is False on every real run today and
+`total_work_s` is an UPPER bound. `separate` is the one worth doing next — DECISIONS 2026-07-19
+measured its slope against audio length at R²=0.000, i.e. the stage is nothing but model
+loading, which means its entire wall is overhead and `rtf_work` is currently overstating by
+~13.2 s per video.
+
+### Repair-window hotwords
+**Feed the repair window `hotwords` / `initial_prompt`.** Fixes the one confirmed regression from
    the 2026-07-20 ear check (rationale + why this does NOT reopen the repetition loop: DECISIONS
    2026-07-20). Available in faster-whisper 1.2.1, verified. Word-list sources cheapest first: the
    video's own out-of-window sentences, then `pronounce_audit.json`. Measure on the golden fixture —
@@ -137,7 +178,8 @@ live artifacts, so copy the six `scout.json` before repeating it.
    the open question is whether the feature earns more investment at all, not whether its window
    could be prompted better. Polishing it ranks below every item that serves a route in daily use.
 
-6. **Investigate N parallel F5 workers — the one F5 speed lever absent from the ledger.** The
+### Parallel F5 workers
+**The one F5 speed lever absent from the ledger.** The
    2026-07-19 ledger (DECISIONS) covers nfe, stage-major, fp16, `torch.compile`, cross-unit
    batching, TF32, cudnn, SDPA, VRAM parking, ref clip and demucs — running several worker
    PROCESSES concurrently is the gap. Rationale: F5 synthesizes one short unit at a time through
@@ -149,11 +191,13 @@ live artifacts, so copy the six `scout.json` before repeating it.
    GPU idle. Budget ~0.8 GB per worker plus ~0.5 GB CUDA context each; three fit inside the 12 GB
    rule with room. Applies to the DUB route (B); scout does not synthesize at all.
 
-7. **Investigate the shorter reference clip — bigger and already measured, but it moves the voice.**
+### Shorter reference clip
+**Bigger than the workers item and already measured, but it moves the voice.**
    DEFERRED in the 2026-07-19 ledger and still unexercised. F5 denoises `ref + gen` and throws the
    ref part away (`utils_infer.py:508`); the reference is 9.164 s against a ~7 s mean unit, so over
-   half of every unit's compute is discarded. Worth ~158 s/batch after nfe=16 — larger than item 6
-   is likely to be, and it needs no occupancy measurement to justify. The cost is not compute but
+   half of every unit's compute is discarded. Worth ~158 s/batch after nfe=16 — larger than the
+   parallel-workers item is likely to be, and it needs no occupancy measurement to justify. The
+   cost is not compute but
    quality: shortening the reference changes speaker conditioning, i.e. the narrator's voice, so it
    needs an ear session. The ledger bundles it with the rights-clear narrator replacement, which
    owes that same session — do them together or the ear cost is paid twice.
@@ -295,7 +339,13 @@ caveat is CLOSED 2026-07-20 evening: multiple real queues fetched, graded and pu
 apart, filesystem-stamped summarize marker, 49 tests)** · **One queue page ✅ (2026-07-21; roadmap
 item 2 closed by MERGING the renderers: `triage_html.py` retired into `scout_report.py`, shared
 data layer in `runreport.py`, cp/adv semantics unified across all surfaces, promoted-but-untranslated
-videos now visible as «в работе» cards; 405→431 tests)**.
+videos now visible as «в работе» cards; 405→431 tests)** · **Timing accounting completed +
+roadmap de-numbered ✅ (2026-07-22; `detail` entries for synthesize/translate, `rtf_work` and
+per-stage `overhead_s` in run.json, one stale claim in the item itself corrected; 34 stale
+"PLAN item N" references in code and tests renamed to topics; 434→445 tests)** · **Queue-page
+previews and «о чём» for dubbed-without-scout rows ✅ (2026-07-22; the full download now takes a
+thumbnail, the preview normalizer moved into `overdub/workdir.py` so it no longer belongs to the
+summarizer step, and the scan cell falls back to summary.md's first sentence)**.
 The `--repair-asr` entry above is the only one still carrying an unsolved problem; the pre-batch
 checks at the top of this file apply to the next DUBBING batch, not to a scout pass.
 

@@ -1,6 +1,6 @@
 """Unit tests for scripts/build_scout.py + scripts/scout_report.py — the queue report.
 
-ONE page per queue since 2026-07-21 (PLAN item 2), so this suite covers all three surfaces it
+ONE page per queue since 2026-07-21 (the queue-page merge), so this suite covers all three surfaces it
 merges: the scout grades, the dub-triage surface folded in from the retired morning-triage page,
 and the cross-surface parity that keeps the digest (scripts/run_report.py) and this page agreeing
 about the same bytes on disk.
@@ -49,7 +49,7 @@ import build_scout  # noqa: E402
 import run_report  # noqa: E402  — the cross-surface tests run both renderers over one workdir
 import scout_report  # noqa: E402
 from overdub import runreport  # noqa: E402
-from overdub.workdir import WorkDir, jpeg_size  # noqa: E402
+from overdub.workdir import WorkDir, ensure_thumb_local, jpeg_size  # noqa: E402
 
 _DRAFT = {"quality": "high", "one_liner": "Однофразовое описание.",
           "highlight": "Замеры с описанной методологией и случаи, где схема ломается.",
@@ -536,7 +536,7 @@ def test_the_rendered_preview_never_asks_for_more_pixels_than_are_stored() -> No
     # the unsafe direction is unguarded too.
     widths = [int(w) for w in re.findall(r"\.thumb\{[^}]*?width:(\d+)px", scout_report._CSS)]
     assert widths, "no .thumb width in the CSS — the rule was renamed and this guard went blind"
-    assert max(widths) <= build_scout._THUMB_W
+    assert max(widths) <= build_scout.THUMB_W
 
 
 def test_the_preview_is_out_of_reach_of_the_artifact_skeletons_img_reset() -> None:
@@ -614,13 +614,13 @@ def test_an_oversized_preview_on_disk_is_rescaled_not_kept() -> None:
     with tempfile.TemporaryDirectory() as d:
         work = WorkDir(Path(d) / "vid00000001")
         work.root.mkdir(parents=True)
-        wide = build_scout._THUMB_W * 2
+        wide = build_scout.THUMB_W * 2
         subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi",
                         "-i", f"color=c=red:s={wide}x{wide // 16 * 9}:d=1", "-frames:v", "1",
                         str(work.thumb)], check=True)
         assert jpeg_size(work.thumb)[0] == wide                  # precondition
         build_scout._ensure_thumb(work, {})
-        assert jpeg_size(work.thumb)[0] == build_scout._THUMB_W
+        assert jpeg_size(work.thumb)[0] == build_scout.THUMB_W
         # no scrap left behind, and above all the preview still exists
         assert not (work.root / "thumb.out.jpg").exists()
         assert not (work.root / "thumb.src.jpg").exists()
@@ -634,7 +634,7 @@ def test_a_preview_already_small_enough_is_left_untouched() -> None:
         work = WorkDir(Path(d) / "vid00000001")
         work.root.mkdir(parents=True)
         subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi",
-                        "-i", f"color=c=red:s={build_scout._THUMB_W}x90:d=1", "-frames:v", "1",
+                        "-i", f"color=c=red:s={build_scout.THUMB_W}x90:d=1", "-frames:v", "1",
                         str(work.thumb)], check=True)
         before = work.thumb.read_bytes()
         build_scout._ensure_thumb(work, {})
@@ -651,6 +651,60 @@ def test_an_unmeasurable_preview_is_left_alone_rather_than_re_encoded() -> None:
         before = work.thumb.read_bytes()
         build_scout._ensure_thumb(work, {})
         assert work.thumb.read_bytes() == before
+
+
+def test_a_full_download_sidecar_becomes_the_preview_without_the_summarizer() -> None:
+    # INBOX 2026-07-22: the glob was source.audio*.jpg, which is the name a SCOUT fetch produces.
+    # A full video fetch writes source.jpg (the -o template is source.mkv), so a dubbed-but-never
+    # -scouted video had no preview and no offline way to get one — the only cure on disk was the
+    # networked backfill inside the summarizer step, which that route never runs.
+    if not _ffmpeg():
+        return
+    with tempfile.TemporaryDirectory() as d:
+        work = WorkDir(Path(d) / "vid00000001")
+        work.root.mkdir(parents=True)
+        wide = build_scout.THUMB_W * 2
+        subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi",
+                        "-i", f"color=c=red:s={wide}x{wide // 16 * 9}:d=1", "-frames:v", "1",
+                        str(work.root / "source.jpg")], check=True)
+        assert ensure_thumb_local(work) is True                  # NO network, no info.json
+        assert jpeg_size(work.thumb)[0] == build_scout.THUMB_W
+        assert not (work.root / "source.jpg").exists()           # scrap once scaled
+        assert not (work.root / "thumb.out.jpg").exists()
+
+
+def test_an_empty_workdir_reports_no_preview_rather_than_reaching_for_one() -> None:
+    # The local layer is the one the download stage calls, so it must be provably offline: no
+    # sidecar and no thumb means False, never a fetch. The network fallback stays in build_scout.
+    with tempfile.TemporaryDirectory() as d:
+        work = WorkDir(Path(d) / "vid00000001")
+        work.root.mkdir(parents=True)
+        assert ensure_thumb_local(work) is False
+        assert not work.thumb.exists()
+
+
+# --- «о чём» for a dubbed-but-never-scouted row -------------------------------
+def test_the_scan_cell_falls_back_to_the_summarys_first_sentence() -> None:
+    # A dubbed-without-scout row has no scout.json and so no one_liner, and printed a dash while
+    # a full write-up of the same video sat one directory away (INBOX 2026-07-22).
+    assert scout_report._one_liner_from_summary(
+        "Обзор нового релиза. Второе предложение не нужно.") == "Обзор нового релиза."
+
+
+def test_the_one_liner_fallback_caps_and_marks_the_truncation() -> None:
+    # Same visible-truncation discipline as every other capped prose field here: never a silent
+    # drop. A summary that never ends a sentence yields the whole capped text, which is honest.
+    long = "а" * 300
+    got = scout_report._one_liner_from_summary(long, cap=200)
+    assert got.endswith(" …") and len(got) == 202
+    assert scout_report._one_liner_from_summary("одна строка без точки") == "одна строка без точки"
+
+
+def test_no_summary_and_no_scout_still_yields_a_dash_not_a_state_sentence() -> None:
+    # The 2026-07-22 defect was a pipeline-state sentence in the content column. The fallback
+    # must not reintroduce it by another route: absent prose is a dash, full stop.
+    assert scout_report._one_liner_from_summary(None) is None
+    assert scout_report._one_liner_from_summary("   ") is None
 
 
 def test_the_preview_rule_carries_the_real_aspect_not_a_guess() -> None:
@@ -988,7 +1042,7 @@ def test_queue_order_dedupes_but_keeps_first_position() -> None:
 
 # --- the merged dub surface ------------------------------------------------------
 # Migrated from the retired morning-triage page's own suite when that page was folded into
-# this one (2026-07-21, PLAN item 2). Each test keeps its parent's INTENT — escaping, the
+# this one (2026-07-21, the queue-page merge). Each test keeps its parent's INTENT — escaping, the
 # "-"-vs-"0" src cell, no fabricated dub metrics on a scout card, skip-vs-card discrimination,
 # the exact no-summary phrase, embed vs --link, --limit — re-pinned against the merged markup.
 
@@ -1470,7 +1524,7 @@ def test_triage_nav_links_flagged_videos_and_is_absent_when_clean() -> None:
     assert "Требуют прослушивания" not in page2
 
 
-# --- cross-surface divergence (the acceptance test for PLAN item 2) ----------------
+# --- cross-surface divergence (the acceptance test for the queue-page merge) -------
 def test_the_two_surfaces_print_identical_batch_cells() -> None:
     # ONE dub workdir, BOTH renderers: the ten data cells of the batch row must be IDENTICAL
     # strings, and both headers must come from runreport.BATCH_COLUMNS. This is the whole point

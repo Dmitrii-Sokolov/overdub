@@ -8,7 +8,7 @@ the script computes, the agent narrates.
 Read-only, and thin by design: queue parsing, workdir classification and the batch-table cells
 all come from overdub.runreport's shared data layer (collect_entries / batch_row /
 batch_totals), so this script and the triage HTML can never again disagree about the same bytes
-on disk (PLAN item 2). What is left here is the per-medium rendering: a dubbed video gets the
+on disk (the queue-page merge). What is left here is the per-medium rendering: a dubbed video gets the
 full block, a scouted or promoted-but-untranslated workdir gets an honest state header instead
 of the old misleading "run the pipeline first" note, and an argv path with nothing to report is
 a named skip, never a crash. The only non-zero exit is a usage error.
@@ -87,7 +87,7 @@ def main(argv: list[str] | None = None) -> int:
         elif kind == "scout":
             # An honest state header instead of the old "run the pipeline first" note, which
             # told the operator to dub a video they had only asked to scout (the third
-            # divergence PLAN item 2 names). The summary IS the scout deliverable — attach it.
+            # divergence the queue-page merge names). The summary IS the scout deliverable — attach it.
             block = (f"### {e['vid']}  [scouted — transcript only, no dub]\n"
                      + _transcript_line(e))
             if summary:
@@ -115,7 +115,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if runs:
         print("\n── batch " + "─" * 40)
-        # ONE header source — runreport.BATCH_COLUMNS. No second list to drift (PLAN item 2).
+        # ONE header source — runreport.BATCH_COLUMNS. No second list to drift.
         print(" | ".join(label for _key, label in runreport.BATCH_COLUMNS))
         for r in runs:
             row = runreport.batch_row(r)

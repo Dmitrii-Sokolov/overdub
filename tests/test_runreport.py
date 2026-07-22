@@ -196,6 +196,86 @@ def test_rtf_and_breakdown() -> None:
         assert t["breakdown_pct"] == {"download": 25.0, "transcribe": 75.0}
 
 
+# --- load-excluded accounting (the wall clock stops being the only bill) ------
+def test_work_accounting_subtracts_each_stages_own_overhead() -> None:
+    # stages[x] - detail[x].work_sec is a stage's load/spawn cost. Summing THOSE and taking them
+    # off the wall gives a figure comparable across videos and builds, which the raw wall clock
+    # is not: stage-major lands every model load on whichever video happens to be first.
+    with tempfile.TemporaryDirectory() as d:
+        work = _mkwork(d, translation=[{"id": 0, "status": "ok"}],
+                       timings={"stages": {"transcribe": 50.0, "synthesize": 40.0},
+                                "detail": {"transcribe": {"work_sec": 44.0},
+                                           "synthesize": {"work_sec": 12.0}}},
+                       info={"duration": 100.0})
+        t = runreport.build_run_report(work, _CFG)["timings"]
+        assert t["total_wall_s"] == 90.0
+        assert t["rtf"] == 0.9                                   # unchanged: the true cost
+        assert t["overhead_s"] == {"transcribe": 6.0, "synthesize": 28.0}
+        assert t["total_overhead_s"] == 34.0
+        assert t["total_work_s"] == 56.0
+        assert t["rtf_work"] == 0.56
+        assert t["work_coverage"] == ["synthesize", "transcribe"]
+        assert t["work_complete"] is True
+
+
+def test_partial_detail_coverage_is_declared_not_hidden() -> None:
+    # A stage with no detail entry contributes no overhead, so total_work_s is an UPPER BOUND.
+    # work_complete is what keeps that from being read as the finished number.
+    with tempfile.TemporaryDirectory() as d:
+        work = _mkwork(d, translation=[{"id": 0, "status": "ok"}],
+                       timings={"stages": {"download": 10.0, "transcribe": 50.0},
+                                "detail": {"transcribe": {"work_sec": 44.0}}},
+                       info={"duration": 100.0})
+        t = runreport.build_run_report(work, _CFG)["timings"]
+        assert t["work_coverage"] == ["transcribe"]
+        assert t["work_complete"] is False
+        assert t["total_work_s"] == 54.0            # download's 10 s of overhead is unknown
+
+
+def test_a_detail_that_outlives_its_stage_wall_is_dropped_not_clamped() -> None:
+    # A work_sec ABOVE the stage wall means the two halves came from different sessions (detail
+    # survives a run that re-recorded no wall for that stage). Clamping to zero would report the
+    # stage as pure work; dropping it says the overhead is unknown, which is the truth.
+    with tempfile.TemporaryDirectory() as d:
+        work = _mkwork(d, translation=[{"id": 0, "status": "ok"}],
+                       timings={"stages": {"transcribe": 5.0},
+                                "detail": {"transcribe": {"work_sec": 44.0}}},
+                       info={"duration": 100.0})
+        t = runreport.build_run_report(work, _CFG)["timings"]
+        assert t["overhead_s"] == {}
+        assert t["total_work_s"] is None
+        assert t["rtf_work"] is None
+        assert t["work_complete"] is False
+
+
+def test_a_run_json_without_detail_reports_exactly_what_it_always_did() -> None:
+    # Every workdir on disk predates the detail entries. The wall-clock half must be untouched
+    # and the new keys must degrade to null/empty rather than to a fabricated zero.
+    with tempfile.TemporaryDirectory() as d:
+        work = _mkwork(d, translation=[{"id": 0, "status": "ok"}],
+                       timings={"stages": {"transcribe": 50.0}}, info={"duration": 100.0})
+        t = runreport.build_run_report(work, _CFG)["timings"]
+        assert t["rtf"] == 0.5
+        assert t["detail"] == {} and t["overhead_s"] == {}
+        assert t["total_work_s"] is None and t["rtf_work"] is None
+        assert t["work_complete"] is False
+
+
+def test_the_digest_prints_the_work_pair_only_when_it_exists() -> None:
+    # A pre-detail run.json must render the line it always rendered — no "work None" text.
+    base = {"video_id": "v", "timings": {"total_wall_s": 90.0, "rtf": 0.9,
+                                         "video_sec_source": "info_json"}}
+    assert "work" not in runreport.render_run_report(base, []).split("\n")[1]
+    withwork = {"video_id": "v",
+                "timings": {"total_wall_s": 90.0, "rtf": 0.9, "video_sec_source": "info_json",
+                            "total_work_s": 56.0, "rtf_work": 0.56, "work_complete": False}}
+    line = runreport.render_run_report(withwork, []).split("\n")[1]
+    # `~` is the partial-coverage mark: a bare number would read as the finished figure
+    assert "work 56.0s / RTF~ 0.56" in line
+    complete = {**withwork, "timings": {**withwork["timings"], "work_complete": True}}
+    assert "RTF 0.56" in runreport.render_run_report(complete, []).split("\n")[1]
+
+
 def test_zero_wall_rtf_null_breakdown_empty() -> None:
     # No timings and no duration source → total_wall 0 → rtf null, breakdown {}.
     with tempfile.TemporaryDirectory() as d:
@@ -318,7 +398,7 @@ def test_render_run_report_smoke() -> None:
         assert "TRIAGE" in out                                  # this run needs triage
 
 
-# --- summary sidecar (PLAN item 3 — informational, gates nothing) -----------------------------
+# --- summary sidecar (informational, gates nothing) -------------------------------------------
 def test_read_summary_absent_and_empty() -> None:
     # A missing summary is NORMAL, not an error: the summary gates nothing, so both renderers must
     # get None rather than an exception. Whitespace-only degrades to None too — an empty section
@@ -587,7 +667,7 @@ def test_flagged_units_translate_flag_on_member() -> None:
     assert rows[0]["reasons"] == ["translate:runaway"]
 
 
-# --- source anomalies (PLAN item 1 — advisory, gates nothing) ---------------------------------
+# --- source anomalies (advisory, gates nothing) -----------------------------------------------
 # The signal exists because a good translator BLEACHES source damage (DECISIONS 2026-07-19), so
 # these guard the two things that make it observable at all: "ok" as a positive claim (scanned),
 # and the anomaly read happening BEFORE the status-ok skip in the translation loop.
@@ -920,7 +1000,7 @@ def test_batch_row_cp_falls_back_to_n_flagged_on_a_pre_schema_run() -> None:
     # A run.json written before the actionable/advisory split carried only completeness.n_flagged.
     # batch_row's cp cell must fall back to it (adv to 0) through the SAME chain
     # render_run_report's flags line uses — otherwise, on an old run, the digest's flags line said
-    # 3 while both batch tables and the card rollup said 0 (the cross-surface divergence PLAN item
+    # 3 while both batch tables and the card rollup said 0 (the cross-surface divergence the merge
     # 2 kills). Assert both the cell and the digest line agree on the pre-schema number.
     run = {"video_id": "vid00000001", "needs_triage": True,
            "completeness": {"n_flagged": 3},           # pre-schema: no n_actionable / n_advisory
@@ -959,7 +1039,7 @@ def test_batch_columns_is_the_single_header_source() -> None:
 
 
 def test_run_report_main_renders_a_scout_block() -> None:
-    # The third divergence PLAN item 2 names: a scouted dir used to print "run the pipeline
+    # The third divergence the queue-page merge names: a scouted dir used to print "run the pipeline
     # first" — an instruction to dub a video the operator only asked to scout.
     with tempfile.TemporaryDirectory() as d:
         work = _mkwork(d, sentences=[{"id": 0, "end": 3.0}, {"id": 1, "end": 9.0}],

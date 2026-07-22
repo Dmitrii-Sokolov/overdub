@@ -2,7 +2,7 @@
 ready to publish as a Claude Artifact.
 
 One page per queue (the separate morning-triage page was retired into this one on 2026-07-21,
-PLAN item 2): entries come from
+the queue-page merge): entries come from
 runreport.collect_entries — queue ids first, argv workdirs appended — and every workdir renders
 exactly what it has earned. A scouted video keeps its grade and write-up; a dubbed one adds the
 batch-table row, the flagged units with inline audio and the source-anomaly block; a
@@ -579,7 +579,7 @@ def _srcanom_html(run: dict) -> str:
 def _dub_table(dubs: list[dict]) -> str:
     """The dub batch table. Header labels come from runreport.BATCH_COLUMNS and the ten data
     cells are printed VERBATIM from batch_row(run)["cells"] — the same strings the text digest
-    prints, so the two surfaces can never again disagree about the same run (PLAN item 2). The
+    prints, so the two surfaces can never again disagree about the same run. The
     cell vocabulary is machine-formatted numbers ("123.4", "n/a", "-", "3.4%"), no HTML-active
     characters by construction, hence no escape on them."""
     ths = "".join(f"<th>{html.escape(label)}</th>" for _key, label in runreport.BATCH_COLUMNS)
@@ -600,7 +600,7 @@ def _dub_table(dubs: list[dict]) -> str:
             if key == "triage":
                 # coloured via a class keyed BY COLUMN KEY, never by cell index: the retired
                 # page hard-coded the triage cell's index and the src column landed on it
-                # silently (PLAN item 2) — adding a column here cannot mis-colour anything
+                # silently — adding a column here cannot mis-colour anything
                 tds.append(f'<td class="{"t-triage" if needs else "t-clean"}">{val}</td>')
             elif key in ("video", "title"):
                 tds.append(f"<td>{val}</td>")
@@ -657,7 +657,7 @@ def _card(e: dict, out_dir: Path, *, embed: bool) -> str:
         sp = run.get("speed", {}) or {}
         # The rollup REUSES batch_row's cell strings (cp/adv are the actionable/advisory split —
         # never n_flagged: printing the pooled count here while the digest prints the split was
-        # the original two-numbers-one-batch bug, PLAN item 2). med/p95 are card-only depth the
+        # the original two-numbers-one-batch bug). med/p95 are card-only depth the
         # table deliberately omits, read off the same run.json.
         n_sent = (run.get("translate", {}) or {}).get("n_sentences", 0)
         rollup = (f"translate {c['tr']}/{n_sent}"
@@ -844,6 +844,33 @@ def _thumb_b64(path: Path) -> str | None:
         return None
 
 
+_SENT_END = re.compile(r"(?<=[.!?…])\s")
+
+
+def _one_liner_from_summary(summary: str | None, cap: int = 200) -> str | None:
+    """summary.md's first sentence → the scan table's «о чём» cell, or None.
+
+    A dubbed-but-never-scouted video has no scout.json and therefore no `one_liner`, so that cell
+    printed a dash while a ~200-word description of the same video sat on disk one directory
+    away (INBOX 2026-07-22). The summarizer's opening sentence is what the field wants by
+    construction — both are "what is this video" in one line — so this derives rather than adds
+    an artifact or a network call.
+
+    NOT a sentence tokenizer, and it must not become one: the split is on terminal punctuation
+    followed by whitespace, so an abbreviation mid-sentence would cut early. Accepted, because
+    the failure mode is a SHORT cell, not a wrong one, and the length cap already truncates the
+    long tail anyway. Russian prose from an LLM is what this reads, and it does not abbreviate.
+
+    A summary with no terminal punctuation at all yields the whole (capped) text, which is the
+    honest answer for a one-line summary that never ended a sentence."""
+    if not summary:
+        return None
+    first = _SENT_END.split(summary.strip(), 1)[0].replace("\n", " ").strip()
+    if not first:
+        return None
+    return first[:cap].rstrip() + " …" if len(first) > cap else first
+
+
 def _views(entries: list[dict]) -> list[dict]:
     """collect_entries rows → render-ready view dicts. The shared layer answers WHAT each
     workdir is; this resolves how it LOOKS: which chip leads the row (grade > dub state >
@@ -908,7 +935,13 @@ def _views(entries: list[dict]) -> list[dict]:
             "thumb_b64": _thumb_b64(work.root / "thumb.jpg"),
             "thumb_wh": jpeg_size(work.root / "thumb.jpg"),
             "title": title, "duration": duration,
-            "one_liner": ((doc or {}).get("one_liner") or "—") if grade else "—",
+            # The scout artifact first — it is the field written FOR this cell. Falling back to
+            # summary.md's opening sentence is what gives a dubbed-but-never-scouted row a «о чём»
+            # at all; without it the scan table showed a dash beside a full write-up on disk.
+            # Still a dash when neither exists: a state sentence in the content column is the
+            # defect fixed on 2026-07-22, and this must not reintroduce it by another route.
+            "one_liner": (((doc or {}).get("one_liner") if grade else None)
+                          or _one_liner_from_summary(e["summary"]) or "—"),
             # states without a "why" (the dub verdicts) render a dash: the chip is the message
             "highlight": ((doc or {}).get("highlight") or "—") if grade else (v.get("why") or "—"),
             "paragraph": paragraph,

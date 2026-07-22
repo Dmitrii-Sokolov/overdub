@@ -56,7 +56,8 @@ _BROKEN = 1.8   # combined compression factor at/above which a unit is "candidat
 # dominant IRREDUCIBLE false positive, and length_short is the deliberately coarse weak signal.
 _ADVISORY_COMPLETENESS = frozenset({"entity_loss", "length_short"})
 
-# Source anomalies the route-B translate sub-agent REPORTS on the English source (PLAN item 1).
+# Source anomalies the route-B translate sub-agent REPORTS on the English source
+# (the source-anomaly pass, CHANGELOG 2026-07-20).
 # Same fixed-vocab discipline as above; "unknown" is the clamp bucket build_translation.py writes
 # for a kind outside its own _SRC_KINDS, so a new/mistyped kind is counted, never dropped.
 # Deliberately NOT named dup_adjacent: dup_neighbour is a different detector with different
@@ -66,7 +67,7 @@ _SOURCE_KINDS = ("garbled", "truncated", "dup_neighbour", "enum_repeat",
                  "context_contradiction", "unknown")
 _SOURCE_LIMIT = 40      # mirrors summarize_offenders(limit=40) — keeps run.json small + diffable
 
-# The summary is free-form Russian prose an LLM wrote (PLAN item 3 — INFORMATIONAL, it gates
+# The summary is free-form Russian prose an LLM wrote (the video summary — INFORMATIONAL, it gates
 # nothing). Two renderers consume it, so the sanitizing happens ONCE here at the read boundary and
 # not in either renderer: a markdown heading inside the text would collide with the digest's own
 # "### <vid>" block header and silently break block boundaries for the agent that parses the
@@ -221,11 +222,43 @@ def record_stage_detail(work, stage, **fields) -> None:
         print(f"[warn] could not record detail for {stage!r}: {e}", file=sys.stderr)
 
 
+def _stage_overhead(stages, detail):
+    """({stage: overhead_s}, total) — what each stage spent OUTSIDE the work it measured itself.
+
+    overhead = stages[x] - detail[x].work_sec: a model load, a worker spawn, an Ollama preflight.
+    Both numbers describe the SAME stage, so subtracting them is legitimate — the thing DECISIONS
+    2026-07-20 forbids is summing a wall clock WITH a work figure and calling the result a cost.
+
+    Three ways a stage is left out, all silent by design because each means "the overhead is not
+    known", never "it was zero":
+      - no detail entry (download, separate, verify, assemble, mux today);
+      - a stage that was SKIPPED this run: record_stage_timing only writes for stages that
+        actually ran, but detail from an EARLIER session survives in the same file, so the pair
+        can straddle two runs. The stage wall is then the older one too (both keys are upserted),
+        which keeps the subtraction internally consistent -- but a NEGATIVE result means they did
+        not come from one session, and that is the case dropped below;
+      - a non-numeric or missing work_sec.
+
+    Dropping the negative case rather than clamping it to 0 is the point: a clamp would report a
+    stage as pure work when the file is actually telling us the two halves disagree."""
+    out: dict[str, float] = {}
+    for stage, wall in stages.items():
+        entry = detail.get(stage)
+        work = entry.get("work_sec") if isinstance(entry, dict) else None
+        if not isinstance(work, (int, float)) or isinstance(work, bool):
+            continue
+        gap = float(wall) - float(work)
+        if gap < 0:
+            continue
+        out[stage] = round(gap, 3)
+    return out, sum(out.values())
+
+
 def read_summary(work):
-    """work/<id>/summary.md → sanitized prose, or None when absent/empty/unreadable (PLAN item 3).
+    """work/<id>/summary.md → sanitized prose, or None when absent/empty/unreadable.
 
     A SIDECAR, deliberately not folded into run.json: run.json is derived and self-clears when
-    report.json + translation.json are both gone (a scout-mode workdir, PLAN item 4), so routing the
+    report.json + translation.json are both gone (a scout-mode workdir), so routing the
     summary through the rollup would make it invisible in the one mode it was designed for. Keeping
     the rollup small and diffable is load-bearing besides.
 
@@ -281,6 +314,17 @@ def _build_run_report(work, cfg):
         stages = {}
     stages = {k: float(v) for k, v in stages.items() if isinstance(v, (int, float))}
     total_wall = round(sum(stages.values()), 3)
+    detail = timings_doc.get("detail") if isinstance(timings_doc, dict) else None
+    detail = detail if isinstance(detail, dict) else {}
+    overhead, total_overhead = _stage_overhead(stages, detail)
+    work_stages = sorted(overhead)
+    # A stage's overhead is stages[x] - detail[x].work_sec: two measurements of the SAME stage
+    # subtracted, which is legitimate, unlike summing a wall clock with a work figure (the thing
+    # DECISIONS 2026-07-20 forbids). total_work_s is total_wall minus every overhead we KNOW, so
+    # it is an upper bound while coverage is partial -- which is why work_complete travels with
+    # it and nothing here silently presents it as the finished number.
+    total_work = round(total_wall - total_overhead, 3) if work_stages else None
+    work_complete = bool(stages) and set(work_stages) == set(stages)
 
     video_sec, video_sec_source = None, "none"
     d = info.get("duration") if info else None
@@ -299,6 +343,8 @@ def _build_run_report(work, cfg):
                 video_sec, video_sec_source = float(max(ends)), "sentences"
 
     rtf = round(total_wall / video_sec, 3) if video_sec else None
+    rtf_work = (round(total_work / video_sec, 3)
+                if (total_work is not None and video_sec) else None)
     breakdown = ({k: round(v / total_wall * 100, 1) for k, v in stages.items()}
                  if total_wall else {})
 
@@ -444,6 +490,18 @@ def _build_run_report(work, cfg):
             "video_sec_source": video_sec_source,
             "rtf": rtf,
             "breakdown_pct": breakdown,
+            # The load-excluded half. `rtf` above still bills the whole wall clock, on purpose:
+            # it is what the run cost, and stage-major lands every model load on whichever video
+            # happens to be first, so it is not comparable ACROSS videos or builds. rtf_work is,
+            # to the extent work_coverage says it is -- and `work_complete` is the flag that
+            # keeps a partial figure from being read as a finished one.
+            "detail": detail,
+            "overhead_s": overhead,
+            "total_overhead_s": round(total_overhead, 3),
+            "total_work_s": total_work,
+            "rtf_work": rtf_work,
+            "work_coverage": work_stages,
+            "work_complete": work_complete,
         },
         "asr": asr_block,
         "translate": {
@@ -667,7 +725,7 @@ def flagged_units(report, translation=None, limit=500):
 
 # --- shared report data layer (queue → entries → batch cells) ------------------
 # Both report surfaces (the text digest scripts/run_report.py and the triage/scout HTML) walk
-# the same queue over the same workdirs and had drifted doing it separately (PLAN item 2:
+# the same queue over the same workdirs and had drifted doing it separately (the queue-page merge:
 # n_flagged vs n_actionable, diverged column sets, two run.json-less special cases). Everything
 # below is the one shared answer to "what is in the queue, what state is each workdir in, and
 # what are the batch-table strings" — renderers keep only per-medium concerns (truncation,
@@ -725,7 +783,7 @@ def classify_workdir(work) -> str:
     """The report shape a workdir has earned: "run" | "pending" | "scout" | "fetched" | "missing".
 
     One classifier for every report surface — the text digest and the triage HTML used to make
-    this call separately and drifted (the "third divergence" PLAN item 2 names).
+    this call separately and drifted (the "third divergence" the queue-page merge names).
 
       - "run":     report.json OR translation.json exists — the same two files build_run_report
                    gates on, so "run" means exactly "build_run_report would try to roll this up".
@@ -855,7 +913,7 @@ def collect_entries(queue, workdirs, work_root, *, limit=500, rebuild=False, cfg
 
 
 # The batch digest table: ONE ordered (key, label) source of truth for both renderers
-# (PLAN item 2 — the two batch tables had drifted to different column sets showing different
+# (the queue-page merge — the two batch tables had drifted to different column sets showing different
 # completeness numbers for the same run). The label row is exactly what the text digest prints.
 BATCH_COLUMNS = (
     ("video", "video"), ("title", "title"), ("wall_s", "wall_s"), ("rtf", "rtf"),
@@ -890,7 +948,7 @@ def batch_row(run) -> dict:
         # carried only n_flagged, so cp falls back to it (adv to 0). This MUST be the same chain
         # render_run_report's flags line uses (n_actionable → n_flagged) — otherwise, on an old
         # run.json, the digest's flags line and these table/card cells report different numbers
-        # for the same completeness (the cross-surface divergence PLAN item 2 exists to kill).
+        # for the same completeness (the cross-surface divergence the merge exists to kill).
         ("cp", str(cp.get("n_actionable", cp.get("n_flagged", 0)))),
         ("adv", str(cp.get("n_advisory", 0))),
         # src: advisory source-anomaly count. "-" means NOT SCANNED (route A, or a pre-schema
@@ -920,7 +978,7 @@ def render_summary_block(summary):
     digest width and indented two spaces, matching the offender bullets' continuation shape.
 
     DELIBERATE EXCEPTION to render_run_report's English-artifact norm below: this text is REQUIRED
-    to be Russian (PLAN item 3) — do not 'fix' it. Paragraph breaks are flattened to single newlines
+    to be Russian (the video summary) — do not 'fix' it. Paragraph breaks are flattened to single newlines
     (a blank line would terminate the digest's bullet list); the triage HTML keeps them. Heading
     markers are already gone — read_summary strips them — so no line here can start a new block."""
     paras = [p for p in summary.split("\n\n") if p.strip()]
@@ -943,10 +1001,19 @@ def render_run_report(run, offenders, summary=None):
     src = t.get("video_sec_source")
     rtf = t.get("rtf")
     rtf_part = f"RTF {rtf} ({src})" if rtf is not None else f"RTF n/a ({src})"
+    # The load-excluded pair, printed ONLY when it exists — a run.json predating the detail
+    # entries has neither key and prints exactly what it always did. `~` marks partial coverage:
+    # some stages still report no work_sec, so the figure is an upper bound, and a bare number
+    # would read as the finished one. The coverage list itself stays in run.json rather than the
+    # digest line, which is already at its width.
+    work_part = ""
+    if t.get("rtf_work") is not None:
+        mark = "" if t.get("work_complete") else "~"
+        work_part = f" · work {t.get('total_work_s')}s / RTF{mark} {t['rtf_work']}"
     top3 = sorted((t.get("breakdown_pct", {}) or {}).items(),
                   key=lambda kv: kv[1], reverse=True)[:3]
     top_part = (" · top: " + ", ".join(f"{k} {v}%" for k, v in top3)) if top3 else ""
-    timings_line = f"- timings: {t.get('total_wall_s', 0)}s wall · {rtf_part}{top_part}"
+    timings_line = f"- timings: {t.get('total_wall_s', 0)}s wall · {rtf_part}{work_part}{top_part}"
 
     a = run.get("asr", {}) or {}
     fr = a.get("floor_ratio")
@@ -967,7 +1034,7 @@ def render_run_report(run, offenders, summary=None):
         f" (n>1.8 {sp.get('n_over_1_8', 0)})")
 
     lines = [head, timings_line, asr_line, flags_line]
-    # Source anomalies (PLAN item 1), rendered whenever non-empty INDEPENDENT of the
+    # Source anomalies, rendered whenever non-empty INDEPENDENT of the
     # [clean]/[TRIAGE] marker — they are advisory, and advisory must never cost visibility.
     # Machine bullets stay together, so this sits after the flags line and before the prose.
     # A run.json predating this schema has no "source" key at all → nothing prints, exactly like

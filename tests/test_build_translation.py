@@ -29,7 +29,7 @@ def _build(sentences: list[dict], draft: list[dict]):
 
 
 def _build_full(sentences: list[dict], draft: list[dict]):
-    """As _build, but also returns the source-anomaly counts + rows (PLAN item 1):
+    """As _build, but also returns the source-anomaly counts + rows:
     (records, total, n_fail, n_anom, n_scanned, anom_rows) — flattened to 5 + rows."""
     with tempfile.TemporaryDirectory() as d:
         tmp = Path(d)
@@ -148,7 +148,7 @@ def test_pronounce_audit_written() -> None:
         assert "fps" in audit["tokens"]
 
 
-# --- source anomalies (PLAN item 1) ------------------------------------------
+# --- source anomalies ---------------------------------------------------------
 # The whole point of `src`: a good translator LAUNDERS source damage, so the draft must carry a
 # positive "ok" claim per record and every src defect must degrade to a [warn] — never an exit.
 # A hard failure here would leave translation.json unwritten and hand the video to the silent

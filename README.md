@@ -84,6 +84,17 @@ Needs Ollama serving `gemma3:12b` on localhost. Agent or human:
   small but ties it to this machine — relative paths next to `work/`, absolute ones when
   `--out` sits on another drive. A published copy built with `--link` shows silent players
   by design: dub audio is never uploaded (narrator rights, DECISIONS).
+- Two clocks per stage, and they answer different questions (do not sum them). `timings.json`
+  keeps `stages[x]` — the wall clock including the model load, i.e. what the run actually cost —
+  and `detail[x]` — what the stage measured about ITSELF. `transcribe`, `translate` and
+  `synthesize` report `work_sec` with their load excluded, plus the counter that explains an
+  outlier: `asr_passes` (the alignment guard re-runs ASR), `n_api` (a resumed translate touches
+  the network for nothing), `n_rendered` (a resumed synthesize re-renders a FRACTION of the
+  units, so its wall clock describes a fraction of the video). `run.json.timings` publishes
+  `rtf` off the full wall and `rtf_work` off the load-excluded total, with `work_coverage` /
+  `work_complete` saying how much of the pass is accounted for — the five stages without a
+  `detail` entry make `rtf_work` an upper bound today, and the digest marks it `RTF~` when so.
+  Compare builds on `rtf_work`; report cost as `rtf`.
 
 ### B. Batch with Sonnet translation (semi-automatic — the primary route)
 
@@ -152,6 +163,13 @@ the dub? Run it before route A or B on any queue you have not read.
   bounded by free disk, not by patience. There is no `/best` fallback on
   purpose: a source with no audio-only format FAILS out of the scout pass
   rather than quietly pulling a full video stream.
+- **A preview rides along with every fetch** — audio-only and full alike since
+  2026-07-22. yt-dlp writes the thumbnail sidecar while it is already talking to
+  YouTube, and the download stage scales it to `work/<id>/thumb.jpg` at 160 px
+  offline. It is cosmetic: a failure anywhere in that chain costs a row its
+  picture and nothing else. Workdirs downloaded before that date have no preview
+  until they are re-fetched; a scout pass backfills one over the network
+  (`build_scout.py`), the dub route does not.
 - Single video: same command with a URL instead of `--batch`. `--force`
   re-fetches (and re-transcribes). `--scout` is its own mode, not a
   composition — `--scout --only …` and `--scout --repair-asr …` are usage
@@ -183,7 +201,9 @@ clock for a stage, model load included — what the run cost. `*_work_sec` is th
 same stage measured from inside with the load and warmup excluded — what THAT
 video cost, and the only one of the pair that compares across builds, because the
 load lands on whichever video the sweep happened to start with (measured: 23.0 s
-wall vs 17.3 s of work on a 2:22 video). `summarize_sec` is one agent's own
+wall vs 17.3 s of work on a 2:22 video). Since 2026-07-22 `translate` and
+`synthesize` report the same pair (see route A's triage bullet), so `run.json`
+carries `rtf_work` beside `rtf`. `summarize_sec` is one agent's own
 window from its marker, not the wave's — the wave start is shared by the whole
 spawn, so it would bill an agent for time it spent queued. Per-video figures
 overlap and their sum is meaningless; the report's strip carries only the wall
@@ -228,9 +248,12 @@ one page per queue now, not a scout page plus a separate triage page. A dubbed
 video adds the batch-table row (the exact cell strings the text digest prints),
 its flagged units with inline audio and the source-anomaly block; a
 promoted-but-untranslated one shows an honest "в работе" state. In the scan
-table a dubbed-but-never-scouted row keeps its dub chip and dashes out the
-content cells — "о чём" and "самое интересное" are the scout's answers, and
-nothing fills them in after the fact. A card never
+table a dubbed-but-never-scouted row keeps its dub chip; its "о чём" falls back
+to the first sentence of `summary.md` when one is on disk (2026-07-22), while
+"самое интересное" stays a dash — that one is the scout's judgement and nothing
+fills it in after the fact. Both cells dash out when neither artifact exists,
+because a pipeline-state sentence in a content column is a defect, not a
+fallback. A card never
 fabricates dub metrics for an undubbed video — no audio player, no RTF, no
 triage verdict, because none of those exist for it — and dubbed videos are
 counted apart from scouted ones, never folded into one total or the throughput

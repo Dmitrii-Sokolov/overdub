@@ -53,7 +53,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import subprocess
 import sys
 import urllib.request
 from pathlib import Path
@@ -61,7 +60,8 @@ from pathlib import Path
 # scripts/ is sys.path[0] when run as a file -- put the repo root first so `import overdub` resolves
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from overdub.workdir import WorkDir, jpeg_size, replace_retry        # noqa: E402
+from overdub.workdir import (                                       # noqa: E402
+    THUMB_W, WorkDir, ensure_thumb_local, replace_retry, scale_thumb)
 
 # Closed verdict vocabulary. Mirrored by scout_report.py's colour map and by the prompt in the
 # overdub-scout skill -- three copies of one list, so changing it means changing all three. Kept
@@ -90,39 +90,21 @@ _HIGHLIGHT_MAX = 240        # one sentence; the scan table's widest text column
 _PARAGRAPH_MAX = 1500
 
 
-_THUMB_W = 160              # MUST be >= the width scout_report renders the preview at, or the
-                            # scan table upscales the file into a wider slot and the result is
-                            # soft. That is the ONLY hard rule here; everything else is weight.
-                            #
-                            # Inlined as a data-URI (the Artifact CSP blocks a remote src), and
-                            # inlined TWICE per video -- scan row and card -- so this number is
-                            # page weight, doubled. MEASURED on the 6-video Test queue, same
-                            # frames re-encoded at both widths: 320px -> 66 KB on disk, 177 KB
-                            # once base64'd into the page, which was 78% of a 226 KB report.
-                            # 160px -> 23 KB and 63 KB, i.e. 35% of the bytes for the same
-                            # rendered size, because scout_report draws the preview at 160.
-                            #
-                            # 320 was briefly kept as a 2x source for hi-DPI sharpness. Dropped:
-                            # a scan-table preview is a thumbnail the reader glances at to
-                            # recognize a video, not an image they study, and 3/4 of the page
-                            # was being spent on retina detail nobody looks for.
-
-
 def _ensure_thumb(work: WorkDir, info: dict) -> None:
-    """Normalize whatever preview exists into work/<id>/thumb.jpg at _THUMB_W wide.
+    """Normalize whatever preview exists into work/<id>/thumb.jpg at THUMB_W wide.
 
-    ONE output, four possible inputs, because the report must not care which era a workdir comes
-    from: a scout run after 2026-07-20 has yt-dlp's `source.audio.jpg` sitting there; an older
-    one has nothing and gets a single best-effort fetch from the URL info.json already carries; a
-    workdir whose thumb.jpg is already at most _THUMB_W wide is left alone; and one whose
-    thumb.jpg is WIDER is re-scaled from itself.
+    TWO LAYERS, and the split is the point. Everything that can be done from disk lives in
+    `overdub.workdir.ensure_thumb_local` — an already-narrow thumb.jpg left alone, a WIDER one
+    re-scaled from itself, yt-dlp's `source*.jpg` sidecar scaled into place — because the download
+    stage needs exactly that and needs it without a network reach. What stays HERE is the one case
+    only the summarizer step can serve: a workdir with no preview bytes at all, backfilled over
+    the network from the URL info.json already carries.
 
-    THAT LAST CASE IS THE WHOLE REASON THIS IS NOT `if exists: return` (2026-07-21). It was, and
-    the result was that lowering _THUMB_W changed nothing for any workdir already on disk: every
-    existing preview kept its old width forever and the reports kept carrying the old bytes. The
-    size of this artifact has to be self-correcting, because the number that defines it lives in
-    a different file from the files it governs. Re-scaling needs NO NETWORK -- a wider preview is
-    its own best source.
+    The re-scale case is the whole reason the local layer is not `if exists: return` (2026-07-21).
+    It was, and lowering THUMB_W then changed nothing for any workdir already on disk: every
+    existing preview kept its old width forever. The size of this artifact has to be
+    self-correcting, because the number that defines it lives in a different file from the files
+    it governs.
 
     NEVER RAISES. A missing preview is cosmetic — the row still carries the grade, the highlight
     and a link — so no failure here may cost the operator a scanned video. A failed re-scale
@@ -130,52 +112,29 @@ def _ensure_thumb(work: WorkDir, info: dict) -> None:
     a temp path and the flip is atomic. The network call is skipped entirely for every case but
     the empty workdir.
     """
+    if ensure_thumb_local(work):
+        return
+    # smallest variant at least THUMB_W wide beats `thumbnail`, which is maxresdefault
+    # (~100 KB) — we are about to scale it down anyway
+    cands = [t for t in (info.get("thumbnails") or [])
+             if isinstance(t, dict) and isinstance(t.get("width"), int)
+             and t["width"] >= THUMB_W and t.get("url")]
+    url = (min(cands, key=lambda t: t["width"])["url"] if cands
+           else info.get("thumbnail") if isinstance(info.get("thumbnail"), str) else None)
+    if not url:
+        return
     fetched = work.root / "thumb.src.jpg"       # only written on the network path
-    src = None
-    if work.thumb.exists():
-        wh = jpeg_size(work.thumb)
-        # unreadable header -> leave it alone. The bytes may still decode in a browser, and
-        # re-encoding something we cannot measure could as easily make it worse as better.
-        if wh is None or wh[0] <= _THUMB_W:
-            return
-        src = work.thumb
-    if src is None:
-        src = next((p for p in sorted(work.root.glob("source.audio*.jpg"))), None)
-    if src is None:
-        # smallest variant at least _THUMB_W wide beats `thumbnail`, which is maxresdefault
-        # (~100 KB) — we are about to scale it down anyway
-        cands = [t for t in (info.get("thumbnails") or [])
-                 if isinstance(t, dict) and isinstance(t.get("width"), int)
-                 and t["width"] >= _THUMB_W and t.get("url")]
-        url = (min(cands, key=lambda t: t["width"])["url"] if cands
-               else info.get("thumbnail") if isinstance(info.get("thumbnail"), str) else None)
-        if not url:
-            return
-        try:
-            with urllib.request.urlopen(url, timeout=15) as r:      # noqa: S310 — https, from yt-dlp
-                fetched.write_bytes(r.read())
-        except Exception as e:                                       # noqa: BLE001 — cosmetic
-            print(f"[warn] {work.root.name}: preview fetch failed ({e}) — row renders without one")
-            fetched.unlink(missing_ok=True)
-            return
-        src = fetched
-    # ffmpeg cannot read and write one path, and on the re-scale path src IS the destination --
-    # so the output always goes to a temp and only replaces the real file once it exists
-    out = work.root / "thumb.out.jpg"
     try:
-        subprocess.run(
-            ["ffmpeg", "-y", "-loglevel", "error", "-i", str(src),
-             "-vf", f"scale={_THUMB_W}:-2", "-q:v", "6", str(out)],
-            check=True)
-    except (OSError, subprocess.CalledProcessError) as e:
-        print(f"[warn] {work.root.name}: preview scale failed ({e}) — row renders without one")
-        out.unlink(missing_ok=True)
-    else:
-        replace_retry(out, work.thumb)
+        with urllib.request.urlopen(url, timeout=15) as r:      # noqa: S310 — https, from yt-dlp
+            fetched.write_bytes(r.read())
+    except Exception as e:                                       # noqa: BLE001 — cosmetic
+        print(f"[warn] {work.root.name}: preview fetch failed ({e}) — row renders without one")
+        fetched.unlink(missing_ok=True)
+        return
+    try:
+        scale_thumb(fetched, work.thumb)
     finally:
         fetched.unlink(missing_ok=True)
-        if src not in (work.thumb, fetched):
-            src.unlink(missing_ok=True)          # the full-size original is scrap once scaled
 
 
 def _load_json(path: Path):

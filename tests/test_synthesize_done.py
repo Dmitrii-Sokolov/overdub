@@ -6,7 +6,7 @@ a complete manifest must NOT skip the stage over wavs rendered from a stale
 translation (`--force --only translate` + plain rerun; bit the renorm A/B).
 
 Since 2026-07-20 it also guards the mirror-image failure: the gate must stay INERT to
-report-only fields added to the translation record (PLAN item 1's `src`/`src_note`).
+report-only fields added to the translation record (the source-anomaly pass's `src`/`src_note`).
 Both directions are pinned, because a gate that cannot be fooled by a new key is
 worthless if it also stopped noticing a changed one.
 """
@@ -91,7 +91,7 @@ def test_grouped_unit_stale_member_reruns() -> None:
 
 
 def test_report_only_fields_do_not_invalidate_the_manifest() -> None:
-    """PLAN item 1 widened the translation record with `src`/`src_note` — REPORT fields the
+    """The source-anomaly pass widened the translation record with `src`/`src_note` — REPORT fields the
     synthesize stage never renders from. If this gate compared whole records instead of the
     fields it actually uses (ids + joined text_tts), the first batch after that change would
     silently re-render every unit in every video: hours of GPU, no error, no flag, and the

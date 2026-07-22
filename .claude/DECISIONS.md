@@ -1,5 +1,69 @@
 # DECISIONS
 
+## 2026-07-22 — Overhead is SUBTRACTED per stage, never summed across kinds; and partial coverage is declared
+
+2026-07-20 established that `stages[x]` (wall) and `detail[x]` (work) both stay and are never
+summed together. Completing the accounting needed one thing that entry did not settle: how to get
+a per-RUN load-excluded figure without violating it.
+
+**The legal operation is `stages[x] − detail[x].work_sec`, and its legality is that both numbers
+describe the SAME stage.** That difference is the stage's overhead — a model load, a worker spawn,
+a preflight — and summing overheads with each other is fine. What is forbidden is a hybrid total
+that adds a wall clock for one stage to a work figure for another and calls the result a cost.
+So `total_work_s` is `total_wall − Σ known overheads`, never a sum of mixed kinds, and `rtf` is
+left exactly as it was: it is what the run cost, and deleting it to promote `rtf_work` would
+repeat the mistake 2026-07-20 rejected (publishing one number makes the other unrecoverable).
+
+**Partial coverage travels WITH the number, as `work_coverage` + `work_complete`.** Five stages
+still report no `detail`, so `total_work_s` is an upper bound. The alternative — withhold the
+figure until every stage is instrumented — was rejected because the three heavy stages are where
+the optimization work is, and a number that says how complete it is beats no number. `separate`
+is the next one worth instrumenting and the reason is already measured: its slope against audio
+length is R²=0.000, so its entire wall is load, and `rtf_work` currently overstates by ~13.2 s
+per video for that reason alone.
+
+**A `work_sec` ABOVE its stage wall is DROPPED, not clamped to zero.** The pair can straddle two
+sessions — `record_stage_timing` only writes for stages that actually ran, while an earlier
+session's `detail` survives in the same file — and a negative difference is the file saying the
+two halves do not describe one run. Clamping would report that stage as pure work, which is a
+fabricated fact; dropping it says the overhead is unknown, which is true. Pinned by a test whose
+name is the decision.
+
+**Correction, and it reverses a claim the roadmap made about itself.** The old accounting item
+said every recorded speed number was suspect, "including `nfe` 48→16's 2.16×". That is wrong
+about that number. `scripts/exp_nfe_sweep.py` times each cell around `engine.synthesize` alone
+and records `startup_s` separately, so the worker spawn was never billed to a video — the figure
+needs no re-check, and the 2026-07-19 ledger entry stands. What IS wall-clock contaminated is
+everything derived from stage walls before this change: the ~72 s/video fixed cost, the
+Silero-vs-F5 whole-pipeline RTF pair, every `breakdown_pct`. **The general lesson is the one worth
+keeping: a blanket "distrust all recorded numbers" is itself an unverified claim, and it cost
+this item its credibility on the one number it named.** Check what a harness actually measured
+before condemning its output.
+
+## 2026-07-22 — The roadmap is named, not numbered, because the numbers were lying
+
+Roadmap items are now slugs (Transcribe speed, Timing accounting, …) and 34 "PLAN item N"
+references across 12 code and test files were renamed to their topic.
+
+**The numbers were not merely stale, they were ambiguous in the present tense.** PLAN was re-cut
+three times in a week and the code comments never moved with it, so "PLAN item 1" simultaneously
+pointed at the F5 speedup (`exp_nfe_sweep.py`), the source-anomaly pass (`runreport.py`), proper
+nouns (DECISIONS 2026-07-18) and transcribe (PLAN today). A reader following one of those
+pointers landed on an unrelated item and had no way to tell.
+
+**The fix is not better numbering, it is removing the pointer's dependency on ordering.** A
+comment that says "the queue-page merge" or "the source-anomaly pass" names a thing that exists
+whatever the roadmap does next; renumbering cannot break it, and the reference degrades to a
+searchable phrase rather than a wrong index. Rejected: stable ids that never get reused (a second
+vocabulary to maintain, and it still says nothing about WHAT is referenced); and leaving the
+numbers with a "as of <date>" suffix (correct, but every reader still has to reconstruct a dead
+roadmap to use it).
+
+**CHANGELOG and DECISIONS keep their numbers deliberately.** They are dated records of what was
+true when written, and rewriting them to today's vocabulary would destroy exactly the provenance
+that makes them worth keeping. Only PLAN — the forward-looking file — and live code comments were
+converted. `.claude-tasks/` session records were left alone for the same reason.
+
 ## 2026-07-21 — One queue page: the scout report is the base, the triage page merged into it
 
 PLAN item 2 (reconcile the renderers) could be closed two ways: a shared data layer under two

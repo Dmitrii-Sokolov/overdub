@@ -496,9 +496,9 @@ def test_scout_fails_loud_on_an_ambiguous_media_glob() -> None:
 def test_scout_thumbnail_does_not_trip_the_ambiguous_media_glob() -> None:
     # Regression: --write-thumbnail --convert-thumbnails jpg lands its output on the SAME
     # source.audio.%(ext)s template as the audio fetch, so a real run produces both
-    # source.audio.webm and source.audio.jpg. Only the jpg is a preview (build_scout.py's
-    # _ensure_thumb globs source.audio*.jpg for exactly this file); the media picker must
-    # ignore it rather than counting it as a second candidate.
+    # source.audio.webm and source.audio.jpg. Only the jpg is a preview; the media picker must
+    # ignore it rather than counting it as a second candidate. The audio fetch must still land
+    # its wav — that is what the picker feeds.
     calls: list = []
     with tempfile.TemporaryDirectory() as d:
         ctx = _ctx(Path(d))
@@ -509,7 +509,30 @@ def test_scout_thumbnail_does_not_trip_the_ambiguous_media_glob() -> None:
 
         _with_fake_subprocess(body)
         assert ctx.work.source_audio.exists()
-        assert (ctx.work.root / "source.audio.jpg").exists()  # left alone for build_scout.py
+        # The sidecar is CONSUMED by the stage now (2026-07-22): ensure_thumb_local scales it
+        # into thumb.jpg and drops the full-size original, so the preview no longer waits on the
+        # summarizer step to exist. Under the fake subprocess no real scaling happens — what is
+        # pinned here is that the stage reaches for the sidecar at all, not the pixels.
+        assert not (ctx.work.root / "source.audio.jpg").exists()
+
+
+def test_the_full_download_asks_for_a_thumbnail_too() -> None:
+    # INBOX 2026-07-22: these flags lived only on the audio branch, so a video dubbed WITHOUT a
+    # scout pass had no preview bytes anywhere on disk and the queue page rendered it pictureless.
+    # The -o template is source.mkv, so the sidecar lands as source.jpg — which is why
+    # ensure_thumb_local globs `source*.jpg` and not the old audio-only shape.
+    calls: list = []
+    with tempfile.TemporaryDirectory() as d:
+        ctx = _ctx(Path(d))
+
+        def body(dl):
+            dl.subprocess.run = _fake_ytdlp(calls, ctx.work.root, ext="mkv")
+            _quiet(DownloadStage().run, ctx)
+
+        _with_fake_subprocess(body)
+        yt = next(c for c in calls if c[0] == "yt-dlp")
+        assert "--write-thumbnail" in yt
+        assert yt[yt.index("--convert-thumbnails") + 1] == "jpg"
 
 
 def test_scout_cleans_a_stale_audio_file_before_fetching() -> None:

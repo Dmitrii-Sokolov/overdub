@@ -237,6 +237,21 @@ slope against audio length is statistically zero (R²=0.000).
 > here because the predictors are collinear (r=0.977, intercept swings −11.7 →
 > 140.3 s on one dropped point). Measure the fixed cost directly from mtimes
 > instead. See DECISIONS 2026-07-19 "Measurement gotchas".
+>
+> **The first trap is closed for runs after 2026-07-22, and only for those.**
+> `detail.synthesize.n_rendered` now records how many units a run actually
+> rendered, and `detail.translate.n_api` how many sentences hit Ollama, so a
+> resumed run says so in the file instead of needing a wav-mtime comparison. Every
+> workdir predating that change still needs the mtime check — the counters are not
+> backfilled, and nothing derives them after the fact. The collinearity trap is
+> unaffected: it is a property of the regression, not of the instrumentation.
+>
+> **The numbers in this section were measured off stage walls and therefore
+> INCLUDE the loads listed above.** Use `run.json.timings.rtf_work` for anything
+> comparing one build against another; `rtf` remains the honest total cost.
+> Contrast `scripts/exp_nfe_sweep.py`, which times each cell around
+> `engine.synthesize` alone and records the worker spawn separately as
+> `startup_s` — which is why its `nfe` 48→16 = 2.16× needs no re-check.
 - **Output:** 24 kHz mono (vocos-mel-24khz — a checkpoint fact, not a knob);
   RUAccent (turbo3.1) puts stresses in-worker.
 - **Seed-capable:** reseed-retry lives in the synthesize stage (keep-best by

@@ -155,6 +155,8 @@ class SynthesizeStage:
         return True
 
     def run(self, ctx: Context) -> None:
+        from .. import runreport            # local: runreport imports stages lazily too
+
         cfg = ctx.cfg
         segs = json.loads(ctx.work.translation.read_text(encoding="utf-8"))
         if [s["id"] for s in segs] != list(range(len(segs))):
@@ -220,8 +222,25 @@ class SynthesizeStage:
             if engine.supports_seed:
                 verifier = ctx.session.whisper(cfg, cfg.verify_model)
 
+        # THE CLOCK STARTS HERE, after the engine (worker spawn + model, measured at ~34.8 s
+        # median) and the verifier are in hand — the same boundary transcribe draws around
+        # load_whisper, and for the same reason: the pipeline's stage timer charges that spawn to
+        # whichever video happens to be first in a stage-major sweep, so the wall clock cannot
+        # compare one video against another or one build against another.
+        #
+        # `n_rendered` is the other half and matters more here than in transcribe. A RESUMED run
+        # re-renders only the stale units, so its wall clock describes a fraction of the video
+        # with nothing in the file saying which fraction — DECISIONS 2026-07-19 records exactly
+        # this ("5 of 12 workdirs have timings covering only the units re-rendered in the last
+        # session ... visible ONLY by comparing segment wav mtimes against the timings file").
+        # Recorded here, that comparison is never needed again.
+        t0 = time.perf_counter()
         out: list[dict] = []
         fresh_since_flush = 0
+        # engine.synthesize calls made in THIS session — the first attempt plus every reseed.
+        # NOT summed from the manifest's `attempts`: a reused unit carries the attempt count of
+        # the session that rendered it, so that sum would bill an old run's retries to this one.
+        synth_calls = 0
         # no local teardown: the engine and the verifier belong to the session, whose
         # lifetime is one stage SWEEP (pipeline.Session). For a single video that sweep ends
         # with this stage, i.e. exactly the old finally block; in a stage-major batch the
@@ -254,6 +273,7 @@ class SynthesizeStage:
                 try:
                     tmp = wav.with_suffix(".wav.tmp")
                     speed_used = engine.synthesize(u["text"], tmp, seed=cfg.tts_seed, **kw)
+                    synth_calls += 1
                     seed_used, attempts = (cfg.tts_seed if engine.supports_seed else None), 1
                     if verifier is not None:
                         ref_norm = normalize_for_compare(u["text"])
@@ -274,6 +294,7 @@ class SynthesizeStage:
                                 try:
                                     engine.synthesize(u["text"], retry_tmp,
                                                       seed=cfg.tts_seed + k, **kw)
+                                    synth_calls += 1
                                     sim_k, _h, _n = roundtrip_similarity(
                                         verifier, retry_tmp, ref_norm, cfg.target_lang)
                                 except TtsFatalError:
@@ -333,6 +354,7 @@ class SynthesizeStage:
 
         if sorted(i for e in out for i in e["ids"]) != list(range(len(segs))):
             raise RuntimeError("unit ids not contiguous (synthesize never-drop)")
+        work_s = time.perf_counter() - t0
         n_flag, n_retried = self._write_manifest(ctx, cfg, key, sr, out, complete=True)
         # regrouping moves unit leaders: unlink stale NNNNN.wav files whose id is no longer
         # a lead, or a later --only verify/assemble could pick up orphan audio
@@ -340,8 +362,14 @@ class SynthesizeStage:
         for p in ctx.work.segments_dir.glob("[0-9][0-9][0-9][0-9][0-9].wav"):
             if int(p.stem) not in leads:
                 p.unlink(missing_ok=True)
+        # `need` is the pre-loop snapshot, and it has to be: reusable() re-reads the wav from
+        # disk, so asking it again down here would call a just-rendered unit reusable.
+        runreport.record_stage_detail(
+            ctx.work, "synthesize", work_sec=round(work_s, 3), n_units=len(out),
+            n_rendered=len(need), n_synth_calls=synth_calls)
         print(f"       {len(segs)} sentences → {len(out)} units → manifest.json "
-              f"({n_flag} flagged, {n_retried} retried)")
+              f"({n_flag} flagged, {n_retried} retried; {work_s:.1f}s excl. engine start, "
+              f"{len(need)}/{len(out)} units rendered)")
 
     @staticmethod
     def _write_manifest(ctx, cfg, key, sr, out, *, complete: bool) -> tuple[int, int]:

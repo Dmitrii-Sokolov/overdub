@@ -1,5 +1,12 @@
 """F5 `nfe_step` sweep harness — renders REAL production units at several nfe values and
-emits a BLIND A/B listening page per candidate. Roadmap item 1 (PLAN: "Speed up F5").
+emits a BLIND A/B listening page per candidate. Built for the F5 speedup (lever ledger:
+DECISIONS 2026-07-19).
+
+MEASURES PER CELL, NOT OFF A STAGE WALL CLOCK. `wall_s` is taken around `engine.synthesize`
+alone and `startup_s` — the worker spawn — is recorded separately and excluded. That is why the
+`nfe` 48→16 = 2.16x figure survives the 2026-07-21 timing-accounting review: it never billed a
+model load to a video in the first place. Stage-level numbers measured off `timings.json`
+BEFORE the per-stage `detail` entries existed do not have that property.
 
 Run with the .venv-asr python from the repo root (it spawns the .venv-f5tts worker itself):
 

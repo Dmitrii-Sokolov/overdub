@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 from ..pipeline import Context
-from ..workdir import replace_retry
+from ..workdir import ensure_thumb_local, replace_retry
 
 
 def _tool_exe(name: str) -> str:
@@ -103,11 +103,21 @@ class DownloadStage:
                 "-f", "bv*[ext=mp4]+ba[ext=m4a]/bv*+ba/b",
                 "--merge-output-format", "mkv",
                 "--write-info-json",
+                # Same one-request preview the scout fetch takes, for the same reason and with
+                # the same tolerance for failure. It is here because a video dubbed WITHOUT a
+                # scout pass had no preview anywhere: the flags lived only on the audio branch,
+                # so the queue page rendered those rows pictureless and the only cure on disk was
+                # a networked backfill inside the summarizer step, which that route never runs
+                # (INBOX 2026-07-22). The -o template is source.mkv, so the sidecar lands as
+                # `source.jpg` — matched by ensure_thumb_local's `source*.jpg` glob, which is
+                # deliberately wider than the old audio-only one.
+                "--write-thumbnail", "--convert-thumbnails", "jpg",
                 "-o", str(w.source_video),
                 ctx.url,
             ],
             check=True,
         )
+        ensure_thumb_local(w)                          # cosmetic, never fatal, never networked
         _extract_wav(w.source_video, w.source_audio)
 
     def _fetch_audio(self, ctx: Context) -> None:
@@ -163,6 +173,7 @@ class DownloadStage:
                                f"got {[p.name for p in media]} — yt-dlp output template changed?")
         print(f"       [scout] audio {media[0].stat().st_size / 1e6:.1f} MB "
               f"({media[0].suffix or 'n/a'}) → source.wav")
+        ensure_thumb_local(w)                          # cosmetic, never fatal, never networked
         _extract_wav(media[0], w.source_audio)
         media[0].unlink(missing_ok=True)               # the wav is the artifact; the container scrap
 
