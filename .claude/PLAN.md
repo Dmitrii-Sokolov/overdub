@@ -173,18 +173,29 @@ makes the timing calls worth it.
    the open question is whether the feature earns more investment at all, not whether its window
    could be prompted better. Polishing it ranks below every item that serves a route in daily use.
 
-### Parallel F5 workers
-**The one F5 speed lever absent from the ledger.** The
-   2026-07-19 ledger (DECISIONS) covers nfe, stage-major, fp16, `torch.compile`, cross-unit
-   batching, TF32, cudnn, SDPA, VRAM parking, ref clip and demucs — running several worker
-   PROCESSES concurrently is the gap. Rationale: F5 synthesizes one short unit at a time through
-   `infer_process`, small tensors, so the GPU is plausibly launch-bound rather than compute-bound.
-   **Gated on a five-minute measurement, not on code: `nvidia-smi dmon` during synthesize AT
-   nfe=16.** If SM occupancy is already 90%+ there is no lever and this item closes having cost
-   nothing. Caveat that decides the ceiling: Windows has no MPS, so N processes get WDDM
-   time-slicing, not concurrent kernels — the win only exists to the extent short units leave the
-   GPU idle. Budget ~0.8 GB per worker plus ~0.5 GB CUDA context each; three fit inside the 12 GB
-   rule with room. Applies to the DUB route (B); scout does not synthesize at all.
+### Parallel F5 workers — GATE PASSED 2026-07-24, build DEFERRED
+**The one F5 speed lever absent from the ledger** (nfe, stage-major, fp16, `torch.compile`,
+   cross-unit batching, TF32, cudnn, SDPA, VRAM parking, ref clip and demucs are all in the
+   2026-07-19 DECISIONS ledger): running several worker PROCESSES concurrently. Rationale: F5
+   synthesizes one short unit at a time, small tensors, so the GPU is plausibly launch-bound.
+   **The occupancy gate is PASSED.** `nvidia-smi dmon` at nfe=16 over 40 real units
+   (`exp_nfe_sweep.py --nfe 16`, dmon 1 s cadence): **median SM 5%, mean 26.6%, and 60% of the
+   active window sits below 10% occupancy** — GPU saturated only 15% of the time. F5 is confirmed
+   launch-bound (synth wall 66 s of a 148 s render), so the lever is REAL — the "90%+ → no lever"
+   exit did not fire. Contrast: cross-video threading found whisper ~28% idle and returned 1.15×;
+   F5 leaves twice the idle, so the ceiling is plausibly higher.
+   **But the build is deferred, and the gate result is why the decision is informed, not why it is
+   automatic.** Three things the occupancy number does NOT promise: (1) the 60% idle includes the
+   verify round-trip (whisper-small, which F5 workers cannot fill), the one-off 66 s worker spawn,
+   and IPC/file overhead — only the F5-synth slice is fillable; (2) Windows has no MPS, so N
+   processes get WDDM time-slicing, and threading already showed N=3 DEGRADES (N=2 is the likely
+   optimum); (3) VRAM is tight — two F5 workers (~2×1.3 GB) + whisper-small + desktop 5.7 GB ≈ 9+ GB
+   of 12, an OOM risk. Building the 2-worker measurement harness (concurrent processes, unit split,
+   mirrored serial-vs-parallel wall) is real code, and F5 is the DUB route (B) — not daily; scout
+   does not synthesize. **Reopen when route B synthesis is a measured bottleneck**; the gate says
+   it will be worth measuring then, not that it is worth building now. Occupancy raw:
+   `work-exp/f5-occupancy/` + `scratchpad/dmon_f5.txt`. Budget ~0.8 GB/worker + ~0.5 GB CUDA
+   context each.
 
 ### Shorter reference clip
 **Bigger than the workers item and already measured, but it moves the voice.**

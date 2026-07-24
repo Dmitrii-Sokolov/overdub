@@ -1,6 +1,22 @@
 # CHANGELOG
 
-## 2026-07-24 (last) — separate stage reports timing detail: rtf_work stops billing the demucs load as work
+## 2026-07-24 (last) — F5 parallel-workers occupancy gate PASSED (GPU 60% idle in synth), build deferred
+
+`nvidia-smi dmon` at nfe=16 over 40 real units (`exp_nfe_sweep.py --nfe 16`, isolated in
+`work-exp/f5-occupancy/`, dmon 1 s cadence in `scratchpad/dmon_f5.txt`): **median SM occupancy 5%,
+mean 26.6%, 60% of the active window below 10%, saturated only 15% of the time.** F5 is confirmed
+launch-bound (synth wall 66 s of a 148 s render), so the PLAN gate's "90%+ → no lever" exit did NOT
+fire — the parallel-workers lever is real, and F5 leaves ~twice the idle cross-video threading found
+in whisper (which returned 1.15×).
+
+Build deferred anyway: the idle includes the verify round-trip (whisper-small, not F5-fillable), the
+one-off 66 s worker spawn and IPC/file overhead — only the F5-synth slice is fillable; WDDM
+time-slicing caps it (threading already showed N=3 degrades, N=2 is the likely optimum); two F5
+workers + whisper-small + desktop 5.7 GB ≈ 9+ GB of 12 is an OOM risk; and F5 is the DUB route (B),
+not daily. Reopen when route B synthesis is a measured bottleneck. No code change — measurement only;
+`exp_nfe_sweep.py` was used as-is (read-only w.r.t. `work/`).
+
+## 2026-07-24 — separate stage reports timing detail: rtf_work stops billing the demucs load as work
 
 `SeparateStage` records `detail.separate`: `work_sec` = the ffmpeg extract (the only part that
 scales with audio length), and `demucs_sec` beside it. The demucs subprocess bills as OVERHEAD, not
