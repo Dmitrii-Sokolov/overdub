@@ -67,7 +67,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from overdub.asr import load_whisper                                    # noqa: E402
 from overdub.config import Config                                       # noqa: E402
 from overdub.stages.transcribe import (                                 # noqa: E402
-    floor_run_ratio, norm_text, resegment, transcribe_words,
+    MIN_WORD_DUR, TERMINATORS, _core, floor_run_ratio, norm_text, resegment,
+    transcribe_words,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -124,6 +125,36 @@ def cell(out: Path, vid: str, variant: str, rep: int) -> Path:
     return out / f"{vid}__{variant}__r{rep}.json"
 
 
+def claim_metrics(flat: list, sents: list[dict]) -> dict:
+    """The two axes that adjudicate the condition_on_previous claim (PLAN, "The condition_on_previous
+    claim"). LOOP, using the SAME quantities as the 2026-07-19 `overdub.toml` note so the two sides
+    are directly comparable: degenerate 0.02 s stamps (`n_floor`), duplicate adjacent sentence pairs
+    (`dup_pairs`), and the max chars/sec of any sentence (`max_chps` — a collapsed alignment inflates
+    it). PUNCTUATION: terminator density per 100 words (`term_density`) and the LONGEST
+    terminator-free stretch in SECONDS (`longest_gap_s`) — the 60-206 s claim stated as a
+    measurement instead of a memory. Read-only over one transcript; terminator test matches
+    `_dehallucinate`'s (`_core(tok)[-1:] in TERMINATORS`)."""
+    n_floor = sum(1 for w in flat if abs((w.end - w.start) - MIN_WORD_DUR) < 1e-6)
+    dup_pairs = sum(1 for i in range(len(sents) - 1)
+                    if norm_text(sents[i]["text"]) == norm_text(sents[i + 1]["text"]))
+    max_chps = 0.0
+    for s in sents:
+        dur = s["end"] - s["start"]
+        if dur > 0:
+            max_chps = max(max_chps, len(s["text"]) / dur)
+    n_term = sum(1 for w in flat if _core(w.text)[-1:] in TERMINATORS)
+    longest_gap, last_term = 0.0, (flat[0].start if flat else 0.0)
+    for w in flat:
+        longest_gap = max(longest_gap, w.end - last_term)
+        if _core(w.text)[-1:] in TERMINATORS:
+            last_term = w.end
+    return {
+        "n_floor": n_floor, "dup_pairs": dup_pairs, "max_chps": round(max_chps, 1),
+        "term_density": round(100.0 * n_term / len(flat), 2) if flat else 0.0,
+        "longest_gap_s": round(longest_gap, 1),
+    }
+
+
 def measure(out: Path, cfg: Config, names: list[str], vids: list[str], repeats: int) -> None:
     for pos, (variant, rep) in enumerate(blocks(names, repeats), 1):
         over = VARIANTS[variant]
@@ -152,6 +183,7 @@ def measure(out: Path, cfg: Config, names: list[str], vids: list[str], repeats: 
                     "work_sec": round(work_s, 2), "n_words": len(flat),
                     "n_sentences": len(sents), "floor_ratio": round(ratio, 4),
                     "floor_longest": longest,
+                    **claim_metrics(flat, sents),
                     "text": " ".join(w.text for w in flat),
                 }, ensure_ascii=False), encoding="utf-8")
                 print(f"    {vid}  {work_s:7.1f}s  {len(flat):5d} words  {len(sents):4d} sents  "
@@ -230,6 +262,59 @@ def report(out: Path, names: list[str], vids: list[str], repeats: int, floor_max
             p.write_text(f"{len(lines)} differing block(s)\n\n" + "\n".join(lines),
                          encoding="utf-8")
             print(f"  {p.name}: {len(lines)} differing block(s)")
+
+
+# (key, label, side the claim predicts HIGHER). The claim is TWO-SIDED, so a single "cond=F worse"
+# framing is wrong: cond=True makes repetition loops (loop axes HIGH on cond=True), while cond=False
+# drops terminators and lengthens blocks (term density LOW on cond=False → HIGH on cond=True; the
+# longest terminator-free gap HIGH on cond=False).
+_CLAIM_AXES = [
+    ("n_floor", "loop: 0.02s stamps", "cond=True"),
+    ("dup_pairs", "loop: dup sent pairs", "cond=True"),
+    ("max_chps", "loop: max ch/s", "cond=True"),
+    ("term_density", "punct: term/100w", "cond=True"),
+    ("longest_gap_s", "punct: longest gap s", "cond=False"),
+]
+
+
+def report_claim(out: Path, vids: list[str], repeats: int) -> None:
+    """Adjudicate the condition_on_previous claim: control (cond=True) vs nocond (cond=False) on the
+    loop and punctuation axes, per video, as RANGES across the repeats. The claim (DECISIONS
+    2026-07-17, `overdub.toml` note 2026-07-19) is TWO-SIDED: cond=True makes repetition loops
+    (loop axes high on cond=True) and cond=False makes terminator-free blocks (term density low /
+    longest gap high on cond=False). **Falsification criterion, fixed in PLAN before the run:** if
+    the LOOP rows OVERLAP between the two sides across the repeats — especially on `4szRHy_CT7s`,
+    the source the claim was built on — the 2026-07-19 attribution does not survive. Overlapping
+    ranges on a sampling decoder mean the flag is not the operative variable; the verdict is read
+    here, per row, not encoded as a pass/fail."""
+    print("\n" + "=" * 96)
+    print("CONDITION_ON_PREVIOUS — control (cond=True) vs nocond (cond=False), range over repeats")
+    print("  claim (two-sided): cond=True → loops (loop axes HIGH on cond=True); cond=False →")
+    print("  terminator-free blocks (term density LOW / longest gap HIGH on cond=False).")
+    print("  FALSIFICATION: loop rows OVERLAP on 4szRHy_CT7s → the 2026-07-19 attribution fails.")
+    for vid in vids:
+        c, v = _load(out, vid, "control", repeats), _load(out, vid, "nocond", repeats)
+        if not c or not v:
+            print(f"\n{vid}: (missing cells — need both control and nocond)")
+            continue
+        star = "  ← claim's source video" if vid == "4szRHy_CT7s" else ""
+        print(f"\n{vid}  (cond=True n={len(c)} vs cond=False n={len(v)}){star}")
+        print(f"  {'axis':<22}{'cond=True':>16}{'cond=False':>16}   verdict")
+        for key, label, claim_high in _CLAIM_AXES:
+            cv = [x[key] for x in c if key in x]
+            vv = [x[key] for x in v if key in x]
+            if not cv or not vv:
+                print(f"  {label:<22}{'(no data)':>16}")
+                continue
+            clo, chi, vlo, vhi = min(cv), max(cv), min(vv), max(vv)
+            if clo <= vhi and vlo <= chi:                   # ranges overlap
+                verdict = "OVERLAP — flag not operative here"
+            else:
+                higher = "cond=True" if clo > vhi else "cond=False"
+                verdict = ("CONFIRMS claim" if higher == claim_high else "AGAINST claim")
+                verdict += f" ({higher} higher)"
+            fmt = (lambda lo, hi: f"{lo:g}" if lo == hi else f"{lo:g}-{hi:g}")
+            print(f"  {label:<22}{fmt(clo, chi):>16}{fmt(vlo, vhi):>16}   {verdict}")
 
 
 def threads_probe(out: Path, cfg: Config, vids: list[str], n: int, repeats: int) -> None:
@@ -415,6 +500,8 @@ def main(argv: list[str] | None = None) -> int:
         out.mkdir(parents=True, exist_ok=True)
         measure(out, cfg, names, vids, args.repeats)
     report(out, names, vids, args.repeats, cfg.transcribe_floor_run_max)
+    if "nocond" in names:                               # the two axes that adjudicate the claim
+        report_claim(out, vids, args.repeats)
     return 0
 
 

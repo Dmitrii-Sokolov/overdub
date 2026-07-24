@@ -83,54 +83,25 @@ resegmentation, timing sync and `--repair-asr` are all built on it). Summarize i
 (at its 4.5× parallel ceiling, CHANGELOG 2026-07-21). One undiagnosed loose end: the `Tu2cCEMwvHI`
 116.7 s download outlier (6-13 s for the rest of that queue).
 
-### The condition_on_previous claim
-**A causal claim this project has treated as settled since 2026-07-17, never independently
-tested here, and one piece of our own data cuts against it.** The claim has two halves:
-`condition_on_previous_text=False` produces 60-206 s terminator-free blocks (the "period
-mid-sentence" ROOT class), and `=True` produces repetition loops. Both are load-bearing: the
-flag's default, `TranscribeStage._guard`'s entire retry, `overdub.toml`'s per-source hatch, and
-the 2026-07-22 demotion of batched inference all rest on them.
-
-   **Today's counter-evidence, from the beam probe and not from theory.** `RyvXxApfHkk` at beam 5
-   **with `cond=True`** returned a textbook loop — `"The LLM is used to analyze and categorize
-   data."` five times consecutively. The same video at beam 1, **also `cond=True`**, did not. The
-   flag was identical on both sides; the loop appeared and vanished with BEAM. So `cond` is not
-   sufficient to explain loop presence, and the causal story is at minimum incomplete. Raw:
-   `work-exp/beam-probe/RyvXxApfHkk__*.json`.
-
-   **What the existing evidence actually is, stated at its real strength:**
-   - Upstream documents it (`faster_whisper/transcribe.py:818-821`: "less prone to getting stuck
-     in a failure loop, such as repetition looping"), and ships a dedicated mitigation,
-     `prompt_reset_on_temperature=0.5` (`:278`, effect `:1372-1383`). Strong evidence about what
-     the maintainers believe. **No evidence at all about our sources.**
-   - `overdub.toml`'s NOTE 2026-07-19 (`4szRHy_CT7s`: 170 degenerate 0.02 s stamps → 0, 2 duplicate
-     sentence pairs → 0, 294 ch/s → 24) is **one video, one run per side** — and we established on
-     2026-07-22 that the same audio at the same settings returns a different transcript and a
-     different alignment. `transcribe_floor_run_max`'s own comment records a 5-run sample overturned
-     by a sixth. A single before/after on a sampling decoder cannot separate a flag effect from a
-     draw. The 170→0 move is large, which is the strongest thing going for it; it is still n=1.
-   - `STACK.md:120` recommends `vad_filter=True` **and** `cond=False` together for the silence
-     "Thank you." loop — two variables moved at once, so it attributes to neither. That failure is
-     at least as plausibly pure VAD.
-   - The punctuation half (DECISIONS 2026-07-17) has never been restated as a number here at all.
-
-   **The test.** `scripts/asr_probe.py --variant nocond` is wired (the variant exists), but the
-   probe is missing the two axes that would settle it — both were in the deleted harness, ~30 lines
-   to re-add: (a) a LOOP axis using the same quantities the 2026-07-19 note used, so the results are
-   directly comparable — runs collapsed by `_dehallucinate`, duplicate sentence pairs, max ch/s per
-   sentence; (b) a PUNCTUATION axis — terminator density and the LONGEST terminator-free stretch in
-   seconds, which is the 60-206 s claim stated as a measurement instead of a memory. Corpus:
-   `4szRHy_CT7s` (6.4 min, on disk, the source the claim was built on) plus the fixture six as
-   controls. **At least 4 repeats per side, mirrored order** — fewer repeats reproduces the original
-   mistake. Cost ~20 min of GPU. **Falsification criterion, fixed now:** if the loop metrics on
-   `4szRHy_CT7s` OVERLAP between `cond=True` and `cond=False` across 4 repeats, the 2026-07-19
-   attribution does not survive and both the guard and the hatch need re-justifying.
-
-   **What hangs on the answer, and it is not small.** If the flag is not the operative variable,
-   the batched-inference demotion loses its main argument — batching hardcodes `cond=False`, and
-   that only matters if `cond` matters. Lever (b) would come back onto the table, and `_guard`
-   would be re-running ASR on suspect videos for a reason that does not hold. Do not quote the
-   2026-07-17 or 2026-07-19 conclusions as established until this runs.
+### The condition_on_previous claim — RESOLVED 2026-07-24 (claim SURVIVES, both halves)
+Measured with `asr_probe.py --variant nocond`, two axes added (loop: 0.02s stamps · dup sentence
+pairs · max ch/s; punct: terminator density · longest terminator-free gap in seconds), corpus
+`4szRHy_CT7s` + fixture six, 4 repeats mirrored. **The falsification criterion did NOT fire:** on
+`4szRHy_CT7s` the loop rows are DISJOINT with cond=True higher (0.02s stamps 70-119 vs 0, max ch/s
+293.8 vs 24.2), so the 2026-07-19 n=1 attribution is now confirmed at 7 videos × 4. Loop half
+("cond=True → collapse") holds 7/7 on floor stamps — precisely: it is the ALIGNMENT-COLLAPSE
+signature the note measured, NOT necessarily textual repetition (`dup_pairs` is mostly 0), and it
+is stochastic (a single cond=True draw can come back clean — 2YCaBqP ch/s spanned 31-300). Punct
+half ("cond=False → terminator-free blocks") is clear on the source (longest gap 35.8 s vs 16 s,
+term density 5.08 vs 5.7) and directional-but-weak on healthy videos (gaps mostly overlap). The
+beam counter-evidence is resolved as BOTH factors mattering, not cond being inoperative.
+**Consequences, all UPHELD — no code change:** `_guard`'s cond=True→cond=False retry is confirmed
+directly (cond=True drives floor to 8-12% on 4szRHy/RyvXxApfHkk/W4Ua6X, cond=False to 0%); the
+per-source hatch is justified; the batched-inference demotion (b) keeps its argument (cond is
+operative), on the narrower basis that the punct cost bites on PROBLEM sources, not universally.
+Side note, NOT reopened: cond=True is itself the collapse source and 1.60× slower than cond=False —
+that does not reopen transcribe speed, because cond=False is rejected on punctuation (now measured),
+not on speed. Cells `work-exp/asr-probe-cond/`; rationale DECISIONS 2026-07-24.
 
 ### S2 artifact route
 **Decide how S2's artifacts reach the disk — the current answer is workable but not settled.**
@@ -370,7 +341,11 @@ summarizer step, and the scan cell falls back to summary.md's first sentence)** 
 axis closed ✅ (2026-07-24; four levers measured, none adopted — int8 rejected 24% slower, threading
 measured N=2 ~1.15×/N=3 net loss and closed, distil rejected by decision, beam already rejected;
 fp16 large-v3 on one GPU at its practical ceiling. `asr_probe.py --threads N` driver added +
-min→mean drift fix; DECISIONS 2026-07-24)**.
+min→mean drift fix; DECISIONS 2026-07-24)** · **`condition_on_previous` claim tested and SURVIVES ✅
+(2026-07-24; two probe axes added — loop + punctuation — corpus 4szRHy_CT7s + fixture six, 4 repeats;
+falsification criterion did not fire, cond=True→collapse confirmed 7/7, cond=False→terminator-free
+blocks clear on the source; `_guard` / hatch / batched demotion all upheld, no code change; the
+2026-07-19 n=1 attribution now n=7×4; DECISIONS 2026-07-24)**.
 The `--repair-asr` entry above is the only one still carrying an unsolved problem; the pre-batch
 checks at the top of this file apply to the next DUBBING batch, not to a scout pass.
 

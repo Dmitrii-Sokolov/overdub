@@ -1,6 +1,35 @@
 # CHANGELOG
 
-## 2026-07-24 (last) — transcribe-speed axis closed: int8 rejected (slower), threading measured and closed
+## 2026-07-24 (last) — condition_on_previous claim tested and SURVIVES (both halves)
+
+The causal claim held since 2026-07-17 (`cond=True` → repetition loops, `cond=False` →
+terminator-free blocks) was measured for the first time. Two axes added to `asr_probe.py` for the
+`nocond` variant: LOOP (degenerate 0.02s stamps, duplicate sentence pairs, max ch/s — the same
+quantities as the 2026-07-19 note) and PUNCTUATION (terminator density, longest terminator-free gap
+in seconds). Corpus `4szRHy_CT7s` + fixture six, 4 repeats mirrored; cells `work-exp/asr-probe-cond/`.
+
+**The falsification criterion did not fire.** On `4szRHy_CT7s` the loop rows are disjoint with
+cond=True higher (0.02s stamps 70-119 vs 0, max ch/s 293.8 vs 24.2), so the 2026-07-19 n=1
+attribution is confirmed at n=7×4. Loop half holds 7/7 on floor stamps — but stated precisely, it
+is the ALIGNMENT-COLLAPSE signature (stamps, ch/s), not textual repetition (`dup_pairs` mostly 0),
+and it is stochastic (2YCaBqP cond=True ch/s spanned 31-300). Punct half is clear on the source
+(gap 35.8s vs 16s) and directional-but-weak on healthy videos. The beam counter-evidence resolves
+as BOTH factors mattering.
+
+**Everything that rested on the claim is upheld — no pipeline code changed.** `_guard`'s
+cond=True→cond=False retry confirmed directly (cond=True floor 8-12% → 0% on cond=False), the
+per-source hatch justified, the batched-inference demotion (b) keeps its argument on the narrower
+basis that punct cost bites problem sources. Rationale DECISIONS 2026-07-24.
+
+**One tool bug caught in the reporting, not the data.** `report_claim`'s first verdict labels
+framed the claim as one-sided ("cond=False worse on every axis"); the claim is two-sided
+(cond=True worse on loops, cond=False worse on punctuation). The cell metrics were correct; the
+direction labels were wrong and were fixed (`--report-only`, no GPU) before reading the verdict.
+
+**Side finding, not acted on:** cond=False is 1.60× faster and floor-clean, but rejected on
+punctuation (now measured), not speed — so the transcribe-speed axis stays closed.
+
+## 2026-07-24 — transcribe-speed axis closed: int8 rejected (slower), threading measured and closed
 
 Roadmap lever (c), billed as "the cheapest thing left". Fixture six, control (shipped fp16)
 always measured beside it, two repeats, mirrored block order (`control r1 · int8 r1 · int8 r2 ·

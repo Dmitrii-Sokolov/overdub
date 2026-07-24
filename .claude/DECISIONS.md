@@ -1,5 +1,51 @@
 # DECISIONS
 
+## 2026-07-24 — The condition_on_previous claim SURVIVES measurement: cond stays operative, guard and hatch upheld
+
+The causal claim held since 2026-07-17 — `condition_on_previous_text=True` produces repetition
+loops, `=False` produces terminator-free blocks — was tested here for the first time, on the two
+axes the 2026-07-19 note used, against the source it was built on plus the fixture six, 4 repeats
+mirrored (`asr_probe.py --variant nocond`, cells `work-exp/asr-probe-cond/`). **The falsification
+criterion fixed in advance did NOT fire**, so the claim stands, and the n=1 attribution is now
+n=7×4.
+
+**Loop half — cond=True → collapse — confirmed 7/7, stated at its real strength.** On every video
+cond=True produces more degenerate 0.02 s stamps than cond=False (11-119 vs 0-1) and an inflated
+max ch/s (70-294 vs ~22); on `4szRHy_CT7s` the ranges are disjoint (stamps 70-119 vs 0). Two
+precisions the raw pass forces: (1) this is the ALIGNMENT-COLLAPSE signature the note actually
+measured — degenerate stamps and ch/s — not textual repetition; the direct textual metric
+`dup_pairs` is mostly 0. (2) It is STOCHASTIC: `2YCaBqP8muw` cond=True spanned ch/s 31-300 across
+repeats, i.e. one draw came back clean. So cond=True does not always collapse, but it collapses far
+more often than cond=False, which essentially never does (floor ~0% everywhere).
+
+**Punct half — cond=False → terminator-free blocks — clear on the source, weak on healthy audio.**
+`4szRHy_CT7s` cond=False longest terminator-free gap 35.8 s vs 16 s and term density 5.08 vs 5.7;
+on the fixture six term density drops on cond=False on 5/7 but the longest-gap ranges mostly
+overlap. The effect is real where the source is already problematic and marginal otherwise — which
+is exactly the profile a per-source hatch fits.
+
+**The beam counter-evidence is resolved, not ignored.** The beam probe had shown a loop appear at
+beam 5 / cond=True and vanish at beam 1 / cond=True, i.e. moving with BEAM while the flag held.
+This pass moves the flag at beam 5 and gets collapse on cond=True across 7 videos. Both factors are
+operative; "cond is not sufficient" (PLAN's phrasing) was right, "cond is not the variable" would
+have been wrong. No contradiction.
+
+**Consequences — everything that rested on the claim is UPHELD; no pipeline code changed.**
+`TranscribeStage._guard` (default cond=True, re-run once with cond=False when the floor ratio
+exceeds `transcribe_floor_run_max`) is confirmed by its own mechanism: cond=True drives the floor
+to 8-12% on 4szRHy/RyvXxApfHkk/W4Ua6X and cond=False takes it to 0%, so the retry does exactly what
+it claims. The `overdub.toml` per-source hatch is justified. The 2026-07-22 batched-inference
+demotion (b) keeps its argument — batching hardcodes cond=False and cond IS operative — on the
+narrower, now-measured basis that the punctuation cost bites on problem sources rather than
+universally.
+
+**Side finding, recorded but NOT acted on.** cond=False is 1.60× faster (fixture TOTAL 258→161 s)
+and clean on the floor (0% everywhere) — cond=True is itself the collapse source, not a guard
+against it. This does not reopen the transcribe-speed axis: cond=False is rejected on PUNCTUATION
+(now measured on the source it hurts), not on speed. The pipeline pays the cond=True cost — slower,
+plus guard re-runs on collapse-prone videos — deliberately, to buy punctuation the resegmenter
+needs.
+
 ## 2026-07-24 — Transcribe-speed axis closed: fp16 large-v3 on one GPU is at its practical ceiling
 
 The four levers named on 2026-07-22 (`int8_float16`, beam 5→1, `num_workers`, distil-large-v3) are

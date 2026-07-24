@@ -25,6 +25,9 @@
 #   loops on repeats (170 degenerate 0.02s word stamps, 2 duplicate sentence pairs, one
 #   slot at 294 char/s → atempo ×8.79). With it off: 0 degenerate, 0 dups, max 24 char/s,
 #   and no overlong terminator-free blocks came back. Per-source escape hatch, not a default.
+#   CONFIRMED 2026-07-24: this was n=1; a mirrored 4-repeat probe over 4szRHy_CT7s + the fixture
+#   six (asr_probe.py --variant nocond, DECISIONS 2026-07-24) reproduced it — cond=True gives
+#   70-119 stamps / max 294 ch/s here, cond=False 0 / 24, ranges disjoint across 4 repeats.
 #   USING THE HATCH IS SAFE TO REVERT: cond is stamped into asr_key but is deliberately NOT
 #   part of what the provenance guard refuses on (asr.asr_key_core), so restoring this file
 #   after a cond=False transcribe leaves that workdir usable — it prints one [info] line
