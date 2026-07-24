@@ -74,21 +74,78 @@ that carry the old numbers are historical records and stay as written.
    against it, 79% of the pass, serial on one GPU, and it scales with video length while agent
    cost does not.
    **RTF 0.087** on large-v3, fp16, `beam_size=5`, `vad_filter=True`, `word_timestamps=True`.
-   Levers, none of them measured yet — and the point of `detail.transcribe.work_sec` is that they
-   now CAN be, against a stored baseline rather than a wall clock that hides the model load:
-   (a) **`beam_size` 5 → 1.** Usually the largest single win and the cheapest to try. Costs
-   accuracy; the ASR round-trip in verify is not a check on the transcribe stage, so quality has
-   to be judged against `--repair-asr`'s golden fixture (`docs/repair-fixture.md`), not by ear.
-   (b) **Batched inference** (`faster_whisper.BatchedInferencePipeline`). Reported multi-× on long
-   audio, which is exactly this queue's shape (20-36 min videos). Unproven here, and it changes
-   how segments come back — check `word_timestamps` survives it, since `resegment` depends on
-   word-level boundaries and nothing downstream works without them.
-   (c) **`compute_type` fp16 → int8_float16.** Cheap to test, ~free VRAM, some accuracy cost.
+   **Read the two numbers this item quotes as one measurement, not two.** 723 s is what a clock
+   saw, over the FIVE instrumented videos of that queue (8255 s of audio). 907 s is that same RTF
+   carried to the whole 2:53:44 (10424 s) — the sixth video was never instrumented, so 907 s has
+   never been observed and assumes it behaves like the other five. Quote it as the baseline; do
+   not quote it as an observation.
+
+   **The instrument is `scripts/asr_probe.py` — `--help` is its runbook, there is no separate
+   doc.** ~3.5 min of GPU per pass over the fixture six. It prints the same-variant noise floor
+   beside the cross-variant effect and stops: the verdict comes from reading the word-stream
+   diffs it writes, not from a rule in the code. The decode config is now a Config key rather than
+   a constant, and every transcript carries an `asr_key` stamp (DECISIONS 2026-07-22).
+   **The two-round sweep harness that preceded it was deleted the same day** — 3100 lines, one
+   open blocker, thirteen majors, a runbook contradicting its own code, and not a single number
+   produced. CHANGELOG 2026-07-22 has the post-mortem; the short version is that the decision
+   machinery, not the measurement, was where every defect lived.
+
+   **THE HOST DRIFTS, AND THAT IS THE REAL MEASUREMENT PROBLEM.** On HEAD, shipped config, three
+   repeats: block 3 ran 8-29% FASTER than block 1 on all six videos, same direction every time.
+   It is monotone within a session, so it is a confound, not noise — more repeats only tighten a
+   biased estimate, and only counterbalanced block order removes it. It is also the opposite sign
+   to the RTF 0.39-cold / 0.60-hot record in DECISIONS 2026-07-19; cause unidentified. An earlier
+   reading of this as "the machine is 3x noisier than any lever, so nothing here is measurable"
+   was WRONG and is retracted — (c) and (d) are measurable.
+   (a) **`beam_size` 5 → 1 — MEASURED AND REJECTED 2026-07-22.** The roadmap's "usually the
+   largest single win and the cheapest to try" did not survive contact: 1.17x at best on the
+   fixture six, with two of the six videos SLOWER. The text moved past the run-to-run floor on all
+   six, and the direction is the one this pipeline cannot afford — `Claude` → `Cloud` 23 times
+   against 0 at beam 5 (the DECISIONS 2026-07-20 proper-noun class), commas promoted to
+   sentence-ending periods (fragmenting the translation unit), and `floor_ratio` pushed over
+   `transcribe_floor_run_max` on 2 of 6, which fires the alignment guard and re-runs ASR on those
+   videos — costing more than the lever saves. Not all one-way: beam 1 avoided a repetition loop
+   beam 5 fell into on `RyvXxApfHkk`, and matched the human transcript where beam 5 hallucinated
+   on `DmgujoZ1mmk`. It trades one error class for another, and the one it buys is worse here.
+   Raw cells and diffs: `work-exp/beam-probe/`. Do not re-litigate without new evidence.
+   (b) **Batched inference** (`faster_whisper.BatchedInferencePipeline`) — **DEMOTED 2026-07-22
+   from a speed lever to a different decode**, and the old caveat here ("unproven, check
+   `word_timestamps` survives it") pointed at the wrong parameter. Word timestamps survive; what
+   does not is `condition_on_previous_text`, which the batched path accepts in its signature and
+   then hardcodes False — the flag that buys this pipeline its punctuation. It also forces a 30 s
+   VAD ceiling and zeroes `max_initial_timestamp`, and it makes `_guard` inert. Source references
+   and the full consequence: DECISIONS 2026-07-22. Admissible only after (c), (d), (e), and only
+   against the same gates plus the punctuation axes. Not in the probe's variant table.
+   (c) **`compute_type` fp16 → int8_float16 — NEXT, and the cheapest thing left.** One probe run,
+   `--variant int8`, ~15 min. Watch for a silent CTranslate2 downgrade: if the backend refuses
+   int8 it falls back to fp16 and the cells come back "free", so check the speedup is non-zero
+   before believing the quality result.
    (d) **distil-large-v3.** Biggest speedup, biggest quality question, and it is EN-only — which
-   this pipeline is anyway (EN→RU hard constraint).
+   this pipeline is anyway (EN→RU hard constraint). **Two things to check BEFORE spending GPU:**
+   it is not in the HF cache (first run downloads ~1.5 GB), and nobody has confirmed
+   `Systran/faster-distil-whisper-large-v3` ships the alignment heads `word_timestamps` needs —
+   which is load-bearing here. A distil failure would most likely be degraded TIMESTAMPS with
+   unchanged text, which the probe's sim axis cannot see; compare `n_sentences` and listen.
+   (e) **Cross-video threading**, `WhisperModel(num_workers=N)` → ctranslate2 `inter_threads`. The
+   one lever that keeps the decode exactly as it is, because the sequential path is the
+   thread-safe one (DECISIONS 2026-07-22). **Still unmeasurable, and the gap is a DRIVER, not a
+   knob**: `load_whisper` takes the keyword and the probe has a `threads2` variant, but
+   `run_pipeline` is strictly sequential, so nothing calls `transcribe()` from two threads.
+   Measuring it means writing that driver first (~30 lines in the probe: a thread pool over
+   videos inside one block). Until then say "3 of 4 levers" whenever coverage is quoted.
    **What NOT to touch:** `word_timestamps=True` is load-bearing, not a knob — sentence
    resegmentation is built on word boundaries (`stages/transcribe.py`), and turning it off breaks
    translation units, timing sync and `--repair-asr` at once.
+   **Adopting a lever is not one config edit, and this is the part that is easy to under-budget.**
+   The beam is shared by the transcribe stage and the `--repair-asr` window on purpose (one
+   `transcribe_words` body, two consumers), so a beam change invalidates the
+   `docs/repair-fixture.md` baseline — its window count, acceptance rate and the 5/12 recall
+   figure are all conditional on the decode config, and re-running the fixture is PART of adopting
+   the lever, not a follow-up. The `asr_key` stamp WARNS on a changed decode config rather than
+   refusing (the refusing version shipped for an afternoon and was reversed the same day: it was
+   inert on all 72 existing workdirs, none of which carries a stamp, while breaking plain
+   `--batch --force` and a no-op `--repair-asr auto`). So the stamp tells you a workdir will
+   fast-skip under the old transcript; it does not stop you. Adoption day is still a re-run day.
    **Measure one at a time against the stored baseline**, and watch `transcribe_asr_passes`: the
    alignment guard re-runs ASR on a suspect video, so a 2 there doubles that video's cost for a
    reason unrelated to whatever is being tested.
@@ -110,6 +167,55 @@ that carry the old numbers are historical records and stay as written.
    (`16zrEPOsIcI`: 144 s then 310 s), with no known lever — input size was ruled out. The wave is
    190-310 s against 723 s of transcribe; chasing a hundred seconds of jitter there is not worth
    a day. Both runs are preserved under `work-exp/wave-run{4,5}-2026-07-21/`.
+
+### The condition_on_previous claim
+**A causal claim this project has treated as settled since 2026-07-17, never independently
+tested here, and one piece of our own data cuts against it.** The claim has two halves:
+`condition_on_previous_text=False` produces 60-206 s terminator-free blocks (the "period
+mid-sentence" ROOT class), and `=True` produces repetition loops. Both are load-bearing: the
+flag's default, `TranscribeStage._guard`'s entire retry, `overdub.toml`'s per-source hatch, and
+the 2026-07-22 demotion of batched inference all rest on them.
+
+   **Today's counter-evidence, from the beam probe and not from theory.** `RyvXxApfHkk` at beam 5
+   **with `cond=True`** returned a textbook loop — `"The LLM is used to analyze and categorize
+   data."` five times consecutively. The same video at beam 1, **also `cond=True`**, did not. The
+   flag was identical on both sides; the loop appeared and vanished with BEAM. So `cond` is not
+   sufficient to explain loop presence, and the causal story is at minimum incomplete. Raw:
+   `work-exp/beam-probe/RyvXxApfHkk__*.json`.
+
+   **What the existing evidence actually is, stated at its real strength:**
+   - Upstream documents it (`faster_whisper/transcribe.py:818-821`: "less prone to getting stuck
+     in a failure loop, such as repetition looping"), and ships a dedicated mitigation,
+     `prompt_reset_on_temperature=0.5` (`:278`, effect `:1372-1383`). Strong evidence about what
+     the maintainers believe. **No evidence at all about our sources.**
+   - `overdub.toml`'s NOTE 2026-07-19 (`4szRHy_CT7s`: 170 degenerate 0.02 s stamps → 0, 2 duplicate
+     sentence pairs → 0, 294 ch/s → 24) is **one video, one run per side** — and we established on
+     2026-07-22 that the same audio at the same settings returns a different transcript and a
+     different alignment. `transcribe_floor_run_max`'s own comment records a 5-run sample overturned
+     by a sixth. A single before/after on a sampling decoder cannot separate a flag effect from a
+     draw. The 170→0 move is large, which is the strongest thing going for it; it is still n=1.
+   - `STACK.md:120` recommends `vad_filter=True` **and** `cond=False` together for the silence
+     "Thank you." loop — two variables moved at once, so it attributes to neither. That failure is
+     at least as plausibly pure VAD.
+   - The punctuation half (DECISIONS 2026-07-17) has never been restated as a number here at all.
+
+   **The test.** `scripts/asr_probe.py --variant nocond` is wired (the variant exists), but the
+   probe is missing the two axes that would settle it — both were in the deleted harness, ~30 lines
+   to re-add: (a) a LOOP axis using the same quantities the 2026-07-19 note used, so the results are
+   directly comparable — runs collapsed by `_dehallucinate`, duplicate sentence pairs, max ch/s per
+   sentence; (b) a PUNCTUATION axis — terminator density and the LONGEST terminator-free stretch in
+   seconds, which is the 60-206 s claim stated as a measurement instead of a memory. Corpus:
+   `4szRHy_CT7s` (6.4 min, on disk, the source the claim was built on) plus the fixture six as
+   controls. **At least 4 repeats per side, mirrored order** — fewer repeats reproduces the original
+   mistake. Cost ~20 min of GPU. **Falsification criterion, fixed now:** if the loop metrics on
+   `4szRHy_CT7s` OVERLAP between `cond=True` and `cond=False` across 4 repeats, the 2026-07-19
+   attribution does not survive and both the guard and the hatch need re-justifying.
+
+   **What hangs on the answer, and it is not small.** If the flag is not the operative variable,
+   the batched-inference demotion loses its main argument — batching hardcodes `cond=False`, and
+   that only matters if `cond` matters. Lever (b) would come back onto the table, and `_guard`
+   would be re-running ASR on suspect videos for a reason that does not hold. Do not quote the
+   2026-07-17 or 2026-07-19 conclusions as established until this runs.
 
 ### S2 artifact route
 **Decide how S2's artifacts reach the disk — the current answer is workable but not settled.**

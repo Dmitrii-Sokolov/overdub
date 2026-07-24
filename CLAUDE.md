@@ -117,6 +117,14 @@ Read it before changing anything in `overdub/repair.py`, before quoting a recall
 `--repair-asr auto`, or before scoring the automation against the human transcripts — the human side
 contains a known error and a deliberate override, so a perfect match is a red flag, not a win.
 
+`scripts/asr_probe.py` — the ASR decode-config probe (`--help` is the runbook; there is no
+separate doc, deliberately). Measures one decode variant against the shipped config on the 6
+fixture videos: counterbalanced block order, every variant twice, and it prints the
+same-variant noise floor beside the cross-variant effect, then stops — there is no adoption
+rule in it, because the verdict comes from reading the word-stream diffs it writes. Read it
+before quoting any transcribe-speed number. Adopting a decode change also re-baselines
+`docs/repair-fixture.md` (the beam is shared with the repair window).
+
 `docs/russian-tts-guide.md` — Russian-TTS working reference (user-supplied, July 2026): model
 comparison, input preparation (punctuation, normalization, stress dictionary, chunking), Silero
 SSML surface, a listening checklist, and a symptom → first-thing-to-check table. Read it before

@@ -90,7 +90,16 @@ Needs Ollama serving `gemma3:12b` on localhost. Agent or human:
   `synthesize` report `work_sec` with their load excluded, plus the counter that explains an
   outlier: `asr_passes` (the alignment guard re-runs ASR), `n_api` (a resumed translate touches
   the network for nothing), `n_rendered` (a resumed synthesize re-renders a FRACTION of the
-  units, so its wall clock describes a fraction of the video). `run.json.timings` publishes
+  units, so its wall clock describes a fraction of the video). `detail.transcribe` also carries
+  the run's decode PROVENANCE, which is not a timing at all: `asr_key`
+  (`model|compute_type|beam=N|cond=B` — what actually decoded, so the alignment guard's cond=False
+  retry is recorded as `cond=False`, and a spliced `--repair-asr` transcript as `cond=mixed`) plus
+  `asr_repair_windows`. A later run WARNS when the stamped model, compute type or beam differs
+  from the current config — that run will fast-skip transcribe and keep the old transcript, which
+  is the thing worth knowing; a cond-only difference reports more quietly, because cond is a
+  documented per-source escape hatch and the alignment guard sets it by itself. Workdirs made
+  before 2026-07-22 carry no stamp and are accepted silently, so the warning only ever fires on
+  transcripts produced after it existed. `run.json.timings` publishes
   `rtf` off the full wall and `rtf_work` off the load-excluded total, with `work_coverage` /
   `work_complete` saying how much of the pass is accounted for — the five stages without a
   `detail` entry make `rtf_work` an upper bound today, and the digest marks it `RTF~` when so.

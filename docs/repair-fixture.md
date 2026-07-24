@@ -57,6 +57,22 @@ Cost, measured 2026-07-20: 5 windows × 2 readings = 10 large-v3 passes in ~26 s
 once for the sweep. The "~1 minute per window" figure in DECISIONS 2026-07-19 describes the old
 manual script, which paid a fresh model load per invocation.
 
+**The baseline below is conditional on a decode config.** It was measured at
+`whisper_model = "large-v3"`, `whisper_compute_type = "float16"`, `whisper_beam_size = 5`,
+`whisper_condition_on_previous = true`. Since 2026-07-22 the beam is a config key
+(`whisper_beam_size`) shared by the stage and the repair window, so a fixture run under a
+different decode config measures a **different thing**: its window count, acceptance rate and the
+"5 of 12" recall figure are not comparable to the numbers here. Re-running the fixture is part of
+adopting any transcribe lever — record the decode config next to the result.
+
+That conditionality is now enforced rather than trusted: `--repair-asr` reads the `asr_key`
+stamped in each workdir's `timings.json` and REFUSES a video whose model, compute type or beam
+differs from the current config (`repair.check_decode_config`), because a window decoded at
+another width splices in a sentence of a different kind from its neighbours. The 6 preserved
+fixture workdirs predate the stamp and are accepted unchanged. After a real pass the stamp reads
+`cond=mixed` with an `asr_repair_windows` count — the spliced windows are the clipped `cond=False`
+reading, so the transcript is no longer one uniform decode and the file says so.
+
 ## Baseline to compare against (run of 2026-07-20)
 
 - 5 windows derived across 4 videos; all 5 accepted; gate agreed 5/5; texts byte-identical across

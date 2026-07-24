@@ -220,7 +220,7 @@ class SynthesizeStage:
             if engine.sample_rate != sr:
                 raise RuntimeError(f"engine sr {engine.sample_rate} != expected {sr}")
             if engine.supports_seed:
-                verifier = ctx.session.whisper(cfg, cfg.verify_model)
+                verifier = ctx.session.whisper(cfg, cfg.verify_model, role="verify")
 
         # THE CLOCK STARTS HERE, after the engine (worker spawn + model, measured at ~34.8 s
         # median) and the verifier are in hand — the same boundary transcribe draws around

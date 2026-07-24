@@ -961,7 +961,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if not args.pages_only:
         print("loading whisper-small (verifier, stays resident across the whole sweep) ...")
-        verifier = load_whisper(cfg.verify_model, cfg.whisper_device, cfg.whisper_compute_type)
+        verifier = load_whisper(cfg.verify_model, cfg.whisper_device,
+                                cfg.compute_type_for("verify"))
         t0 = time.perf_counter()
         try:
             render_grid(sample, nfes, out, cfg, verifier)

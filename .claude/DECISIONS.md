@@ -1,5 +1,195 @@
 # DECISIONS
 
+## 2026-07-22 — Batched inference is a DIFFERENT DECODE, not a faster one: roadmap lever (b) demoted
+
+The roadmap carried `faster_whisper.BatchedInferencePipeline` as speed lever (b) with one caveat —
+"unproven here, check `word_timestamps` survives it". Both halves are wrong, and the source
+answers them with no GPU (faster-whisper 1.2.1, `.venv-asr/Lib/site-packages/faster_whisper/`;
+line numbers below are `transcribe.py` at that version).
+
+**`word_timestamps` survives. `condition_on_previous_text` does not.** The batched `transcribe()`
+accepts `condition_on_previous_text: bool = True` in its signature (`:277`) and then builds
+`TranscriptionOptions` with `condition_on_previous_text=False` hardcoded (`:547`) — the caller's
+argument is read by nothing. Word timestamps, meanwhile, are passed straight through (`:545`) and
+applied (`:161-162`). So the one question the roadmap wrote down was aimed at the parameter that
+is fine, while the parameter that matters is silently overridden behind a signature that says it
+is configurable. Three more values are decided for the caller in the same construction:
+`hallucination_silence_threshold=None` (`:546`), `max_initial_timestamp=0.0` (`:552`), and VAD's
+`max_speech_duration_s` forced to `chunk_length` — 30 s, from the feature extractor (`:394`,
+`:400`) — with a caller-supplied value popped and overwritten rather than honoured (`:404-409`).
+
+**That flag is what buys this pipeline its punctuation, so losing it is not a side effect.**
+DECISIONS 2026-07-17: with `condition_on_previous_text=False` long stretches came back as 60-206 s
+terminator-free blocks that the overlong-splitter bisected mid-phrase — the ROOT of the "period
+mid-sentence" class. Turning it True is the fix that closed that class, and it ships True
+(`whisper_condition_on_previous`). Batched mode also makes `TranscribeStage._guard` inert: the
+guard's entire remedy is "re-run once with that flag off", so under batching the retry is the same
+decode as the first pass — it can only cost a second ASR pass, never repair anything.
+
+**Consequence, and it alters the roadmap: lever (b) is DEMOTED, not rejected.** It is no longer
+comparable to `int8_float16` / beam 1 / distil-large-v3, which change how fast the same decode
+runs. It changes the decode itself, on axes this project chose deliberately and paid for once
+already. It is therefore admissible only AFTER the other levers, and only against the same quality
+gates plus the punctuation axes specifically — terminator density and the longest terminator-free
+stretch, which is the 2026-07-17 defect class stated as a measurement. It is correspondingly
+absent from `scripts/asr_probe.py`'s variant table. Note
+what this does to the reported multi-× speedups elsewhere: they are measured on a decode that has
+no cross-chunk conditioning and a 30 s VAD ceiling, i.e. on a configuration this pipeline
+previously measured and rejected on output quality — the number is real and it is not our number.
+
+**The threading lever is the one that PRESERVES the flag, and the reason is structural.** The
+sequential `transcribe()` keeps `last_speech_timestamp` as a LOCAL (`:1152`); `BatchedInferencePipeline`
+keeps it on `self` (`:117`). So the sequential path is the thread-safe one, which is exactly what
+`WhisperModel(num_workers=N)` → ctranslate2 `inter_threads` (`:695`, docstring `:654-657`) asks
+for: N concurrent `transcribe()` calls, each with its own options, the flag intact. Cross-video
+threading and batching are not two flavours of the same idea — one keeps the decode and buys
+parallelism, the other buys throughput by changing the decode. The `num_workers` plumbing is
+recorded in the same-day entry on the decode-config split; what is NOT built is a driver that
+calls it from more than one thread, so this lever is unmeasured today (PLAN records the coverage
+gap).
+
+## 2026-07-22 — The ASR decode config is a key, the verifier is not: role-split compute type, one shared beam, and a provenance stamp
+
+"Transcribe speed" is the last bottleneck (907 s per pass over the 6-video queue, 2:53:44 of
+audio, RTF 0.087, 79% of a scout pass) and the four candidate levers — `int8_float16`, beam 5→1,
+`num_workers`, distil-large-v3 — were all unreachable for the same reason: **the decode config was
+hardcoded, so there was nothing to A/B and nothing on disk saying which config produced a
+transcript.** This entry is the plumbing that makes an experiment possible; it changes no
+behaviour on an unchanged `overdub.toml`.
+
+**`verify_compute_type` is independent of `whisper_compute_type`, not inherited from it.**
+`Session.whisper` passed one compute type to both large-v3 and whisper-small, so a single TOML
+flip would have moved the round-trip verifier along with the transcriber. The verifier is this
+pipeline's MEASURING INSTRUMENT — it decides which units are flagged and which clear
+`similarity_threshold` — and an instrument that moves with the thing it measures cannot detect a
+regression in it: the experiment would read its own measurement error as a result. An "inherit
+unless overridden" sentinel was rejected precisely because it would still drag the verifier along
+by default, i.e. it would not fix the problem at all. The resolver is `cfg.compute_type_for(role)`
+keyed on ROLE and not on model name, because `verify_model` is itself a key: pointing it at
+large-v3 must not silently inherit the transcriber's experimental compute type. Unknown role
+raises — a closed 2-element enum with 4 call sites makes a typo a programming error, not a
+runtime scenario. For the same reason verify's beam is a NAMED CONSTANT (`asr.VERIFY_BEAM_SIZE`)
+rather than a key: verify is ~0.3 s/unit and is not on the critical path this lever is shortening,
+so it holds still by construction.
+
+**One beam key, shared by the stage and `--repair-asr`, and `transcribe_words` requires it.**
+There is deliberately no `repair_beam_size`. Repair's whole contract is *delete, do not invent* —
+its output must be indistinguishable IN KIND from the surrounding transcript — and a second beam
+key is a licence for it not to be: a window decoded at beam 5 spliced into a transcript decoded at
+beam 1 is a different kind of artifact from its neighbours, which is the exact drift the shared
+`transcribe_words` body exists to prevent. The parameter is keyword-only with NO default, because
+a default is how one of the two call sites silently keeps beam 5 while the other moves: green
+suite, wrong media.
+
+**`asr_key` + a refusal in `TranscribeStage.done()` — this is the hole that made an adoption
+unverifiable.** There was zero on-disk provenance for the decode config (report.json records only
+`verify_model`, run.json records nothing), so two runs at different beam sizes were
+indistinguishable after the fact. The key is now stamped into `timings.json` `detail.transcribe`,
+and it is a readable string rather than a hash on purpose: a mismatch message that names the two
+configs is actionable, one that names two hex digests is not. It carries the
+`condition_on_previous` INTENT, not the pass actually taken — `_guard` may re-run with the flag
+off, and that is a per-run reaction to the audio, not a config change. `done()` now raises on a
+mismatch because both ways an ASR config change can land are silently wrong: on an existing
+workdir it is a no-op (`[skip] transcribe`, and the operator believes a beam-1 run happened), and
+forced it rewrites `sentences.json` while `TranslateStage.done()` is bare existence — pairing a
+NEW transcript with the OLD `translation.json`, which synthesize's congruence gate cannot see
+because it compares the manifest against the translation, not against sentences. Refusing is right
+here even though this repo flags rather than blocks: a flag leaves an audibly bad segment, whereas
+continuing produces a run that LOOKS clean and is not. Pre-stamp workdirs have no key and are
+accepted unchanged — this must not invalidate the existing corpus. Rejected: auto-calling
+`WorkDir.invalidate_downstream()`, which deletes user artifacts on a config typo, in a codebase
+where an unknown config key is a print and not an error.
+
+**`num_workers` is a loader keyword, not a Config key.** `WhisperModel(num_workers=N)` becomes
+ctranslate2's `inter_threads` (faster-whisper 1.2.1 `transcribe.py:695`) and the sequential
+`transcribe()` path is the thread-safe one (it keeps `last_speech_timestamp` local at 1152, where
+`BatchedInferencePipeline` keeps it on `self` at 117). But `run_pipeline` is strictly sequential,
+so a cfg key would have no consumer — it exists only so `scripts/asr_probe.py` can measure the
+cross-video-threading ceiling through the one loader that registers the CUDA DLL dirs and warms
+the model. It is absent from the session cache key for the same reason (the session never varies
+it); if it ever becomes a knob it must enter that key. What DOES enter the key now is the BEAM,
+because `_warm` tunes kernels for a beam — an instance warmed at 5 is not interchangeable with one
+warmed at 1, and a key that omitted it would hand an in-process A/B two references to one build.
+
+`scripts/lv_pick_refs.py:30` is left on `load_whisper("large-v3")` loader defaults by design: it
+is a one-off reference-picking tool, not pipeline code, and pinning it to cfg would give it an
+opinion it does not need.
+
+## 2026-07-22 — Measuring ASR inverts `exp_nfe_sweep`'s premise; and the host drifts, which is a different problem from noise
+
+**Status note, same day.** The harness this entry was written for (`exp_asr_sweep.py`, its region
+scorer and its runbook) was deleted hours later and replaced by `scripts/asr_probe.py` — see
+CHANGELOG 2026-07-22 for why. The premise below outlived it and is the reason the probe exists in
+the shape it does; the two-corpus machinery described further down did not, because the probe runs
+one corpus and says so. Read this for the premise, not for the file layout.
+
+`exp_nfe_sweep`'s central premise is FALSE for ASR and the instrument is inverted accordingly. F5
+is deterministic for a fixed (text, seed, speed, nfe), so that harness buys coverage with more
+texts and repeats a cell only to *falsify* determinism. **Whisper's temperature fallback samples:
+the same audio at the same settings returns a different transcript, a different word count and a
+different wall time.** There is therefore no axis with a zero expectation here — the role
+`duration_s` played there is played by a MEASURED NOISE FLOOR, control-vs-control, and repeats are
+a first-class axis rather than a check. The project's own record of what happens without one is
+`config.py`'s `transcribe_floor_run_max`: a 5-run sample looked cleanly separable and a sixth
+independent sample put the mid video above the severe video's entire range. A single run proves
+nothing about any lever in this file.
+
+**MEASURED THE SAME DAY, and it splits that premise in two.** Not all of the run-to-run movement
+is sampling noise. On a clean HEAD worktree, shipped config, three repeats over the fixture six:
+block 3 ran **8-29% faster than block 1 on all six videos, in the same direction every time**.
+That is a monotone within-session drift, and it behaves nothing like noise — averaging does not
+remove it, more repeats only tighten a biased estimate, and only counterbalanced block order
+cancels it (mirrored pairs, hence the probe's even-`--repeats` advice). Text sampling noise and
+wall-clock drift are therefore two separate problems needing two separate defences: repeats for
+the first, ordering for the second. An earlier conclusion that "the machine is ~3× noisier than
+any lever, so nothing under 50% is measurable here" conflated them and is RETRACTED — int8 and
+distil remain measurable. Two further facts: HEAD drifts as much as the changed code, so none of
+this is our doing; and the direction is OPPOSITE to the RTF 0.39-cold / ~0.60-hot record in the
+2026-07-19 gotchas entry, which points at thermal throttling. Cause unidentified. Controlled for,
+not modelled — and if a future measurement depends on it, identify it first.
+
+**Two corpora, and five structural barriers between them.** `fixture` (the 6 repair-fixture ids,
+41:06) is the only corpus with human-verified references, so it is the only place a quality score
+means anything — and its 4-12 min videos are the wrong SHAPE for a speed claim about 20-36 min
+production sources. `queue` (the 6 production ids, 2:53:44) is where the 907 s / RTF 0.087 baseline
+lives and has no human references. Convention was not enough to keep the two apart, so: `--corpus`
+is required with no default; `--out` defaults per corpus; the rollup emits a literal STRING, not a
+number, for `speedup_vs_control` on `fixture`; `region_score` and `watch` are `None` on `queue`;
+and the fixture report prints its `work_sec` column under a "DIAGNOSTIC ONLY" header. A reader
+cannot lift a speed number off the quality corpus or a quality verdict off the speed corpus.
+
+**Separability is interval-disjointness over repeats, not a t-test.** At R=3..5 a distributional
+assumption is unearned, and this project has already been burned by a 5-run sample that looked
+separable. Disjoint [min,max] intervals is the weakest claim defensible from this many
+observations and is falsifiable by one more repeat; the corpus verdict additionally requires 4 of
+6 videos separable with agreeing sign, and prints the literal `"not separable"` in place of any
+ratio otherwise. Control is a full variant re-run at the head of every repeat round, so the
+thermal/order confound is bracketed by construction rather than by a bolt-on recheck, and one
+model instance is loaded per (repeat, variant) block — never interleaved by beam inside one
+instance, because `_warm` tunes kernels for a beam and a shared instance would charge one
+variant's mis-tune to the other's first video.
+
+**The region score is a REGRESSION DETECTOR, not a ranking, and the watch list is the reason it
+is not enough.** The 12 scored regions were harvested from full-file large-v3's own defects, so
+the control arm reproduces them by construction and its own score is expected to be near zero —
+the comparison of interest is variant vs control, never variant vs 12. That makes the score
+structurally blind to a NEW failure on clean speech, which is exactly what cheap presets are most
+likely to produce and exactly what `Claude`→`Cloud` was (2026-07-20: clearly enunciated, both
+readings agreed, the stability gate could not object). The watch list plus the full-file
+`sim_vs_control` are the independent metric; publish a verdict only when both agree. A region is
+the on-disk diff block and never a repair window — that single rule dissolves two of the three
+reported fixture "poisonings", leaving one genuine case (the `Anthropic's Claude models` override,
+which no automation bound by *delete, do not invent* may reproduce) excluded from the headline
+count and carrying its reason.
+
+**The decision rule is fixed BEFORE the first run and printed by `--dry-run`**: separably faster
+on `queue`; `sim_vs_control` on `fixture` not separably below the control-vs-control band;
+`floor_ratio` under `transcribe_floor_run_max` in every repeat, `max_term_gap_sec` never past 60 s
+(the DECISIONS 2026-07-17 defect class), `term_density` never past its alarm; and every watch entry
+passing. "Cannot tell" counts as PASS on the quality axis — that is what stops a noisy instrument
+from vetoing a lever — and as FAIL on the speed axis, because an unproven speedup is not a
+speedup.
+
 ## 2026-07-22 — Overhead is SUBTRACTED per stage, never summed across kinds; and partial coverage is declared
 
 2026-07-20 established that `stages[x]` (wall) and `detail[x]` (work) both stay and are never

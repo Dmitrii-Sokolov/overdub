@@ -359,7 +359,7 @@ def resegment(flat: list[W]) -> list[dict]:
     return out
 
 
-def transcribe_words(model, audio_path, *, language: str,
+def transcribe_words(model, audio_path, *, language: str, beam_size: int,
                      condition_on_previous: bool) -> list[W]:
     """faster-whisper → clean, monotone word list. Body verbatim from the old run() closure.
 
@@ -368,13 +368,23 @@ def transcribe_words(model, audio_path, *, language: str,
     and the stage from drifting apart in beam size, VAD or word_timestamps — a drift that
     would make a repaired sentence a different kind of artifact from its neighbours.
 
+    `beam_size` is a parameter and VAD/word_timestamps are not, on purpose. The two consumers
+    must not drift, so both are handed the SAME cfg.whisper_beam_size — a repair window decoded
+    at beam 5 inside a transcript decoded at beam 1 would splice in a sentence that is a
+    different kind of artifact from its neighbours, which is the exact drift this shared body
+    exists to prevent. There is deliberately no `repair_beam_size` key: repair's whole contract
+    is "delete, do not invent", i.e. its output must be indistinguishable IN KIND from the
+    surrounding transcript, and a second beam key is a licence for it not to be. It is REQUIRED
+    (no default) because a default would let one of the two call sites silently keep beam 5 while
+    the other moved — green suite, wrong media.
+
     Timestamps are relative to the audio PASSED IN (flatten starts prev_end at 0.0), so a
     caller transcribing a clip must offset them itself. That is deliberately not done here:
     this function knows nothing about ctx, windows or _guard.
     """
     segments, _info = model.transcribe(
         str(audio_path),
-        language=language, beam_size=5,
+        language=language, beam_size=beam_size,
         word_timestamps=True, vad_filter=True,
         vad_parameters=dict(min_silence_duration_ms=500),
         condition_on_previous_text=condition_on_previous,
@@ -382,11 +392,91 @@ def transcribe_words(model, audio_path, *, language: str,
     return flatten(segments)                # consumes the lazy generator
 
 
+def _stamped_key(ctx: Context) -> "str | None":
+    """The asr_key recorded in this workdir's timings.json, or None when there is none.
+
+    One reader for the three places that ask (done, _warn_mixed_rewrite, repair) so the stamp's
+    location can never be spelled three ways. A non-string stamp reads as absent: a hand-edited
+    timings.json must degrade to "no provenance", not crash a stage.
+    """
+    from .. import runreport            # local, same reason as run()
+
+    detail = runreport._load_timings(ctx.work)[1].get("detail") or {}
+    stamped = (detail.get("transcribe") or {}).get("asr_key")
+    return stamped if isinstance(stamped, str) else None
+
+
 class TranscribeStage:
     name = "transcribe"
 
     def done(self, ctx: Context) -> bool:
-        return ctx.work.sentences.exists()
+        """Bare artifact existence, PLUS a decode-provenance WARNING.
+
+        Transcribe has no invalidation machinery, so an ASR config change on an existing workdir
+        is a no-op — [skip] transcribe, and the operator believes a beam-1 run happened. The
+        stamp makes that visible.
+
+        It WARNS, it does not refuse (2026-07-22, after the refusing version shipped for an
+        afternoon). Two measurements killed refusal: none of the 72 existing workdirs carries a
+        stamp, so the check was inert exactly where the data lives, and `stamped is not None`
+        meant it fired only on workdirs created after it — while a plain `--batch --force`, which
+        rebuilds translation.json two stages later and was always correct, started failing the
+        whole video. A guard that cannot protect the corpus and breaks working commands is worse
+        than no guard. The pairing risk it was aimed at is real but rare and operator-driven; a
+        loud line on the one command that can cause it is the proportionate answer.
+
+        Pre-stamp workdirs have no asr_key and are accepted silently — the existing corpus.
+
+        The comparison is on asr_key_core, so a cond-only difference is reported more quietly:
+        it is the expected output of the per-source hatch (overdub.toml's 4szRHy_CT7s NOTE), of
+        the alignment guard's own cond=False retry, and of a repair.
+        """
+        from ..asr import asr_key, asr_key_core
+
+        if not ctx.work.sentences.exists():
+            return False
+        stamped = _stamped_key(ctx)
+        want = asr_key(ctx.cfg)
+        if stamped is not None and stamped != want:
+            if asr_key_core(stamped) != asr_key_core(want):
+                print(f"       [warn] transcribe: {ctx.work.root.name} was transcribed with ASR "
+                      f"config [{stamped}] but the current config is [{want}] — this run SKIPS "
+                      f"transcribe, so the transcript stays the old one. To actually re-decode, "
+                      f"delete words.json + sentences.json + translation.json for this video.",
+                      file=sys.stderr)
+            else:
+                print(f"       [info] transcribe: {ctx.work.root.name} was decoded as [{stamped}], "
+                      f"config says [{want}] — condition_on_previous only (per-source hatch, the "
+                      f"alignment guard, or a repair), transcript kept", file=sys.stderr)
+        return True
+
+    def _warn_mixed_rewrite(self, ctx: Context) -> None:
+        """Warn when sentences.json is about to be rewritten under a new decode config while the
+        translation.json built from the OLD one is still on disk.
+
+        This is the one genuinely silent pairing: `--force --only transcribe` filters translate
+        out, TranslateStage.done() is bare existence, and nothing downstream compares the two
+        files — synthesize's congruence gate reads the manifest against translation.json, so a
+        beam-1 transcript paired with a beam-5 translation is invisible for the rest of the run.
+
+        It warns rather than refuses for the reason done() records: refusal also caught plain
+        `--batch --force`, which rebuilds translation.json two stages later and was never wrong.
+        Scoped to the artifact that makes the pairing silent — with no translation.json a forced
+        re-transcribe is a legitimate move and prints nothing.
+        """
+        from ..asr import asr_key, asr_key_core
+
+        if not ctx.work.translation.exists():
+            return
+        stamped = _stamped_key(ctx)
+        want = asr_key(ctx.cfg)
+        if stamped is not None and asr_key_core(stamped) != asr_key_core(want):
+            print(f"       [warn] transcribe: rewriting {ctx.work.root.name} at [{want}] over a "
+                  f"transcript decoded at [{stamped}] while its translation.json still exists. "
+                  f"If translate does not re-run, this run ships a new transcript paired with the "
+                  f"old translation and no later stage compares the two. Delete translation.json "
+                  f"for this video to be sure (synthesize's congruence gate then re-renders the "
+                  f"stale wavs by itself).", file=sys.stderr)
 
     def _guard(self, ctx: Context, asr, flat: list[W]) -> list[W]:
         """Re-run once with context feedback OFF when the word alignment looks collapsed.
@@ -429,12 +519,17 @@ class TranscribeStage:
 
     def run(self, ctx: Context) -> None:
         from .. import runreport            # local: runreport imports this module lazily too
+        from ..asr import asr_key
 
         cfg = ctx.cfg
+        # BEFORE the model load: the check costs one small JSON read and a forced rewrite over a
+        # live translation.json is the one failure this stage can produce that nothing downstream
+        # can see.
+        self._warn_mixed_rewrite(ctx)
         # session-owned: one large-v3 load per stage SWEEP, not per video. The session
         # releases it when the sweep ends (pipeline.Session.clear) — for a single video
         # that is the end of this stage, exactly as the old local try/finally did.
-        model = ctx.session.whisper(cfg, cfg.whisper_model)
+        model = ctx.session.whisper(cfg, cfg.whisper_model, role="transcribe")
         # THE CLOCK STARTS HERE, after the model is in hand. The pipeline's own stage timer
         # (pipeline.run_pipeline) starts before this line and therefore charges the load — and
         # the warmup — to whichever video is first in the sweep, which is the run's true cost
@@ -450,10 +545,18 @@ class TranscribeStage:
             nonlocal passes
             passes += 1
             return transcribe_words(model, ctx.work.source_audio, language=cfg.source_lang,
+                                    beam_size=cfg.whisper_beam_size,
                                     condition_on_previous=condition_on_previous)
 
         flat = asr(cfg.whisper_condition_on_previous)
-        flat = self._guard(ctx, asr, flat)
+        kept = self._guard(ctx, asr, flat)
+        # WHAT ACTUALLY DECODED, not the intent: _guard hands back its cond=False retry whenever
+        # that retry halves the floor ratio, and a stamp recording the intent would let two
+        # workdirs share one asr_key over materially different transcripts. Identity, because
+        # "returned the retry object" is exactly what _guard's own tests already pin
+        # (`chosen is clean` / `chosen is collapsed`, tests/test_transcribe_guard.py).
+        cond_used = bool(cfg.whisper_condition_on_previous) if kept is flat else False
+        flat = kept
 
         # raw words persisted so resegmentation can be re-tuned without re-running ASR
         ctx.work.words.write_text(
@@ -471,7 +574,11 @@ class TranscribeStage:
         # model, and resegmentation plus these two writes are part of what an optimization
         # would be trying to move.
         work_s = time.perf_counter() - t0
-        runreport.record_stage_detail(ctx.work, "transcribe",
-                                      work_sec=round(work_s, 3), asr_passes=passes)
+        # asr_key alongside the timings: it is the only on-disk record of WHICH decode config
+        # produced this transcript, and done() reads it back to refuse a mixed-provenance workdir.
+        runreport.record_stage_detail(ctx.work, "transcribe", work_sec=round(work_s, 3),
+                                      asr_passes=passes, asr_key=asr_key(cfg, cond=cond_used),
+                                      asr_repair_windows=0)   # a fresh pass supersedes any
+                                                              # earlier --repair-asr splice
         print(f"       {len(flat)} words → {len(sentences)} sentences  "
               f"({work_s:.1f}s excl. model load, {passes} ASR pass(es))")

@@ -77,7 +77,7 @@ class VerifyStage:
         # session-owned: one whisper-small load per stage SWEEP. Inside a stage the session
         # also dedupes it against synthesize's reseed verifier when both run in the same
         # sweep — across stages it is loaded once per sweep, released at each sweep's end.
-        model = ctx.session.whisper(cfg, cfg.verify_model)
+        model = ctx.session.whisper(cfg, cfg.verify_model, role="verify")
         rep = report.load(ctx.work.report)                 # preserve any assemble fields
         n_flag = n_retried = n_repaired = 0
         for u in units:

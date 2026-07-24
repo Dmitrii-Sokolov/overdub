@@ -62,16 +62,32 @@ class Session:
             self._cache[key] = factory()
         return self._cache[key]
 
-    def whisper(self, cfg: Config, model: str):
+    def whisper(self, cfg: Config, model: str, *, role: str):
         """faster-whisper keyed by every knob load_whisper takes. transcribe asks for
         cfg.whisper_model; verify AND synthesize's reseed verifier both ask for
         cfg.verify_model — inside one stage those two share one instance. Safe to share:
         no concurrency (the sweep is strictly sequential), CTranslate2 is stateless, and
-        roundtrip_similarity drains its lazy generator before returning (asr.py)."""
-        from .asr import load_whisper
+        roundtrip_similarity drains its lazy generator before returning (asr.py).
 
-        return self.get(("whisper", model, cfg.whisper_device, cfg.whisper_compute_type),
-                        lambda: load_whisper(model, cfg.whisper_device, cfg.whisper_compute_type))
+        `role` is "transcribe" or "verify" and is REQUIRED (not defaulted) so a new call site
+        must state which instrument it is asking for rather than inheriting whichever one
+        happened to be first.
+
+        The key carries the RESOLVED compute type and beam, never the role: two roles that
+        resolve to the same (model, device, compute_type, beam) are genuinely the same instance
+        and must share it — that is today's behaviour for large-v3/small and must not change. It
+        carries the BEAM because the warmup tunes kernels for a beam (asr._warm): an instance
+        warmed at 5 is not interchangeable with one warmed at 1, and a key that omitted it would
+        silently hand an in-process A/B two references to one build.
+
+        num_workers is absent from the key only because the session never varies it
+        (load_whisper's default 1). If it ever becomes a cfg knob it MUST enter the key."""
+        from .asr import VERIFY_BEAM_SIZE, load_whisper
+
+        ct = cfg.compute_type_for(role)
+        beam = cfg.whisper_beam_size if role == "transcribe" else VERIFY_BEAM_SIZE
+        return self.get(("whisper", model, cfg.whisper_device, ct, beam),
+                        lambda: load_whisper(model, cfg.whisper_device, ct, beam_size=beam))
 
     def tts_engine(self, cfg: Config):
         from .tts import build_engine

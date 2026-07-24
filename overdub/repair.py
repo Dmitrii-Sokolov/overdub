@@ -23,8 +23,11 @@ actually did, and asr.floor_ratio must keep reporting that this file had a colla
 This is NOT a Stage. It mutates artifacts outside the pipeline and must never re-run a
 downstream stage itself (user decision D1): it rewrites sentences.json and DELETES exactly the
 artifacts downstream of it, so the next ordinary run redoes translate → synthesize → verify →
-assemble → mux honestly. TranscribeStage.done() gates on sentences.json alone and still returns
-True afterwards, so no full ASR pass is redone.
+assemble → mux honestly. TranscribeStage.done() still returns True afterwards, so no full ASR
+pass is redone — but it is no longer a bare existence check: it also reads the asr_key stamp and
+RAISES on a model/compute-type/beam mismatch. Hence the two provenance duties this module now
+carries (check_decode_config, stamp_repaired): running no stage means nothing else can do them,
+and invalidate_downstream deliberately preserves timings.json.
 
 The gate proves STABILITY, not correctness: two identical readings of the same clip mean whisper
 is no longer guessing, not that it heard right. Ears remain the final authority.
@@ -51,7 +54,7 @@ from dataclasses import dataclass, field
 
 from . import completeness
 from .pipeline import Context
-from .stages.transcribe import W, norm_text, resegment, transcribe_words
+from .stages.transcribe import W, _stamped_key, norm_text, resegment, transcribe_words
 from .workdir import WorkDir
 
 CLIP_PAD_SEC = 0.25   # Pad the clip into the SILENCE around the window, never into a
@@ -373,10 +376,13 @@ def make_window_asr(ctx: Context):
         # session-owned and fetched lazily: a clean `auto` sweep never loads whisper at all,
         # and a batch loads large-v3 ONCE. A locally constructed WhisperModel would double
         # its ~3.1 GB and defeat that.
-        model = ctx.session.whisper(ctx.cfg, ctx.cfg.whisper_model)
+        model = ctx.session.whisper(ctx.cfg, ctx.cfg.whisper_model, role="transcribe")
         # _guard is NEVER applied to a window: its halving rule is full-file semantics, and a
-        # clipped window has no prior context to loop on (DECISIONS 2026-07-19).
+        # clipped window has no prior context to loop on (DECISIONS 2026-07-19). The beam is the
+        # STAGE's beam, deliberately — a window decoded at a different width would splice in a
+        # sentence that is a different kind of artifact from its neighbours (transcribe_words).
         return transcribe_words(model, tmp, language=ctx.cfg.source_lang,
+                                beam_size=ctx.cfg.whisper_beam_size,
                                 condition_on_previous=condition_on_previous)
 
     return window_asr
@@ -470,6 +476,63 @@ def _print_window(r: WindowResult, i: int, n: int, *, dry_run: bool) -> None:
           file=sys.stderr)
 
 
+# --- decode provenance --------------------------------------------------------
+def check_decode_config(ctx: Context) -> "str | None":
+    """Warn when a repair's decode config differs from the one that produced the transcript.
+
+    Returns the stamped asr_key (None on a pre-stamp workdir — the existing corpus predates the
+    stamp, exactly as TranscribeStage.done() argues).
+
+    This is transcribe_words' "must not drift" rule surfaced at the only entry point that could
+    break it. --repair-asr runs NO stage, so TranscribeStage.done() never executes (cli.py
+    branches to _run_repair before the pipeline), and a beam-1 window spliced into a beam-5
+    transcript is the "different kind of artifact from its neighbours" the shared body exists to
+    prevent. Compared on asr_key_core: cond is EXPECTED to differ here — the emitted reading is
+    always the clipped cond=False one.
+
+    It warns rather than refuses (2026-07-22, same reversal as done()): the refusing version ran
+    ahead of the no-defect-windows early return, so a repair that would have changed nothing
+    still exited 1 and marked the video FAIL in a batch.
+    """
+    from .asr import asr_key, asr_key_core
+
+    stamped = _stamped_key(ctx)
+    want = asr_key(ctx.cfg)
+    if stamped is not None and asr_key_core(stamped) != asr_key_core(want):
+        print(f"[warn] repair: {ctx.work.root.name} was transcribed at [{stamped}] but the "
+              f"current ASR config is [{want}]. A window decoded at another model/compute "
+              f"type/beam splices in a sentence of a different KIND from its neighbours — "
+              f"restore the ASR config or re-transcribe the video if that matters here.",
+              file=sys.stderr)
+    return stamped
+
+
+def stamp_repaired(ctx: Context, stamped: "str | None", n_windows: int) -> None:
+    """Record that this transcript is no longer ONE uniform decode.
+
+    A repaired transcript is the full-file reading with n windows of the CLIPPED cond=False
+    reading spliced into it (repair_window emits `a`). check_decode_config has already refused
+    anything but a cond difference, so `cond=mixed` is the whole of what moved — and it is the
+    truth, where continuing to claim the pure value is not. Without this the guard's headline
+    claim (the on-disk key names the decode that produced this transcript) is false on the ONE
+    command whose entire purpose is rewriting a transcript in place: no stage runs, and
+    WorkDir.invalidate_downstream deliberately preserves timings.json.
+
+    A pre-stamp workdir gets the COUNT but no key: its base decode is genuinely unknown, and an
+    invented stamp is a worse record than none. The count is cumulative across passes — the same
+    "counter that explains an outlier" role asr_passes plays for the guard.
+    """
+    from . import runreport
+    from .asr import asr_key
+
+    detail = runreport._load_timings(ctx.work)[1].get("detail") or {}
+    prior = (detail.get("transcribe") or {}).get("asr_repair_windows")
+    fields: dict = {"asr_repair_windows": (prior if isinstance(prior, int) else 0) + n_windows}
+    if stamped is not None:
+        fields["asr_key"] = asr_key(ctx.cfg, cond="mixed")
+    runreport.record_stage_detail(ctx.work, "transcribe", **fields)
+
+
 # --- per-video orchestration --------------------------------------------------
 def repair_video(ctx: Context, *, ids: list[int] | None, dry_run: bool,
                  window_asr=None) -> tuple[list[WindowResult], int, int]:
@@ -478,6 +541,8 @@ def repair_video(ctx: Context, *, ids: list[int] | None, dry_run: bool,
     synthesize → verify → assemble → mux honestly."""
     owns_clip = window_asr is None
     sentences = load_sentences(ctx.work)
+    stamped = check_decode_config(ctx)     # before any GPU time: a foreign decode config makes
+                                           # every window a mixed-kind splice, not a repair
     n_before = len(sentences)
 
     seeds = (seed_ids_from_detectors(sentences) if ids is None
@@ -548,6 +613,9 @@ def repair_video(ctx: Context, *, ids: list[int] | None, dry_run: bool,
     tmp = ctx.work.sentences.with_suffix(".json.tmp")   # atomic: never a torn sentences.json
     tmp.write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
     os.replace(tmp, ctx.work.sentences)
+    # immediately after the transcript flips and BEFORE the invalidation that can raise: the
+    # stamp describes what is on disk, and what is on disk is now repaired
+    stamp_repaired(ctx, stamped, len(repls))
 
     removed, failed = ctx.work.invalidate_downstream()
     print(f"       invalidated: {', '.join(removed) if removed else 'nothing downstream'}")

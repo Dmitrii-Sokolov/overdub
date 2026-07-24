@@ -1,6 +1,119 @@
 # CHANGELOG
 
-## 2026-07-22 (last) — two files split along seams that already existed
+## 2026-07-22 (last) — beam 5→1 measured and rejected; the instrument built to measure it, deleted
+
+Suite 445 → 590 → **484**. Read that arc: a 3100-line measurement harness was built, reviewed
+twice, never produced a number, and was deleted the same day for a 230-line probe that answered
+the question in 12 minutes of GPU. **The plumbing survived; the instrument did not.**
+
+**The decode config stopped being a constant.** `Config.whisper_beam_size` and
+`Config.verify_compute_type` are keys; `Config.compute_type_for(role)` resolves per ROLE
+(transcribe / verify) and raises on anything else; `asr.asr_key(cfg)` renders the config as a
+readable string (`large-v3|float16|beam=5|cond=True`); `Session.whisper(cfg, model, *, role)`
+takes the beam into its cache key because `_warm` tunes kernels for a beam;
+`transcribe_words(..., beam_size=)` is keyword-only with NO default, so neither of its two
+consumers can drift from the other. Verify's beam is a named constant (`asr.VERIFY_BEAM_SIZE`),
+not a key — it is the measuring instrument and must hold still. `TranscribeStage.run()` stamps
+`asr_key` into `timings.json` `detail.transcribe`, and `done()` WARNS when an existing workdir's
+stamp disagrees with the current config. Pre-stamp workdirs have no key and are accepted
+unchanged. No behaviour change on an unchanged `overdub.toml`; rationale in DECISIONS 2026-07-22.
+**This is the part that earned its keep**: `beam_size` was hardcoded inside `transcribe_words`,
+the body shared with `--repair-asr`, so before this there was literally nothing to A/B.
+
+**The stamp shipped as a REFUSAL and was reversed the same afternoon.** Two measurements killed
+it: none of the 72 existing workdirs carries a stamp, so `stamped is not None` made the check
+inert exactly where the corpus lives — while a plain `--batch --force`, which rebuilds
+`translation.json` two stages later and was never wrong, started failing the whole video, and a
+`--repair-asr auto` with no defect windows exited 1 on a no-op. A guard that cannot protect the
+data and breaks working commands is worse than no guard. It warns now, in all three places.
+
+**BEAM 5→1: MEASURED AND REJECTED.** Fixture six, four passes, counterbalanced ABBA order,
+timed around `transcribe_words` alone. Speed 1.17× at best and **two of six videos got slower**,
+which is impossible as a real effect since beam 1 does strictly less work. Text moved past the
+run-to-run floor on all six. The direction is what decided it: **`Cloud` appears 23 times in the
+beam-1 stream and 0 times at beam 5** — the same proper-noun class DECISIONS 2026-07-20 recorded
+for the repair window, now reproduced on clean full-file audio; commas get promoted to
+sentence-ending periods, fragmenting the unit of translation; and `floor_ratio` crosses
+`transcribe_floor_run_max` on 2 of 6, which fires the alignment guard and re-runs ASR on those
+videos. Honestly, not one-way: beam 1 avoided a repetition loop beam 5 fell into on
+`RyvXxApfHkk` (`"The LLM is used to analyze and categorize data."` ×5) and matched the human
+transcript where beam 5 hallucinated on `DmgujoZ1mmk`. It trades error classes; the one it buys
+is the one this pipeline cannot afford. Cells and diffs in `work-exp/beam-probe/`.
+
+**THE HOST DRIFTS, AND YESTERDAY'S READING OF IT WAS WRONG.** The first probe showed run-to-run
+spreads up to 49% and the conclusion drawn was "the machine is 3× noisier than any lever, so
+nothing under ~50% is measurable here". Re-measured on a clean HEAD worktree, shipped config,
+three repeats: block 3 was **8-29% faster than block 1 on all six videos, same direction every
+time**. That is a monotone session drift, not noise — a confound that counterbalanced ordering
+removes and that more repeats only make more precisely wrong. HEAD spreads as much as today's
+code, so nothing we built caused it. Two consequences: int8 and distil are back on the table,
+and the big spread at beam 1 specifically is its own instability (more temperature-fallback
+re-decodes), not the machine. Direction is also OPPOSITE to the RTF 0.39-cold/0.60-hot record in
+DECISIONS 2026-07-19; cause unidentified, controlled for rather than modelled.
+
+**A settled claim reopened, on our own evidence.** The beam probe caught `RyvXxApfHkk` producing
+a five-fold repetition loop at beam 5 with `condition_on_previous_text=True`, and NOT producing
+it at beam 1 with the same flag value. The flag is the variable this project has credited with
+causing loops since 2026-07-17; here the loop moved with BEAM while the flag held still. Combined
+with the fact that the original attribution is one video, one run per side, on a decoder we now
+know samples — plus `STACK.md`'s recommendation moving `vad_filter` and `cond` together — the
+causal claim is unproven locally. New PLAN item "The condition_on_previous claim" with a
+falsification criterion fixed in advance; `--variant nocond` is wired, the loop and punctuation
+axes are not yet. This matters beyond tidiness: the batched-inference demotion rests on `cond`
+mattering.
+
+**What replaced the harness.** `scripts/asr_probe.py`, ~230 lines, `--help` is the runbook.
+Mirrored block order, every variant twice, prints the same-variant noise floor beside the
+cross-variant effect and writes word-stream diffs — **and contains no adoption rule at all**,
+because both rules the harness shipped were wrong in ways only execution revealed.
+
+**Then three reviewers went at it adversarially and returned 22 findings, 3 of them blockers —
+on an instrument that was one command away from consuming 4.5 h of GPU.** That is the part worth
+remembering; the feature list above is not. What the review actually caught, by class:
+
+- **A wrong fact that had been on the roadmap for two days and had never been checked against the
+  source.** Lever (b), batched inference, carried the caveat "check `word_timestamps` survives
+  it". Word timestamps survive fine; `condition_on_previous_text` is what does not — accepted in
+  the signature, hardcoded False in the options. The caveat named the safe parameter and missed
+  the one that would have quietly undone the 2026-07-17 punctuation fix. Reading 40 lines of a
+  vendored file answered it; nobody had.
+- **A lever that shipped unmeasurable.** `num_workers` is plumbed through the loader, and every
+  variant in the sweep runs it at 1 because no threaded driver exists. Left as-is, the rollup
+  would have read as "the levers were measured" while covering 3 of 4.
+- **Contamination hazards between a speed number and a quality number**, now barriers in code
+  rather than conventions (required `--corpus`, per-corpus `--out`, a literal STRING where a
+  speedup would be meaningless, `null` where a quality score would be).
+- **A scoring region that no correct implementation can pass** — the human's
+  `Anthropic's Claude models` override, which `--repair-asr` is forbidden to reproduce by its own
+  *delete, do not invent* contract. Left in the sweep, it would have penalised every variant
+  equally and looked like signal.
+
+**A second review round fixed those three blockers — and introduced a fourth, plus thirteen
+majors.** The new blocker came from the fix instruction itself (a video that errored silently
+lowered the adoption bar). Six of the majors were the runbook contradicting its own code within
+the same afternoon: two decision rules on disk, one 4-point and one 5-point, and the human reads
+the doc. Harness 1102 → 1710 lines, suite 468 → 590, findings 22 → 14, numbers produced: 0.
+
+**That counter is the lesson, not the findings.** Complexity accrued faster than trust, and every
+defect both rounds found lived in the DECISION machinery — the five-axis rule, `ceil(2n/3)`, the
+all-pairs floor, the order counterbalancing — never in the measurement. So the whole decision
+layer was deleted and the measurement kept. Corollary worth carrying: **the cheap experiment
+belonged FIRST.** Twelve minutes of GPU would have told us beam 1 is dead, that the host drifts,
+and therefore what an instrument actually needs to control for — which is the one question two
+rounds of design could not answer from a chair. Build the instrument when a probe proves you need
+one, and never point a fresh harness at a long GPU run without an adversarial pass.
+
+Deleted: `scripts/exp_asr_sweep.py` (1710), `tests/test_asr_sweep.py` (775), `scripts/asr_regions.py`
+(248), `tests/test_asr_regions.py` (216), `docs/asr-sweep.md` (151). Kept: the config plumbing
+(361 lines across 8 files) and `tests/test_asr_config.py` (617, twelve mutations verified red).
+
+**One number this project has been quoting loosely, stated properly.** The transcribe baseline is
+722.8 s of stage wall / 718.2 s of work over FIVE instrumented videos (8255 s of audio) — RTF
+0.087. The 907 s figure is that RTF carried to the full 6-video queue (10424 s); it is an
+extrapolation over a sixth video that was never instrumented, not an observation. Both are the
+same measurement.
+
+## 2026-07-22 (later) — two files split along seams that already existed
 
 No behaviour change; 445 tests green before and after, which is the whole claim being made.
 

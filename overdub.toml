@@ -8,12 +8,27 @@
 # whisper_model = "large-v3"
 # whisper_device = "cuda"
 # whisper_compute_type = "float16"
+# whisper_beam_size = 5     # decode beam for TRANSCRIBE — the stage AND --repair-asr share it,
+#                           # deliberately (a window decoded at another width splices in a
+#                           # different kind of artifact).
+#   DO NOT SET THIS TO 1. Measured 2026-07-22 on the 6 fixture videos, 4 passes, counterbalanced
+#   order (scripts/asr_probe.py): speed 1.17x at best and two of six videos got SLOWER, while the
+#   TEXT moved further than the run-to-run floor on all six. What it costs is exactly what this
+#   pipeline cannot afford: "Claude" became "Cloud" 23 times against 0 at beam 5 (the DECISIONS
+#   2026-07-20 proper-noun class), commas became sentence-ending periods, and floor_ratio crossed
+#   transcribe_floor_run_max on 2 of 6 — which fires the alignment guard and re-runs ASR, costing
+#   more than the lever saves. Changing this changes source text: it is in asr_key, so a workdir
+#   transcribed under another key is WARNED about, not silently re-used and not refused.
 # whisper_condition_on_previous = true   # context → proper punctuation; false only if a
 #                                        # source makes whisper loop on repeats
 #   NOTE 2026-07-19: 4szRHy_CT7s was re-transcribed with this set to FALSE — that source
 #   loops on repeats (170 degenerate 0.02s word stamps, 2 duplicate sentence pairs, one
 #   slot at 294 char/s → atempo ×8.79). With it off: 0 degenerate, 0 dups, max 24 char/s,
 #   and no overlong terminator-free blocks came back. Per-source escape hatch, not a default.
+#   USING THE HATCH IS SAFE TO REVERT: cond is stamped into asr_key but is deliberately NOT
+#   part of what the provenance guard refuses on (asr.asr_key_core), so restoring this file
+#   after a cond=False transcribe leaves that workdir usable — it prints one [info] line
+#   naming both configs. Only model / compute type / beam refuse.
 
 # repair_window_min_sec = 8.0   # --repair-asr: widen a defect window to at least this many seconds.
 #                               # NOT a free dial. Widening pulls unflagged neighbours into the
@@ -63,6 +78,13 @@ tts_sample_rate = 48000     # silero-only (F5 sr is engine-owned: 24000)
 
 # --- verification (whisper-small round-trip) ---
 # verify_model = "small"
+# verify_compute_type = "float16"   # the round-trip verifier's compute type. Independent of
+#                                   # whisper_compute_type ON PURPOSE: the instrument must not
+#                                   # move with the thing it measures, or a transcribe-speed
+#                                   # experiment reads its own measurement error as a result.
+#                                   # Same value as the transcriber today, so an unchanged file
+#                                   # resolves both roles identically. Verify's beam is NOT a key
+#                                   # at all (asr.VERIFY_BEAM_SIZE), for the same reason.
 # similarity_threshold = 0.9              # unit-level gate (long joined strings score high;
                                           # raised from the per-sentence 0.8 on 2026-07-17)
 # similarity_threshold_compressed = 0.9   # stricter gate for natively compressed units

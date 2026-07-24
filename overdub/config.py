@@ -22,13 +22,37 @@ class Config:
     whisper_model: str = "large-v3"
     whisper_device: str = "cuda"
     whisper_compute_type: str = "float16"
+    whisper_beam_size: int = 5                   # decode beam for the TRANSCRIBE role (the stage
+                                                 # AND --repair-asr, which share transcribe_words
+                                                 # on purpose). Candidate speed lever for the
+                                                 # "Transcribe speed" roadmap item: 907 s per pass
+                                                 # over the 6-video queue is 79% of a scout pass.
+                                                 # NOT a free dial — beam width is what buys the
+                                                 # transcript its second opinion on ambiguous
+                                                 # audio, and this repo has already watched a
+                                                 # narrower-context decode turn "Claude" into
+                                                 # "Cloud" on clean, clearly enunciated speech
+                                                 # (DECISIONS 2026-07-20). Move it only on
+                                                 # evidence from scripts/asr_probe.py, never
+                                                 # on a single run: whisper's temperature fallback
+                                                 # SAMPLES, so the same audio at the same settings
+                                                 # comes back different (see the 5-vs-6-run story
+                                                 # under transcribe_floor_run_max below).
+                                                 # Changing it changes SOURCE TEXT → it is part of
+                                                 # asr_key (overdub/asr.py) and a changed key
+                                                 # trips the transcribe provenance guard.
     whisper_condition_on_previous: bool = True   # feed prior text as context so whisper
                                                  # PUNCTUATES properly. False left 60-206 s
                                                  # terminator-free blocks that the resegmenter
                                                  # bisected mid-phrase (the "period mid-sentence"
                                                  # class, DECISIONS 2026-07-17). Measured safe:
                                                  # no repetition-loop on the music video. Flip
-                                                 # to False only if a source makes whisper loop
+                                                 # to False only if a source makes whisper loop.
+                                                 # Recorded in asr_key (as what ACTUALLY decoded,
+                                                 # so the transcribe guard's own retry shows as
+                                                 # cond=False) but NEVER refused on: it is a
+                                                 # per-source hatch under a global config and the
+                                                 # pipeline sets it itself — see asr.asr_key_core
     transcribe_floor_run_max: float = 0.085      # share of words landing on the MIN_WORD_DUR
                                                  # floor above which THIS RUN's transcript is
                                                  # treated as alignment-collapsed and re-run with
@@ -146,6 +170,20 @@ class Config:
 
     # verification — whisper-small round-trip
     verify_model: str = "small"
+    verify_compute_type: str = "float16"   # DELIBERATELY NOT inherited from whisper_compute_type.
+                                           # The round-trip verifier is the pipeline's MEASURING
+                                           # INSTRUMENT: it decides which units are flagged and
+                                           # which pass similarity_threshold. An instrument that
+                                           # moves with the thing it measures cannot detect a
+                                           # regression in it — flipping the transcriber to
+                                           # int8_float16 would shift every similarity score and
+                                           # the flag counts with it, and a transcribe-speed
+                                           # experiment would read its own measurement error as a
+                                           # result. Set this only to move the verifier ON PURPOSE.
+                                           # Today's value equals whisper_compute_type, so an
+                                           # unchanged overdub.toml resolves both roles identically
+                                           # and the session cache keys are what they were before
+                                           # the split.
     similarity_threshold: float = 0.9      # unit-level gate (0.8 → 0.9, 2026-07-17: units are
                                            # long joined strings that dilute local defects —
                                            # the 17:02 word-drop scored 0.836 and passed 0.8)
@@ -159,6 +197,20 @@ class Config:
     # flag a legit condensed sentence. Weak signal, redundant with the precise num/neg/entity
     # detectors — kept conservative to prefer a miss over a false alarm.
     completeness_len_ratio_min: float = 0.45
+
+    def compute_type_for(self, role: str) -> str:
+        """Resolved CTranslate2 compute type for an ASR ROLE, not for a model name.
+
+        Roles, not names, because verify_model is a config key: someone pointing it at large-v3
+        must not silently inherit the transcriber's experimental compute type. Raises on an
+        unknown role — the role set is a closed 2-element enum with 4 call sites, so a typo is a
+        programming error, not a runtime scenario.
+        """
+        if role == "transcribe":
+            return self.whisper_compute_type
+        if role == "verify":
+            return self.verify_compute_type
+        raise ValueError(f"unknown ASR role: {role!r}")
 
     @classmethod
     def load(cls, path: Path | None) -> "Config":
