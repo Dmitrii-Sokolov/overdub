@@ -67,106 +67,21 @@ that carry the old numbers are historical records and stay as written.
 
 ---
 
-### Transcribe speed
-**It is the bottleneck now, and it is the only one left.** The summarize
-   wave went 842 → 192 s (Workflow fan-out, CHANGELOG 2026-07-21) and is now the slowest agent
-   plus two seconds: 4.51× parallel against a 4.55× ceiling, i.e. finished. Transcribe is 723 s
-   against it, 79% of the pass, serial on one GPU, and it scales with video length while agent
-   cost does not.
-   **RTF 0.087** on large-v3, fp16, `beam_size=5`, `vad_filter=True`, `word_timestamps=True`.
-   **Read the two numbers this item quotes as one measurement, not two.** 723 s is what a clock
-   saw, over the FIVE instrumented videos of that queue (8255 s of audio). 907 s is that same RTF
-   carried to the whole 2:53:44 (10424 s) — the sixth video was never instrumented, so 907 s has
-   never been observed and assumes it behaves like the other five. Quote it as the baseline; do
-   not quote it as an observation.
-
-   **The instrument is `scripts/asr_probe.py` — `--help` is its runbook, there is no separate
-   doc.** ~3.5 min of GPU per pass over the fixture six. It prints the same-variant noise floor
-   beside the cross-variant effect and stops: the verdict comes from reading the word-stream
-   diffs it writes, not from a rule in the code. The decode config is now a Config key rather than
-   a constant, and every transcript carries an `asr_key` stamp (DECISIONS 2026-07-22).
-   **The two-round sweep harness that preceded it was deleted the same day** — 3100 lines, one
-   open blocker, thirteen majors, a runbook contradicting its own code, and not a single number
-   produced. CHANGELOG 2026-07-22 has the post-mortem; the short version is that the decision
-   machinery, not the measurement, was where every defect lived.
-
-   **THE HOST DRIFTS, AND THAT IS THE REAL MEASUREMENT PROBLEM.** On HEAD, shipped config, three
-   repeats: block 3 ran 8-29% FASTER than block 1 on all six videos, same direction every time.
-   It is monotone within a session, so it is a confound, not noise — more repeats only tighten a
-   biased estimate, and only counterbalanced block order removes it. It is also the opposite sign
-   to the RTF 0.39-cold / 0.60-hot record in DECISIONS 2026-07-19; cause unidentified. An earlier
-   reading of this as "the machine is 3x noisier than any lever, so nothing here is measurable"
-   was WRONG and is retracted — (c) and (d) are measurable.
-   (a) **`beam_size` 5 → 1 — MEASURED AND REJECTED 2026-07-22.** The roadmap's "usually the
-   largest single win and the cheapest to try" did not survive contact: 1.17x at best on the
-   fixture six, with two of the six videos SLOWER. The text moved past the run-to-run floor on all
-   six, and the direction is the one this pipeline cannot afford — `Claude` → `Cloud` 23 times
-   against 0 at beam 5 (the DECISIONS 2026-07-20 proper-noun class), commas promoted to
-   sentence-ending periods (fragmenting the translation unit), and `floor_ratio` pushed over
-   `transcribe_floor_run_max` on 2 of 6, which fires the alignment guard and re-runs ASR on those
-   videos — costing more than the lever saves. Not all one-way: beam 1 avoided a repetition loop
-   beam 5 fell into on `RyvXxApfHkk`, and matched the human transcript where beam 5 hallucinated
-   on `DmgujoZ1mmk`. It trades one error class for another, and the one it buys is worse here.
-   Raw cells and diffs: `work-exp/beam-probe/`. Do not re-litigate without new evidence.
-   (b) **Batched inference** (`faster_whisper.BatchedInferencePipeline`) — **DEMOTED 2026-07-22
-   from a speed lever to a different decode**, and the old caveat here ("unproven, check
-   `word_timestamps` survives it") pointed at the wrong parameter. Word timestamps survive; what
-   does not is `condition_on_previous_text`, which the batched path accepts in its signature and
-   then hardcodes False — the flag that buys this pipeline its punctuation. It also forces a 30 s
-   VAD ceiling and zeroes `max_initial_timestamp`, and it makes `_guard` inert. Source references
-   and the full consequence: DECISIONS 2026-07-22. Admissible only after (c), (d), (e), and only
-   against the same gates plus the punctuation axes. Not in the probe's variant table.
-   (c) **`compute_type` fp16 → int8_float16 — NEXT, and the cheapest thing left.** One probe run,
-   `--variant int8`, ~15 min. Watch for a silent CTranslate2 downgrade: if the backend refuses
-   int8 it falls back to fp16 and the cells come back "free", so check the speedup is non-zero
-   before believing the quality result.
-   (d) **distil-large-v3.** Biggest speedup, biggest quality question, and it is EN-only — which
-   this pipeline is anyway (EN→RU hard constraint). **Two things to check BEFORE spending GPU:**
-   it is not in the HF cache (first run downloads ~1.5 GB), and nobody has confirmed
-   `Systran/faster-distil-whisper-large-v3` ships the alignment heads `word_timestamps` needs —
-   which is load-bearing here. A distil failure would most likely be degraded TIMESTAMPS with
-   unchanged text, which the probe's sim axis cannot see; compare `n_sentences` and listen.
-   (e) **Cross-video threading**, `WhisperModel(num_workers=N)` → ctranslate2 `inter_threads`. The
-   one lever that keeps the decode exactly as it is, because the sequential path is the
-   thread-safe one (DECISIONS 2026-07-22). **Still unmeasurable, and the gap is a DRIVER, not a
-   knob**: `load_whisper` takes the keyword and the probe has a `threads2` variant, but
-   `run_pipeline` is strictly sequential, so nothing calls `transcribe()` from two threads.
-   Measuring it means writing that driver first (~30 lines in the probe: a thread pool over
-   videos inside one block). Until then say "3 of 4 levers" whenever coverage is quoted.
-   **What NOT to touch:** `word_timestamps=True` is load-bearing, not a knob — sentence
-   resegmentation is built on word boundaries (`stages/transcribe.py`), and turning it off breaks
-   translation units, timing sync and `--repair-asr` at once.
-   **Adopting a lever is not one config edit, and this is the part that is easy to under-budget.**
-   The beam is shared by the transcribe stage and the `--repair-asr` window on purpose (one
-   `transcribe_words` body, two consumers), so a beam change invalidates the
-   `docs/repair-fixture.md` baseline — its window count, acceptance rate and the 5/12 recall
-   figure are all conditional on the decode config, and re-running the fixture is PART of adopting
-   the lever, not a follow-up. The `asr_key` stamp WARNS on a changed decode config rather than
-   refusing (the refusing version shipped for an afternoon and was reversed the same day: it was
-   inert on all 72 existing workdirs, none of which carries a stamp, while breaking plain
-   `--batch --force` and a no-op `--repair-asr auto`). So the stamp tells you a workdir will
-   fast-skip under the old transcript; it does not stop you. Adoption day is still a re-run day.
-   **Measure one at a time against the stored baseline**, and watch `transcribe_asr_passes`: the
-   alignment guard re-runs ASR on a suspect video, so a 2 there doubles that video's cost for a
-   reason unrelated to whatever is being tested.
-   Second-order, only after the above: **the download outlier** — `Tu2cCEMwvHI` took 116.7 s
-   against 6-13 s for the rest of the same queue, undiagnosed. And **pipelining transcribe →
-   summarize** is now worth less than it ever looked: the ceiling is `min(transcribe, summarize)`
-   and summarize has shrunk to 192 s, so it buys ~192 s of a ~915 s pass while breaking the
-   skill's three-step shape.
-
-   **Dead levers — closed by measurement, do not re-litigate.** Input size does not drive agent
-   cost (465 sentences → 132 s, 181 → 177 s, negative correlation in that sample). Model-load
-   overhead is 0.64%, not the 25% first claimed off a 2:22 video. Prompt wording cannot produce a
-   fan-out. And run-to-run variance on identical configuration reached 272 s, so any lever worth
-   less than that needs more than one run to claim.
-
-   **Summarize is CLOSED as an optimization target — do not reopen it without new evidence.**
-   Parallelism is at its ceiling (run 4: 4.51x of 4.55x; run 5: 3.39x of 3.40x), so the wave is
-   now exactly the slowest agent. And agent time varies ~2x run to run on identical input
-   (`16zrEPOsIcI`: 144 s then 310 s), with no known lever — input size was ruled out. The wave is
-   190-310 s against 723 s of transcribe; chasing a hundred seconds of jitter there is not worth
-   a day. Both runs are preserved under `work-exp/wave-run{4,5}-2026-07-21/`.
+### Transcribe speed — CLOSED 2026-07-24 (measured record in CHANGELOG + DECISIONS)
+Transcribe is still the bottleneck (~907 s per pass over the 6-video queue, 79% of a scout pass,
+RTF 0.087 on large-v3 / fp16 / beam 5), but no cheap lever moves it. **All four candidate levers
+measured, none adopted:** beam 5→1 and int8_float16 rejected (int8 is 24% SLOWER, beam trades a
+worse error class — fp16 large-v3 on Ada is at the decode ceiling); distil-large-v3 rejected by
+decision (validation costs an ear cycle, its likely failure — degraded timestamps — is invisible
+to the probe); cross-video threading real but shallow (N=2 ~1.15× and unstable, N=3 a net loss)
+and too costly to adopt (parallelising the stage breaks resume, `_guard`, and the just-built
+`detail.transcribe` accounting). Full record: CHANGELOG 2026-07-22 (beam) + 2026-07-24 (int8,
+threading); rationale DECISIONS 2026-07-24. **Reopen only** on different hardware (a second GPU for
+real parallelism, or a non-Ada / CPU host where int8 pays off) or distil cleared by ear — not
+another probe on this host. `word_timestamps=True` stays load-bearing (do not touch — sentence
+resegmentation, timing sync and `--repair-asr` are all built on it). Summarize is likewise closed
+(at its 4.5× parallel ceiling, CHANGELOG 2026-07-21). One undiagnosed loose end: the `Tu2cCEMwvHI`
+116.7 s download outlier (6-13 s for the rest of that queue).
 
 ### The condition_on_previous claim
 **A causal claim this project has treated as settled since 2026-07-17, never independently
@@ -451,7 +366,11 @@ per-stage `overhead_s` in run.json, one stale claim in the item itself corrected
 "PLAN item N" references in code and tests renamed to topics; 434→445 tests)** · **Queue-page
 previews and «о чём» for dubbed-without-scout rows ✅ (2026-07-22; the full download now takes a
 thumbnail, the preview normalizer moved into `overdub/workdir.py` so it no longer belongs to the
-summarizer step, and the scan cell falls back to summary.md's first sentence)**.
+summarizer step, and the scan cell falls back to summary.md's first sentence)** · **Transcribe-speed
+axis closed ✅ (2026-07-24; four levers measured, none adopted — int8 rejected 24% slower, threading
+measured N=2 ~1.15×/N=3 net loss and closed, distil rejected by decision, beam already rejected;
+fp16 large-v3 on one GPU at its practical ceiling. `asr_probe.py --threads N` driver added +
+min→mean drift fix; DECISIONS 2026-07-24)**.
 The `--repair-asr` entry above is the only one still carrying an unsolved problem; the pre-batch
 checks at the top of this file apply to the next DUBBING batch, not to a scout pass.
 

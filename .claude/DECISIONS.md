@@ -1,5 +1,52 @@
 # DECISIONS
 
+## 2026-07-24 — Transcribe-speed axis closed: fp16 large-v3 on one GPU is at its practical ceiling
+
+The four levers named on 2026-07-22 (`int8_float16`, beam 5→1, `num_workers`, distil-large-v3) are
+resolved; none is adopted. The reason is one fact measured four ways — on this host the fp16
+large-v3 decode already saturates the GPU, so any lever that keeps both the model and the single
+card has no idle room to reclaim.
+
+**int8_float16 — measured 0.81× (24% SLOWER), rejected.** Fixture six, control beside it, mirrored
+order, timed around `transcribe_words`. This is NOT the silent CTranslate2 downgrade the roadmap
+warned about (a fallback to fp16 reads as ~1.0× with identical text): int8 executes and the text
+differs, the answer is just negative. Ada's fp16 tensor cores are the fast path already, and
+`int8_float16` adds a per-layer quantize/dequantize cost for no compute win. int8 pays off on CPU,
+on pre-Ada GPUs without strong fp16, or when VRAM is the bound — none hold (large-v3 ~3.1 GB in a
+12 GB budget). Quality also drifts into beam 1's rejected class (fused sentences, dropped
+terminators, "research center" → "workshop"). Cells `work-exp/asr-probe-int8/`.
+
+**Cross-video threading — measured, real, closed as not worth adopting.** The `num_workers`
+plumbing from the same-day 2026-07-22 split was finally driven: `asr_probe.py --threads N` decodes
+N videos concurrently through one `WhisperModel(num_workers=N)` vs serially, wall-clock, mirrored,
+mean-based. N=2 = 1.15× (a first single-pair read of 1.28× was a lucky draw; parallel walls span
+58-83 s), N=3 = 0.85× — a NET LOSS, because under 3-way contention each decode inflates ~4×
+(45 → 160-214 s) and the block runs longer than three serial decodes. Contention is super-linear
+in N: Windows has no MPS, so `num_workers` is WDDM time-slicing, not concurrent kernels; the
+ceiling is N=2 and it is shallow. Decode is preserved (sim ~1.0), so the objection is economic,
+not quality — ~12% of a pass, 42-74% wall dispersion (unpredictable overnight stage time), and
+adopting it would parallelise the transcribe stage out of its stage-major shape, breaking resume,
+`_guard`, and the just-built per-video `detail.transcribe` accounting (`work_sec` inflates ~1.7×
+under contention, so `rtf_work` stops meaning what it means now). Cells
+`work-exp/asr-probe-threads-n{2,3}/`.
+
+**beam (rejected 2026-07-22) and distil complete the set.** distil-large-v3 was rejected by
+DECISION, not measurement: it is the one lever with real speedup potential, but its likely failure
+mode — degraded timestamps with unchanged text — is invisible to the probe's sim axis (alignment
+heads for `word_timestamps` are unconfirmed in `Systran/faster-distil-whisper-large-v3`), so
+clearing it costs an ear cycle, not a probe run, and is not worth spending while output is good.
+
+**Method note, the durable part.** Every prior in this branch was wrong until measured: int8 was
+"the cheapest win" and returned a 24% loss; threading was "won't help" and helped ~15%; the 1.28×
+first read shrank to 1.15× on four repeats. And the probe's own rollup used `min`, which on a
+drift-confounded host hands the latest (drift-fastest) block to whichever mode owns it — switched
+to `mean`, which the mirrored order makes drift-neutral. On a monotonically drifting machine,
+average the mirrored pair; never take the best.
+
+**What reopens the axis** (recorded so it is not re-litigated): a SECOND GPU for the transcribe
+stage — real parallelism with no contention, unlike `num_workers` on one card; a non-Ada or CPU
+host where int8 pays off; or distil-large-v3 cleared by an ear session. Not another probe here.
+
 ## 2026-07-22 — Batched inference is a DIFFERENT DECODE, not a faster one: roadmap lever (b) demoted
 
 The roadmap carried `faster_whisper.BatchedInferencePipeline` as speed lever (b) with one caveat —

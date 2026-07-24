@@ -118,12 +118,17 @@ Read it before changing anything in `overdub/repair.py`, before quoting a recall
 contains a known error and a deliberate override, so a perfect match is a red flag, not a win.
 
 `scripts/asr_probe.py` — the ASR decode-config probe (`--help` is the runbook; there is no
-separate doc, deliberately). Measures one decode variant against the shipped config on the 6
-fixture videos: counterbalanced block order, every variant twice, and it prints the
-same-variant noise floor beside the cross-variant effect, then stops — there is no adoption
-rule in it, because the verdict comes from reading the word-stream diffs it writes. Read it
-before quoting any transcribe-speed number. Adopting a decode change also re-baselines
-`docs/repair-fixture.md` (the beam is shared with the repair window).
+separate doc, deliberately). Two modes: `--variant` measures one decode variant against the
+shipped config on the 6 fixture videos (counterbalanced block order, every variant twice, prints
+the same-variant noise floor beside the cross-variant effect, then stops — no adoption rule in
+code, the verdict comes from reading the word-stream diffs it writes); `--threads N` measures the
+cross-video threading ceiling (N videos decoded concurrently through one `WhisperModel(num_workers=N)`
+vs serially, wall-clock, mirrored, mean-based). Read it before quoting any transcribe-speed number.
+Adopting a decode change also re-baselines `docs/repair-fixture.md` (the beam is shared with the
+repair window). **The transcribe-speed axis is CLOSED (2026-07-24): all four levers measured, none
+adopted — fp16 large-v3 on one GPU is at its practical ceiling (DECISIONS 2026-07-24). Do not
+re-run these probes to "improve transcribe speed"; reopening needs different hardware or a smaller
+model cleared by ear.**
 
 `docs/russian-tts-guide.md` — Russian-TTS working reference (user-supplied, July 2026): model
 comparison, input preparation (punctuation, normalization, stress dictionary, chunking), Silero

@@ -1,6 +1,62 @@
 # CHANGELOG
 
-## 2026-07-22 (last) — beam 5→1 measured and rejected; the instrument built to measure it, deleted
+## 2026-07-24 (last) — transcribe-speed axis closed: int8 rejected (slower), threading measured and closed
+
+Roadmap lever (c), billed as "the cheapest thing left". Fixture six, control (shipped fp16)
+always measured beside it, two repeats, mirrored block order (`control r1 · int8 r1 · int8 r2 ·
+control r2`). Cells: `work-exp/asr-probe-int8/`.
+
+**int8_float16 is 0.81× — 24% SLOWER, not a speedup.** Five of six videos slower (0.65×–0.98×),
+one faster (`ytEN_iAk09c` 1.21×); TOTAL 225.9 s → 279.8 s over the fixture. The lever was opened
+to CUT transcribe (79% of a scout pass); on this host it lengthens it.
+
+**Not a silent CTranslate2 downgrade** — the exact risk the PLAN item flagged. A fallback to fp16
+would read as ~1.0× with near-identical text; int8 is 24% slower AND the text differs (cross sim
+below the same-variant noise floor on three of six). It executes; the answer is just negative.
+Why it is slower is not a paradox: Ada's fp16 tensor cores are already the fast path, and
+int8_float16 adds a quantize/dequantize cost per layer for no compute win. int8 pays off on CPU,
+on pre-Ada GPUs without strong fp16, or when VRAM is the bound — none hold here (large-v3 ~3.1 GB
+in a 12 GB budget).
+
+**Quality drifts too, into the class beam 1 was rejected for.** The diffs show terminators
+dropped and sentences fused ("give Claude context, show examples" → "Give Claude context Show
+examples", which breaks the unit of translation), commas ↔ periods, and outright content errors
+— "agricultural research center" → "agricultural workshop", "It's called few-shot prompting" →
+"We doesn't call it few-shot prompting". The speed sign alone closes the lever; this only
+confirms the direction.
+
+**repeats=4 not run, on purpose.** The −24% effect is an order larger than the host drift (8–29%,
+already cancelled by the mirrored order — which if anything favoured int8 by placing its blocks
+later than the first control block), and the sign is consistent on five of six. More repeats only
+sharpen a settled negative.
+
+**Two of four transcribe-speed levers now measured and rejected** (beam, compute_type), both dead
+for the same reason: fp16 large-v3 on Ada is already at the decode ceiling. Same day, **(d)
+distil-large-v3 was rejected by decision without measuring** — the one remaining lever with real
+speedup potential, but its likely failure mode (degraded timestamps, unchanged text) is invisible
+to the probe and needs an ear cycle to clear, not worth spending while output is good.
+
+**Then (e) cross-video threading was measured, and it CLOSES THE AXIS.** A threaded driver was
+added to the probe (`asr_probe.py --threads N`: n videos decoded concurrently through one
+`WhisperModel(num_workers=n)` vs serially, wall-clock, mirrored order, mean-based — min was a
+defect that understated the lever by handing the drift-fastest block to whichever mode owned it).
+Run at N=2 and N=3, four repeats each. **N=2 = 1.15×** — real but modest, and a first single-pair
+read of 1.28× was a lucky draw (parallel walls span 58-83 s). **N=3 = 0.85×, a net loss**: under
+3-way contention each decode inflates ~4× (45 s → 160-214 s), so the block runs longer than three
+serial decodes. Contention is super-linear in N; the ceiling is N=2 and it is shallow. The prior
+recorded before the run ("two threads mostly share one GPU") was too pessimistic on sign — the
+decode leaves ~28% idle a second thread fills — but right on magnitude. Decode preserved (sim
+~1.0); the objection is economic — 12% of a pass, unstable (42-74% wall dispersion from WDDM
+time-slicing), and adopting it would parallelise the transcribe stage out of its stage-major
+shape, breaking resume, `_guard`, and the per-video `detail.transcribe` accounting just built
+(`work_sec` inflates ~1.7× under contention). Cells: `work-exp/asr-probe-threads-n{2,3}/`.
+
+**The transcribe-speed axis is closed: all four levers measured, none adopted.** fp16 large-v3
+on this single GPU is at its practical ceiling; transcribe stays the bottleneck but no cheap lever
+moves it. Reopening needs different hardware (a second GPU for real parallelism, or a non-Ada host
+where int8 pays off) or a smaller model cleared by an ear session (distil), not another probe.
+
+## 2026-07-22 — beam 5→1 measured and rejected; the instrument built to measure it, deleted
 
 Suite 445 → 590 → **484**. Read that arc: a 3100-line measurement harness was built, reviewed
 twice, never produced a number, and was deleted the same day for a 230-line probe that answered

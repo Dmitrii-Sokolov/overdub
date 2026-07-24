@@ -79,6 +79,13 @@ ROOT = Path(__file__).resolve().parents[1]
 VIDEOS = ["2YCaBqP8muw", "DmgujoZ1mmk", "RyvXxApfHkk",
           "W4Ua6XFfX9w", "W5cga7xipRI", "ytEN_iAk09c"]
 
+# Cross-video threading (--threads) needs videos of NEAR-EQUAL length: a parallel wall-clock is a
+# threading ceiling only if every thread finishes around the same time. Pair a 71 s video with a
+# 15 s one and the parallel wall is pinned to the 71 s tail while the short thread sits idle —
+# that understates the lever for a reason (load imbalance) that is not GPU contention. These three
+# all run ~34-37 s solo on control, so the wall reads as overlap, not as the slowest tail.
+THREAD_VIDEOS = ["W5cga7xipRI", "ytEN_iAk09c", "W4Ua6XFfX9w"]
+
 # Overrides applied on top of the shipped config. "control" is the shipped config itself and is
 # always measured, always in the same session — a stored baseline cannot control for the drift.
 VARIANTS: dict[str, dict] = {
@@ -225,6 +232,103 @@ def report(out: Path, names: list[str], vids: list[str], repeats: int, floor_max
             print(f"  {p.name}: {len(lines)} differing block(s)")
 
 
+def threads_probe(out: Path, cfg: Config, vids: list[str], n: int, repeats: int) -> None:
+    """Cross-video threading ceiling: n videos decoded CONCURRENTLY through one
+    WhisperModel(num_workers=n) vs the same n decoded SERIALLY, wall-clock, mirrored order.
+
+    This is the one measurement the variant table cannot make. num_workers changes nothing about a
+    single decode — VARIANTS['threads2'] runs it and its cells are byte-identical to control — so
+    the lever only ever shows up as the wall-clock of a whole BLOCK. Serial and parallel are timed
+    in the same session and mirrored (serial/parallel/parallel/serial) so the host's monotone
+    session drift cancels in a pair, exactly as the variant blocks do.
+
+    ONE model, not n: num_workers is ctranslate2 inter_threads, the weights are shared, so VRAM
+    does not scale with n. Thread-safety is structural (DECISIONS 2026-07-22): the sequential
+    transcribe() keeps last_speech_timestamp local, so n concurrent calls each keep their own
+    state — which is precisely why this lever preserves the decode while batching does not.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    def decode(model, vid: str) -> dict:
+        t0 = time.perf_counter()
+        flat = transcribe_words(
+            model, ROOT / "work" / vid / "source.wav", language=cfg.source_lang,
+            beam_size=cfg.whisper_beam_size,
+            condition_on_previous=cfg.whisper_condition_on_previous)
+        return {"vid": vid, "solo_sec": round(time.perf_counter() - t0, 2),
+                "n_words": len(flat), "text": " ".join(w.text for w in flat)}
+
+    batch = vids[:n]
+    rows: list[dict] = []
+    order = blocks(["serial", "parallel"], repeats)
+    for pos, (mode, rep) in enumerate(order, 1):
+        workers = n if mode == "parallel" else 1
+        print(f"[{pos}/{len(order)}] {mode} r{rep}: loading num_workers={workers} ...")
+        model = load_whisper(cfg.whisper_model, cfg.whisper_device,
+                             cfg.compute_type_for("transcribe"),
+                             beam_size=cfg.whisper_beam_size, num_workers=workers)
+        try:
+            t0 = time.perf_counter()
+            if mode == "parallel":
+                with ThreadPoolExecutor(max_workers=n) as ex:
+                    cells = list(ex.map(lambda v: decode(model, v), batch))
+            else:
+                cells = [decode(model, v) for v in batch]
+            wall = time.perf_counter() - t0
+            per = ", ".join(f"{c['vid'][:6]} {c['solo_sec']:.0f}s" for c in cells)
+            rows.append({"mode": mode, "rep": rep, "wall": round(wall, 2), "cells": cells})
+            print(f"    wall {wall:6.1f}s   in-block: {per}")
+        finally:
+            del model
+            try:
+                import gc
+
+                import torch
+                gc.collect()
+                torch.cuda.empty_cache()
+            except Exception:                       # torch absent or already torn down
+                pass
+
+    (out / "threads-result.json").write_text(
+        json.dumps({"n": n, "repeats": repeats, "batch": batch, "rows": rows},
+                   ensure_ascii=False, indent=2), encoding="utf-8")
+
+    ser = [r["wall"] for r in rows if r["mode"] == "serial"]
+    par = [r["wall"] for r in rows if r["mode"] == "parallel"]
+    print("\n" + "=" * 96)
+    print(f"CROSS-VIDEO THREADING — {n} videos, num_workers={n}, {repeats} repeats each")
+    if not ser or not par:
+        print("  (missing a mode — nothing to compare)")
+        return
+    sm, pm = statistics.mean(ser), statistics.mean(par)
+    # MEAN, not min: the mirrored order (serial/parallel/parallel/serial) puts both modes at the
+    # same average block position, so averaging the pair cancels the host's linear session drift.
+    # min does NOT — it hands whichever mode owns the latest (drift-fastest) block an unearned edge,
+    # which on the first N=2 run understated the lever (1.19x min vs 1.28x mean). The ideal wall is
+    # the slowest CLEAN solo (solo_sec from the serial blocks, no contention): a perfectly
+    # overlapped parallel block cannot finish before its longest member decodes alone.
+    clean = [c["solo_sec"] for r in rows if r["mode"] == "serial" for c in r["cells"]]
+    ideal = max(clean) if clean else 0.0
+    print(f"  serial wall   : mean {sm:7.1f}s   (range {min(ser):.1f}-{max(ser):.1f})  = "
+          f"{n} decodes back to back")
+    print(f"  parallel wall : mean {pm:7.1f}s   (range {min(par):.1f}-{max(par):.1f})")
+    print(f"  SPEEDUP       : {sm / pm:5.2f}x   (mean-based, drift-cancelled; 1.00 = no lever)")
+    if ideal:
+        print(f"  ideal wall    : {ideal:7.1f}s   slowest clean solo — full overlap cannot beat it "
+              f"(best possible {sm / ideal:.2f}x)")
+        print(f"  overlap eff.  : {ideal / pm:5.2f}    share of the ideal speedup reached "
+              f"(1.00 = perfect overlap, lower = GPU-contended)")
+    # sanity: num_workers must NOT change the decode. Compare each video's serial vs parallel text;
+    # a sim well below the run-to-run floor would mean the concurrent path is not the decode we ship.
+    print("  text sanity (serial vs parallel, per video — expect ~1.0, num_workers is not a decode "
+          "change):")
+    for vid in batch:
+        st = [c["text"] for r in rows if r["mode"] == "serial" for c in r["cells"] if c["vid"] == vid]
+        pt = [c["text"] for r in rows if r["mode"] == "parallel" for c in r["cells"] if c["vid"] == vid]
+        if st and pt:
+            print(f"    {vid:<14} sim {_sim(st[0], pt[0]):.4f}")
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(
         prog="asr_probe", formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -238,6 +342,11 @@ def main(argv: list[str] | None = None) -> int:
                         "the mirrored block order cancels the host's session drift in pairs")
     p.add_argument("--videos", default="", help="comma-separated ids (default: the fixture six)")
     p.add_argument("--out", type=Path, default=Path("work-exp/asr-probe"))
+    p.add_argument("--threads", type=int, default=0, metavar="N",
+                   help="cross-video threading mode: decode N videos CONCURRENTLY through one "
+                        "WhisperModel(num_workers=N) vs serially, wall-clock, mirrored. A different "
+                        "measurement from --variant (which times one decode); the two are mutually "
+                        "exclusive. Uses THREAD_VIDEOS (near-equal length) unless --videos is given")
     p.add_argument("--dry-run", action="store_true", help="print the plan, touch no GPU")
     p.add_argument("--report-only", action="store_true", help="re-report existing cells, no GPU")
     args = p.parse_args(argv)
@@ -247,19 +356,47 @@ def main(argv: list[str] | None = None) -> int:
     if not Path(args.config).exists():
         p.error(f"config not found: {args.config} — run from the repo root, or pass --config")
     cfg = Config.load(args.config)
-    unknown = [v for v in args.variant if v not in VARIANTS]
-    if unknown:
-        p.error(f"unknown variant(s) {unknown}; known: {', '.join(VARIANTS)}")
-    if not args.variant:
-        p.error("nothing to compare — pass at least one --variant")
-    names = ["control"] + [v for v in dict.fromkeys(args.variant)]
-    vids = [v.strip() for v in args.videos.split(",") if v.strip()] or VIDEOS
+    user_vids = [v.strip() for v in args.videos.split(",") if v.strip()]
 
     out = Path(args.out).resolve()
     work_root = Path(cfg.work_root).resolve()
     if out == work_root or work_root in out.parents:
         p.error(f"--out {out} is inside work_root {work_root} — this probe never writes into the "
                 f"pipeline's workdirs")
+
+    if args.threads:                                # cross-video threading is a DIFFERENT measurement
+        if args.variant:
+            p.error("--threads and --variant are different measurements; pass one, not both")
+        if args.threads < 2:
+            p.error(f"--threads needs N>=2 (got {args.threads})")
+        vids = user_vids or THREAD_VIDEOS
+        if len(vids) < args.threads:
+            p.error(f"--threads {args.threads} needs at least that many videos, have {len(vids)}")
+        vids = vids[:args.threads]
+        missing = [v for v in vids if not (ROOT / "work" / v / "source.wav").exists()]
+        if missing:
+            p.error(f"no source.wav for {missing}")
+        order = blocks(["serial", "parallel"], args.repeats)
+        print(f"threading: {args.threads} videos x {{serial, parallel}} x {args.repeats} repeats "
+              f"= {len(order)} blocks over {vids}")
+        print("  order: " + " ".join(f"{m}r{r}" for m, r in order))
+        if args.repeats % 2:
+            print(f"  [warn] --repeats {args.repeats} is ODD, so the mirrored order does not fully "
+                  f"cancel the session drift; the last repeat is unpaired", file=sys.stderr)
+        if args.dry_run:
+            print("dry run — no model loaded")
+            return 0
+        out.mkdir(parents=True, exist_ok=True)
+        threads_probe(out, cfg, vids, args.threads, args.repeats)
+        return 0
+
+    unknown = [v for v in args.variant if v not in VARIANTS]
+    if unknown:
+        p.error(f"unknown variant(s) {unknown}; known: {', '.join(VARIANTS)}")
+    if not args.variant:
+        p.error("nothing to compare — pass at least one --variant")
+    names = ["control"] + [v for v in dict.fromkeys(args.variant)]
+    vids = user_vids or VIDEOS
     missing = [v for v in vids if not (ROOT / "work" / v / "source.wav").exists()]
     if missing:
         p.error(f"no source.wav for {missing}")
