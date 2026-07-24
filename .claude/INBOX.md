@@ -11,6 +11,9 @@ Tags: `[bug] [feature] [chore] [?]` — one line per entry, processed weekly.
      neither needed a roadmap slot: the thumb was a missing yt-dlp flag plus a glob one character
      too narrow, and the «о чём» was a fallback over prose already on disk. -->
 
+## 2026-07-24
+- [chore] `STACK.md` transcribe/verify skeleton contradicts shipped config: verify shown as `compute_type=int8` (ship float16 since the asr role-split), transcribe shown as `cond=False` + a "cuts loops" note (ship True; 2026-07-24 measured cond=True as the collapse SOURCE, not a guard)
+
 ## 2026-07-22
 - [chore] `work-exp/beam-probe/` cells predate `asr_probe.py`'s naming — `--variant beam1` re-measures instead of reusing the 24 existing cells
 - [feature] `asr_probe.py` has no "compare against a git HEAD worktree" mode; the technique that settled the drift question lives only in a session scratchpad now
