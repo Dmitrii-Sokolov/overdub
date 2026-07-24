@@ -363,7 +363,8 @@ blocks clear on the source; `_guard` / hatch / batched demotion all upheld, no c
 The `--repair-asr` entry above is the only one still carrying an unsolved problem; the pre-batch
 checks at the top of this file apply to the next DUBBING batch, not to a scout pass.
 
-Stack pins, verified APIs and setup: STACK.md + SETUP.md. Translation: Gemma-3-12B (Ollama),
+Stack pins, host findings and setup: STACK.md (findings ledger; API examples now live in the code it
+points to) + SETUP.md. Translation: Gemma-3-12B (Ollama),
 `gemma3:12b`, local in-pipeline default by A/B 2026-07-18 (Qwen3-14B removed); PRIMARY route =
 Sonnet semi-automatic (DECISIONS 2026-07-18, runbook README "Running"). TTS: ESpeech-TTS-1_RL-V2 (F5-TTS,
 .venv-f5tts) — production by ear 2026-07-16; narrator = ESpeech demo reference (rights caveat in
