@@ -153,12 +153,15 @@ the 2.16× needs no re-check. What IS wall-clock contaminated is anything derive
 whole-pipeline RTF pair (0.14-0.17 vs 0.70-0.92), and every `breakdown_pct`. Re-derive those
 from `rtf_work` on the next pass rather than quoting them.
 
-**Still open, and it is a measurement not code:** `download`, `separate`, `verify`, `assemble`
-and `mux` report no `detail`, so `work_complete` is False on every real run today and
-`total_work_s` is an UPPER bound. `separate` is the one worth doing next — DECISIONS 2026-07-19
-measured its slope against audio length at R²=0.000, i.e. the stage is nothing but model
-loading, which means its entire wall is overhead and `rtf_work` is currently overstating by
-~13.2 s per video.
+**`separate` now reports detail (2026-07-24):** `detail.separate.work_sec` is the ffmpeg extract
+— the one part that scales with audio length — and the demucs subprocess bills as OVERHEAD
+(`demucs_sec` recorded beside it): htdemucs load and inference are inseparable in the CLI
+subprocess and DECISIONS 2026-07-19 measured the demucs wall's slope against length at R²=0.000
+(load-dominated). So `overhead[separate] = wall − extract` lands the ~13.2 s demucs load where it
+belongs, and `rtf_work` no longer counts it as work. **Still open, a measurement not code:**
+`download`, `verify`, `assemble` and `mux` report no `detail`, so `work_complete` stays False on a
+real run and `total_work_s` is an UPPER bound; add their detail the same way when a real batch
+makes the timing calls worth it.
 
 ### Repair-window hotwords
 **Feed the repair window `hotwords` / `initial_prompt`.** Fixes the one confirmed regression from

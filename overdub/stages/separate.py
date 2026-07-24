@@ -16,6 +16,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import time
 from pathlib import Path
 
 from ..pipeline import Context
@@ -45,17 +46,21 @@ class SeparateStage:
         full = ctx.work.root / "source_full.wav"           # 44.1k stereo, temp
         out_dir = ctx.work.root / "_demucs"
         try:
+            t0 = time.perf_counter()
             subprocess.run(
                 ["ffmpeg", "-y", "-loglevel", "error", "-i", str(ctx.work.source_video),
                  "-vn", "-ac", "2", "-ar", "44100", "-c:a", "pcm_s16le", str(full)],
                 check=True,
             )
+            extract_s = time.perf_counter() - t0
+            t0 = time.perf_counter()
             subprocess.run(
                 [str(cfg.demucs_python), "-m", "demucs.separate", "--two-stems", "vocals",
                  "-n", "htdemucs", "-d", "cuda", "-o", str(out_dir), str(full)],
                 check=True,
                 env={**os.environ, "PYTHONUTF8": "1"},
             )
+            demucs_s = time.perf_counter() - t0
             bed = out_dir / "htdemucs" / full.stem / "no_vocals.wav"
             if not bed.exists():
                 raise RuntimeError(f"demucs produced no bed at {bed}")
@@ -63,4 +68,15 @@ class SeparateStage:
         finally:
             full.unlink(missing_ok=True)
             shutil.rmtree(out_dir, ignore_errors=True)
+        # detail.separate: work_sec is the ffmpeg EXTRACT — the one part that scales with audio
+        # length (decode source.mkv → 44.1k stereo wav). The demucs subprocess is recorded beside it
+        # but bills as OVERHEAD, not work: htdemucs load and inference are inseparable inside the CLI
+        # subprocess, and DECISIONS 2026-07-19 measured the demucs wall's slope against audio length
+        # at R²=0.000 — load-dominated, does not scale — so counting it as work overstated rtf_work
+        # by the whole demucs wall (~13.2 s/video). overhead[separate] = wall − work_sec then lands
+        # that load where it belongs. Never-raises, like every record_stage_detail caller.
+        from .. import runreport                            # local: avoid an import cycle at load
+        runreport.record_stage_detail(ctx.work, "separate",
+                                      work_sec=round(extract_s, 3),
+                                      demucs_sec=round(demucs_s, 3))
         print("       source_bed.wav ← htdemucs no-vocals stem")

@@ -1,6 +1,22 @@
 # CHANGELOG
 
-## 2026-07-24 (last) — condition_on_previous claim tested and SURVIVES (both halves)
+## 2026-07-24 (last) — separate stage reports timing detail: rtf_work stops billing the demucs load as work
+
+`SeparateStage` records `detail.separate`: `work_sec` = the ffmpeg extract (the only part that
+scales with audio length), and `demucs_sec` beside it. The demucs subprocess bills as OVERHEAD, not
+work — htdemucs load and inference are inseparable in the CLI subprocess and DECISIONS 2026-07-19
+measured the demucs wall's slope against length at R²=0.000 (load-dominated). So
+`overhead[separate] = wall − extract` lands the ~13.2 s demucs load where it belongs; `rtf_work` no
+longer overstates by it. `work_complete` stays False (download / verify / assemble / mux still
+uncovered).
+
+No test added, on purpose: `separate.run` is a GPU/subprocess stage outside the suite's no-GPU
+contract, and a runreport test fed synthetic separate-detail would be a restatement — green
+regardless of the code in `separate.py`. The downstream accounting is already covered
+(`test_work_accounting`); verified synthetically that separate detail yields `overhead[separate]`
+= 13.0 (15 wall − 2 extract).
+
+## 2026-07-24 — condition_on_previous claim tested and SURVIVES (both halves)
 
 The causal claim held since 2026-07-17 (`cond=True` → repetition loops, `cond=False` →
 terminator-free blocks) was measured for the first time. Two axes added to `asr_probe.py` for the
