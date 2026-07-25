@@ -47,6 +47,35 @@ MIN_CUE_SEC = 1.2       # never manufacture a flash-frame: a seam whose split wo
 _CUE_SEAM = re.compile(r"(?<=[,;:.!?…])\s")
 
 
+def effective_lowpass(hz: int | None, sr: int | None) -> int | None:
+    """The cutoff actually applied to the dub track, or None when the filter is a no-op.
+
+    Skipped unless the cutoff sits comfortably below Nyquist: at 24 kHz (F5) an 11 kHz
+    biquad rides the band edge and would recolour the production engine for nothing — the
+    hiss it targets is a 48 kHz Silero artifact living above 12 kHz. run() and done() both
+    call THIS, so the gate can never disagree with what was written."""
+    return hz if hz and sr and hz < sr * 0.4 else None
+
+
+def _apply_lowpass(path, sr: int, hz: int) -> None:
+    """One ffmpeg pass over the whole finished track, in place (path is still the .tmp).
+
+    Deliberately NOT folded into the per-unit atempo call: that call only runs for units
+    with factor > 1.0, so a per-unit filter would leave every un-sped unit unfiltered and
+    put an audible tembre step at those seams. atempo is pitch-preserving, so filtering
+    after it is spectrally equivalent to filtering before."""
+    dst = path.with_suffix(path.suffix + ".lp")
+    # explicit -f wav for the SAME reason soundfile calls need format="WAV" here: both ends are
+    # atomic temp paths (…/dub_ru.wav.tmp[.lp]) whose extension names no container.
+    subprocess.run(
+        ["ffmpeg", "-y", "-loglevel", "error", "-f", "wav", "-i", str(path),
+         "-filter:a", f"lowpass=f={hz}", "-ar", str(sr), "-ac", "1",
+         "-c:a", "pcm_s16le", "-f", "wav", str(dst)],
+        check=True,
+    )
+    os.replace(dst, path)
+
+
 def _fade(clip: np.ndarray, sr: int) -> np.ndarray:
     """~10 ms linear fade-in/out in place (int16-safe via float multiply)."""
     n = min(int(sr * _FADE_SEC), len(clip) // 2)
@@ -124,10 +153,16 @@ class AssembleStage:
             man = json.loads(ctx.work.seg_manifest.read_text(encoding="utf-8"))
             # absent stamp counts as mismatch — a legacy report re-assembles ONCE and gains
             # the stamp; units_key catches same-synth_key (--force) resynthesis
+            # lowpass joins the gate because it is the one audio knob that lands HERE, not in
+            # synth: without it a cutoff change would leave the old dub in place under a
+            # matching synth_key. Absent from a legacy stamp reads as None, which equals the
+            # effective cutoff on every 24 kHz (F5) run — those do not churn.
             if (stamp.get("synth_key") != man.get("synth_key")
-                    or stamp.get("units_key") != man.get("units_key")):
-                print("       [info] assemble: manifest synth/units key changed — re-assembling",
-                      file=sys.stderr)
+                    or stamp.get("units_key") != man.get("units_key")
+                    or stamp.get("lowpass_hz") != effective_lowpass(
+                        ctx.cfg.dub_lowpass_hz, man.get("sample_rate"))):
+                print("       [info] assemble: manifest synth/units/lowpass key changed — "
+                      "re-assembling", file=sys.stderr)
                 return False
         except Exception:
             pass                                           # torn report → keep the old gate
@@ -239,6 +274,9 @@ class AssembleStage:
 
         dub_tmp = ctx.work.dub_audio.with_suffix(".wav.tmp")
         sf.write(str(dub_tmp), buf, sr, format="WAV", subtype="PCM_16")
+        lowpass = effective_lowpass(cfg.dub_lowpass_hz, sr)
+        if lowpass:
+            _apply_lowpass(dub_tmp, sr, lowpass)
         _write_srt(ctx.work.en_srt, [(s["start"], s["end"], s["src_en"]) for s in segs])
         _write_srt(ctx.work.ru_srt, [(s["start"], s["end"], s["text_ru"]) for s in segs])
         report.prune(rep, {s["id"] for s in segs})
@@ -248,6 +286,7 @@ class AssembleStage:
             "n_sped": n_sped, "max_speed_factor": round(max_f, 4),
             "n_over_1_8_combined": n_over,
             "in_span_silence_sec": round(in_span_silence, 1),
+            "lowpass_hz": lowpass,
         }
         # artifact flips BEFORE the stamp: a crash between them leaves new-dub + old-stamp,
         # which done() treats as mismatch and harmlessly re-assembles. Stamp-first would
@@ -255,5 +294,7 @@ class AssembleStage:
         replace_retry(dub_tmp, ctx.work.dub_audio)
         report.save(ctx.work.report, rep)
         shutil.rmtree(tmp_dir, ignore_errors=True)
+        if lowpass:
+            print(f"       lowpass {lowpass} Hz applied to dub_ru.wav")
         print(f"       dub_ru.wav {total / sr:.1f}s ({n_sped} sped, max ×{max_f:.2f}, "
               f"{n_over} over 1.8× combined, in-span silence {in_span_silence:.0f}s)")

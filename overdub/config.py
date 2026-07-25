@@ -123,7 +123,9 @@ class Config:
     translate_unload: bool = True    # POST keep_alive:0 after the stage to free VRAM
 
     # TTS — engine selection + seed policy
-    tts_engine: str = "f5"           # "f5" (production, Phase-3 ear check 2026-07-16) | "silero" (fallback)
+    tts_engine: str = "silero"       # THE engine since 2026-07-25 (user decision, DECISIONS):
+                                     # speed + hardware cost, quality difference accepted as a
+                                     # trade. "f5" still works and is what pre-switch runs used.
     tts_voice: str = "eugene"        # silero-only
     silero_model: str = "v5_5_ru"    # silero-only release id via torch.hub. v4_ru (~38 MB) was
                                      # the 2026-07-15 bake-off entrant BY MISTAKE — v5_5_ru
@@ -134,6 +136,20 @@ class Config:
                                      # because text_tts is Cyrillic by contract (see tts/silero.py).
                                      # Audio-affecting → it is part of synth_key.
     tts_sample_rate: int = 48000     # silero-only (F5 sr is engine-owned: 24000)
+    silero_ssml_breaks: bool = False  # silero v5 only: put the ORIGINAL inter-sentence pauses
+                                     # back inside a grouped unit as SSML <break>. OFF by ear
+                                     # (2026-07-25): indistinguishable from no markup, because
+                                     # it fixes the wrong thing. The holes in the dub are NOT
+                                     # swallowed inter-sentence pauses — forensics on the 5:15
+                                     # hole found the source speech continuous (largest word
+                                     # gap 0.95 s) and the hole made by assembly: unit [61,62]
+                                     # got a 15.76 s slot, spoke for 10.66 s, and the leftover
+                                     # 5.10 s is digital silence. <break> put back 0.44 s of
+                                     # that, i.e. 8%, while ADDING pauses where the speaker had
+                                     # none. The real lever is translation length + atempo<1.
+                                     # Kept, not deleted: correct mechanism, wrong problem —
+                                     # worth revisiting if units with genuinely long pauses
+                                     # appear. Audio-affecting → part of synth_key.
     tts_seed: int = 42               # base seed (seed-capable engines); retries use seed+attempt
     tts_max_retries: int = 3         # reseed attempts after the first try (seed-capable engines)
 
@@ -162,10 +178,39 @@ class Config:
                                      # (atempo never does) — keep ≲1.15; 1.0 disables
 
     # dead-air / mix (see DECISIONS 2026-07-16 dead-air entry + 2026-07-17 ear verdict)
-    group_gap_max: float = 0.4       # join adjacent sentences into one render unit when the
-                                     # inter-sentence gap ≤ this (s); 0.0 disables grouping
+    group_gap_max: float = 1.2       # join adjacent sentences into one render unit when the
+                                     # inter-sentence gap ≤ this (s); 0.0 disables grouping.
+                                     # 0.4/12/300 → 1.2/20/600 by ear on 8zJlKmgMT44
+                                     # (2026-07-25): 1.32 → 2.57 sentences per unit, ~7 → ~14 s
+                                     # of speech per contour. The 4.19/unit arm was also better
+                                     # than baseline but barely different from this one, and it
+                                     # doubles the sync cost (p90 swallowed silence 2.62 s vs
+                                     # 1.28), so the middle arm wins. Costs nothing in time:
+                                     # synth 22.8/28.2/25.3 s and verify 45.8/58.2/56.3 s across
+                                     # the three arms are inside the run-to-run noise (two
+                                     # identical baseline verify passes read 84.3 and 45.8).
+    group_span_max: float = 20.0     # unit source-span cap (s) and joined-text cap. Both were
+    group_chars_max: int = 600       # F5-shaped constants ("~10 s ref + gen inside F5's trained
+                                     # ≤30 s regime", "internal-chunking insurance") and they —
+                                     # not group_gap_max — are what actually binds grouping:
+                                     # measured over 37 videos / 5401 sentences, raising gap
+                                     # 0.4→1.2 alone moves 1.40→1.57 sentences per unit because
+                                     # the refusals just migrate to span (1822→2997). Knobs, not
+                                     # constants, so a grouping A/B is a toml away. Grouping is
+                                     # WARN-only on change, like group_gap_max — regrouping
+                                     # needs --force (see synthesize.done).
     dub_mix: str = "bed"             # "replace" | "duck" | "bed" (no-vocals stem at original
                                      # level under the dub — production default by ear)
+    dub_lowpass_hz: int = 11000      # low-pass the FINISHED dub track (0 = off; ear check
+                                     # 2026-07-25). Silero's vocoder lays a broadband hiss
+                                     # across 8-20 kHz that tracks the speech instead of
+                                     # sitting under it, so no denoiser (afftdn/arnndn) can
+                                     # reach it — cutting the top does, at no intelligibility
+                                     # cost. NOT audio-affecting in the synth sense: it lands
+                                     # after verify, so it stays OUT of synth_key and never
+                                     # forces a resynthesis. Auto-skipped when the cutoff is
+                                     # not comfortably below Nyquist — F5's 24 kHz track has
+                                     # nothing up there to cut (see assemble.effective_lowpass).
     demucs_python: Path = Path(".venv-demucs/Scripts/python.exe")  # bed mode only
 
     # verification — whisper-small round-trip
