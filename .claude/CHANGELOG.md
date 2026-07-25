@@ -1,6 +1,36 @@
 # CHANGELOG
 
-## 2026-07-25 (last) — the two worst videos re-run through repair → re-translate → re-synthesize
+## 2026-07-25 (last) — Silero becomes the only engine: hiss filter, grouping re-cut, stress marks, measurement gate
+
+Rationale for every item is in DECISIONS 2026-07-25; this is the what.
+
+| change | where |
+|---|---|
+| `dub_lowpass_hz = 11000` — one pass over the finished dub, kills the 8-20 kHz vocoder carpet | `config.py`, `stages/assemble.py` |
+| grouping defaults `0.4/12/300 → 1.2/20/600`; the two F5-shaped constants became knobs | `config.py`, `stages/synthesize.py` |
+| SSML `<break>` restoration of swallowed pauses — built, **default off** (rejected by ear) | `config.py`, `tts/silero.py`, `tts/base.py`, `stages/synthesize.py` |
+| `+` stress marks end to end: dictionary values may carry them, verify strips them | `pronounce.py`, `normalize.py` |
+| CMUdict in-repo + `stress_index()` / `apply_stress()` — **not yet wired into `_resolve`** | `data/cmudict.dict`, `pronounce.py` |
+| `host_guard.py` pre-flight GPU check, gating both measuring paths of the probe | `scripts/host_guard.py`, `scripts/asr_probe.py` |
+
+Engine-facing contract changes: `TtsEngine` gained `supports_breaks` and an optional `gaps=`
+argument (the original inter-sentence silences a grouped unit swallowed); `build_units` records
+those gaps per unit; `synth_key` gained `breaks=` so flipping it re-renders. `text` stays the plain
+joined string on every path — markup never reaches the manifest or verify.
+
+Tests: 521 passing (was 505). New files `test_assemble_lowpass.py`, `test_host_guard.py`,
+`test_silero_breaks.py`; `test_pronounce.py` extended with the stress-mark invariants (a value may
+carry `+` only immediately before a vowel, at most one per word) and
+`test_stress_mark_is_invisible_to_verify`. Every new gate was mutation-checked — thresholds and the
+strip line were flipped and the tests failed as intended.
+
+Measured this session, kept for the next person who wonders: Silero fills the median slot to 0.73
+vs F5's 0.90 (267 s of holes vs 124 s on `8zJlKmgMT44`); grouping costs nothing in time (arms
+within run-to-run noise); Silero v5 SILENTLY DELETES Latin script — "Я читал Reddit вчера" renders
+byte-identical to the same sentence with the word removed, which is why `text_tts` is
+Cyrillic-by-contract.
+
+## 2026-07-25 — the two worst videos re-run through repair → re-translate → re-synthesize
 
 Applied `--repair-asr auto` to `iWRmtPdFbGw` (1 window, ids 9-10, 61 sentences unchanged) and
 `aVwxzDHniEw` (5 windows, 212 → 205 sentences, 2 with collateral edits), then re-translated both

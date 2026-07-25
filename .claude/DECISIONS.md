@@ -1,5 +1,86 @@
 # DECISIONS
 
+## 2026-07-25 — Silero becomes the ONLY engine; four Silero-shaped fixes land, one is rejected by ear
+
+User decision: F5/ESpeech is replaced by Silero v5_5_ru outright, on speed and hardware cost, with
+the quality difference accepted as a deliberate trade. Explicitly NOT a parallel-engine setup —
+per-engine knobs were considered and declined; the shipped defaults are tuned for Silero and the F5
+path comes back out of git history if the switch fails. This reverses the 2026-07-16 ear verdict
+that made F5 production and Silero fallback.
+
+**Vocoder hiss → `dub_lowpass_hz = 11000`, applied once to the finished track.** The complaint was
+"шипение". Measured on `bakeoff/silero_v5_eugene/id147_long.wav`: the sibilant band sits 19.9 dB
+under the body, *quieter* relative to F5's 15.4 dB — so it was never sibilance, and `deesser` did
+nothing. The spectrogram shows the real thing: a broadband noise carpet across 8-20 kHz, present on
+vowels, without harmonic structure, and *absent in the pauses* — i.e. vocoder noise that tracks the
+speech. That last fact is what rules out `afftdn`/`arnndn`/`anlmdn`: they remove a stationary floor,
+and this is not one. Cutting the top removes it at no intelligibility cost (confirmed by ear, A/B).
+Placement is deliberate: ONE pass over the whole dub in `assemble`, after verify, not folded into
+the per-unit atempo call — that call only runs for units with `factor > 1.0`, so a per-unit filter
+would leave un-sped units unfiltered and put a tembre step at those seams. It is out of `synth_key`
+(post-verify, no resynthesis) but inside the assemble gate, and auto-skips when the cutoff is not
+comfortably below Nyquist, so an F5 run at 24 kHz is never silently recoloured.
+
+**Grouping re-cut 0.4/12/300 → 1.2/20/600 by ear.** `_GROUP_MAX_SPAN`/`_GROUP_MAX_CHARS` were
+constants shaped for F5 ("~10 s ref + gen inside F5's trained ≤30 s regime") and they, not
+`group_gap_max`, were what bound grouping: over 37 videos / 5401 sentences, raising the gap alone
+0.4→1.2 moves 1.40→1.57 sentences per unit because refusals migrate to `span` (1822→2997). Now
+config knobs. The 2.0/30/900 arm was also better than baseline but barely different from 1.2/20/600
+while doubling the sync cost (p90 swallowed silence 2.62 s vs 1.28), so the middle arm won.
+Grouping costs nothing in time — see the measurement note below.
+
+**`<break>` restoration: built, measured, REJECTED (default off).** Grouping deletes inter-sentence
+pauses, so restoring them as SSML `<break>` looked like the fix for the holes in the dub. It is a
+correct mechanism aimed at the wrong problem, and the forensics say so: at the 5:15 hole the SOURCE
+speech is continuous (largest word gap 0.95 s) and the hole is made by ASSEMBLY — unit [61,62] holds
+a 15.76 s slot, speaks for 10.66 s, and the remaining 5.10 s is digital silence. `<break>` put back
+0.44 s of that (8%) while ADDING pauses where the speaker had none; A/B was indistinguishable. Kept
+in the code with the default off — it would earn its place if units with genuinely long pauses
+appear. Coverage, for the record: 51 of 57 grouped units took markup (89%), 6 declined.
+
+**THE open blocker is slot fill, and it is not an assembly-only fix.** Silero has no
+`supports_target`, so nothing stretches speech to its slot and F5's `plan_speed` does not apply.
+On `8zJlKmgMT44`: Silero fills the median slot to **0.73** against F5's **0.90**; 45 of 69 units
+hold a hole >3 s, 21 hold >5 s, 267 s total against F5's 124 s. Closing the median hole needs a
+**1.37×** slowdown — past `atempo`'s comfortable range — so the translation has to come out ~25-35%
+longer (target duration into the translate prompt) with `atempo` <1 taking the remainder. This is
+the price of the switch: the engine is cheaper, but timing fit is now ours to do.
+
+**Measurement discipline: `scripts/host_guard.py`, and a retracted conclusion.** A grouping A/B read
+verify at 347 s and 597 s against a 45 s baseline, and the conclusion "grouping makes Silero slower
+than F5" was drawn from it and stated. Every number was an artifact — a game held the GPU at 98% and
+86 C. Re-measured on an idle card, the arms are synth 22.8/28.2/25.3 s and verify 45.8/58.2/56.3 s,
+i.e. indistinguishable; two identical baseline verify passes read 84.3 and 45.8, so the run-to-run
+noise EXCEEDS the between-arm difference. The methodology was not the weak point: mirrored order
+cancels slow drift, but a process that owns the card for the whole session is not drift, it is a
+different machine, and counterbalancing cannot see it. Hence a pre-flight gate rather than a
+post-hoc correction, wired into both measuring paths of `asr_probe.py`. Three hypotheses for the
+"blow-up" were tested and all three falsified before the real cause was found (temperature
+fallback: 0/8 fired; decoder repetition: hyp/ref 0.99; a stray round-trip in synthesize: only
+created `if engine.supports_seed`, so Silero never had one).
+
+**Stress on borrowed proper nouns: `+` marks, English stress wins, applied by hand for now.** Silero
+honours a manual `+` before the stressed vowel — probed contrastively, `reddit_auto == reddit_I`
+(the model says "редд+ит") while the marked form differs, so the mark works AND the automatic guess
+is wrong there; on "кроссинг" auto already agrees, so a mark would be noise. `normalize_for_compare`
+now deletes `+` before the punctuation pass — without that, "р+еддит" compares as two tokens and a
+CORRECT reading scores as a defect, which is the one silent failure mode of dictionary stress.
+CMUdict (`data/cmudict.dict`, 3.5 MB, in-repo, lazily loaded, feature simply off if absent) gives
+the stressed vowel INDEX, and transfer needs no phoneme-to-letter alignment: mark the Nth Cyrillic
+vowel where N is the index among vowel phonemes. On disagreement with Russian usage, English wins
+(user call: predictable rule + dictionary exceptions beats a per-word judgement). The vowel-count
+guard never fired across the probed corpus. **Deliberately NOT wired into `_resolve`:** of the top
+60 invented tokens, only 10 disagree with Silero's own stress, and half of those would put a mark on
+an already-broken transliteration (`execute → +эксекют`, `update → упд+ейт`) — accenting a defect
+entrenches it. Automatic application waits on the transliteration fix.
+
+**Next lever identified: phoneme-based transliteration.** CMUdict was fetched for stress and turns
+out to answer the older question too — the letter rules guess at spelling what the dictionary knows
+phonetically: `buy → буи` vs `B AY1`, `fields → фиелдс` vs `F IY1 L D Z`, `update → упдейт` vs
+`AH0 P D EY1 T`. Coverage over the corpus's invented tokens is 79% of types and 77% of occurrences;
+the absent tail is brands and neologisms (`mcp`, `anthropic`, `vercel`, `shadcn`, `tmux`), so the
+letter rules stay as fallback rather than being retired.
+
 ## 2026-07-24 — The condition_on_previous claim SURVIVES measurement: cond stays operative, guard and hatch upheld
 
 The causal claim held since 2026-07-17 — `condition_on_previous_text=True` produces repetition

@@ -67,6 +67,36 @@ that carry the old numbers are historical records and stay as written.
 
 ---
 
+## Full switch to Silero as the ONLY TTS engine (opened 2026-07-25, user decision)
+
+Silero v5_5_ru replaces F5/ESpeech outright — decided on speed and hardware cost, accepted as a
+deliberate quality trade. The pipeline is being rebuilt around it; if it does not work out, the
+F5 path comes back out of git history rather than being maintained in parallel. Engine-dependent
+knobs are therefore NOT wanted — tune the shipped defaults for Silero.
+
+Done so far: `dub_lowpass_hz` (vocoder hiss), grouping knobs re-cut to 1.2/20/600 by ear,
+`scripts/host_guard.py` (measurements on a busy card are worthless), `+`-stress support end to end.
+
+Open, in order — the first one is the blocker:
+1. **Slot fill — the holes are a PACE MISMATCH, and that is what makes it tractable.** The source
+   speaker varies pace enormously and Silero does not: measured per unit on `8zJlKmgMT44`, Silero
+   runs 16.4-21.4 ru chars/s (**CV 5.5%**, p90/p10 1.16×) while the English speaker runs 4.7-66.2
+   en chars/s (**CV 41.7%**). So the slot length is set by a moving quantity and the dub's pace is
+   an engine constant — "translate to roughly the same length" cannot fit slots that were never
+   the same shape. The fix follows directly: for each unit take the SOURCE span, divide by
+   Silero's measured rate to get a target character count, and make the translator hit THAT
+   number instead of imitating the source's length; `atempo` <1 absorbs the remainder. Silero's
+   rate is stable enough to be a usable constant, which is the whole reason this works — with a
+   variable-pace engine the same arithmetic would not close.
+   Damage today: Silero fills the median slot to **0.73** vs F5's 0.90; 45 of 69 units hold a hole
+   >3 s, 21 hold >5 s, 267 s of silence total vs F5's 124 s. Closing the median hole by tempo
+   alone needs **1.37×** slowdown, past `atempo`'s comfortable range — hence translation length
+   is the primary lever and tempo only the trim. `<break>` was tried and rejected here (DECISIONS
+   2026-07-25): it addresses swallowed pauses, which is not what the holes are made of.
+2. **Voice post-processing** — compression/EQ for a brighter, more attractive timbre (INBOX).
+3. **Stress audit** with the CMUdict pass below; English stress wins on disagreement (user call).
+4. Re-time the batch once 1 lands — the old "synthesize dominates" assumption is F5's, not Silero's.
+
 ## Batch 2026-07-25 — 24 videos, route B (analysed; SEVEN FIXED same day, three residues open)
 
 **Status: the seven items below are IMPLEMENTED — full record in CHANGELOG 2026-07-25.** They are
