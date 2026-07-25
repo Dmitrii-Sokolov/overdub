@@ -63,7 +63,9 @@ from difflib import SequenceMatcher
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent))               # sibling scripts/
 
+from host_guard import require_idle                                     # noqa: E402
 from overdub.asr import load_whisper                                    # noqa: E402
 from overdub.config import Config                                       # noqa: E402
 from overdub.stages.transcribe import (                                 # noqa: E402
@@ -434,6 +436,9 @@ def main(argv: list[str] | None = None) -> int:
                         "exclusive. Uses THREAD_VIDEOS (near-equal length) unless --videos is given")
     p.add_argument("--dry-run", action="store_true", help="print the plan, touch no GPU")
     p.add_argument("--report-only", action="store_true", help="re-report existing cells, no GPU")
+    p.add_argument("--allow-busy-gpu", action="store_true",
+                   help="measure even if another process owns the card (numbers will not be "
+                        "comparable to any run made on an idle GPU)")
     args = p.parse_args(argv)
 
     # Config.load returns DEFAULTS for a missing path, so a typo'd --config would silently
@@ -471,6 +476,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.dry_run:
             print("dry run — no model loaded")
             return 0
+        require_idle(allow_busy=args.allow_busy_gpu)   # AFTER --dry-run: planning needs no card
         out.mkdir(parents=True, exist_ok=True)
         threads_probe(out, cfg, vids, args.threads, args.repeats)
         return 0
@@ -496,7 +502,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.dry_run:
         print("dry run — no model loaded")
         return 0
-    if not args.report_only:
+    if not args.report_only:                           # --report-only touches no GPU, so no gate
+        require_idle(allow_busy=args.allow_busy_gpu)
         out.mkdir(parents=True, exist_ok=True)
         measure(out, cfg, names, vids, args.repeats)
     report(out, names, vids, args.repeats, cfg.transcribe_floor_run_max)
