@@ -109,7 +109,13 @@ roughly where (use the start timestamps, M:SS). Ground every claim in the transc
 invent facts, names, or numbers that are not there, and if the transcript is too garbled or thin
 to judge, say that instead of guessing. Plain paragraphs only: no markdown headings, no bullet
 lists, no title, no preamble like "Вот краткое содержание" — the file's whole content is the
-summary text. Read the file in one pass; write it in one pass.
+summary text. Write EXACTLY TWO paragraphs separated by a BLANK LINE: paragraph 1 is (a),
+paragraph 2 is (b), and paragraph 2 must OPEN with the interesting thing itself (e.g. "Самое
+интересное — …"), never with a verdict about whether to watch. The queue report reads paragraph 2
+as its «самое интересное» column and takes its first sentence verbatim, so a one-paragraph summary
+leaves that cell empty and a paragraph 2 opening with "Смотреть стоит…" fills it with the wrong
+answer (measured 2026-07-25: 2 of 24 summaries ran the two points together, ~6 opened paragraph 2
+with the verdict). Read the file in one pass; write it in one pass.
 
 Also read ${dir}\\source.info.json — the yt-dlp metadata sidecar. Take title, channel,
 upload_date (YYYYMMDD) and description from it. The transcript alone carries none of these, and

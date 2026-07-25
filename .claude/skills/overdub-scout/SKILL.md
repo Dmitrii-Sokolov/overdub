@@ -53,7 +53,72 @@ Offer exactly two ways forward, in this order:
 The prompt that builds it is committed. So a fresh clone has the tool and not the data, which is
 the intended state: this preflight will fire for the next person too.
 
-## S1 — Scout the batch
+## S1 — Resolve the queue, then scout the batch
+
+**Resolve the queue BEFORE the run, not after** (moved above the command 2026-07-24). These
+checks used to sit under it, which made them audits of a fetch that had already happened.
+
+**If the user handed over a PLAYLIST rather than a list of videos**, expand it — the queue is a
+list of videos, always — and record where it came from as the first line of `queue.txt`:
+
+```powershell
+$pl = @(.venv-asr\Scripts\yt-dlp.exe --flat-playlist --print "%(id)s" <playlist-url>)
+```
+
+```
+# playlist: <название плейлиста> | <url плейлиста>
+https://www.youtube.com/watch?v=...
+```
+
+The report names it at the top and links the title. Nothing else depends on the line — it is a
+comment, so the pipeline skips it exactly as it always has — but without it the report is a list
+of videos with no answer to "which playlist was this". Only the first such line is read.
+
+**That header is PROVENANCE, not a live link.** It records the playlist as it was when the queue
+was written. If `queue.txt` already exists and its header matches the playlist the user just
+named, that is NOT evidence the queue is current — re-expand it into `$pl` and diff, right
+after the `$ids` block below has run:
+
+```powershell
+Compare-Object $pl $ids | ForEach-Object {
+  "{0}: {1}" -f $(if ($_.SideIndicator -eq '<=') { 'playlist only' } else { 'queue only' }),
+               $_.InputObject }
+```
+
+The difference goes to the USER, never to your own judgement — **playlist only** is either
+growth or a video a human deliberately dropped (promotion trims the queue to the survivors), and
+those two are indistinguishable from here; **queue only** is normal (removed or private
+upstream), worth one sentence and nothing more. Same rule as the two below, one level up.
+
+**The id list comes from the QUEUE, never from a `work/` listing.** `<id>` is the 11-char
+YouTube id inside each URL (S1 also prints it per video: `work dir: work\<id>`):
+
+```powershell
+$lines = @(Get-Content queue.txt | ForEach-Object { $_.Trim() } |
+  Where-Object { $_ -and -not $_.StartsWith('#') })
+$ids = @($lines | ForEach-Object {
+  if ($_ -match '(?:v=|youtu\.be/|/shorts/|/embed/)([A-Za-z0-9_-]{11})') { $Matches[1] } })
+if ($ids.Count -ne $lines.Count) {
+  throw "queue: $($lines.Count) URLs, $($ids.Count) matched ids - unmatched line(s), see below" }
+$lines | Where-Object { $_ -match '[?&]list=' }    # must print nothing — see below
+$ids = @($ids | Select-Object -Unique)
+```
+
+All three guards are load-bearing. A URL the regex misses (e.g. a `/live/` link) is still
+PROCESSED by the pipeline — `video_id()` hash-fallbacks it into a `work/<sha1>` dir — but
+invisible to every gate below, so it silently never gets summarized. A line carrying `&list=` is
+the worse case, because the regex gate WAVES IT THROUGH — the video id matches — and then
+`yt-dlp` follows the playlist: the download stage passes no `--no-playlist` and `-o` is a fixed
+`source.*` path (`stages/download.py`), so dozens of videos are fetched over one workdir
+(verified 2026-07-24: a `watch?v=…&list=…` URL expands to the whole playlist). Both cases:
+normalize the line in `queue.txt` to a bare `watch?v=<id>` form and restart from S1.
+Duplicate spellings of one video share a workdir and the CLI dedupes them (`cli.py`); without
+`-Unique` two parallel sub-agents would race on the same `summary.md`.
+
+Do NOT enumerate `work/` directories — `work/` persists across batches and holds stale and
+baseline workdirs. Summarizing those wastes tokens on videos nobody queued.
+
+Then run:
 
 ```powershell
 .venv-asr\Scripts\python.exe -X utf8 -m overdub --batch queue.txt --scout
@@ -72,41 +137,6 @@ produces, which is why a promoted video never re-transcribes.
 
 One line per video in the batch summary:
 `scouted · <duration> · <n> sentences · summary pending`.
-
-**If the user handed over a PLAYLIST rather than a list of videos**, record where the queue came
-from as the first line of `queue.txt`, before expanding it:
-
-```
-# playlist: <название плейлиста> | <url плейлиста>
-https://www.youtube.com/watch?v=...
-```
-
-The report names it at the top and links the title. Nothing else depends on the line — it is a
-comment, so the pipeline skips it exactly as it always has — but without it the report is a list
-of videos with no answer to "which playlist was this". Only the first such line is read.
-
-**The id list comes from the QUEUE, never from a `work/` listing.** `<id>` is the 11-char
-YouTube id inside each URL (S1 also prints it per video: `work dir: work\<id>`):
-
-```powershell
-$lines = @(Get-Content queue.txt | ForEach-Object { $_.Trim() } |
-  Where-Object { $_ -and -not $_.StartsWith('#') })
-$ids = @($lines | ForEach-Object {
-  if ($_ -match '(?:v=|youtu\.be/|/shorts/|/embed/)([A-Za-z0-9_-]{11})') { $Matches[1] } })
-if ($ids.Count -ne $lines.Count) {
-  throw "queue: $($lines.Count) URLs, $($ids.Count) matched ids - unmatched line(s), see below" }
-$ids = @($ids | Select-Object -Unique)
-```
-
-Both guards are load-bearing. A URL the regex misses (e.g. a `/live/` link) is still PROCESSED
-by the pipeline — `video_id()` hash-fallbacks it into a `work/<sha1>` dir — but invisible to
-every gate below, so it silently never gets summarized: normalize the URL in `queue.txt` to a
-`watch?v=` form and restart from S1. Duplicate spellings of one video share a workdir and the
-CLI dedupes them (`cli.py`); without `-Unique` two parallel sub-agents would race on the same
-`summary.md`.
-
-Do NOT enumerate `work/` directories — `work/` persists across batches and holds stale and
-baseline workdirs. Summarizing those wastes tokens on videos nobody queued.
 
 **Gate before S2:** `work/<id>/sentences.json` exists for every id in `$ids`.
 
@@ -343,6 +373,12 @@ make a re-scout free. Deleting them is the user's call, not yours.
 - **A scout pass never shortens the queue by itself.** S3 recommends; the human drops videos. A
   model silently deciding a video is not worth dubbing is indistinguishable, downstream, from
   the pipeline losing it — and unlike a lost video, nothing reports it.
+- **A scout pass never lengthens it by itself either, and never assumes it is still current.**
+  A `# playlist:` header matching the URL the user just named is provenance, not freshness — it
+  was written once and never updated. Concluding from it that the queue already covers the
+  playlist drops every video added since, with no FAIL row and no missing artifact to catch it:
+  those videos were never in `$ids`. Re-expand, diff, hand the diff over (S1). Measured on the
+  real queue 2026-07-24: 6 ids in `queue.txt`, 23 in the playlist.
 - **Never hand-write a `summary.md`** to clear a `summary pending` line. That line is the pass's
   only completion signal, and forging it is the same silent failure in miniature.
 - **Never ground the rundown in anything but the summaries.** If a summary is missing, say so

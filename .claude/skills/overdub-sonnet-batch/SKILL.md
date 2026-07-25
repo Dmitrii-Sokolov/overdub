@@ -19,6 +19,8 @@ do not skip the helper, do not let a sub-agent hand-write `text_tts`.
   fallback, missing → clear error). (`.venv-f5tts` + `.venv-demucs` are needed
   only from synthesize onward — step 3, not step 1/2.)
 - A queue: `queue.txt` (one URL per line, `#` comments and blanks skipped) **or** a single URL.
+  A PLAYLIST url is neither — expand and diff it in step 1, and never read the `# playlist:`
+  header as proof that the queue still matches it.
 - Run everything from the repo root `D:\code\overdub`. Never merge venvs.
 
 ## Scouting first? That is a different skill (README route C)
@@ -38,16 +40,11 @@ hand-assembling an MKV from `source.wav`.
 **The summarizer prompt in Step 2 below is shared with that skill.** Change it in one place and
 change it in the other, or the two routes start producing different artifacts under one name.
 
-## Step 1 — Transcribe the batch (no translation yet)
+## Step 1 — Resolve the queue, then transcribe the batch (no translation yet)
 
-```powershell
-.venv-asr\Scripts\python.exe -X utf8 -m overdub --batch queue.txt --only download transcribe
-```
-
-Single video: same command with the URL instead of `--batch queue.txt`.
-
-Produces per video: `work/<id>/sentences.json` — a JSON list of `{id, text, start, end}`,
-`id` contiguous from 0. That is the sub-agent's input.
+**Resolve the queue BEFORE the command, not after** (moved above it 2026-07-24). These checks
+used to sit under the run, which made them audits of a download that had already happened: a
+malformed line was caught only once its bytes were spent.
 
 **The id list comes from the QUEUE, never from a `work/` listing.** `<id>` is the 11-char
 YouTube id inside each URL (step 1 also prints it per video: `work dir: work\<id>`):
@@ -59,23 +56,87 @@ $ids = @($lines | ForEach-Object {
   if ($_ -match '(?:v=|youtu\.be/|/shorts/|/embed/)([A-Za-z0-9_-]{11})') { $Matches[1] } })
 if ($ids.Count -ne $lines.Count) {
   throw "queue: $($lines.Count) URLs, $($ids.Count) matched ids - unmatched line(s), see below" }
+$lines | Where-Object { $_ -match '[?&]list=' }    # must print nothing — see below
 $ids = @($ids | Select-Object -Unique)
 ```
 
-Both guards are load-bearing. A URL the regex misses (e.g. a `/live/` link) is still
+All three guards are load-bearing. A URL the regex misses (e.g. a `/live/` link) is still
 PROCESSED by the pipeline — `video_id()` hash-fallbacks it into a `work/<sha1>` dir — but
 invisible to every gate below, which at step 3 means silent Gemma substitution for that
-video: normalize the URL in queue.txt to a `watch?v=` form and restart from step 1.
+video. A line carrying `&list=` is the worse case, because the regex gate WAVES IT THROUGH —
+the video id matches — and then `yt-dlp` follows the playlist: the download stage passes no
+`--no-playlist` and `-o` is a fixed `source.*` path (`stages/download.py`), so dozens of videos
+are fetched over one workdir (verified 2026-07-24: a `watch?v=…&list=…` URL expands to the whole
+playlist). Both cases: normalize the line in queue.txt to a bare `watch?v=<id>` form and restart
+from step 1.
 Duplicate spellings of one video share a workdir and the CLI dedupes them (`cli.py`); without
 `-Unique` two parallel sub-agents would race on the same draft file.
+
+**The queue is not the playlist, and `# playlist:` is not a live link to one.** That header is
+PROVENANCE for the report (`queueview.queue_playlist`) — a snapshot of the moment the queue was
+written. A header URL matching the playlist the user just named proves NOTHING about what is in
+`queue.txt` now; the playlist may have grown since. Whenever the user points at a playlist — by
+URL, or by "тот же плейлист" — expand it again and diff, before trusting the file:
+
+```powershell
+$pl = @(.venv-asr\Scripts\yt-dlp.exe --flat-playlist --print "%(id)s" <playlist-url>)
+Compare-Object $pl $ids | ForEach-Object {
+  "{0}: {1}" -f $(if ($_.SideIndicator -eq '<=') { 'playlist only' } else { 'queue only' }),
+               $_.InputObject }
+```
+
+Hand the difference to the USER; never resolve it yourself:
+
+- **playlist only** — either the playlist grew, or a human deliberately dropped that video
+  (route C promotion trims the queue to the survivors, `overdub-scout`). Those two are
+  indistinguishable from here. Name the ids, ask, wait for an answer.
+- **queue only** — normal (removed or made private upstream). Say it once and carry on; never
+  drop the line by yourself.
+
+Same rule as ids-from-the-queue-never-from-`work/`, one level up: a model concluding on its own
+that a queue is still current is indistinguishable, downstream, from the pipeline losing videos.
 
 Do NOT enumerate `work/` directories — `work/` persists across batches and holds
 stale/baseline workdirs; translating those wastes tokens and overwrites their
 `translation.json` (experiment baselines are unrecoverable).
 
+Then run:
+
+```powershell
+.venv-asr\Scripts\python.exe -X utf8 -m overdub --batch queue.txt --only download transcribe
+```
+
+Single video: same command with the URL instead of `--batch queue.txt`.
+
+Produces per video: `work/<id>/sentences.json` — a JSON list of `{id, text, start, end}`,
+`id` contiguous from 0. That is the sub-agent's input.
+
 **Gate before step 2:** step 1 exited 0 and `work/<id>/sentences.json` exists for every id in
 `$ids`. The batch continues past per-video failures (`FAIL` rows in the summary) — re-run the
 same step-1 command until clean; completed stages fast-skip.
+
+### Step 1b — Repair the transcript BEFORE translating it (added 2026-07-25)
+
+```powershell
+.venv-asr\Scripts\python.exe -X utf8 -m overdub --batch queue.txt --repair-asr auto
+```
+
+**Cheap, and this is the only position where it is cheap.** `auto` seeds on `dup_adjacent` +
+`rate_implausible` read off `sentences.json` alone, loads whisper lazily (a clean sweep never
+loads it at all), and is idempotent. Run here and the repaired text flows into translate,
+synthesize and the subtitles. Run it after the batch instead — which is what the step-4 narrative
+suggests for a single video — and every id renumbers, `invalidate_downstream` deletes
+`translation.json`/`summary.md`, and that video pays a full re-translate + re-synthesize.
+
+**What it is fixing, measured on the 2026-07-25 batch (24 videos, run WITHOUT this step):** 17
+units shipped needing `atempo` between ×1.8 and **×12.5** — `iWRmtPdFbGw#10` had a 0.46 s slot for
+5.2 s of speech, `8zJlKmgMT44#130-133` were four ASR duplicates of one sentence sharing a 5.74 s
+slot. Those are invented timings and duplicated source, not long Russian: 10 of the 17 carried
+`rate_implausible` on the EN side, i.e. the seeds this sweep keys on. An ×12 unit is
+unconditionally unintelligible, so it is worth a sweep that usually does nothing.
+
+Skip it only for a queue you have already repaired (`sentences.json` newer than the repair stamp).
+A video whose digest `- asr:` line says `alignment collapse suspected` is never a skip.
 
 ## Step 2 — Translate each video with a Sonnet sub-agent (+ summarize it)
 
@@ -173,8 +234,14 @@ Sub-agent prompt skeleton (fill `<id>`):
 > Ground every claim in the transcript — do not invent facts, names, or numbers that are not there,
 > and if the transcript is too garbled or thin to judge, say that instead of guessing. Plain
 > paragraphs only: no markdown headings, no bullet lists, no title, no preamble like "Вот краткое
-> содержание" — the file's whole content is the summary text. Read the file in one pass; write it
-> in one pass.
+> содержание" — the file's whole content is the summary text. **Write EXACTLY TWO paragraphs
+> separated by a BLANK LINE: paragraph 1 is (a), paragraph 2 is (b), and paragraph 2 must OPEN with
+> the interesting thing itself (e.g. "Самое интересное — …"), never with a verdict about whether to
+> watch.** The queue report reads paragraph 2 as its «самое интересное» column and takes its first
+> sentence verbatim, so a one-paragraph summary leaves that cell empty and a paragraph 2 that opens
+> with "Смотреть стоит…" fills it with the wrong answer (measured 2026-07-25: 2 of 24 summaries
+> ran the two points together, ~6 opened paragraph 2 with the verdict). Read the file in one pass;
+> write it in one pass.
 
 ## Step 3 — Resume the full pipeline
 
@@ -284,6 +351,13 @@ re-sorts the queue). Mention the path in your summary. Skip it for a fully clean
 - **The helper is not optional.** It is the only thing validating the contract on the resume
   path (`TranslateStage.done()` only checks that the file exists — a malformed hand-written
   `translation.json` would sail straight into synthesize and produce garbage or crash there).
+- **A matching `# playlist:` header is not evidence that the queue is current.** It is a
+  snapshot written when the queue was built (`queueview.queue_playlist`, for the report header).
+  Concluding "the URL is the same, so everything is already downloaded" skips every video added
+  to the playlist since — a silent loss with no FAIL row, no flag and no missing artifact to
+  detect it, because those videos were never in `$ids` to begin with. Re-expand and diff
+  (step 1); the diff goes to the human. Measured on the real queue 2026-07-24: `queue.txt` held
+  6 ids while the playlist held 23.
 - **A missing `translation.json` at step 3 is a silent route substitution, not an error.**
   The resume runs the local Gemma path for that video (silently, if Ollama is up) — hence the
   mandatory every-id check before resuming, and hence ids from the queue, never from `work/`.
