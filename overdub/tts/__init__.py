@@ -14,7 +14,7 @@ def build_engine(cfg: Config) -> TtsEngine:
         from .silero import SileroEngine
 
         return SileroEngine(voice=cfg.tts_voice, sample_rate=cfg.tts_sample_rate,
-                            model_id=cfg.silero_model)
+                            model_id=cfg.silero_model, breaks=cfg.silero_ssml_breaks)
     if cfg.tts_engine == "f5":
         from .f5 import F5Engine
 
@@ -62,4 +62,8 @@ def synth_key(cfg: Config) -> str:
     # model release is audio-affecting (v4_ru and v5_5_ru are different voices under the same
     # speaker name), so it MUST be in the key — see the INVARIANT above. Legacy manifests keyed
     # without it predate the knob and were all v4_ru; they re-render once, which is correct.
-    return f"silero|{cfg.silero_model}|{cfg.tts_voice}|sr={cfg.tts_sample_rate}"
+    # breaks= joins for the same reason the release does: with it on, a grouped unit renders
+    # with its swallowed pauses back in, which is different audio from the same text. Legacy
+    # manifests keyed without it re-render once, which is correct.
+    return (f"silero|{cfg.silero_model}|{cfg.tts_voice}|sr={cfg.tts_sample_rate}"
+            f"|breaks={int(cfg.silero_ssml_breaks)}")

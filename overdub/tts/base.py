@@ -20,16 +20,25 @@ class TtsEngine(Protocol):
     sample_rate: int
     supports_seed: bool
     supports_target: bool
+    supports_breaks: bool
 
     def synthesize(self, text: str, out_path: Path, *, seed: int | None = None,
-                   target_sec: float | None = None, max_sec: float | None = None) -> float | None:
+                   target_sec: float | None = None, max_sec: float | None = None,
+                   gaps: list[float] | None = None) -> float | None:
         """Render `text` to a mono wav at `out_path` (self.sample_rate).
 
         `seed=None` means the engine's configured base seed; deterministic engines ignore it.
         `target_sec`/`max_sec` (engines with supports_target only): the source span to fill
         and the slot cap — the engine picks a native speed to land near target_sec without
         exceeding max_sec (slot-fill; see f5.plan_speed). Returns the speed actually used,
-        or None for engines without native speed."""
+        or None for engines without native speed.
+
+        `gaps` (engines with supports_breaks only): the ORIGINAL inter-sentence silences a
+        grouped unit swallowed, len(gaps) == members - 1. Grouping buys a continuous contour
+        by deleting those pauses, which is exactly what makes the dub drift ahead of the
+        picture and pile silence at the end of each slot; an engine that can place pauses
+        puts them back where the speaker had them. `text` stays the plain joined string —
+        it is what verify compares against, and it must never carry markup."""
         ...
 
     def begin_video(self) -> None:
