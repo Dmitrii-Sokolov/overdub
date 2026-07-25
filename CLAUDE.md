@@ -52,14 +52,21 @@ segments are tolerated, silent failures are not.
 
 ## Stack (v1)
 
-yt-dlp → faster-whisper large-v3 → Gemma-3-12B (Ollama) → ESpeech/F5-TTS →
+yt-dlp → faster-whisper large-v3 → Gemma-3-12B (Ollama) → Silero v5_5_ru →
 htdemucs no-vocals bed (dub_mix="bed" default) → ffmpeg.
 
-TTS engines are pluggable behind an adapter: ESpeech-TTS-1_RL-V2 (F5-TTS, worker
-process in `.venv-f5tts`) is the production engine (ear check 2026-07-16); Silero
-(voice `eugene`, `kseniya` backup) is the fallback — slightly lower quality but needs
-no voice sample (adapter default v5_5_ru; v4_ru only to reproduce old runs, DECISIONS 2026-07-19);
-Chatterbox was rejected in the day-1 ear test (see DECISIONS). No voice cloning — fixed narrator voice. Don't
+TTS engines are pluggable behind an adapter, but **as of 2026-07-25 Silero v5_5_ru (voice `eugene`)
+is THE engine, not the fallback** — user decision on speed and hardware cost, quality difference
+accepted as a deliberate trade (DECISIONS 2026-07-25; reverses the 2026-07-16 verdict that made F5
+production). The switch is deliberately NOT a parallel-engine setup: per-engine knobs were declined,
+shipped defaults are tuned for Silero, and the F5 path comes back out of git history if it fails.
+ESpeech-TTS-1_RL-V2 (F5-TTS, worker in `.venv-f5tts`) still works and is still what old runs used;
+Chatterbox was rejected in the day-1 ear test. Two things Silero forces on the pipeline:
+**it silently DELETES Latin script** (verified — a sentence with `Reddit` renders byte-identical to
+the same sentence without the word), which is why `text_tts` is Cyrillic-by-contract via the
+`pronounce` chain; and **it has no `supports_target`**, so slot fitting is the pipeline's job now
+(the open blocker — PLAN). Adapter default is v5_5_ru; v4_ru only to reproduce old runs
+(DECISIONS 2026-07-19). No voice cloning — fixed narrator voice. Don't
 hardcode engine specifics outside the engine adapter. Three venvs, never merge them:
 `.venv-asr` (pipeline), `.venv-f5tts` (F5 worker), `.venv-demucs` (separate stage);
 run the pipeline with `.venv-asr` python via `python -X utf8 -m overdub`.
@@ -129,6 +136,15 @@ repair window). **The transcribe-speed axis is CLOSED (2026-07-24): all four lev
 adopted — fp16 large-v3 on one GPU is at its practical ceiling (DECISIONS 2026-07-24). Do not
 re-run these probes to "improve transcribe speed"; reopening needs different hardware or a smaller
 model cleared by ear.**
+
+`scripts/host_guard.py` — pre-flight check: is the GPU free enough to measure on? Run it (or call
+`require_idle()`) BEFORE any timed work — `asr_probe.py` already gates both of its measuring paths
+on it. Exists because a 2026-07-25 grouping A/B read verify at 347 s and 597 s against a 45 s
+baseline and a whole conclusion was drawn from it; a game owned the card at 98%/86 C, and on a
+free host the same arms came out 46-58 s, i.e. indistinguishable. Mirrored order does NOT save you
+here: counterbalancing cancels slow drift, not a process that holds the card for the entire
+session. `--allow-busy-gpu` opts out; a host without nvidia-smi forfeits the guarantee rather than
+blocking work.
 
 `docs/russian-tts-guide.md` — Russian-TTS working reference (user-supplied, July 2026): model
 comparison, input preparation (punctuation, normalization, stress dictionary, chunking), Silero

@@ -50,7 +50,7 @@
 # context_window = 4
 
 # --- TTS engine selection ---
-tts_engine = "f5"           # production engine (Phase-3 ear check passed); "silero" = fallback
+tts_engine = "silero"       # THE engine since 2026-07-25 (DECISIONS); "f5" still works for old runs
 tts_voice = "eugene"        # silero-only; ear ranking 2026-07-19 on v5_5_ru: eugene + kseniya
                             # best, xenia good-but-slightly-unpleasant, aidar/baya have an
                             # off-standard accent that is harder to follow. "kseniya" = backup
