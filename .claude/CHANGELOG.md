@@ -1,6 +1,74 @@
 # CHANGELOG
 
-## 2026-07-24 (last) — F5 parallel-workers occupancy gate PASSED (GPU 60% idle in synth), build deferred
+## 2026-07-25 (last) — the 24-video batch read back: reports say what they mean, triage stops crying wolf, transliteration becomes visible
+
+Analysis of the overnight route-B batch (24 videos, `queue.txt`, 7.26 h source → 3.27 h pipeline
+work, RTF 0.451, all 24 muxed, zero crashes, zero real translate failures) and the seven fixes it
+earned. Findings are recorded in PLAN under "Batch 2026-07-25"; what changed:
+
+**Reports name their numbers.** `queueview.batch_totals` gained `wall_hm` and
+`queueview.format_hm(sec, ru=)`; all three surfaces that printed `wall 11778.0s` now print
+`pipeline work 3h 16m` plus what the figure IS — the SUM of per-video stage walls, not the batch's
+elapsed time (route B's Sonnet translate wave sits between transcribe and synthesize, outside every
+stage timer: 3h 16m inside a ~5.2 h night). `overdub/cli.py`'s batch sweep also stopped duplicating
+the totals math and now calls the shared layer, so the sweep, the digest and the HTML cannot drift.
+
+**«Самое интересное» is filled for a dubbed video.** `scout_report._highlight_from_summary` reads
+summary.md's SECOND paragraph — the symmetric half of the 2026-07-22 `_one_liner_from_summary` fix.
+18 of 24 rows were dashes while the answer sat one directory away; 23 of 24 now carry it (the 24th
+summary ran both points into one paragraph, which stays a dash on purpose). The scan table now also
+renders for a PURE-DUB queue, since both prose columns have a real source. The summarizer prompt —
+shared by `overdub-sonnet-batch` and `.claude/workflows/scout-summarize.js`, changed in both — now
+pins the shape: two paragraphs, paragraph 2 opening with the highlight itself.
+
+**needs_triage stops marking everything: 23/24 → 16/24.** Same argument as the entity_loss demotion,
+applied to what the measurement showed. `dup_adjacent` + `rate_implausible` joined
+`_ADVISORY_COMPLETENESS`: both read the EN source (35 + 54 hits, the top two contributors), so they
+report an ASR defect that `--repair-asr` fixes and listening cannot. New `_ADVISORY_TRANSLATE`
+demotes `english_echo`, which fired 28 times and was wrong 28 times — every case was Sonnet
+correctly keeping Latin (`task-master init`, `npm run dev`, `/update-doc initialize`,
+`contact-session-1.md`, `free-to-play`); one video reported 15 actionable flags of which 11 were
+this. All counts still print; they just stop ordering a listen.
+
+**english_echo also stopped firing on commands.** `translate._latin_prose_chars` exempts lowercase
+Latin runs adjacent to `-_/\.:` or a digit — a third exemption beside the existing ALL-CAPS and
+Capitalised ones, for the class no case rule can see. The trailing-period trap is handled explicitly
+(`_TECH_AFTER` requires a non-space after a dot), so a real echo ending a sentence still fires.
+
+**num_loss suppressor now matches a stem.** The `_n2w` FP-suppressor only ever matched the
+nominative, i.e. the one form Russian prose rarely uses: 5 of its 7 fires were numbers spelled
+correctly in an oblique case or a derivative ("этих десяти", "пятёрку", "пятидесятилетней"). Both
+residues are now pinned by tests: a root-vowel change still slips through (два→дву-), and a numeral
+stem that is also a word prefix ("сто" in "стоит") can suppress a real loss — a miss, the module's
+documented safe direction.
+
+**Transliteration is measurable and 12 known-wrong readings are fixed.** `run.json` gained a
+`pronounce` block (`n_distinct` / `n_fallback` / `n_letters` / `n_invented`, all None when the audit
+file is absent — never a measured zero) and the digest a `- pronounce:` line. Before this, 1587
+invented readings over 653 distinct tokens reached NO surface: `pronounce.audit_events`' own
+docstring said "nothing ever reads it back". Now one video shows 248 and another 9. `WORDS` gained 11
+entries — proper nouns the rules got wrong (heroes → хироуз not херос, ×50 in the batch;
+facebook, readme, tmux, shadcn, fable, euro) plus the closed class of function words that only reach
+TTS inside a quoted English title (the → зэ, and, to, other). Two word-INITIAL rules: `^a(?=ge)`
+(agent → эйджент, 24 hits, was аджент) and `^bui` (builder → билдер, was буилдер). The open-class
+tail stays the fallback's job, per the WORDS contract.
+
+**An alignment collapse is named in the digest.** `- asr:` appends "alignment collapse suspected;
+try --repair-asr auto" when `floor_longest_run >= 40` (`_FLOOR_CHAIN_HINT`). Chains ran 4..30 on the
+healthy videos and 45 / 82 on the two whose worst units then needed atempo ×2.3 and ×5.4.
+REPORTING only — `transcribe._guard` keeps gating on the ratio, whose threshold is calibrated with a
+DECISIONS record and whose docstring measured the chain as non-separating on a smaller batch.
+
+**The repair sweep moved into the route-B runbook (Step 1b).** `--repair-asr auto` after transcribe,
+before translate: 17 units shipped this batch needing atempo ×1.8..×12.5 (`iWRmtPdFbGw#10`: a 0.46 s
+slot for 5.2 s of speech; `8zJlKmgMT44#130-133`: four ASR duplicates sharing one 5.74 s slot), and 10
+of the 17 carried `rate_implausible` — the seeds `auto` keys on. NO new detector was written for this,
+deliberately: the existing one already covers the class, and running the sweep AFTER a batch (what
+the step-4 narrative suggested) renumbers ids and costs a full re-translate + re-synthesize.
+
+496 tests green. Nothing in `work/` was rewritten except `run.json` (derived, via `--rebuild`).
+
+## 2026-07-24 — F5 parallel-workers occupancy gate PASSED (GPU 60% idle in synth), build deferred
 
 `nvidia-smi dmon` at nfe=16 over 40 real units (`exp_nfe_sweep.py --nfe 16`, isolated in
 `work-exp/f5-occupancy/`, dmon 1 s cadence in `scratchpad/dmon_f5.txt`): **median SM occupancy 5%,

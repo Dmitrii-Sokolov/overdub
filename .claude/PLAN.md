@@ -67,6 +67,127 @@ that carry the old numbers are historical records and stay as written.
 
 ---
 
+## Batch 2026-07-25 — 24 videos, route B (analysed; SEVEN FIXED same day, three residues open)
+
+**Status: the seven items below are IMPLEMENTED — full record in CHANGELOG 2026-07-25.** They are
+kept here in full because each one's EVIDENCE is the measurement, and the next batch is how the
+fixes get judged. What to check on the next route-B run, in order:
+1. `needs_triage` count (was 23/24 → 16/24 on the same artifacts). If it is back near N/N, the
+   actionable set has drifted again — look at what is padding it before adding another detector.
+2. The `- pronounce:` line per video. It ranged 9..248 invented readings here; a video near 200 is
+   telling you which tokens the dictionary still lacks. Feed the top of its audit back into `WORDS`
+   (proper nouns / closed class only) or into a rule.
+3. Whether Step 1b (`--repair-asr auto`) actually fires, and whether the ×1.8+ unit count drops from
+   17. That is the one fix whose effect is unproven — nothing was re-run to verify it.
+
+**Three residues stay OPEN and are NOT in the fixed set:**
+- **Transcription rules for open-class words.** `execute → эксекют` (18 hits), `adventures →
+  адвентурс`, `fields → фиелдс`, `open → опен`, `waters → вейтерс`, and `buy → буи` (pre-existing,
+  spotted while measuring). By the WORDS contract these are the fallback's job, not the dictionary's,
+  and a rule touching `ex-`/`ie`/`-ute` is ambiguous in English ("exit" wants экс, "execute" wants
+  эгз) — so this needs a rules cycle WITH an ear check, not another dictionary line. ~55-rule
+  ceiling applies.
+- **`neg_loss` fired 19 times and every case inspected was correct** — the negation was carried
+  lexically ("Hell no" → "Чёрта с два", "no matter what" → "вне зависимости от", "are not equally
+  spaced anymore" → "перестают быть"). It was deliberately NOT demoted with the others: DECISIONS
+  2026-07-19 carves it out by name ("an inverted negation is the most dangerous silent loss there
+  is, and one false positive per batch is a fair price"). 19 per batch is not one per batch — that
+  is a decision to revisit in DECISIONS with this number in hand, and it is the user's call.
+- **Sentence splitting loses 166 endings** (the last item below, untouched).
+
+Evidence: `queue.txt` + the 24 `work/<id>/` dirs from that night (all 24 muxed, no crash, no real
+translate failure). 7.26 h of source in 3.27 h of pipeline work, RTF 0.451, per-video RTF band
+0.38-0.50 (the one outlier, `Tu2cCEMwvHI` 0.78, is a 631 s download — network, not the pipeline).
+Stage shares of the summed wall: synthesize 47.6% · transcribe 21.3% · download 9.8% ·
+verify 8.3% · mux 7.9% · separate 4.9%. Compression is mild almost everywhere: 78.1% of 4321
+units sit at cf ≤ 1.05, only 60 units above 1.4. **Nothing below is a speed item** — at RTF 0.45
+a 24-video night finishes in three hours; what fails is knowing WHICH videos to open and what a
+listener actually hears.
+
+### Report — the batch wall time is unlabelled and unreadable (operator report 2026-07-25)
+The three surfaces that print batch totals all print raw seconds with no unit conversion and no
+statement of what the number IS: `scripts/run_report.py` (`totals: wall 11778.0s`),
+`scripts/scout_report.py` header (`24 видео · wall 11778.0s`) and `overdub/cli.py`'s batch sweep
+(`total wall 11778.0s`). Two defects, one line each: (a) 11778 s means nothing to a human reading
+a morning report — it is 3 h 16 min; (b) the label "wall" is actively wrong for what it holds. It
+is the SUM of per-video stage walls, not the elapsed time of the batch: this night ran ~21:53 →
+03:07 (~5.2 h) because the route-B Sonnet translate wave sits between transcribe and synthesize
+and no stage timer covers it. Fix the formatting in the shared layer (`queueview.batch_totals`)
+so all three surfaces move together, and name the number honestly ("суммарная работа пайплайна",
+not "wall"). `totals_of`'s existing rule stands and is the reason this is a LABEL fix, not a new
+grand total: do not add a sum of work to a wall clock and call it "итого".
+
+### «Самое интересное» is empty for 18 of 24 rows (operator report 2026-07-25)
+The scan table's highlight column renders `—` for every dubbed-but-never-scouted video
+(`scout_report._views`, the `highlight` key), because it reads only `scout.json`, which route B
+never writes — 6 of these 24 had it from an earlier scout pass, 18 did not. The content EXISTS:
+every one of the 24 has a `summary.md` whose second paragraph is exactly that field («Самое
+интересное — французское исследование 2022 года (около 3:50)…»). This is the same gap
+`_one_liner_from_summary` already closed for the «о чём» column on 2026-07-22 — the symmetric
+half was never done. Two parts: (a) derive the highlight from `summary.md`'s second paragraph in
+the renderer; (b) the summarizer prompt asks for "(a) worth watching (b) the most interesting
+thing" as free prose, so 2 of 24 answered in ONE paragraph and ~6 opened paragraph 2 with the
+watch-verdict instead — pin the shape in the prompt (paragraph 2 leads with the highlight). The
+prompt is SHARED with `overdub-scout`; change both or the routes diverge.
+
+### `english_echo` fired 28 times and was wrong 28 times
+Every one is Sonnet correctly keeping Latin that must stay: CLI invocations (`task-master init`,
+`npm run dev`, `/update-doc initialize`), filenames (`contact-session-1.md`), and set phrases
+(`free-to-play`, `gold edition`, `executable code actions`). They are counted as translate
+FAILURES and land in `flags_actionable`, which is why `1L509JK8p1I` reports 15 actionable flags of
+which 11 are this. Either whitelist the shape (a token that is a command/path/identifier, not
+prose) or drop `english_echo` out of the actionable set. Note what the audit shows about the
+consequence: these units DID reach TTS and were transliterated («таск-мастер парс-пи-ар-ди
+скриптс/пи-ар-ди.ти-экс-ти»), i.e. the pipeline handled them; only the report lied.
+
+### `needs_triage` marked 23 of 24 — the metric is dead a second time
+Same failure the `entity_loss` demotion fixed in `runreport.py` (its own comment: "11 of 12 …
+carries the same information as marking none"). Today's actionable pool is padded by the 28
+false `english_echo` plus `rate_implausible` (54) and `dup_adjacent` (35) — and both of those
+detectors read the EN SOURCE (`completeness.py` says so), so they describe a whisper defect a
+listener cannot fix by opening the dub. Measured alternative on this batch: counting only
+dub-side evidence (a `verify_flag`, an `assemble_flag`, or cf ≥ 1.8) gives **9 of 24**. Keep the
+source-side counts printed as advisory; stop letting them decide whether a human opens a video.
+
+### The worst units are broken SLOTS, not long Russian
+17 units at cf ≥ 1.8, up to **12.5×** (`iWRmtPdFbGw#10`: slot 0.46 s for 5.24 s of speech;
+`aVwxzDHniEw#198` 2.32 s for 11.34 s; `8zJlKmgMT44#130-133` — four source duplicates sharing one
+5.74 s slot). At ×12 the unit is unconditionally garbage and it ships silently: `assemble_flag`
+is None on all 17. This is a pre-synthesis check, not a translate problem — a slot implausibly
+short for its text should be flagged and merged/dropped before the TTS spends time on it. Note
+the arithmetic that makes this cheap: with 78% of units at cf ≤ 1.05, "no tempo cap" is barely
+exercised, so a hard bar at the top costs almost nothing.
+
+### `floor_ratio ≥ 0.085` never fired — the signal is the RUN LENGTH
+Batch max was 0.070, so `--repair-asr` triggered on nothing (repair windows 0 across 24) — while
+`aVwxzDHniEw` has `floor_longest_run` **82** with a visible end-of-video collapse ("а затем почти
+всё это «джастиали» сделано мной") and `8zJlKmgMT44` has 45. Both are also the videos with the
+worst cf. The `config.py` comment already admits the ratio is "knowingly unreliable" for
+borderline detection; on this batch `floor_longest_run ≥ 40` separates exactly those two and
+nothing else. Recalibrate off the accumulated series as that comment asks — but recalibrate the
+CHAIN, not the ratio.
+
+### Transliteration is the largest defect in the batch and nothing measures it
+`pronounce_audit.json` (present for all 24) records **1587 fallback transliterations** + 466
+correct letter-by-letter ones, across 653 distinct Latin tokens — and none of it reaches
+`run.json`, the digest, the HTML or triage. The fallback is literal, not phonetic, so the
+listener hears `readme → ар-и-эй-ди-эм-и` (×11), `heroes → херос` (×50), `builder → буилдер`,
+`execute → эксекют`, `facebook → фасебук`, `fields → фиелдс`, `euro → эуро`,
+`adventures → адвентурс`. The top 40 tokens cover ~700 of the 1587 occurrences, so a hand-written
+dictionary of ~50 entries is the highest-value hour available in the project right now. Two
+sub-findings worth keeping: `of` (×23), `to` (×13), `the` (×11), `for` (×9) went through the
+transliterator at all, which means whole English fragments reached TTS; and the audit should
+surface a count in `run.json` so the next batch cannot hide this again.
+
+### Sentence splitting loses 166 endings (lower priority, but it is OURS)
+Of 388 source anomalies the Sonnet pass reported (9.0% of 4321 sentences), 166 are `truncated`
+and they cluster in live Q&A material where whisper emits no terminal punctuation
+(`2qrzI8YCVgI`, `Tu2cCEMwvHI`: "cut off mid-thought; continues into id 212", consecutively).
+The rebuild from word timestamps is our step, so these are our splits, not source damage —
+distinct from the 143 `garbled` / 60 `dup_neighbour`, which really are whisper's.
+
+---
+
 ### Transcribe speed — CLOSED 2026-07-24 (measured record in CHANGELOG + DECISIONS)
 Transcribe is still the bottleneck (~907 s per pass over the 6-video queue, 79% of a scout pass,
 RTF 0.087 on large-v3 / fp16 / beam 5), but no cheap lever moves it. **All four candidate levers
@@ -263,6 +384,10 @@ re-fetching it inside the merged MKV (~5% waste, accepted 2026-07-20 — but ans
 question first: a promoted run OVERWRITES `source.wav` with a differently-decoded file, ba[ext=m4a]
 vs the scout's opus, while `sentences.json` was read off the old one and `--repair-asr` clips
 windows from the new one; same master and same timeline, so believed benign, never checked);
+`--no-playlist` on both yt-dlp fetches (`stages/download.py` `_fetch_video` + `_fetch_audio`, one
+flag each + test: a queue line carrying `&list=` passes the id regex, then yt-dlp FOLLOWS the
+playlist into the fixed `-o source.*` path — dozens of videos fetched over one workdir, verified
+2026-07-24; today the only guard is a check in both skills, i.e. instruction, not code);
 `libopus` for the dub
 track (one-flag quality upgrade over aac); singing/music detection → keep original (no robot
 singing); loudnorm/EQ on the dub; `--subs-only` fast path; cross-video stage pipelining (translate
