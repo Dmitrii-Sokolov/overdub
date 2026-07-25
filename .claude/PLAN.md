@@ -374,7 +374,24 @@ and checked after — drift measured across the 12-video course, e.g. ИИ-гр�
 per-video isolation makes it invisible to every stage, only a batch-level check sees it);
 name-safety pass (out-of-dict Latin names self-agree through verify UNFLAGGED — Bungie→бунджи —
 promote `pronounce_audit.json` to a pre-batch operator gate + a per-run known-names check on
-src_en for ASR mis-spellings like CLAWD→Claude); enumeration-head detector (in a run of ≥3
+src_en for ASR mis-spellings like CLAWD→Claude);
+**narrator's grammatical gender → the translate prompt** (user 2026-07-25: "определять пол
+говорящего + передавать эту информацию в переводчик"). Russian marks gender on 1st-person PAST
+verbs, English does not, and the transcript carries no name — so every first-person past clause in
+an outro is a coin flip the translator has to make silently. Measured on `aVwxzDHniEw` (channel
+Freya Holmér): the sub-agent used impersonal constructions where they read naturally and defaulted
+to masculine in 7 places (ids 178/181/190-192/195-196). Not a translator defect — the information
+was not in its input. Mechanics: estimate median F0 over voiced frames of `source.wav` (one cheap
+pass, no model; single-speaker is already a project assumption), write it beside the transcript,
+and thread it into BOTH translate routes — the route-B sub-agent prompt and `SYSTEM` in
+`stages/translate.py`. Three rules that keep it honest: F0 measures VOCAL TYPE, not a person's
+gender, so the field is about the grammatical gender of self-reference and takes
+`feminine|masculine|unknown`; a middle band (~155-185 Hz) resolves to `unknown`, never to a guess;
+and `unknown` means "prefer impersonal constructions", which is what the agent already did well —
+i.e. the fallback is a real instruction, not a default to masculine. An operator override belongs
+next to it (a channel's narrator does not change between videos, so this is per-channel data worth
+keeping). Cost of getting it wrong is audible immediately and costs only a re-synth of the affected
+units, which is also why it never blocks a batch; enumeration-head detector (in a run of ≥3
 adjacent sentences matching `^(and )?X to …` the captured head must be unique — measured 1 fire /
 1101 sentences, the true positive, 0 FP, ~15 LOC); Ollama circuit-breaker (abort translate after
 ~3 consecutive api_error instead of burning 4×timeout per sentence overnight; note failed records
