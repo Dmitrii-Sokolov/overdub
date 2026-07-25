@@ -34,12 +34,36 @@ baseline arm was never written to; the mirror was deleted after):
 | opening cue at its group's audio start | 70 of 70 |
 | cue duration profile | median 3.27 s (was 3.45), p90 5.79 (5.42), max 11.67 (10.63) |
 
-Tests: 521 → 530, new `tests/test_assemble_srt.py` (placement only; `test_assemble_cues.py` keeps
-`_split_cue`'s presentation contract). **Mutation-checked, and the check earned its keep:** six
-mutations, five caught immediately, and the survivor exposed a test asserting something it did not
-test — an empty `text_tts` is caught by the `or text_ru` fallback, so the width floor never ran.
-The floor's real invariant is a division by zero when a unit has no text at all; the test now says
-that, and all six mutations are caught.
+**A regression shipped in the first landing of this and was caught by adversarial review before it
+reached a batch — recorded because the review is the only reason it is not in the repo.** Three
+independent lenses found the same defect and reproduced it on real workdirs: the first version
+stretched a row to the next onset and THEN let `_write_srt` split it, so `_split_cue` divided slot
+SILENCE by character share and walked the tail fragment out into the hole — `dcmPV-Fa3GA` had a
+fragment opening 10.6 s after its own audio stopped, and late sub-cues went 7 → 14, i.e. worse than
+the drift being fixed. The order is now split-then-stretch: `_split_cue` runs over the span the
+unit actually SPEAKS, and only the last fragment's END reaches the next onset. Re-measured on the
+same mirror: **0 sub-cues open more than 0.25 s after their audio** (was 14). The `split=False`
+requirement is encapsulated in `_write_ru_srt` rather than left as an argument at the call site —
+a mutation test showed nothing else would catch it being flipped back.
+
+My own verification missed it: I measured the cue DURATION profile, which barely moved, instead of
+the cue's delay against its own audio, which is the thing the change is about. Note also what the
+mutation harness did NOT catch on its own: a docstring typo made the module fail to import, and the
+harness scored all eight mutations "caught" with zero tests executed. It now distinguishes a
+collection error from a failing assertion.
+
+Reading density, the honest cost of the "stretch to the next onset" choice: cues over 8 s go 3 →
+25, but they hold little text (the longest is 15.6 s for 57 chars, 3.7 ch/s). Median density rises
+14.9 → 18.7 ch/s while the p95 IMPROVES 30.2 → 20.8 — non-final cues now share the unit's real
+speech time instead of its longer source span. That median is itself an underfill symptom: it
+should fall back toward the old value once (a) sizes translations to their slots.
+
+Tests: 521 → 532, new `tests/test_assemble_srt.py` (placement only; `test_assemble_cues.py` keeps
+`_split_cue`'s presentation contract). **Mutation-checked, 8/8 caught, and the check earned its
+keep twice:** one survivor exposed a test asserting something it did not test (an empty `text_tts`
+is absorbed by the `or text_ru` fallback, so the width floor never ran — retargeted at the floor's
+real invariant, a division by zero), and a second survivor is what prompted encapsulating the
+writer call.
 
 ## 2026-07-25 (last) — Silero becomes the only engine: hiss filter, grouping re-cut, stress marks, measurement gate
 

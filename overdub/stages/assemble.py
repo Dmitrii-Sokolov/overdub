@@ -125,20 +125,37 @@ def _split_cue(a: float, b: float, text: str) -> list[tuple[float, float, str]]:
     return [(a, b, text)]                                 # no usable clause seam: leave whole
 
 
-def _write_srt(path, rows) -> None:
+def _write_srt(path, rows, *, split: bool = True) -> None:
     """rows: iterable of (start, end, text). Long cues are broken up for DISPLAY only (see
     _split_cue). end is floored to start+0.05 — a zero/negative cue is silently dropped by
-    most players."""
+    most players.
+
+    split=False for rows that were ALREADY split by the caller. _split_cue divides a span by
+    CHARACTER share, which is only meaningful while the span is speech: applied to a ru row
+    whose end was stretched over slot silence it walks the tail fragment out into the hole
+    (measured: a fragment opening 10.6 s after its own audio stopped). _ru_cue_rows therefore
+    splits first and stretches after, and must not be split a second time here."""
     out: list[str] = []
     i = 0
     for a0, b0, text0 in rows:
-        for a, b, text in _split_cue(a0, b0, text0):
+        for a, b, text in (_split_cue(a0, b0, text0) if split else [(a0, b0, text0)]):
             i += 1
             b = max(b, a + 0.05)
             out += [str(i), f"{_ts(a)} --> {_ts(b)}", (text or "…").strip(), ""]
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text("\n".join(out), encoding="utf-8")
     os.replace(tmp, path)
+
+
+def _write_ru_srt(path, plans, segs, sr) -> None:
+    """ru.srt end to end: rows from ACTUAL placement, split over the spoken span, written
+    without a second split.
+
+    One function rather than two calls at the call site, because `split=False` there is a
+    correctness requirement that looks like a formatting option — re-splitting these rows
+    reintroduces the exact defect _ru_cue_rows is ordered to avoid, and a mutation test
+    confirmed nothing else would catch it being flipped back."""
+    _write_srt(path, _ru_cue_rows(plans, segs, sr), split=False)
 
 
 def _ru_cue_rows(plans, segs, sr) -> list[tuple[float, float, str]]:
@@ -159,13 +176,20 @@ def _ru_cue_rows(plans, segs, sr) -> list[tuple[float, float, str]]:
     sentences' ORIGINAL timings: a silent unit has no placement to speak of, and never-drop
     outranks accuracy here. en.srt is deliberately NOT re-timed — it transcribes the original
     English track, which the MKV still carries unmodified, so moving it would desync it from
-    its own audio to match a dub it does not belong to."""
+    its own audio to match a dub it does not belong to.
+
+    SPLIT ORDER IS LOAD-BEARING: the long-cue split runs HERE, over the span the unit actually
+    SPEAKS, and the stretch to the next onset happens after it. Splitting a stretched row
+    instead divides slot silence by character share and walks the tail fragment out into the
+    hole — measured at up to 10.6 s past its own audio, worse than the drift this function
+    exists to remove. So the rows returned are final: _write_srt is called with split=False."""
     rows: list[tuple[float, float, str]] = []
     for p in plans:
         ids = p["u"]["ids"]
         dur = p.get("placed", 0) / sr
         if dur <= 0:
-            rows += [(segs[i]["start"], segs[i]["end"], segs[i]["text_ru"]) for i in ids]
+            for i in ids:
+                rows += _split_cue(segs[i]["start"], segs[i]["end"], segs[i]["text_ru"])
             continue
         at = p["offset"] / sr
         # min width 1: an empty text_tts inside a spoken unit must still take a slice, or the
@@ -175,7 +199,7 @@ def _ru_cue_rows(plans, segs, sr) -> list[tuple[float, float, str]]:
         total_w = sum(widths)
         for sid, w in zip(ids, widths):
             b = at + dur * w / total_w
-            rows.append((at, b, segs[sid]["text_ru"]))
+            rows += _split_cue(at, b, segs[sid]["text_ru"])
             at = b
     # Stretch each cue to the next one's onset, then keep onsets monotone: a fallback row
     # carries SOURCE timings and can otherwise open before the placed row preceding it.
@@ -341,7 +365,7 @@ class AssembleStage:
         if lowpass:
             _apply_lowpass(dub_tmp, sr, lowpass)
         _write_srt(ctx.work.en_srt, [(s["start"], s["end"], s["src_en"]) for s in segs])
-        _write_srt(ctx.work.ru_srt, _ru_cue_rows(plans, segs, sr))
+        _write_ru_srt(ctx.work.ru_srt, plans, segs, sr)
         report.prune(rep, {s["id"] for s in segs})
         rep["assemble"] = {
             "sample_rate": sr, "duration_sec": round(total / sr, 3),

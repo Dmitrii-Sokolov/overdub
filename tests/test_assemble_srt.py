@@ -16,11 +16,12 @@ contract (how one span is broken up), this one owns where the span comes from.
 from __future__ import annotations
 
 import sys
+import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from overdub.stages.assemble import _ru_cue_rows  # noqa: E402
+from overdub.stages.assemble import _ru_cue_rows, _write_ru_srt  # noqa: E402
 
 SR = 1000                                          # 1 ms per sample: offsets read as seconds
 
@@ -116,6 +117,50 @@ def test_last_cue_does_not_run_past_its_audio() -> None:
     rows = _ru_cue_rows([_plan([0], 0.0, 2.0, 0.0, 2.0),
                          _plan([1], 2.0, 30.0, 2.0, 3.0)], segs, SR)
     assert round(rows[-1][1], 6) == 5.0, rows     # 2.0 + 3.0, not the 30 s source end
+
+
+# a long line with a clause seam: _split_cue breaks it because it exceeds MAX_CUE_CHARS (84)
+_LONG_RU = ("Сначала мы разберём, как именно устроен этот механизм внутри, "
+            "а затем посмотрим, что он даёт на практике и чего стоит.")
+
+
+def test_split_happens_over_the_SPOKEN_span_not_the_stretched_one() -> None:
+    # THE regression this ordering exists to prevent (found by adversarial review of the first
+    # landing, reproduced on real work dirs): stretch-then-split divides slot SILENCE by
+    # character share, so the tail fragment opens deep inside the hole — measured 10.6 s past
+    # its own audio, worse than the drift the placement fixes. Every fragment must OPEN inside
+    # the audio; only the last one's END may hang over the silence.
+    segs = [_seg(0, 0.0, 40.0, _LONG_RU), _seg(1, 40.0, 44.0, "Дальше.")]
+    plans = [_plan([0], 0.0, 40.0, 0.0, 3.0),      # speaks 3 s, then a 37 s hole
+             _plan([1], 40.0, 44.0, 40.0, 4.0)]
+    rows = _ru_cue_rows(plans, segs, SR)
+    unit0 = [r for r in rows if r[0] < 40.0]
+    assert len(unit0) > 1, rows                    # the line really did split
+    for a, _, _ in unit0:
+        assert a <= 3.0 + 1e-9, (a, rows)          # every onset inside the spoken 3 s
+    assert round(unit0[-1][1], 6) == 40.0, rows    # only the tail END reaches the next onset
+
+
+def test_a_stretched_cue_is_not_split_again_downstream() -> None:
+    # _ru_cue_rows returns FINAL rows. If a caller re-split them, the stretched tail would be
+    # divided by char share all over again — the same defect.
+    segs = [_seg(0, 0.0, 40.0, _LONG_RU)]
+    rows = _ru_cue_rows([_plan([0], 0.0, 40.0, 0.0, 3.0)], segs, SR)
+    joined = " ".join(t for _, _, t in rows)
+    assert " ".join(joined.split()) == " ".join(_LONG_RU.split()), rows
+
+
+def test_written_ru_srt_has_exactly_the_rows_it_was_given() -> None:
+    # _write_ru_srt owns the "do not split twice" requirement so a call site cannot forget it.
+    # A second split would turn the stretched tail into more cues than there are rows.
+    segs = [_seg(0, 0.0, 40.0, _LONG_RU), _seg(1, 40.0, 44.0, "Дальше.")]
+    plans = [_plan([0], 0.0, 40.0, 0.0, 3.0), _plan([1], 40.0, 44.0, 40.0, 4.0)]
+    rows = _ru_cue_rows(plans, segs, SR)
+    with tempfile.TemporaryDirectory() as td:
+        path = Path(td) / "ru.srt"
+        _write_ru_srt(path, plans, segs, SR)
+        blocks = [b for b in path.read_text(encoding="utf-8").split("\n\n") if b.strip()]
+    assert len(blocks) == len(rows), (len(blocks), len(rows))
 
 
 if __name__ == "__main__":
