@@ -55,6 +55,15 @@ GOLDEN = {
     "Google": "гугл", "GitHub": "гитхаб", "Python": "пайтон", "Linux": "линукс",
     "NVIDIA": "энвидиа", "Intel": "интел", "Unity": "юнити", "Unreal": "анриал",
     "Microsoft": "майкрософт", "Apple": "эппл", "Netflix": "нетфликс", "iPhone": "айфон",
+    # 2026-07-25 dictionary additions — the pronounce_audit series of a 24-video batch. Goldens
+    # here rather than only in the WORDS table because the batch PROVED the fallback ships these
+    # wrong (херос / фасебук / тмукс / шадкн / фабл / эуро), and the round-trip verify cannot
+    # catch a self-consistent wrong expansion.
+    "Heroes": "хироуз", "Heroes 4": "хироуз четыре",
+    "Facebook": "фейсбук", "readme": "ридми", "tmux": "тимакс",
+    "shadcn": "шадсиэн", "Fable": "фейбл", "euro": "евро",
+    # quoted-English function words: "In the other waters" — a closed class, so a list ends it
+    "the": "зэ", "and": "энд", "other": "азер",
     # fillers / composed tokens
     "uh": "э-э", "um": "эм",
     "PS5": "пи-эс пять", "qwen3": "квен три", "F5-TTS": "эф пять-ти-ти-эс",
@@ -89,6 +98,9 @@ FALLBACK_PINNED = {
     "quake": "квейк", "night": "найт", "know": "ноу", "the": "те",
     "DeathLoop": "дитлуп",
     # one pin per otherwise-unexercised rule — a rule with no pin is silent-drift material
+    "agent": "эйджент",      # ^a(?=ge) — the base map gave аджент on 24 hits in one batch
+    "builder": "билдер",     # ^bui — gave буилдер
+    "build": "билд",
     "nation": "нейшн",       # a(?=tion) + tion
     "eight": "ейт",          # eigh
     "wrap": "рап",           # ^wr

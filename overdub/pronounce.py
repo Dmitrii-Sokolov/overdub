@@ -107,6 +107,24 @@ WORDS = {
     "unity": "юнити", "unreal": "анриал", "microsoft": "майкрософт",
     "apple": "эппл", "iphone": "айфон",
     "qwen": "квен",      # (=)
+    # 2026-07-25, from the pronounce_audit series of a 24-video batch (1587 fallback events, 653
+    # distinct tokens). ONLY proper nouns and closed-class function words are here — the rule
+    # fallback still owns the open-class tail, per the WORDS contract above. Each line names what
+    # the fallback said, because that is the evidence the entry exists.
+    "heroes": "хироуз",       # rules: херос — the Heroes of Might and Magic series, 50 hits
+    "facebook": "фейсбук",    # rules: фасебук
+    "readme": "ридми",        # rules: ридм (and ар-и-эй-ди-эм-и when written README)
+    "tmux": "тимакс",         # rules: тмукс
+    "shadcn": "шадсиэн",      # rules: шадкн — the component library, spoken as shad-c-n
+    "fable": "фейбл",         # rules: фабл — the Claude model and the game
+    "euro": "евро",           # rules: эуро
+    # Function words: they reach TTS only when a whole English title/phrase is quoted verbatim
+    # ("executable code actions", "In the other waters") — a closed class, so a fixed list ends
+    # it, unlike the open-class words around them.
+    "the": "зэ",              # rules: те
+    "and": "энд",             # rules: анд
+    "to": "ту",               # rules: то
+    "other": "азер",          # rules: отер
 }
 
 # --- acronyms / letter names (moved from normalize.py; the old plural keys GPUS/APIS
@@ -145,6 +163,12 @@ _RULES: list[tuple[re.Pattern[str], str, str | None]] = [
     (re.compile(p), out, guard) for p, out, guard in [
         # multigraphs / silent starts / no-stray-vowel endings
         ("a(?=tion)", "ей", None),                            # nation -> нейшн, not нашн
+        # Two positional rules from the 2026-07-25 audit. Both are word-INITIAL, which is what
+        # keeps them out of the "needs context" class the module ceiling excludes: the magic-e rule
+        # below already handles the bare stems (age -> ейдж), but only word-finally, so every
+        # derived form fell through to the base map (agent -> аджент, 24 hits; builder -> буилдер).
+        ("^a(?=ge)", "эй", None),                             # agent -> эйджент, agency -> эйдженси
+        ("^bui", "би", None),                                 # builder -> билдер, build -> билд
         ("tion", "шн", None), ("eigh", "ей", None), ("igh", "ай", None), ("tch", "тч", None),
         ("^kn", "н", None), ("^wr", "р", None),
         ("gue$", "г", "V+"), ("que$", "к", "V+"),             # league -> лиг, unique -> уник
