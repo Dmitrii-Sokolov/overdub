@@ -1,6 +1,35 @@
 # CHANGELOG
 
-## 2026-07-25 (last) — the 24-video batch read back: reports say what they mean, triage stops crying wolf, transliteration becomes visible
+## 2026-07-25 — report readability (durations, a flags column, the stage split) + two measurements
+
+Code: `queueview.format_dur` replaces `format_hm` — ONE unit with a decimal ("3.3h", "47.0m",
+"18.4s" / «3.3 ч»), applied to every duration on every surface (`scout_report.secs` delegates to
+it; `clock()` stays a timecode). New `flags` column carries actionable/total per video. The
+per-video digest lists EVERY stage with duration and share instead of a top-3, and
+`batch_totals` gained the batch-level split, printed by the digest, the HTML header and the CLI
+sweep: **synthesize 1.6h 47.6% · transcribe 41.8m 21.3% · download 19.3m 9.8% · verify 16.3m 8.3%
+· mux 15.6m 7.9% · separate 9.5m 4.9% · assemble 21.7s 0.2%**.
+
+**Silero v5_5_ru vs F5 on `8zJlKmgMT44`, identical translation.json** (isolated work_root
+`work-exp/silero-8zJlKmgMT44/`, upstream artifacts hardlinked so only synthesize→mux ran, and the
+shipped F5 run was never touched): synthesize **230.9 s → 28.6 s = 8.1×** (work 230.8 → 26.2), 136
+units both sides, 136 synth calls vs 140 (Silero is deterministic — nothing to reseed). Errors
+essentially unchanged: verify 2 flags (Silero, 0 retries) vs 1 (F5, after 2 retries + 1 repair);
+completeness byte-identical (same text); atempo max 2.39 vs 2.29; 2 units over 1.8 each.
+The cost is one number: **in-span silence 224 s vs 47 s** on the same 1063 s dub — Silero says the
+same text markedly faster, so the slots hold silence. Scale of the lever if it were ever adopted:
+synthesize is 47.6% of a batch, so 3.3h → ~1.9h and RTF 0.451 → ~0.26. NOT adopted — the engine
+choice was made by ear (DECISIONS 2026-07-16) and only ears can reverse it.
+
+**Step 1b verified on the two worst videos of the batch** (`--repair-asr auto --repair-dry-run`,
+nothing written): `iWRmtPdFbGw` — 1 window on exactly the id 9-10 break ("…and you're / not even
+working on the codebase") behind the 0.46 s slot and its ×12.5 atempo; `aVwxzDHniEw` — 5 windows,
+212 → 205 sentences, including the hallucinated tail id 198-200 ("justially done by me", "i'll see
+you in the next one" ×3) that produced ×5.38, re-read as "and then most of it is just code driven
+animation". Every window "WOULD ACCEPT — both readings identical". Not applied: applying deletes
+`translation.json`, so those two videos would need a re-translate + re-synthesize.
+
+## 2026-07-25 — the 24-video batch read back: reports say what they mean, triage stops crying wolf, transliteration becomes visible
 
 Analysis of the overnight route-B batch (24 videos, `queue.txt`, 7.26 h source → 3.27 h pipeline
 work, RTF 0.451, all 24 muxed, zero crashes, zero real translate failures) and the seven fixes it
