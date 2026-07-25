@@ -93,9 +93,23 @@ Open, in order — the first one is the blocker:
    alone needs **1.37×** slowdown, past `atempo`'s comfortable range — hence translation length
    is the primary lever and tempo only the trim. `<break>` was tried and rejected here (DECISIONS
    2026-07-25): it addresses swallowed pauses, which is not what the holes are made of.
-2. **Voice post-processing** — compression/EQ for a brighter, more attractive timbre (INBOX).
-3. **Stress audit** with the CMUdict pass below; English stress wins on disagreement (user call).
-4. Re-time the batch once 1 lands — the old "synthesize dominates" assumption is F5's, not Silero's.
+2. **Phoneme-based transliteration from CMUdict — blocks the stress audit, so do it FIRST of the
+   two.** The letter rules guess from spelling what the dictionary already knows phonetically:
+   `buy → буи` vs `B AY1`, `fields → фиелдс` vs `F IY1 L D Z`, `update → упдейт` vs `AH0 P D EY1 T`,
+   `execute → эксекют` vs `EH1 K S AH0 K Y UW2 T`. An ARPAbet→Cyrillic table is ~39 phonemes against
+   the current ~55 letter rules — smaller AND more accurate. Coverage over the corpus's invented
+   tokens: **79% of types, 77% of occurrences**; the absent tail is brands and neologisms (`mcp`,
+   `anthropic`, `vercel`, `shadcn`, `tmux`), so the letter rules STAY as the fallback for
+   out-of-dictionary tokens rather than being retired. This also closes most of the open
+   "transcription rules for open-class words" residue below, which the ~55-rule ceiling made
+   awkward to fix by adding more rules.
+3. **Voice post-processing** — compression/EQ for a brighter, more attractive timbre (INBOX).
+4. **Stress audit** of the dictionary using `stress_index`/`apply_stress`; English stress wins on
+   disagreement (user call). Gated on item 2: of the top 60 invented tokens only 10 disagree with
+   Silero's own stress, and half of those would mark an already-broken transliteration
+   (`execute → +эксекют`), so accenting before fixing entrenches the defect. Needs an EAR pass —
+   34 of 60 automatic stresses were already correct, where a mark is pure noise in the data.
+5. Re-time the batch once 1 lands — the old "synthesize dominates" assumption is F5's, not Silero's.
 
 ## Batch 2026-07-25 — 24 videos, route B (analysed; SEVEN FIXED same day, three residues open)
 
@@ -491,7 +505,9 @@ ESpeech Apache provenance caveat: weights possibly derived from a CC-BY-NC base)
   leftover silence 1.2% vs 0.8% — its tightness pushes marginally toward the slow-speech end. Lever:
   RELAX the keep-length pressure for fuller RU (less stretch, more compression) — a trade, not free.
   `f5_speed_floor` caps max stretch at the cost of inter-phrase gaps.
-- Silero stress on names/homographs — a `+`-stress dictionary pass? (fallback engine only, low stakes)
+- ~~Silero stress on names/homographs — a `+`-stress dictionary pass?~~ MECHANISM SHIPPED
+  2026-07-25 (marks honoured, verify strips them, CMUdict in-repo). No longer "low stakes, fallback
+  engine only" — Silero is THE engine now. What remains is the DICTIONARY audit, roadmap item 3.
 - ~~Similarity metric/threshold~~ RESOLVED: char-level SequenceMatcher(autojunk=False); unit-level 0.9.
 - ~~RTF end-to-end~~ RESOLVED (2026-07-16): translate is the bottleneck. Gemma adds ~16% there.
 
@@ -538,6 +554,7 @@ checks at the top of this file apply to the next DUBBING batch, not to a scout p
 Stack pins, host findings and setup: STACK.md (findings ledger; API examples now live in the code it
 points to) + SETUP.md. Translation: Gemma-3-12B (Ollama),
 `gemma3:12b`, local in-pipeline default by A/B 2026-07-18 (Qwen3-14B removed); PRIMARY route =
-Sonnet semi-automatic (DECISIONS 2026-07-18, runbook README "Running"). TTS: ESpeech-TTS-1_RL-V2 (F5-TTS,
-.venv-f5tts) — production by ear 2026-07-16; narrator = ESpeech demo reference (rights caveat in
-README). Silero v4/v5 = fallback; Chatterbox rejected day-1.
+Sonnet semi-automatic (DECISIONS 2026-07-18, runbook README "Running"). TTS: **Silero v5_5_ru
+(`eugene`) since 2026-07-25 — THE engine, not a fallback** (DECISIONS; reverses the 2026-07-16
+verdict). ESpeech-TTS-1_RL-V2 (F5-TTS, .venv-f5tts) still runs and is what pre-switch artifacts
+used; narrator = ESpeech demo reference (rights caveat in README). Chatterbox rejected day-1.
