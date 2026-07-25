@@ -147,6 +147,28 @@ def _write_srt(path, rows, *, split: bool = True) -> None:
     os.replace(tmp, path)
 
 
+def _tempo_for(nat: int, slot: int | None, cfg) -> tuple[float, float, float]:
+    """(req, factor, stretch) for one unit, in SAMPLES. Pure — the tempo decision, testable.
+
+    `req` is the COMPRESSION demand and stays floored at 1.0 even when the unit under-fills:
+    every triage surface already reads it (and `combined`), and underfill has its own metric in
+    `fill_median`. `factor` is what ffmpeg is actually given — above 1.0 it compresses, below it
+    stretches. `stretch` is 1.0 unless the unit was slowed.
+
+    Stretching is bounded by cfg.atempo_floor rather than allowed to reach the slot at any cost:
+    the median hole needs ~1.37x, which is well past what stays natural, so this is the TRIM
+    beside a slot-sized translation, not the fix. cfg.atempo_floor = 1.0 restores the
+    speed-up-only behaviour that shipped before 2026-07-25."""
+    if slot is not None and nat > slot:
+        req = nat / slot                                   # TRUE required factor — uncapped
+        return req, min(req, 100.0), 1.0                   # only the ffmpeg arg is clamped
+    want = slot * cfg.slot_fill_target if slot is not None else None
+    if want and nat and nat < want:
+        stretch = max(nat / want, cfg.atempo_floor)
+        return 1.0, stretch, stretch
+    return 1.0, 1.0, 1.0
+
+
 def _write_ru_srt(path, plans, segs, sr) -> None:
     """ru.srt end to end: rows from ACTUAL placement, split over the spoken span, written
     without a second split.
@@ -231,11 +253,18 @@ class AssembleStage:
             # synth: without it a cutoff change would leave the old dub in place under a
             # matching synth_key. Absent from a legacy stamp reads as None, which equals the
             # effective cutoff on every 24 kHz (F5) run — those do not churn.
+            # atempo_floor / slot_fill_target join for exactly the reason lowpass_hz did: they
+            # change the finished track while leaving synth_key untouched, so without them here
+            # a floor change would leave the OLD dub in place and read as "applied". A legacy
+            # stamp has neither key — absent reads as None, which differs from any float, so
+            # such a workdir re-assembles once. That is correct: it was built speed-up-only.
             if (stamp.get("synth_key") != man.get("synth_key")
                     or stamp.get("units_key") != man.get("units_key")
+                    or stamp.get("atempo_floor") != ctx.cfg.atempo_floor
+                    or stamp.get("slot_fill_target") != ctx.cfg.slot_fill_target
                     or stamp.get("lowpass_hz") != effective_lowpass(
                         ctx.cfg.dub_lowpass_hz, man.get("sample_rate"))):
-                print("       [info] assemble: manifest synth/units/lowpass key changed — "
+                print("       [info] assemble: manifest synth/units/fit/lowpass key changed — "
                       "re-assembling", file=sys.stderr)
                 return False
         except Exception:
@@ -271,16 +300,13 @@ class AssembleStage:
             slot = (round(units[i + 1]["start"] * sr) - offset) if i < n - 1 else None
             if slot is not None and slot <= 0:             # non-monotone: contract violation
                 slot, aflag = None, "bad_slot"
-            if slot is not None and nat > slot:
-                req = nat / slot                           # TRUE required factor — logged uncapped
-                factor = min(req, 100.0)                   # only the ffmpeg arg is clamped
-                if req > 100.0:
-                    aflag = aflag or "extreme_tempo"
-            else:
-                req = factor = 1.0
+            req, factor, stretch = _tempo_for(nat, slot, cfg)
+            if req > 100.0:
+                aflag = aflag or "extreme_tempo"
             native_rel = (u.get("speed") or base_speed) / base_speed   # >1 = native compression
             plans.append({"u": u, "lead": u["ids"][0], "offset": offset, "slot": slot,
                           "factor": factor, "req": req, "nat": nat, "aflag": aflag,
+                          "stretch": stretch,
                           "combined": max(1.0, native_rel) * req})
 
         if not plans:
@@ -291,8 +317,9 @@ class AssembleStage:
         rep = report.load(ctx.work.report)                 # preserve any verify fields
         tmp_dir = ctx.work.segments_dir / "_atempo"
         tmp_dir.mkdir(exist_ok=True)
-        n_sped = n_over = 0
+        n_sped = n_over = n_stretched = 0
         max_f = 1.0
+        min_f = 1.0
         in_span_silence = 0.0
         slot_silence = 0.0
         for p in plans:
@@ -303,7 +330,7 @@ class AssembleStage:
             try:
                 if not wav.exists():
                     raise FileNotFoundError(wav)
-                if factor > 1.0:
+                if factor != 1.0:                          # >1 compresses, <1 stretches
                     dst = tmp_dir / f"{lead:05d}.wav"
                     subprocess.run(
                         ["ffmpeg", "-y", "-loglevel", "error", "-i", str(wav),
@@ -312,8 +339,12 @@ class AssembleStage:
                         check=True,
                     )
                     clip, _ = sf.read(str(dst), dtype="int16")
-                    n_sped += 1
-                    max_f = max(max_f, req)
+                    if factor > 1.0:
+                        n_sped += 1
+                        max_f = max(max_f, req)
+                    else:
+                        n_stretched += 1
+                        min_f = min(min_f, factor)
                 else:
                     clip, _ = sf.read(str(wav), dtype="int16")
                 if clip.ndim > 1:
@@ -351,6 +382,7 @@ class AssembleStage:
                     combined_factor=round(p["combined"], 4),
                     slot_sec=(round(slot / sr, 3) if slot is not None else None),
                     raw_sec=round(p["nat"] / sr, 3), placed_sec=round(placed / sr, 3),
+                    stretch_factor=round(p["stretch"], 4),   # <1 = slowed to fill; 1.0 = untouched
                     assemble_flag=aflag,
                 )
 
@@ -372,6 +404,10 @@ class AssembleStage:
             "synth_key": doc.get("synth_key"), "units_key": doc.get("units_key"),
             "n_sped": n_sped, "max_speed_factor": round(max_f, 4),
             "n_over_1_8_combined": n_over,
+            "n_stretched": n_stretched,
+            "min_stretch_factor": round(min_f, 4),
+            "atempo_floor": cfg.atempo_floor,
+            "slot_fill_target": cfg.slot_fill_target,
             "in_span_silence_sec": round(in_span_silence, 1),
             # Fill is raw/slot BEFORE atempo and is deliberately NOT floored at 1.0 the way
             # speed_factor is: that floor is why the whole speed block reads "clean" (median
@@ -392,6 +428,7 @@ class AssembleStage:
         if lowpass:
             print(f"       lowpass {lowpass} Hz applied to dub_ru.wav")
         fill_txt = f"{fill_median:.2f}" if fill_median is not None else "n/a"
-        print(f"       dub_ru.wav {total / sr:.1f}s ({n_sped} sped, max ×{max_f:.2f}, "
-              f"{n_over} over 1.8× combined, fill med {fill_txt}, "
+        stretch_txt = f", {n_stretched} stretched, min ×{min_f:.2f}" if n_stretched else ""
+        print(f"       dub_ru.wav {total / sr:.1f}s ({n_sped} sped, max ×{max_f:.2f}"
+              f"{stretch_txt}, {n_over} over 1.8× combined, fill med {fill_txt}, "
               f"slot silence {slot_silence:.0f}s, in-span silence {in_span_silence:.0f}s)")

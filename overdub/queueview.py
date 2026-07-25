@@ -441,8 +441,11 @@ def render_run_report(run, offenders, summary=None):
     # Reads in BOTH directions on purpose: the same corpus holds videos at 1.02-1.15, where the
     # slot is too SHORT and atempo is doing the work.
     asm = run.get("assemble", {}) or {}
+    stretched = asm.get("n_stretched")
     fill_line = (f"- fill: med {asm.get('fill_median')} raw/slot"
                  f" · slot silence {format_dur(asm.get('slot_silence_sec') or 0)}"
+                 + (f" · stretched {stretched} (min ×{asm.get('min_stretch_factor')})"
+                    if stretched else "")
                  if asm.get("fill_median") is not None else None)
 
     lines = [head, timings_line]

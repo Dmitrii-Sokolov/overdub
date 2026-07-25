@@ -606,6 +606,11 @@ def _build_run_report(work, cfg):
             # dub by construction.
             "fill_median": ar.get("fill_median"),
             "slot_silence_sec": ar.get("slot_silence_sec"),
+            # fill_median describes the TRANSLATION's size (raw/slot, before any tempo change);
+            # these describe what assembly did about it. Keeping them apart is what lets a run
+            # say "the text was short AND the stretch covered N of them".
+            "n_stretched": ar.get("n_stretched"),
+            "min_stretch_factor": ar.get("min_stretch_factor"),
         },
         "mux": {
             "dub_mix": mr.get("dub_mix"),

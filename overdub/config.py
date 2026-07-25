@@ -199,6 +199,22 @@ class Config:
                                      # constants, so a grouping A/B is a toml away. Grouping is
                                      # WARN-only on change, like group_gap_max — regrouping
                                      # needs --force (see synthesize.done).
+    atempo_floor: float = 0.85       # SLOWEST atempo applied to an under-filled unit (1.0 = off,
+                                     # i.e. speed-up only, which is what shipped before
+                                     # 2026-07-25). Silero has no supports_target, so nothing
+                                     # stretches speech to its slot and the hole is left as
+                                     # digital silence: measured fill median 0.71 on
+                                     # 8zJlKmgMT44, 283 s of a 1058 s dub. Stretching cannot
+                                     # close that alone (the median hole needs ~1.37×) — it is
+                                     # the TRIM beside a slot-sized translation, which is why
+                                     # the floor is conservative rather than at F5's 0.75.
+                                     # Applies AFTER verify like every other atempo, so a
+                                     # stretched unit is still verified on raw audio.
+    slot_fill_target: float = 1.0    # fraction of the slot the dub aims to fill: what the
+                                     # translator is asked to write toward AND what atempo
+                                     # stretches toward. <1.0 deliberately leaves air between
+                                     # units; 1.0 fills the slot and lets the inter-unit gap be
+                                     # the only pause. Ear knob — the arithmetic is indifferent.
     dub_mix: str = "bed"             # "replace" | "duck" | "bed" (no-vocals stem at original
                                      # level under the dub — production default by ear)
     dub_lowpass_hz: int = 11000      # low-pass the FINISHED dub track (0 = off; ear check
