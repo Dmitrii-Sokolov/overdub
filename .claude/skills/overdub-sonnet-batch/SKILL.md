@@ -222,6 +222,26 @@ which is exactly why `build_translation.py` is not optional. The digest and the 
 `summary.md` directly and sanitize it on read (heading markers stripped, runaway text truncated,
 empty treated as absent), so a malformed summary can never break either surface.
 
+**HOW the sub-agent writes it — say this in the prompt, do not leave it to the agent
+(2026-07-25).** The harness blocks the Write tool for a sub-agent on a path matching
+`*summary*.md` ("Subagents should return findings as text, not write report files"). The rule is
+right in general and wrong here — `work/<id>/summary.md` is a pipeline INPUT that two report
+surfaces read, not an agent's account of its own work — but it is HARNESS-level: it is not in
+`~/.claude/hooks`, not in `settings.json`, and nothing local turns it off. Measured on 2026-07-25,
+with the mechanism unstated, two summarizers on the same batch diverged: one stopped and handed
+back the text (correct), the other wrote to a temp file and `mv`'d it into place (an end-run).
+So state the mechanism, and state the fallback:
+
+- write with PowerShell, never the Write tool — `[System.IO.File]::WriteAllText(path, $text,
+  (New-Object System.Text.UTF8Encoding($false)))`, i.e. the same shape
+  `.claude/workflows/scout-summarize.js` already uses on route C;
+- if that is refused or unavailable for ANY reason, **STOP and return the prose as your final
+  text** — the caller writes it. Do NOT hunt for a third route to disk.
+
+The caller-writes path is fully compliant and costs ~8.5 s per 1000 chars of orchestrator
+generation (PLAN "S2 artifact route"), i.e. ~20 s per video — worth paying when it is needed,
+worth avoiding when a documented mechanism works.
+
 Sub-agent prompt skeleton (fill `<id>`):
 
 > You are a triage summarizer for the overdub pipeline. Read

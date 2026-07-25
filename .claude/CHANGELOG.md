@@ -1,5 +1,52 @@
 # CHANGELOG
 
+## 2026-07-25 (last) — the two worst videos re-run through repair → re-translate → re-synthesize
+
+Applied `--repair-asr auto` to `iWRmtPdFbGw` (1 window, ids 9-10, 61 sentences unchanged) and
+`aVwxzDHniEw` (5 windows, 212 → 205 sentences, 2 with collateral edits), then re-translated both
+with Sonnet sub-agents and resumed. Baseline artifacts were snapshotted first; `_pre-repair-*.json`
+backups are in each workdir.
+
+| | `iWRmtPdFbGw` | `aVwxzDHniEw` |
+|---|---|---|
+| atempo max | **12.52 → 2.04** | **5.38 → 2.40** |
+| units ≥1.8 | 2 → 1 | 3 → 1 |
+| units sped | 24 → 17 | 17 → 11 |
+| flags act/total | 0/14 → 1/14 | 3/54 → 3/46 |
+| advisory completeness | 1 → 1 | 36 → 28 |
+| verify flags | 0 → 0 | 0 → 0 |
+| translate failures | 0 → 0 | 0 → 0 |
+
+`asr.floor_ratio` / `floor_longest_run` are byte-identical either side (0.042/36 and 0.059/82) —
+`words.json` is never rewritten, so the collapse stays on the record exactly as the rule requires.
+That is the integrity check on the whole operation, not a nice-to-have.
+
+**The residue names the NEXT defect class, and it is ours, not whisper's.** Both remaining ≥1.8
+units are sentence-SPLIT artifacts, not invented timings: `aVwxzDHniEw#67` is "is the derivative of
+a Bezier curve?" in a 1.06 s slot — the tail of "So, what" / "is the derivative…", i.e. one sentence
+cut in two by the rebuild (the 166-`truncated` class already in INBOX), and `rate_implausible` does
+not fire on it (36 ch/s, under the 40 bound). `iWRmtPdFbGw#11` is the honest case: a 5.64 s slot
+and Russian that simply runs 10.5 s. Repair cannot help either one.
+
+**Cost, stated honestly.** Stage walls grew (synthesize 121 → 215 s and 285 → 333 s) but the WORK
+did not: 121.1 → 124.7 s and 284.8 → 305.9 s. The difference is the F5 worker start — 90.3 s and
+26.6 s of `overhead_s.synthesize` — which a 24-video batch amortises and a single-video re-run pays
+in full. RU text actually shrank (−3.3% / −4.7% chars), so the +7% on the larger video is unit
+regrouping (173 → 170), not longer text.
+
+Also: `--repair-asr auto` CANNOT see a clause repeated INSIDE one sentence (`8zJlKmgMT44#44`,
+`#105` — the audible repeats at 3:22 and 9:53). `dup_adjacent` compares NEIGHBOURS and
+`rate_implausible` needs a timing anomaly; #44 runs at a normal 18 ch/s. Only the translator's
+reading pass caught them (`src=garbled`, with notes) — and `src` seeds nothing today. Feeding
+`src != ok` into `repair.seed_ids_from_detectors` is the open item that follows from this.
+
+Skills: the summarizer prompt now states HOW to write `summary.md` (PowerShell, not the Write tool)
+and forbids a temp-file+move end-run, in both route B and route C. The harness blocks a sub-agent's
+Write on `*summary*.md`, it is not configurable locally (not in `~/.claude/hooks`, not in
+`settings.json`), and on this run two summarizers diverged: one returned the text (correct), the
+other moved a temp file into place. `work/<id>/summary.md` is a pipeline INPUT, not an agent's
+report about itself — but that argument has to live in the prompt, since it cannot live in config.
+
 ## 2026-07-25 — report readability (durations, a flags column, the stage split) + two measurements
 
 Code: `queueview.format_dur` replaces `format_hm` — ONE unit with a decimal ("3.3h", "47.0m",
