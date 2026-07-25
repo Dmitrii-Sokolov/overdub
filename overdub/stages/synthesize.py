@@ -50,22 +50,28 @@ _GROUP_MAX_SPAN = 12.0     # unit source-span cap (s): ~10 s ref + gen stays ins
 _GROUP_MAX_CHARS = 300     # joined text_tts cap: internal-chunking insurance
 
 
-def build_units(segs: list[dict], gap_max: float) -> list[dict]:
+def build_units(segs: list[dict], gap_max: float, span_max: float = _GROUP_MAX_SPAN,
+                chars_max: int = _GROUP_MAX_CHARS) -> list[dict]:
     """Group adjacent sentences into render units. Pure, deterministic, unit-tested.
-    Returns [{ids, start, end, text}] covering every sentence id exactly once, in order."""
+    Returns [{ids, start, end, text}] covering every sentence id exactly once, in order.
+
+    span_max/chars_max default to the module constants so the pure-function tests keep
+    pinning the shipped caps; run() passes cfg.group_span_max / cfg.group_chars_max."""
     units: list[dict] = []
     for s in segs:
         text = (s.get("text_tts") or "").strip()
         u = units[-1] if units else None
         if (gap_max > 0 and text and u is not None and u["text"]
                 and s["start"] - u["end"] <= gap_max
-                and s["end"] - u["start"] <= _GROUP_MAX_SPAN
-                and len(u["text"]) + 1 + len(text) <= _GROUP_MAX_CHARS):
+                and s["end"] - u["start"] <= span_max
+                and len(u["text"]) + 1 + len(text) <= chars_max):
             u["ids"].append(s["id"])
+            u["gaps"].append(round(max(0.0, s["start"] - u["end"]), 3))   # swallowed pause
             u["end"] = s["end"]
             u["text"] = f"{u['text']} {text}"
         else:
-            units.append({"ids": [s["id"]], "start": s["start"], "end": s["end"], "text": text})
+            units.append({"ids": [s["id"]], "start": s["start"], "end": s["end"], "text": text,
+                          "gaps": []})
     return units
 
 
@@ -146,10 +152,18 @@ class SynthesizeStage:
                 print(f"       [warn] synthesize: artifact exists but synth key changed\n"
                       f"              ({prior_key} → {key}) — rerun with --force to resynthesize",
                       file=sys.stderr)
-            elif doc.get("group_gap_max", 0.0) != ctx.cfg.group_gap_max:   # legacy docs = per-sentence
-                print(f"       [warn] synthesize: group_gap_max changed "
-                      f"({doc.get('group_gap_max')} → {ctx.cfg.group_gap_max}) — "
-                      "rerun with --force to regroup", file=sys.stderr)
+            else:
+                # legacy docs (no grouping fields) read as the pre-knob shipped caps, so an
+                # old manifest warns only if the CURRENT config actually differs from them
+                prior_group = (doc.get("group_gap_max", 0.0),
+                               doc.get("group_span_max", _GROUP_MAX_SPAN),
+                               doc.get("group_chars_max", _GROUP_MAX_CHARS))
+                now_group = (ctx.cfg.group_gap_max, ctx.cfg.group_span_max,
+                             ctx.cfg.group_chars_max)
+                if prior_group != now_group:
+                    print(f"       [warn] synthesize: grouping changed "
+                          f"(gap/span/chars {prior_group} → {now_group}) — "
+                          "rerun with --force to regroup", file=sys.stderr)
         except Exception:
             pass
         return True
@@ -164,7 +178,7 @@ class SynthesizeStage:
 
         key = synth_key(cfg)
         sr = engine_sample_rate(cfg)
-        units = build_units(segs, cfg.group_gap_max)
+        units = build_units(segs, cfg.group_gap_max, cfg.group_span_max, cfg.group_chars_max)
         if sorted(i for u in units for i in u["ids"]) != list(range(len(segs))):
             raise RuntimeError("units do not cover translation ids (synthesize never-drop)")
 
@@ -270,6 +284,8 @@ class SynthesizeStage:
             else:
                 fresh_since_flush += 1
                 kw = {"target_sec": target, "max_sec": slot} if supports_target else {}
+                if getattr(engine, "supports_breaks", False):
+                    kw["gaps"] = u.get("gaps") or []       # restore the pauses grouping ate
                 try:
                     tmp = wav.with_suffix(".wav.tmp")
                     speed_used = engine.synthesize(u["text"], tmp, seed=cfg.tts_seed, **kw)
@@ -385,7 +401,8 @@ class SynthesizeStage:
             "sample_rate": sr, "engine": cfg.tts_engine,
             "voice": cfg.f5_ref_audio.stem if cfg.tts_engine == "f5" else cfg.tts_voice,
             "synth_key": key, "units_key": uk, "complete": complete,
-            "group_gap_max": cfg.group_gap_max, "base_speed": cfg.f5_speed,
+            "group_gap_max": cfg.group_gap_max, "group_span_max": cfg.group_span_max,
+            "group_chars_max": cfg.group_chars_max, "base_speed": cfg.f5_speed,
             "n_units": len(out), "n_flagged": n_flag, "n_retried": n_retried, "units": out,
         }
         tmp = ctx.work.seg_manifest.with_suffix(".json.tmp")
