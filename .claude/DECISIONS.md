@@ -1,5 +1,48 @@
 # DECISIONS
 
+## 2026-07-25 — what this repo produces is a TOOL; an individual video is never the deliverable
+
+User framing, recorded because it is a work-selection criterion and not a mood: the repository is
+building a pipeline, so **fixing a single video has no value in itself.** A defect in a shipped MKV
+is an input signal about the tool — the correct response is to find the CLASS, fix the pipeline, and
+let the next batch come out right. The video that exposed it stays broken, and that is not a debt.
+
+**What this rules out**, concretely: re-running, re-repairing, re-translating or re-synthesizing a
+finished video in order to improve THAT video; hand-patching a bad unit; "while I'm here" fixes to
+artifacts in `work/`. What it does NOT rule out is the same operation performed for a MEASUREMENT
+that generalizes. The distinction is not the action, it is what comes back. The 2026-07-25 repair of
+the two worst videos was correct under this rule and would have been wrong under a slightly
+different one: it returned atempo max 12.52 → 2.04 and 5.38 → 2.40, i.e. the evidence that Step 1b
+belongs in the runbook — the two improved MKVs are a by-product nobody needed. Had the same work
+been done because those two videos were the ones being watched, it would have been waste.
+
+**Consequences that follow directly and are already in PLAN.** (1) Intermediate artifacts are
+consumables, which is the argument for deleting `work/<id>/` binaries after mux (18.5 of 18.7 GB) —
+re-synthesis is cheap next to disk bounding the queue size. (2) Anything that persists a
+GENERALIZABLE finding outranks the videos: the golden fixture, the six `_pre-repair-*.json` pairs,
+the `work-exp/` baselines. `work-exp/` has already lost three baseline sets to a cleanup while the
+videos survived — exactly the wrong direction, and the reason the disk decision needs making before
+the next cleanup makes it. (3) An ear check is a measurement, so listening is never the thing this
+rule prohibits.
+
+**Where the tension will show up.** A batch is also how the tool is judged, so "the batch shipped 24
+watchable videos" reads like success and can quietly become the goal. The check is to ask what the
+run RETURNED: a number, a flag distribution, a verdict, a fixture. A run that returns only artifacts
+was a production run, and this repo does not do production runs yet.
+
+## 2026-07-25 (later) — the Silero switch is ear-confirmed on finished videos, not just on clips
+
+User verdict after listening to finished MKVs produced on the new engine: **quality is sufficient.**
+This is what the switch was still owed. The engine decision itself was made on speed and hardware
+cost with the quality difference accepted as a deliberate trade (entry below), and every ear check
+supporting it until now was on bake-off clips and A/B arms — not on a shipped video end to end. The
+trade is now verified where it is actually consumed.
+
+What this does NOT close: the slot holes. Silero fills the median slot to 0.73 and leaves 267 s of
+silence on `8zJlKmgMT44` — a TIMING defect, audible as pacing rather than as voice quality, and it
+stays the open blocker (PLAN item 1). "The voice is good enough" and "the dub has holes in it" are
+compatible statements about the same file; do not let this verdict be quoted against that item.
+
 ## 2026-07-25 — Silero becomes the ONLY engine; four Silero-shaped fixes land, one is rejected by ear
 
 User decision: F5/ESpeech is replaced by Silero v5_5_ru outright, on speed and hardware cost, with

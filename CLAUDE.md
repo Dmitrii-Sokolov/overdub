@@ -7,6 +7,18 @@ Current stage: research / proof of concept. The pipeline must run turn-key
 (URL in → final MKV out) with acceptable speed and quality; occasional broken
 segments are tolerated, silent failures are not.
 
+**The deliverable is the TOOL, never a particular video.** Every MKV in `work/`
+and `out/` is a test fixture that happens to be watchable. So a defect in a
+shipped video is an input signal about the pipeline, not a repair ticket:
+fix the CLASS and let the next batch come out right. Do not re-run, re-repair,
+re-translate or re-synthesize an individual video to make that video better —
+the only thing that justifies touching a finished one is a MEASUREMENT that
+generalizes (a number, an ear verdict, a fixture), and then the artifact is a
+by-product, not the point. Same rule reversed: intermediate artifacts are
+consumables, so anything that persists a generalizable finding (the golden
+fixture, `_pre-repair-*.json` pairs, `work-exp/` baselines) outranks the videos
+themselves. Rationale: DECISIONS 2026-07-25.
+
 ## Host environment
 
 - Windows 11, PowerShell-first tooling.

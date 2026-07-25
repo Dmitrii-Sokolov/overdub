@@ -110,7 +110,27 @@ animation". Every window "WOULD ACCEPT — both readings identical". Not applied
 
 Analysis of the overnight route-B batch (24 videos, `queue.txt`, 7.26 h source → 3.27 h pipeline
 work, RTF 0.451, all 24 muxed, zero crashes, zero real translate failures) and the seven fixes it
-earned. Findings are recorded in PLAN under "Batch 2026-07-25"; what changed:
+earned.
+
+**The evidence, moved here from PLAN 2026-07-25** — it lived in the roadmap while the fixes were
+being written, and a plan is not where a measurement retires. Stage shares of the summed wall:
+synthesize 47.6% · transcribe 21.3% · download 9.8% · verify 8.3% · mux 7.9% · separate 4.9%
+(F5-era — see PLAN "Numbers to re-measure"). Per-video RTF band 0.38-0.50; the one outlier
+(`Tu2cCEMwvHI` 0.78) is a 631 s download, network not pipeline. Compression is mild almost
+everywhere: 78.1% of 4321 units sit at cf ≤ 1.05, only 60 above 1.4 — which is what makes a hard
+bar at the top cheap. The batch ran ~21:53 → 03:07 (~5.2 h) against 3 h 16 m of stage walls; the
+gap is the Sonnet translate wave, which no stage timer covers. Detector counts behind the triage
+fixes: `english_echo` 28 fires / 28 wrong, `rate_implausible` 54, `dup_adjacent` 35, `neg_loss` 19,
+`n_src` 388 anomalies (9.0% of 4321 sentences: 166 `truncated`, 143 `garbled`, 60 `dup_neighbour`).
+Dub-side-only evidence (a `verify_flag`, an `assemble_flag`, or cf ≥ 1.8) marks 9 of 24 — the
+measured alternative that the 23/24 → 16/24 demotion was aimed at. Transliteration before the fix:
+1587 fallback readings + 466 letter-by-letter over 653 distinct tokens, top 40 covering ~700
+occurrences; `of` ×23, `to` ×13, `the` ×11, `for` ×9 went through the transliterator at all, i.e.
+whole English fragments reached TTS. `floor_ratio` batch max 0.070 against a 0.085 trigger — the
+threshold fired on nothing while `aVwxzDHniEw` (`floor_longest_run` 82) and `8zJlKmgMT44` (45) both
+had visible collapses, which is why the chain, not the ratio, became the hint.
+
+What changed:
 
 **Reports name their numbers.** `queueview.batch_totals` gained `wall_hm` and
 `queueview.format_hm(sec, ru=)`; all three surfaces that printed `wall 11778.0s` now print
