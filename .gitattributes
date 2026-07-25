@@ -9,3 +9,9 @@
 # restores CRLF on every checkout and the fix survives only in one working copy. The global
 # normalize-postwrite hook already skips this directory; this is the other half.
 .claude/workflows/*.js text eol=lf
+
+# CMUdict ships with LF and is 130k+ lines. core.autocrlf would rewrite every one of them on the
+# next touch — a whole-file diff and ~1 MB of growth for nothing. Python reads it with universal
+# newlines either way, so the endings carry no meaning here.
+# `-text` (not `binary`): normalization off, but diffs stay readable when an entry is corrected.
+data/cmudict.dict -text
