@@ -16,8 +16,10 @@ do not skip the helper, do not let a sub-agent hand-write `text_tts`.
 ## Preconditions (check, fail loud, do not auto-install)
 
 - `.venv-asr` exists; `ffmpeg` on PATH; `yt-dlp` in `.venv-asr` (venv-first resolution, PATH
-  fallback, missing → clear error). (`.venv-f5tts` + `.venv-demucs` are needed
-  only from synthesize onward — step 3, not step 1/2.)
+  fallback, missing → clear error). Silero (the engine since 2026-07-25) runs from `.venv-asr`
+  itself — no separate TTS venv. `.venv-demucs` is needed from synthesize onward (step 3, not
+  step 1/2) for the default `dub_mix = "bed"`. `.venv-f5tts` matters ONLY if `tts_engine = "f5"`
+  is set explicitly in `overdub.toml`.
 - A queue: `queue.txt` (one URL per line, `#` comments and blanks skipped) **or** a single URL.
   A PLAYLIST url is neither — expand and diff it in step 1, and never read the `# playlist:`
   header as proof that the queue still matches it.
@@ -277,19 +279,39 @@ path: with Ollama up it is silently translated by Gemma (a silent route substitu
 batch still reports ok), without Ollama it fails with a misleading "Ollama not reachable —
 start the daemon" (the real fix is step 2 for that video, not starting Ollama).
 
-Also preflight the synthesis prerequisites now, before an overnight run — exact paths, not
-"the folder exists" (defaults from `overdub/config.py`; check `overdub.toml` for `f5_*` /
-`demucs_python` overrides). The ref clip is deliberately NOT in the repo (fetched at setup,
-SETUP.md) — a missing file here fails the first synthesize hours into the night:
+Also preflight the synthesis prerequisites now, before an overnight run — the point is that a
+missing piece fails the first synthesize HOURS into the night, so check it while a human is
+awake. Defaults come from `overdub/config.py`; read `overdub.toml` for `tts_engine`, `tts_voice`,
+`silero_model` and `demucs_python` overrides before assuming which branch applies.
+
+**Silero (the default engine).** There is no asset to fetch — the release is pulled through
+`torch.hub` on first use and cached under `~/.cache/torch/hub`. That is exactly the failure worth
+pre-empting: a cold cache plus no network fails at the first unit, at night. Warm it and prove
+the voice loads in one shot:
 
 ```powershell
-@('.venv-f5tts\Scripts\python.exe', '.venv-demucs\Scripts\python.exe',
-  'models\espeech-rlv2\espeech_tts_rlv2.pt', 'models\espeech-rlv2\vocab.txt',
-  'models\refs\ref_espeech_demo.wav', 'models\refs\ref_espeech_demo.txt') |
-  Where-Object { -not (Test-Path $_) }   # must print nothing
+.venv-asr\Scripts\python.exe -X utf8 -c "from pathlib import Path; from overdub.config import Config; from overdub.tts import build_engine, voice_rate; cfg=Config.load(Path('overdub.toml')); e=build_engine(cfg); print('tts ok:', cfg.tts_engine, cfg.tts_voice, cfg.silero_model, '| rate', voice_rate(cfg))"
+.venv-demucs\Scripts\python.exe -c "import demucs; print('demucs ok')"    # for dub_mix = 'bed'
 ```
 
-(`.venv-demucs` is needed for the default `dub_mix = "bed"`.)
+Go through `build_engine` rather than calling `torch.hub` by hand: it is the path synthesize
+actually takes, so it loads whatever `overdub.toml` selects (including `trust_repo=True`, without
+which hub blocks on an interactive prompt) and it fails on the same error the night run would.
+
+Read the printed line, do not just check that it printed. `rate` must NOT be `None`: the slot
+arithmetic is keyed on `tts_voice` and disables itself on a voice it has not measured, so a typo
+there costs the fit silently rather than loudly. The shipped voice is `eugene` — the only one
+whose rate is well measured; aidar, baya, kseniya and xenia carry one-video figures.
+
+**F5, only if `tts_engine = "f5"` is set explicitly.** The ref clip is deliberately not in the
+repo (fetched at setup, SETUP.md):
+
+```powershell
+@('.venv-f5tts\Scripts\python.exe', 'models\espeech-rlv2\espeech_tts_rlv2.pt',
+  'models\espeech-rlv2\vocab.txt', 'models\refs\ref_espeech_demo.wav',
+  'models\refs\ref_espeech_demo.txt') |
+  Where-Object { -not (Test-Path $_) }   # must print nothing
+```
 
 Then the exact command from the local route (no `--only`). `TranslateStage.done()` is
 `translation.json exists`, so download/transcribe/translate fast-skip; synthesize → verify →
