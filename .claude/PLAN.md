@@ -72,12 +72,19 @@ it by 41 s, and the speed block reported median 1.0 / p95 1.0 on that same run �
 being measured and thrown away. The F5 side of the old comparison (0.90 / 124 s) is still an
 old-grouping number; no F5 run exists at 1.2/20/600 (see "Numbers to re-measure").
 
+**THE STRETCH BRANCH SHIPPED 2026-07-25 and it demoted the rest of this item.** `atempo_floor`
+= 0.75 (ear verdict: degradation starts at 0.65 — DECISIONS) cuts slot silence 283 → 84 s on
+`8zJlKmgMT44`, a 70% reduction, entirely in assembly: no prompt change, no re-translation, no
+re-synthesis, and the dub's duration is unchanged at every floor so picture sync never moves.
+**(a) is therefore no longer the blocker** — it is the polish that removes the 84 s residue and
+the audible stretch on the 42-of-69 units pinned at the floor. Do it deliberately, not urgently;
+the risks below are real and there is no longer a hole forcing the pace.
+
 Remaining, and each one now has a code-level obstacle found by reading rather than assumed:
    - **(a) Size the translation to the slot, both directions.** Target chars = slot ÷ the voice's
-     rate; `atempo` trims the remainder. Four obstacles, all confirmed in code: (i) **`atempo` <1
-     does not exist** — `assemble` computes a factor only when `nat > slot` and shells to ffmpeg
-     only `if factor > 1.0`, so the stretch branch must be BUILT, with a floor (mirror `f5.plan_speed`'s
-     0.75) or the narrator drawls; (ii) **the `runaway` gate fights the target** — `_is_bad` caps
+     rate (`tts.target_chars`, shipped); `atempo` trims the remainder. Obstacles, all confirmed in
+     code: (i) ~~`atempo` <1 does not exist~~ **BUILT** (`assemble._tempo_for`); (ii) **the
+     `runaway` gate fights the target** — `_is_bad` caps
      `text_ru` at `translate_max_len_ratio=3.0 × len(src_en)`, so for any source slower than
      ~6.3 en ch/s the CORRECT length is flagged, costing up to 4 reseeds and in the limit shipping
      `src_en`, i.e. English into the dub; re-anchor it on the target, not on the source length;

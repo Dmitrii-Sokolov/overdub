@@ -199,15 +199,19 @@ class Config:
                                      # constants, so a grouping A/B is a toml away. Grouping is
                                      # WARN-only on change, like group_gap_max — regrouping
                                      # needs --force (see synthesize.done).
-    atempo_floor: float = 0.85       # SLOWEST atempo applied to an under-filled unit (1.0 = off,
+    atempo_floor: float = 0.75       # SLOWEST atempo applied to an under-filled unit (1.0 = off,
                                      # i.e. speed-up only, which is what shipped before
                                      # 2026-07-25). Silero has no supports_target, so nothing
                                      # stretches speech to its slot and the hole is left as
                                      # digital silence: measured fill median 0.71 on
-                                     # 8zJlKmgMT44, 283 s of a 1058 s dub. Stretching cannot
-                                     # close that alone (the median hole needs ~1.37×) — it is
-                                     # the TRIM beside a slot-sized translation, which is why
-                                     # the floor is conservative rather than at F5's 0.75.
+                                     # 8zJlKmgMT44, 283 s of a 1058 s dub.
+                                     # 0.75 is an EAR verdict on a tempo ladder (one phrase at
+                                     # 1.0/0.8/0.65/0.5 back to back, three units, 2026-07-25):
+                                     # degradation starts at 0.65, so the default sits half a
+                                     # step above it rather than on the edge — other voices and
+                                     # material will eat some of that margin. Effect measured on
+                                     # 8zJlKmgMT44: slot silence 283→84 s (−70%), and 42 of 69
+                                     # units are pinned here (56 would be at 0.85, 29 at 0.70).
                                      # Applies AFTER verify like every other atempo, so a
                                      # stretched unit is still verified on raw audio.
     slot_fill_target: float = 1.0    # fraction of the slot the dub aims to fill: what the

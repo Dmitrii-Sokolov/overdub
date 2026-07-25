@@ -1,5 +1,44 @@
 # DECISIONS
 
+## 2026-07-25 — `atempo_floor = 0.75`, and the listening test that produced it was the second one
+
+Under-filled units are now stretched toward their slot, bounded by a floor. The floor is an EAR
+number and the first attempt to obtain it was a bad test — worth recording, because the failure
+mode will recur with any per-unit knob.
+
+**The bad test:** a 45 s window of finished dub, assembled at each candidate floor, offered for
+A/B. Everything sounded fine at every floor, and the user said so while adding that the test
+looked wrong. It was. A floor only binds units whose own fill falls BELOW it, so it is not a
+uniform slowdown — and that window held exactly TWO units (fill 0.67 and 0.79), one of which never
+reached the floor at all. Most of the 45 s was the silence being measured. The test could not have
+shown degradation if there had been any.
+
+**The good test, proposed by the user:** one phrase, slowed to 100 / 80 / 65 / 50 %, back to back,
+so the only variable is the factor. Three units, 17-18 s of natural speech each, 340-380 chars.
+Verdict: degradation begins at the 0.65 step, consistent across all three. The default is set half
+a step above the edge at **0.75**, not on it — other voices and other material will eat some of
+that margin, and the knob is per-config so a specific run can go lower deliberately.
+
+**What it buys, measured on `8zJlKmgMT44`** (assemble only, no re-synthesis): slot silence
+283 → 84 s, a 70% cut, with 42 of 69 units pinned at the floor. The full curve: 0.85 → 163 s
+(56 pinned), 0.80 → 123 s (50), 0.75 → 84 s (42), 0.70 → 50 s (29). Returns fall off below 0.70
+because the remaining units stretch only to their own fill, not to the floor. The dub's duration
+is IDENTICAL at every floor (1058.848 s) — stretching lives strictly inside a unit's slot, so
+picture sync is untouched whatever the value.
+
+**The consequence for the roadmap: item 1(a) stops being the blocker.** It existed to close 283 s
+of holes; the floor closes 70% of that in the assembly layer, with no prompt change, no
+re-translation and no re-synthesis. Sizing the translation to the slot is now a polish step that
+removes the residue and the audible stretch — worth doing, not worth the risk of rushing, and that
+risk is real (the `runaway` gate, four hand-synced copies of the length rule, and a resume key
+that keeps a translation sized for a slot that `--repair-asr` has since changed).
+
+**Why the effect exceeded the estimate.** The hole was assumed to be "the translation is ~29% too
+short" and was actually DISTRIBUTED — many units each missing a little. A uniform multiplier
+answers that shape far better than per-sentence length work does. The same error of form appeared
+in item 1(b), whose numbers described a different population than the one being fixed: in both
+cases the arithmetic was fine and the SHAPE of the problem was wrong.
+
 ## 2026-07-25 — what this repo produces is a TOOL; an individual video is never the deliverable
 
 User framing, recorded because it is a work-selection criterion and not a mood: the repository is
