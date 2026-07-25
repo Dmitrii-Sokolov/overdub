@@ -20,7 +20,11 @@ from overdub.pronounce import (  # noqa: E402
     _ACRONYMS, _LETTER_NAMES, PHRASES, WORDS, transliterate_en)
 
 _ASCII_ALNUM = re.compile(r"[0-9A-Za-z]")
-_VALUE_RE = re.compile(r"^[а-яё \-]+$")
+# Values are Cyrillic, spaces and hyphens — plus an optional Silero stress mark, which is only
+# ever valid IMMEDIATELY BEFORE a vowel. Deliberately narrow: "+" anywhere else is silently
+# stripped by the model's own symbol filter, so a misplaced mark would be a dictionary entry
+# that looks stressed and is not. At most one mark per word (checked separately below).
+_VALUE_RE = re.compile(r"^(?:[а-яё \-]|\+(?=[аеёиоуыэюя]))+$")
 _VOWELS = re.compile(r"[аеёиоуыэюя]")
 
 # through normalize_for_tts, exact match
@@ -41,7 +45,10 @@ GOLDEN = {
     "PvP": "пи-ви-пи", "PVP": "пи-ви-пи", "PvE": "пи-ви-и",
     "MOBA": "моба",
     "Claude": "клод", "Clawed Code": "клод код",
-    "Reddit": "реддит", "Discord": "дискорд", "Twitch": "твитч",
+    # Reddit carries a manual stress: Silero's automatic guess reads "редд+ит" (probed
+    # 2026-07-25). The GOLDEN is the TTS side, so the mark is expected here; the compare side
+    # strips it (test_stress_mark_is_invisible_to_verify).
+    "Reddit": "р+еддит", "Discord": "дискорд", "Twitch": "твитч",
     "Fortnite": "фортнайт", "Titanfall": "титанфолл",
     "Deep Rock Galactic": "дип рок галактик", "Destiny": "дестини",
     "It Takes Two": "ит тейкс ту", "Overcooked": "оверкукт",
@@ -169,10 +176,26 @@ def test_fallback_pinned():
         assert got == expected, f"{src!r} -> {got!r}, expected {expected!r}"
 
 
+def test_stress_mark_is_invisible_to_verify():
+    """A stress mark must change synthesis and NOTHING else.
+
+    The round-trip compares an ASR hypothesis (never contains "+") against the normalized
+    reference, and the punctuation pass turns non-word chars into SPACES — so without an
+    explicit strip, "р+еддит" would compare as two tokens and a CORRECT reading would score
+    as a defect. This is the one failure mode of dictionary stress marks, and it is silent."""
+    assert "+" not in normalize_for_compare("На Reddit это обсуждали.")
+    assert normalize_for_compare("На Reddit это обсуждали.") == \
+           normalize_for_compare("На реддит это обсуждали.")
+    # and the TTS side still carries it, or the mark would be pointless
+    assert "+" in normalize_for_tts("На Reddit это обсуждали.")
+
+
 def test_data_invariants():
     for table in (PHRASES, WORDS, _ACRONYMS, _LETTER_NAMES):
         for k, v in table.items():
             assert v and _VALUE_RE.fullmatch(v), f"bad value {k!r} -> {v!r}"
+            for word in v.split():                 # one stress per word: two marks is not a
+                assert word.count("+") <= 1, f"multiple stress marks in {k!r} -> {v!r}"
     for k in PHRASES:
         assert k == k.lower() and "," not in k and "  " not in k, f"bad phrase key {k!r}"
     for k in WORDS:

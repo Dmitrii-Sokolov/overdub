@@ -28,6 +28,7 @@ context beyond "position + neighbor" goes to the dict.
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 # --- multiword names, replaced on RAW text (pass 0a) ---------------------------
 # Policy: a phrase earns a slot ONLY when word-by-word resolution (WORDS + rules) cannot
@@ -87,7 +88,9 @@ WORDS = {
     "steam": "стим",    # (=)
     "twitch": "твитч",  # (=)
     "discord": "дискорд",  # (=)
-    "reddit": "реддит",    # (=)
+    "reddit": "р+еддит",   # (=) manual stress: Silero's automatic one reads "редд+ит" (probed
+                           # 2026-07-25 — marked and auto renders differ; on "кроссинг" they
+                           # agree, so the mark is only worth spending where auto is wrong)
     "bumble": "бамбл", "slack": "слэк", "netflix": "нетфликс",  # netflix (=)
     # title parts / high-frequency leaks
     "live": "лайв",  # (=)
@@ -240,6 +243,72 @@ def transliterate_en(word: str) -> str:
 
 
 _CYR_VOWEL = re.compile(r"[аеёиоуыэюя]")
+
+# --- CMUdict stress transfer ---------------------------------------------------
+# Silero's automatic stress is trained on general vocabulary and mis-reads borrowed proper nouns
+# ("редд+ит" for Reddit, probed 2026-07-25). CMUdict knows where English stresses them, and the
+# transfer needs no phoneme-to-letter alignment: mark the Nth Cyrillic vowel where N is the index
+# of the stressed vowel PHONEME, because the transliteration is syllable-shaped by construction.
+#   reddit  -> R EH1 D IH0 T  -> 1st vowel stressed -> "реддит"  -> "р+еддит"
+#   discord -> D IH1 S K AO0 R D -> 1st              -> "дискорд" -> "д+искорд"
+# ENGLISH STRESS WINS on disagreement with Russian usage (user decision 2026-07-25): "диск+орд"
+# is the commoner Russian reading, but a predictable rule plus dictionary exceptions beats a
+# per-word judgement call. The rule DECLINES whenever the vowel counts disagree (silent final e,
+# "ю"/"я" spanning two English vowels, camelCase joins) — a mark on the wrong syllable is worse
+# than Silero's own guess, which is at least sometimes right.
+_CMUDICT_PATH = Path(__file__).resolve().parent.parent / "data" / "cmudict.dict"
+_ARPA_VOWEL = re.compile(r"^[AEIOU]")          # ARPAbet vowels all start with a vowel letter
+_cmudict_cache: dict[str, int] | None = None
+
+
+def _load_cmudict() -> dict[str, int]:
+    """word -> 0-based index of the stressed vowel among that word's vowel phonemes.
+
+    Only the primary stress (digit 1) counts; a word without one is omitted. Alternate
+    pronunciations ("word(2)") are skipped — the first listing is the common reading, and
+    choosing between variants is exactly the judgement this rule refuses to make."""
+    global _cmudict_cache
+    if _cmudict_cache is not None:
+        return _cmudict_cache
+    out: dict[str, int] = {}
+    try:
+        with _CMUDICT_PATH.open(encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                if not line or line.startswith(";;;"):
+                    continue
+                head, _, rest = line.partition(" ")
+                if not rest or head.endswith(")"):          # "word(2)" alternate
+                    continue
+                idx = -1
+                for ph in rest.split():
+                    if _ARPA_VOWEL.match(ph):
+                        idx += 1
+                        if ph.endswith("1"):
+                            out.setdefault(head.lower(), idx)
+                            break
+    except OSError:                                          # data file absent -> feature off,
+        pass                                                 # never a crash (same as host_guard)
+    _cmudict_cache = out
+    return out
+
+
+def stress_index(word: str) -> int | None:
+    """Index of the stressed vowel for an English word, or None if CMUdict does not know it."""
+    return _load_cmudict().get(word.lower().replace("'", "").replace("’", ""))
+
+
+def apply_stress(cyrillic: str, idx: int | None) -> str:
+    """Insert '+' before the idx-th Cyrillic vowel. Returns `cyrillic` unchanged when it declines.
+
+    Declines on: no index, an out-of-range index (vowel counts disagree — the transfer's one
+    real failure mode), or a value that already carries a mark."""
+    if idx is None or "+" in cyrillic:
+        return cyrillic
+    hits = list(_CYR_VOWEL.finditer(cyrillic))
+    if not 0 <= idx < len(hits):
+        return cyrillic
+    at = hits[idx].start()
+    return cyrillic[:at] + "+" + cyrillic[at:]
 
 
 def _resolve(tok: str) -> tuple[str, str]:

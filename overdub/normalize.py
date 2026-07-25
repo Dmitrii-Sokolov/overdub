@@ -239,6 +239,11 @@ def normalize_for_compare(text: str) -> str:
     """The single canonicalizer the verify stage applies to BOTH sides before similarity:
     full TTS normalization, then casefold, ё->е, strip punctuation, collapse whitespace."""
     t = normalize_for_tts(text).casefold().replace("ё", "е")
+    # Stress marks are DELETED, not blanked. Silero takes "+" before the stressed vowel and
+    # dictionary values carry it (pronounce.WORDS), but the punctuation pass below turns every
+    # non-word char into a SPACE — "р+еддит" would become two tokens and the round-trip would
+    # score a correct reading as a defect. Must precede that pass.
+    t = t.replace("+", "")
     t = re.sub(r"[^\w\s]", " ", t)
     t = re.sub(r"\s+", " ", t).strip()
     return t
