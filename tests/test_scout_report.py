@@ -1287,8 +1287,12 @@ def test_counters_exclude_scouts_from_the_video_count() -> None:
     assert code == 0
     assert "1 video(s), 1 scouted," in log
     assert "2 video(s)" not in log
-    assert "1 видео · wall" in page                     # dub totals: the dubbed one only
-    assert "2 видео · wall" not in page
+    # dub totals: the dubbed one only. The figure is named «работа пайплайна» and printed in H/M
+    # since 2026-07-25 — «wall 60.0s» said neither what it was nor how long that is.
+    assert "1 видео · работа пайплайна" in page
+    assert "2 видео · работа пайплайна" not in page
+    assert "(сумма по видео, не время прогона)" in page
+    assert " · wall " not in page
 
 
 def test_argv_typo_is_a_named_skip_but_a_queue_id_is_always_carded() -> None:
@@ -1465,6 +1469,51 @@ def test_dub_row_highlight_is_a_dash_not_pipeline_state() -> None:
         page = out.read_text(encoding="utf-8")
     assert "задублировано без разведки" not in page
     assert "</span>—</td>" in page              # the chip, then the dash, nothing between
+
+
+_SUM2 = ("Это видеоэссе о привычках. Смотреть стоит тем, кто узнаёт себя.\n\n"
+         "Самое интересное — французское исследование 2022 года (около 3:50). "
+         "Также стоит выделить историю про коврик.")
+
+
+def test_a_dubbed_row_takes_its_highlight_from_summary_paragraph_two() -> None:
+    # 18 of 24 rows printed a dash in the «самое интересное» column while the answer sat in
+    # summary.md one directory away (operator report 2026-07-25) — the symmetric half of the
+    # «о чём» fix from 2026-07-22. Paragraph 2's FIRST sentence, and paragraph 1 must not leak
+    # into it: that cell would then answer "стоит ли смотреть", which is the other column's job.
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        _dubbed(root, "vid00000001", summary=_SUM2)
+        q = _queue(root, ["vid00000001"])
+        out = root / "r.html"
+        _report(["--queue", str(q), "--config", str(_cfg(root)), "--out", str(out)])
+        page = out.read_text(encoding="utf-8")
+    # the scan table renders for a PURE-DUB queue now: both prose columns have a real source
+    assert "<th>Самое интересное</th>" in page
+    row = page[page.index('<tr id="r1">'):page.index("</tr>", page.index('<tr id="r1">'))]
+    assert "французское исследование 2022 года (около 3:50)." in row
+    assert "Смотреть стоит" not in row.split('<td class="why">')[1]
+    # and «о чём» still comes from paragraph 1's first sentence — the two columns disagree by
+    # construction, which is the whole reason they are two columns
+    assert "Это видеоэссе о привычках." in row
+
+
+def test_one_paragraph_summary_leaves_the_highlight_empty_rather_than_guessing() -> None:
+    # 2 of the 24 summaries ran both points together in one paragraph. A dash is the honest
+    # answer and the prompt is where that gets fixed; reaching into paragraph 1 would print the
+    # watch-verdict as if it were the highlight.
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        _dubbed(root, "vid00000001", summary="Один абзац, оба вопроса разом. Без пустой строки.")
+        q = _queue(root, ["vid00000001"])
+        out = root / "r.html"
+        _report(["--queue", str(q), "--config", str(_cfg(root)), "--out", str(out)])
+        page = out.read_text(encoding="utf-8")
+    assert "</span>—</td>" in page
+    assert scout_report._highlight_from_summary("Одно предложение. Без абзацев.") is None
+    assert scout_report._highlight_from_summary(None) is None
+    # a single newline is wrapping, not a paragraph break — splitting on it would cut a sentence
+    assert scout_report._highlight_from_summary("Первый абзац.\nПродолжение строки.") is None
 
 
 def test_page_background_bleeds_past_the_content_column() -> None:

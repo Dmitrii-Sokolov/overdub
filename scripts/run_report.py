@@ -127,7 +127,12 @@ def main(argv: list[str] | None = None) -> int:
             out.append("yes" if row["needs_triage"] else "no")
             print(" | ".join(out))
         tot = queueview.batch_totals(runs)
-        print(f"totals: wall {tot['total_wall']}s · throughput {tot['throughput']}"
+        # "pipeline work", not "wall": the figure is the SUM of per-video stage walls, and on
+        # route B the Sonnet translate wave between transcribe and synthesize is outside every
+        # stage timer — the 2026-07-25 batch summed 3h 16m inside a ~5.2 h night. H/M leads
+        # because that is what a human reads; the seconds stay for diffing two runs.
+        print(f"totals: pipeline work {tot['wall_hm']} ({tot['total_wall']}s summed over "
+              f"{len(runs)} videos, not batch elapsed) · throughput {tot['throughput']}"
               f" · {tot['n_triage']} need triage")
 
     if skipped:

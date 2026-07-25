@@ -98,6 +98,39 @@ def test_english_echo_flagged_not_hidden() -> None:
     assert out[1]["status"] == "failed" and out[1]["flag"] == "english_echo"
 
 
+def test_a_kept_command_is_not_an_english_echo() -> None:
+    # All 28 english_echo fires in the 2026-07-25 batch were correct translator behaviour; 13 were
+    # this shape. A CLI invocation translated into Russian words would be the actual defect, so
+    # these must pass the gate — otherwise the report sends a human to listen to a correct unit.
+    kept = [
+        "Выполняем task-master init.",
+        "Открываем терминал и выполняем npm install -g task-master-ai.",
+        "Так что я выполню task-master parse-prd scripts/prd.txt.",
+        "А когда всё готово, можно выполнить task-master list --with-subtasks.",
+        "Сначала я выполняю /update-doc initialize.",
+        "И сначала он попытается создать файл contact-session-1.md.",
+        "Хотя она free-to-play.",
+    ]
+    out, total, n_fail = _build(
+        # src_en as long as the translation, or the length gate fires "runaway" instead and the
+        # test would pass/fail for the wrong reason
+        [_sent(i, "x" * len(t)) for i, t in enumerate(kept)],
+        [{"id": i, "text_ru": t} for i, t in enumerate(kept)],
+    )
+    assert (total, n_fail) == (len(kept), 0), [o.get("flag") for o in out]
+
+
+def test_a_real_echo_still_fails_when_it_ends_a_sentence() -> None:
+    # The exemption is punctuation-driven, so the trap is the trailing period: treating a sentence
+    # terminator as path evidence would exempt the last word of EVERY sentence and quietly blind
+    # the detector. These are route-A Gemma's actual failure — the source, handed back.
+    for echo in ("this was left untranslated",
+                 "she is free to play.",
+                 "it just maps up your whole project."):
+        out, _, n_fail = _build([_sent(0, "EN")], [{"id": 0, "text_ru": echo}])
+        assert n_fail == 1 and out[0]["flag"] == "english_echo", echo
+
+
 def test_missing_id_exits() -> None:
     # draft misses id 1 → LOUD exit, never a partial translation.json
     assert _exits(

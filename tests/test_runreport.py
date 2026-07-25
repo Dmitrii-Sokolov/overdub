@@ -319,29 +319,125 @@ def test_needs_triage_false_clean_run() -> None:
         assert run["needs_triage"] is False
 
 
-def test_dup_adjacent_is_actionable() -> None:
-    # dup_adjacent is ACTIONABLE by construction: it is absent from _ADVISORY_COMPLETENESS, and
-    # n_actionable is a set DIFFERENCE, so any name not listed there decides needs_triage. This
-    # test is the only guard on that status — without it the flag silently demotes to advisory
-    # the moment someone adds it to the advisory set.
-    segs = [_unit(0, 0, verify_flag=None, combined=1.0, speed=1.0,
-                  completeness_flags=["dup_adjacent"])]
+def test_source_side_completeness_is_advisory_not_a_listen_order() -> None:
+    # REVERSED 2026-07-25 (was test_dup_adjacent_is_actionable). dup_adjacent and
+    # rate_implausible both inspect the EN SOURCE — completeness.py's own docstring says so — so
+    # they report a whisper defect, and no amount of listening to the dub fixes a sentence the
+    # ASR duplicated. On a 24-video batch they were the top two contributors to a 23-of-24 triage
+    # rate, i.e. the same "marks everything, says nothing" failure the entity_loss demotion fixed.
+    # They stay COUNTED (n_dup_adjacent, n_flagged, the offenders list); they stop deciding.
+    for flag, key in (("dup_adjacent", "n_dup_adjacent"),
+                      ("rate_implausible", "n_rate_implausible")):
+        segs = [_unit(0, 0, verify_flag=None, combined=1.0, speed=1.0,
+                      completeness_flags=[flag])]
+        rep = {
+            "segments": segs,
+            "verify": {"n_units": 1, "n_segments": 1, "n_flagged": 0, "n_retried": 0,
+                       "n_repaired": 0},
+            "completeness": {"n_sentences": 1, "n_flagged": 1, "n_num_loss": 0, "n_neg_loss": 0,
+                             "n_entity_loss": 0, "n_length": 0, key: 1},
+            "assemble": {"duration_sec": 50.0, "n_sped": 0, "in_span_silence_sec": 1.0},
+            "mux": {"dub_mix": "bed", "dub_gain_db": 0.0},
+        }
+        with tempfile.TemporaryDirectory() as d:
+            work = _mkwork(d, report=rep, translation=[{"id": 0, "status": "ok"}])
+            run = runreport.build_run_report(work, _CFG)
+            assert run["completeness"][key] == 1                 # counted
+            assert run["completeness"]["n_flagged"] == 1         # and printed
+            assert run["completeness"]["n_actionable"] == 0      # but not a reason to open it
+            assert run["completeness"]["n_advisory"] == 1
+            assert run["needs_triage"] is False, flag
+
+
+def test_num_loss_and_neg_loss_stay_actionable() -> None:
+    # The other half of the 2026-07-25 split, and the guard that keeps the demotion narrow: these
+    # two compare RU against EN, so they are claims about the TRANSLATION — exactly what a human
+    # can act on by listening. A blanket "completeness is advisory" would silently take them too.
+    #
+    # Both are on notice, and the reason they are still here is NOT measured precision: on that
+    # batch neg_loss fired 19 times and every case inspected was a correct translation carrying
+    # its negation lexically ("Hell no" → "Чёрта с два", "no matter what" → "вне зависимости от",
+    # "are not equally spaced anymore" → "перестают быть"). DECISIONS 2026-07-19 carves neg_loss
+    # out of the module's prefer-miss default BY NAME — an inverted negation is the worst silent
+    # loss there is — so demoting it is a decision to take there, with that record open, not a
+    # side effect of a triage cleanup. num_loss keeps its status on precision instead: the
+    # 2026-07-25 stem suppressor removed 5 of its 7 fires.
+    for flag, key in (("num_loss", "n_num_loss"), ("neg_loss", "n_neg_loss")):
+        segs = [_unit(0, 0, verify_flag=None, combined=1.0, speed=1.0,
+                      completeness_flags=[flag])]
+        rep = {
+            "segments": segs,
+            "verify": {"n_units": 1, "n_segments": 1, "n_flagged": 0, "n_retried": 0,
+                       "n_repaired": 0},
+            "completeness": {"n_sentences": 1, "n_flagged": 1, "n_num_loss": 0, "n_neg_loss": 0,
+                             "n_entity_loss": 0, "n_length": 0, key: 1},
+            "assemble": {"duration_sec": 50.0, "n_sped": 0, "in_span_silence_sec": 1.0},
+            "mux": {"dub_mix": "bed", "dub_gain_db": 0.0},
+        }
+        with tempfile.TemporaryDirectory() as d:
+            work = _mkwork(d, report=rep, translation=[{"id": 0, "status": "ok"}])
+            run = runreport.build_run_report(work, _CFG)
+            assert run["completeness"]["n_actionable"] == 1, flag
+            assert run["needs_triage"] is True, flag
+
+
+def test_the_pronounce_audit_reaches_the_rollup_and_the_digest() -> None:
+    # The 2026-07-25 gap: 1587 invented pronunciations in one batch and not a single number on any
+    # surface, because audit_events' output only ever went into its own file. Counts in, tokens
+    # out (the file is beside run.json), and ADVISORY — inventing a reading is normal, the count
+    # is what separates a normal video from one that needs dictionary work.
+    audit = {"video_id": "v", "tokens": {
+        "heroes": {"count": 50, "via": "fallback", "out": "херос", "ids": [1]},
+        "builder": {"count": 3, "via": "fallback", "out": "буилдер", "ids": [2]},
+        "mcp": {"count": 7, "via": "letters", "out": "эм-си-пи", "ids": [3]},
+    }}
+    with tempfile.TemporaryDirectory() as d:
+        work = _mkwork(d, translation=[{"id": 0, "status": "ok"}])
+        (Path(d) / "pronounce_audit.json").write_text(json.dumps(audit, ensure_ascii=False),
+                                                      encoding="utf-8")
+        run = runreport.build_run_report(work, _CFG)
+        assert run["pronounce"] == {"n_distinct": 3, "n_fallback": 53, "n_letters": 7,
+                                    "n_invented": 60}
+        assert run["flags_actionable"] == 0 and run["needs_triage"] is False   # advisory
+        assert "- pronounce: 60 invented readings (53 by rule, 7 letter-spelled)" in \
+            queueview.render_run_report(run, [])
+    # No audit file → None, never 0: route A predates the artifact, and a torn workdir must not
+    # report a measured zero. The digest then prints no line at all.
+    with tempfile.TemporaryDirectory() as d:
+        work = _mkwork(d, translation=[{"id": 0, "status": "ok"}])
+        run = runreport.build_run_report(work, _CFG)
+        assert run["pronounce"]["n_invented"] is None
+        assert "pronounce" not in queueview.render_run_report(run, [])
+
+
+def test_english_echo_counts_but_does_not_order_a_listen() -> None:
+    # 28 fires, 28 false, on one batch (see _ADVISORY_TRANSLATE). n_failed and by_type must keep
+    # reporting it — a route-A Gemma echo is real and the digest line is how it surfaces — while
+    # flags_actionable and needs_triage stop reacting to it.
     rep = {
-        "segments": segs,
+        "segments": [_unit(0, 0, verify_flag=None, combined=1.0, speed=1.0,
+                           status="failed", translate_flag="english_echo")],
         "verify": {"n_units": 1, "n_segments": 1, "n_flagged": 0, "n_retried": 0, "n_repaired": 0},
-        "completeness": {"n_sentences": 1, "n_flagged": 1, "n_num_loss": 0, "n_neg_loss": 0,
-                         "n_entity_loss": 0, "n_length": 0, "n_dup_adjacent": 1},
+        "completeness": {"n_sentences": 1, "n_flagged": 0, "n_num_loss": 0, "n_neg_loss": 0,
+                         "n_entity_loss": 0, "n_length": 0},
         "assemble": {"duration_sec": 50.0, "n_sped": 0, "in_span_silence_sec": 1.0},
         "mux": {"dub_mix": "bed", "dub_gain_db": 0.0},
     }
     with tempfile.TemporaryDirectory() as d:
-        work = _mkwork(d, report=rep, translation=[{"id": 0, "status": "ok"}])
+        work = _mkwork(d, report=rep,
+                       translation=[{"id": 0, "status": "failed", "flag": "english_echo"}])
         run = runreport.build_run_report(work, _CFG)
-        assert run["completeness"]["n_dup_adjacent"] == 1
-        assert run["completeness"]["n_actionable"] == 1
-        assert run["completeness"]["n_advisory"] == 0
-        assert run["speed"]["n_over_1_8"] == 0
-        assert run["needs_triage"] is True
+        assert run["translate"]["n_failed"] == 1                     # still counted
+        assert run["translate"]["by_type"]["english_echo"] == 1      # still named
+        assert run["flags_total"] == 1                               # still in the total
+        assert run["flags_actionable"] == 0                          # but not actionable
+        assert run["needs_triage"] is False
+    # a DIFFERENT translate flag is untouched — the demotion is one name, not the category
+    with tempfile.TemporaryDirectory() as d:
+        work = _mkwork(d, report=rep,
+                       translation=[{"id": 0, "status": "failed", "flag": "runaway"}])
+        run = runreport.build_run_report(work, _CFG)
+        assert run["flags_actionable"] == 1 and run["needs_triage"] is True
 
 
 # --- both inputs absent -------------------------------------------------------
@@ -1019,8 +1115,34 @@ def test_batch_totals() -> None:
         {"timings": {"total_wall_s": 50.0, "video_sec": None}, "needs_triage": False},
     ]
     tot = queueview.batch_totals(runs)
-    assert tot == {"total_wall": 150.0, "throughput": "×2.00", "n_triage": 1}
+    assert tot == {"total_wall": 150.0, "wall_hm": "2m", "throughput": "×2.00", "n_triage": 1}
     assert queueview.batch_totals([])["throughput"] == "n/a"    # zero wall — nothing to divide
+
+
+def test_format_hm_is_readable_at_batch_scale() -> None:
+    # The defect it fixes: three surfaces printed "11778.0s" for a night's work (operator report
+    # 2026-07-25) — five digits of seconds is not a duration anyone reads at 8am.
+    assert queueview.format_hm(11778.0) == "3h 16m"
+    assert queueview.format_hm(11778.0, ru=True) == "3 ч 16 мин"
+    assert queueview.format_hm(2820) == "47m"                   # under an hour: no "0h"
+    assert queueview.format_hm(18.4) == "18s"                   # under a minute stays seconds
+    assert queueview.format_hm(0) == "0s"                       # a measured zero is a number
+    for bad in (None, "600", True, -1):
+        # same contract as scout_report.clock/secs: unknown must never render as a measured value
+        assert queueview.format_hm(bad) == "—"
+
+
+def test_the_totals_line_names_what_the_number_is() -> None:
+    # "wall" was wrong for what it holds: the sum of per-video stage walls, with route B's Sonnet
+    # translate wave outside every stage timer. A reader who takes it as the batch's elapsed time
+    # concludes the night was 2 h shorter than it was.
+    runs = [{"video_id": "v", "timings": {"total_wall_s": 11778.0, "video_sec": 26136.0},
+             "needs_triage": False}]
+    tot = queueview.batch_totals(runs)
+    line = (f"totals: pipeline work {tot['wall_hm']} ({tot['total_wall']}s summed over "
+            f"{len(runs)} videos, not batch elapsed)")
+    assert "3h 16m" in line and "not batch elapsed" in line
+    assert "wall 11778.0s" not in line
 
 
 def test_batch_columns_is_the_single_header_source() -> None:

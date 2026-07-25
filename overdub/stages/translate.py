@@ -59,6 +59,37 @@ _LABEL = re.compile(r"^\s*(\[RU\]|RU:|Russian:|Перевод:)\s*", re.IGNORECA
 _CYR = re.compile(r"[А-Яа-яЁё]")
 _ALPHA = re.compile(r"[A-Za-zА-Яа-яЁё]")
 _LATIN_RUN = re.compile(r"[A-Za-z]+")
+# A latin run that is NOT prose: part of a command, path, filename, flag or identifier. The
+# evidence is the character NEXT TO the run, not the letters themselves — `task-master`, `prd.txt`,
+# `scripts/prd`, `--with-subtasks`, `/update-doc`, `contact-session-1`, `qwen3`. Measured on the
+# 2026-07-25 batch: 13 of 28 english_echo fires were this shape (the rest are set phrases the
+# translator kept on purpose — advisory in runreport, not silenced here). Deliberately NOT a
+# command whitelist: `npm`/`cd`/`tmux` change with the material, punctuation does not.
+#
+# The `.\S` in _TECH_AFTER is the whole reason these are two patterns and not one character class:
+# a bare trailing '.' is a SENTENCE TERMINATOR, and treating it as path evidence would exempt the
+# last word of every sentence — i.e. quietly blind english_echo to "Она free to play." A dot only
+# counts when something non-space follows it, which is what a file extension looks like.
+_TECH_BEFORE = re.compile(r"[-_/\\.:0-9]$")
+_TECH_AFTER = re.compile(r"^(?:[-_/\\:0-9]|\.\S)")
+
+
+def _latin_prose_chars(text: str) -> int:
+    """Characters of LOWERCASE Latin that read as prose — the english_echo numerator.
+
+    Case is filtered by the caller's rule (see _is_bad: ALL-CAPS are acronyms, Capitalised are
+    proper names); this drops the third exemption, technical tokens, which no case rule can see."""
+    total = 0
+    for m in _LATIN_RUN.finditer(text):
+        word = m.group(0)
+        if not word.islower():
+            continue
+        if _TECH_BEFORE.search(text[max(0, m.start() - 1):m.start()]):
+            continue
+        if _TECH_AFTER.search(text[m.end():m.end() + 2]):
+            continue
+        total += len(word)
+    return total
 # A refusal is the model talking about ITSELF, so the Russian arms require the first-person
 # clause that follows "как ИИ" in a real refusal ("как ИИ, я не могу…"). The bare
 # "как (?:ии|модель|языковая)" this replaces matched ordinary prose — "как ИИ" is also plain
@@ -88,6 +119,12 @@ def _is_bad(text_ru: str, src_en: str, cfg) -> str | None:
     Latin so pronounce.py owns them — neither is an untranslated echo. A genuine echo is
     running lowercase English and still scores >0.84 against a 0.30 limit.
 
+    THIRD exemption since 2026-07-25 (_latin_prose_chars): lowercase runs that belong to a
+    command, path, filename or flag. `task-master init`, `npm install -g task-master-ai` and
+    `/update-doc initialize` are all-lowercase Latin by necessity — a translated CLI invocation is
+    a wrong translation — and they scored up to 0.70 here. The case rules cannot see that class;
+    the punctuation around the run can.
+
     no_cyrillic is gated the same way: under the Latin-name mandate a names-only line
     ("Minecraft, Valheim, No Man's Sky") carries no Cyrillic yet is a valid translation the
     pronounce chain voices — accept it when normalize_for_tts yields Cyrillic. A lowercase
@@ -99,7 +136,7 @@ def _is_bad(text_ru: str, src_en: str, cfg) -> str | None:
     if not _CYR.search(text_ru) and not _CYR.search(normalize_for_tts(text_ru)):
         return "no_cyrillic"
     alpha = len(_ALPHA.findall(text_ru))
-    echo = sum(len(w) for w in _LATIN_RUN.findall(text_ru) if w.islower())
+    echo = _latin_prose_chars(text_ru)
     if alpha and echo / alpha > cfg.latin_ratio_max:
         return "english_echo"
     if len(text_ru) > cfg.translate_max_len_ratio * max(len(src_en), 1):

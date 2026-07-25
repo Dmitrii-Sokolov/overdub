@@ -55,7 +55,20 @@ _BROKEN = 1.8   # combined compression factor at/above which a unit is "candidat
 # Completeness flags that are informational only: they are counted and printed but never decide
 # needs_triage. See completeness.py — entity_loss names personal-name Russification as its
 # dominant IRREDUCIBLE false positive, and length_short is the deliberately coarse weak signal.
-_ADVISORY_COMPLETENESS = frozenset({"entity_loss", "length_short"})
+# dup_adjacent and rate_implausible joined them 2026-07-25: both read the EN SOURCE, so they
+# describe an ASR defect a listener cannot fix by opening the dub (they were the top two
+# contributors to a 23-of-24 triage rate). `--repair-asr` acts on those, not the listen queue.
+_ADVISORY_COMPLETENESS = frozenset({"entity_loss", "length_short",
+                                    "dup_adjacent", "rate_implausible"})
+
+# Translate flags that do NOT decide needs_triage. english_echo measures the LATIN RATIO of a
+# translation, which on route B is a deliberate output: the prompt keeps commands, filenames and
+# set phrases in Latin, and pronounce.py voices them. Measured on the 2026-07-25 batch: 28 fires,
+# 28 of them correct Sonnet behaviour (`task-master init`, `npm run dev`, `/update-doc initialize`,
+# `contact-session-1.md`, `free-to-play`) — one video reported 15 actionable flags of which 11 were
+# this. The count stays (a route-A Gemma echo is real, and `translate.n_failed` still prints it);
+# it just stops sending a human to listen to a unit that was translated correctly.
+_ADVISORY_TRANSLATE = frozenset({"english_echo"})
 
 # Source anomalies the route-B translate sub-agent REPORTS on the English source
 # (the source-anomaly pass, CHANGELOG 2026-07-20).
@@ -400,6 +413,36 @@ def _build_run_report(work, cfg):
             tr_by_type[flag if flag in tr_by_type else "unknown"] += 1
     n_src = sum(sa_by_type.values())
 
+    # --- pronounce audit (counts only; the token table stays in its own file) -
+    # pronounce.audit_events' docstring said "nothing ever reads it back", and that WAS the hole:
+    # the 2026-07-25 batch invented 1587 fallback pronunciations across 653 distinct Latin tokens
+    # (readme → ар-и-эй-ди-эм-и, heroes → херос ×50, builder → буилдер) and not one number reached
+    # run.json, the digest, the queue page or triage. The dictionary fixes went in with that batch;
+    # these counts are what stops the NEXT batch from hiding the same class.
+    #
+    # COUNTS, not the tokens: the audit file is already on disk beside run.json and can be long
+    # (12 KB on one video here). `n_invented` is the pair's sum, so a consumer has one number to
+    # trend without deciding what "letters" means. Absent file → all None, never 0: route A before
+    # this artifact existed, and a torn workdir, must not report a measured zero.
+    pa = _load_json(work.pronounce_audit)
+    pa_tokens = pa.get("tokens") if isinstance(pa, dict) else None
+    if isinstance(pa_tokens, dict):
+        by_via: dict[str, int] = {}
+        for rec in pa_tokens.values():
+            if isinstance(rec, dict):
+                n = rec.get("count")
+                by_via[str(rec.get("via"))] = by_via.get(str(rec.get("via")), 0) + (
+                    int(n) if isinstance(n, int) else 1)
+        pronounce_block = {
+            "n_distinct": len(pa_tokens),
+            "n_fallback": by_via.get("fallback", 0),
+            "n_letters": by_via.get("letters", 0),
+            "n_invented": by_via.get("fallback", 0) + by_via.get("letters", 0),
+        }
+    else:
+        pronounce_block = {"n_distinct": None, "n_fallback": None,
+                           "n_letters": None, "n_invented": None}
+
     # --- verify (rollup copied; by_type recomputed over UNIT leaders) --------
     vr = report.get("verify") if isinstance(report, dict) else None
     vr = vr if isinstance(vr, dict) else {}
@@ -424,6 +467,14 @@ def _build_run_report(work, cfg):
     # deliberately-coarse signal. Pooling both into needs_triage marked 11 of 12 videos in the
     # AI-Fluency batch as needing a look, which carries the same information as marking none.
     # They stay counted and printed; they just stop deciding whether a human opens the video.
+    #
+    # 2026-07-25 adds the second half of the same argument, measured on a 24-video batch that came
+    # back 23/24 needing triage — the metric had died again. dup_adjacent and rate_implausible
+    # inspect the EN SOURCE (completeness.py says so in its own docstring): they report an ASR
+    # defect, and opening the dub does not let a human fix a sentence whisper duplicated. They are
+    # the top two contributors to that 23 (35 and 54 hits). Now advisory for the SAME reason as
+    # entity_loss, still counted, still printed, still in the offenders list — the source-anomaly
+    # pass and `--repair-asr` are where a source defect gets acted on, not the listen queue.
     segs_all = report.get("segments") if isinstance(report, dict) else None
     segs_all = segs_all if isinstance(segs_all, list) else []
     n_comp_actionable = sum(
@@ -478,7 +529,12 @@ def _build_run_report(work, cfg):
     # measured fire rate; this demotion is provisional, not permanent.
     # needs_triage answers "does a human have to OPEN this video", so only actionable flags and
     # speed offenders decide it; flags_total keeps counting everything for trend/comparison.
-    flags_actionable = n_failed + v_n_flagged + n_comp_actionable + n_assemble_flagged
+    # n_failed_actionable drops the advisory translate flags (english_echo) for the reason stated
+    # at _ADVISORY_TRANSLATE: on route B they mark correct output. n_failed itself is untouched —
+    # `translate 28/4321` keeps printing in the digest, and by_type still names the split.
+    n_failed_actionable = n_failed - sum(tr_by_type[k] for k in _ADVISORY_TRANSLATE)
+    flags_actionable = (max(n_failed_actionable, 0) + v_n_flagged + n_comp_actionable
+                        + n_assemble_flagged)
     needs_triage = flags_actionable > 0 or n_over > 0
 
     run = {
@@ -510,6 +566,7 @@ def _build_run_report(work, cfg):
             "n_failed": n_failed,
             "by_type": tr_by_type,
         },
+        "pronounce": pronounce_block,
         # src_en is duplicated into `items` DELIBERATELY: this block must be readable in a
         # transcribe+translate-only workdir, where report.json does not exist. Discovering the
         # anomaly hours before synthesize is the entire point of the signal, so it must not

@@ -41,10 +41,19 @@ length_short  (signal A, WEAK) — len(text_ru)/len(src_en) below cfg.completene
 num_loss  (signal B) — a digit run present in src_en but absent from text_ru. Leans on the
     translation rule "keep numbers as DIGITS": a number in src_en stays the same digits in
     text_ru, so detection is exact digit-substring matching. CLEAN on the Sonnet path (0 fires
-    on 427). NOISY on the Gemma path, which spells numbers out against the rule ("100%" -> "сто
-    процентов"); the normalize._n2w nominative-spelling suppressor blunts most of that, but RU
-    oblique case ("140" -> "ста сорока", nominative is "сто сорок") still slips through.
-    FALSE POSITIVE: a number the translator legitimately spelled/reformatted (Gemma path only).
+    on 427). NOISY when a translator spells numbers out against the rule ("100%" -> "сто
+    процентов"); the normalize._n2w spelling suppressor blunts that. The suppressor matches a
+    3-char STEM as of 2026-07-25 — the previous whole-token form missed every oblique case and
+    derivative ("десяти", "пятёрку", "пятидесятилетней", "двумерном") and produced 5 of the 7
+    fires on a 4321-sentence batch.
+    FALSE POSITIVE: a number the translator legitimately reformatted into a phrase with no numeral
+    at all — "100 % free" -> "полностью бесплатна", "12 am" -> "в полночь" (the 2 remaining fires
+    from that batch). Irreducible by string matching: the digit is genuinely gone, and only
+    meaning says the sentence is complete.
+    The stem cuts both ways, both accepted: a root-vowel change still slips through (два->дву-,
+    три->тре-, сто->ста), and a 3-char numeral stem that is also an ordinary word prefix
+    ("сто" in "стоит") can suppress a real loss. The second is a MISS, this module's documented
+    safe direction; both are pinned by tests so they stay limits rather than surprises.
 
 neg_loss  (signal B) — an EN negation marker present in src_en with NO RU negation marker in
     text_ru. Negation inverts meaning: the single most dangerous SILENT loss. RU markers are
@@ -146,19 +155,30 @@ _MIN_SRC_LEN = 30
 
 # --- number detector ----------------------------------------------------------
 _DIGITS_RE = re.compile(r"\d+")
+# Stem length for the spelled-number suppressor. 3 covers the whole spoken numeral system down to
+# "два"/"три"/"сто" while still needing a real prefix match; every Russian numeral inflects its
+# ending, never its first three letters ("пят-ь/-ёрку/-идесяти", "десят-ь/-и/-ками").
+_NUM_STEM = 3
 
 
 def _missing_numbers(src_en: str, text_ru: str) -> list[str]:
-    ru_cf = text_ru.casefold()
+    ru_cf = text_ru.casefold().replace("ё", "е")
     missing: list[str] = []
     for n in dict.fromkeys(_DIGITS_RE.findall(src_en)):   # dedupe, keep order
         if n in text_ru:                                  # exact digit substring: present
             continue
-        # FP-suppressor (Gemma spells numbers out against the keep-digits rule): count the
-        # number PRESENT if its nominative spelling shares a token with text_ru. Over-
-        # suppression only ever produces a miss (the safe direction).
-        spelled = normalize._n2w(int(n))
-        if any(w and w in ru_cf for w in spelled.split()):
+        # FP-suppressor (a translator spells numbers out against the keep-digits rule): count the
+        # number PRESENT if its spelling shares a STEM with text_ru. Over-suppression only ever
+        # produces a miss (the safe direction).
+        #
+        # STEM, not the whole word, since 2026-07-25: the nominative-token version missed every
+        # oblique case and every derivative, which is most of real Russian — measured 7 fires on a
+        # 4321-sentence batch, and 5 of them were the number spelled correctly: "these 10" →
+        # "этих десяти" (десять), "the 5" → "пятёрку" (пять), "50 years ago" →
+        # "пятидесятилетней" (пятьдесят), "in 2D" → "в двумерном" (два). A 3-char stem is enough
+        # to make those match and is deliberately loose — see the safe direction above.
+        spelled = normalize._n2w(int(n)).replace("ё", "е")
+        if any(w[:_NUM_STEM] in ru_cf for w in spelled.split() if len(w) >= _NUM_STEM):
             continue
         missing.append(n)
     return missing

@@ -12,7 +12,7 @@ import traceback
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import repair, runreport
+from . import queueview, repair, runreport
 from .config import Config
 from .pipeline import Context, STOP_NAME, Session, StopRequested, check_stop, run_pipeline
 from .stages import all_stages, scout_stages
@@ -590,13 +590,15 @@ def _summarize(results: list[tuple[str, str, str]], not_run: list[str], halted: 
         if r is not None:
             runs.append(r)
     if runs:
-        total_wall = round(sum((r.get("timings", {}) or {}).get("total_wall_s", 0) or 0
-                               for r in runs), 1)
-        sum_video = sum(((r.get("timings", {}) or {}).get("video_sec") or 0) for r in runs)
+        # The shared layer owns this math (it used to be duplicated here, verbatim); the sweep and
+        # both report surfaces now print ONE set of numbers by construction. "pipeline work" and
+        # the H/M form for the same reason they changed there: raw seconds are unreadable, and the
+        # figure is per-video stage walls SUMMED, never the batch's elapsed time.
+        tot = queueview.batch_totals(runs)
         triage = [r.get("video_id") for r in runs if r.get("needs_triage")]
         print(f"\n── batch sweep ({order}) " + "─" * 20)
-        thru = f"×{sum_video / total_wall:.2f}" if total_wall > 0 else "n/a"
-        print(f"{len(runs)} run(s) · total wall {total_wall}s · throughput {thru}")
+        print(f"{len(runs)} run(s) · pipeline work {tot['wall_hm']} ({tot['total_wall']}s "
+              f"summed per video) · throughput {tot['throughput']}")
         print(f"needs triage ({len(triage)}): {', '.join(triage) if triage else 'none'}")
     return 1 if fails else (3 if halted else 0)
 

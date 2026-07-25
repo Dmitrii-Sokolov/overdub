@@ -656,7 +656,13 @@ def render(entries: list[dict], totals: dict, queue_name: str | None, stamp: str
     if dubs:
         # dub totals from the shared layer — the same numbers the digest's totals line prints
         tot = queueview.batch_totals([e["run"] for e in dubs])
-        out.append(f'<p class="sub">{len(dubs)} видео · wall {tot["total_wall"]}s · '
+        # H/M and a name for what the number IS. «wall 11778.0s» said neither (operator report
+        # 2026-07-25): five digits of seconds is not a duration, and the figure is work SUMMED per
+        # video — the route-B translate wave between transcribe and synthesize is outside every
+        # stage timer, so it is always smaller than the night the operator actually spent.
+        out.append(f'<p class="sub">{len(dubs)} видео · работа пайплайна '
+                   f'{queueview.format_hm(tot["total_wall"], ru=True)} '
+                   f'(сумма по видео, не время прогона) · '
                    f'throughput {tot["throughput"]} · '
                    f'{tot["n_triage"]} требуют прослушивания</p>')
     out.append("</header>")
@@ -670,10 +676,12 @@ def render(entries: list[dict], totals: dict, queue_name: str | None, stamp: str
         out.append(f'<div class="nav"><span class="lbl">Требуют прослушивания:</span> '
                    f'{links}</div>')
 
-    # The scan table needs at least one scout.json to have anything scout-shaped to say; a
-    # pure-dub queue skips it (states still show on the cards) rather than rendering a table
-    # of dashes.
-    if any(e.get("scout_doc") for e in entries):
+    # The scan table needs something CONTENT-shaped to say. Until 2026-07-25 that meant a
+    # scout.json, and a pure-dub queue skipped the table rather than render dashes — correct then,
+    # wrong now: both prose columns fall back to summary.md, which route B writes for every video,
+    # so a dub-only queue has a real «о чём» + «самое интересное» per row. A queue with neither
+    # artifact still skips it; the dashes argument stands for that case.
+    if any(e.get("scout_doc") or e.get("summary") for e in entries):
         out.append('<section class="sec"><div class="sechead"><h2>Список</h2>'
                    '<p class="sub">В порядке очереди — так же, как в плейлисте.</p></div>')
         out.append('<div class="wrap"><table><thead><tr>'
@@ -737,6 +745,38 @@ def _one_liner_from_summary(summary: str | None, cap: int = 200) -> str | None:
     if not first:
         return None
     return first[:cap].rstrip() + " …" if len(first) > cap else first
+
+
+def _highlight_from_summary(summary: str | None, cap: int = 240) -> str | None:
+    """summary.md's SECOND paragraph, first sentence → the «самое интересное» cell, or None.
+
+    The symmetric half of _one_liner_from_summary, and the same defect one column over: 18 of the
+    24 videos in the 2026-07-25 batch printed a dash here while the answer sat in summary.md
+    («Самое интересное — французское исследование 2022 года (около 3:50)…»). scout.json is the
+    field written FOR this cell, but route B never writes one, and the summarizer prompt asks for
+    exactly this content as its second point.
+
+    THE SECOND PARAGRAPH IS THE CONTRACT, not a guess: the shared summarizer prompt (both skills)
+    requires paragraph 1 = what it is / worth watching, paragraph 2 = the most interesting thing
+    and roughly where. A one-paragraph summary therefore yields None and the cell keeps its dash —
+    the honest answer, and the same rule as the one-liner: never put pipeline state or a
+    watch-verdict where the reader scans for substance. Two of that batch's 24 answered in one
+    paragraph, which is what the prompt change is for; this side must not paper over it by
+    reaching into paragraph 1.
+
+    Paragraph split on a blank line only — a single newline inside a paragraph is wrapping, not a
+    break. Sentence cut and cap: same shape and same accepted failure (a short cell, never a
+    wrong one) as _one_liner_from_summary; the cap is wider because a highlight names a place in
+    the video ("около 8:35") and truncating that costs the reader the timestamp."""
+    if not summary:
+        return None
+    paras = [p for p in re.split(r"\n\s*\n", summary.strip()) if p.strip()]
+    if len(paras) < 2:
+        return None
+    second = _SENT_END.split(paras[1].strip(), 1)[0].replace("\n", " ").strip()
+    if not second:
+        return None
+    return second[:cap].rstrip() + " …" if len(second) > cap else second
 
 
 def _views(entries: list[dict]) -> list[dict]:
@@ -810,8 +850,14 @@ def _views(entries: list[dict]) -> list[dict]:
             # defect fixed on 2026-07-22, and this must not reintroduce it by another route.
             "one_liner": (((doc or {}).get("one_liner") if grade else None)
                           or _one_liner_from_summary(e["summary"]) or "—"),
-            # states without a "why" (the dub verdicts) render a dash: the chip is the message
-            "highlight": ((doc or {}).get("highlight") or "—") if grade else (v.get("why") or "—"),
+            # Same ladder as one_liner, one column over: the scout field first, then summary.md's
+            # SECOND paragraph (what gives a dubbed-but-never-scouted row a «самое интересное» at
+            # all — 18 of 24 rows were dashes on 2026-07-25), then the state's own why. The dub
+            # verdicts have no "why" on purpose, so a dubbed row with no summary still renders a
+            # dash rather than pipeline status in a content column.
+            "highlight": (((doc or {}).get("highlight") if grade else None)
+                          or _highlight_from_summary(e["summary"])
+                          or v.get("why") or "—"),
             "paragraph": paragraph,
             "n_sentences": e.get("n_sentences"),
             "timings": (doc or {}).get("timings") if isinstance((doc or {}).get("timings"), dict)

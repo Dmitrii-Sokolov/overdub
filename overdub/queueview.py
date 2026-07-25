@@ -270,16 +270,49 @@ def batch_row(run) -> dict:
             "needs_triage": bool(run.get("needs_triage")), "cells": cells}
 
 
+# Longest MIN_WORD_DUR chain at/above which the digest names an alignment collapse. A REPORTING
+# threshold, not a pipeline gate (transcribe._guard owns that, on the ratio): 40 sits above every
+# healthy video measured on the 2026-07-25 batch (max 30) and below both collapsed ones (45, 82).
+_FLOOR_CHAIN_HINT = 40
+
+
+def format_hm(sec, *, ru: bool = False) -> str:
+    """Seconds → "3h 16m" (`ru=True`: «3 ч 16 мин»). Under an hour: "47m" / "18s".
+
+    Exists because 11778.0s was the only form three batch footers had for a night's work, and a
+    five-digit second count is not a duration a human reads at 8am (operator report 2026-07-25).
+    Returns "—" for a non-number, matching scout_report.clock/secs: a measured zero prints "0s",
+    an unknown never gets to look like one."""
+    if not isinstance(sec, (int, float)) or isinstance(sec, bool) or sec < 0:
+        return "—"
+    h_u, m_u, s_u = (" ч", " мин", " с") if ru else ("h", "m", "s")
+    sep = " "                       # "3h 16m" / «3 ч 16 мин» — the pair never runs together
+    t = int(round(sec))
+    if t < 60:
+        return f"{t}{s_u}"
+    h, m = t // 3600, (t // 60) % 60
+    return f"{h}{h_u}{sep}{m}{m_u}" if h else f"{m}{m_u}"
+
+
 def batch_totals(runs) -> dict:
-    """Batch footer numbers: {total_wall, throughput, n_triage} — run_report's totals math moved
-    verbatim. throughput is video-seconds per wall-second ("×1.54" style); "n/a" on zero wall
-    (an all-resumed batch where no stage ran leaves nothing to divide by)."""
+    """Batch footer numbers: {total_wall, wall_hm, throughput, n_triage} — run_report's totals
+    math moved verbatim. throughput is video-seconds per wall-second ("×1.54" style); "n/a" on
+    zero wall (an all-resumed batch where no stage ran leaves nothing to divide by).
+
+    `wall_hm` is the same number in H/M, because every surface printing `total_wall` printed raw
+    seconds. NAMING, read before reusing it: this is the SUM of per-video stage walls, NOT the
+    elapsed time of the batch — on route B the Sonnet translate wave sits between transcribe and
+    synthesize with no stage timer over it, so the 2026-07-25 batch summed 3h 16m inside a ~5.2 h
+    night. Every caller must label it as work summed per video; `totals_of` in scout_report
+    refuses to add a work sum to a wall clock for the same reason, and this must not become the
+    back door that does it."""
     total_wall = round(sum((r.get("timings", {}) or {}).get("total_wall_s", 0) or 0
                            for r in runs), 1)
     sum_video = sum(((r.get("timings", {}) or {}).get("video_sec") or 0) for r in runs)
     thru = f"×{sum_video / total_wall:.2f}" if total_wall > 0 else "n/a"
     n_triage = sum(1 for r in runs if r.get("needs_triage"))
-    return {"total_wall": total_wall, "throughput": thru, "n_triage": n_triage}
+    return {"total_wall": total_wall, "wall_hm": format_hm(total_wall),
+            "throughput": thru, "n_triage": n_triage}
 
 
 def render_summary_block(summary):
@@ -327,8 +360,21 @@ def render_run_report(run, offenders, summary=None):
 
     a = run.get("asr", {}) or {}
     fr = a.get("floor_ratio")
+    # The chain, not the ratio, is what a long collapse shows up in — and until now BOTH numbers
+    # printed bare, so a video whose timings whisper invented in one stretch read like any other.
+    # Measured 2026-07-25 across 24 videos: chains ran 4..30 on the healthy ones, 45 and 82 on the
+    # two whose worst units then needed atempo ×2.3 and ×5.4 (invented timings → impossible slots).
+    # ADVISORY ONLY, deliberately: transcribe._guard gates on the RATIO because floor_run_ratio's
+    # own docstring measured the chain as non-separating (a healthy video reached 17), and
+    # cfg.transcribe_floor_run_max is a calibrated number with a DECISIONS record — this line adds
+    # a hint for the operator, it does not re-gate anything. The named action is real: seeding for
+    # `--repair-asr auto` keys on dup_adjacent / rate_implausible, which fire in exactly the
+    # stretch a floor chain marks.
+    hint = ""
+    if isinstance(a.get("floor_longest_run"), int) and a["floor_longest_run"] >= _FLOOR_CHAIN_HINT:
+        hint = "  ← alignment collapse suspected; try --repair-asr auto on this video"
     asr_line = (f"- asr: {a.get('n_words', 0)} words · floor {fr:.2%} "
-                f"(longest chain {a.get('floor_longest_run')})"
+                f"(longest chain {a.get('floor_longest_run')}){hint}"
                 if fr is not None else "- asr: no words.json")
 
     tr = run.get("translate", {}) or {}
@@ -343,7 +389,21 @@ def render_run_report(run, offenders, summary=None):
         f" · speed med {sp.get('median')}/p95 {sp.get('p95')}/max {sp.get('max')}"
         f" (n>1.8 {sp.get('n_over_1_8', 0)})")
 
+    # The pronunciation audit, printed only when it has numbers (a pre-schema run.json and route A
+    # before the artifact existed both carry None — see the pronounce block in runreport). It is
+    # ADVISORY and deliberately not in flags_actionable: every one of these is a token the
+    # pipeline had to invent a Russian reading for, most of them fine. The COUNT is the point —
+    # 1587 invented readings in a 24-video batch reached no surface at all before 2026-07-25, so
+    # nothing could tell a normal video (28 events) from the one that needs dictionary work (203).
+    pr = run.get("pronounce", {}) or {}
+    pron_line = (f"- pronounce: {pr.get('n_invented')} invented readings "
+                 f"({pr.get('n_fallback')} by rule, {pr.get('n_letters')} letter-spelled) "
+                 f"over {pr.get('n_distinct')} distinct latin tokens"
+                 if pr.get("n_invented") is not None else None)
+
     lines = [head, timings_line, asr_line, flags_line]
+    if pron_line:
+        lines.append(pron_line)
     # Source anomalies, rendered whenever non-empty INDEPENDENT of the
     # [clean]/[TRIAGE] marker — they are advisory, and advisory must never cost visibility.
     # Machine bullets stay together, so this sits after the flags line and before the prose.

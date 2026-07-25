@@ -49,6 +49,42 @@ def test_number_spelled_out_not_flagged() -> None:
     assert "num_loss" not in r["flags"]
 
 
+def test_a_spelled_number_in_any_case_or_derivative_is_not_a_loss() -> None:
+    # The whole-token suppressor only matched the NOMINATIVE, which is the one form Russian prose
+    # rarely uses — 5 of 7 fires on the 2026-07-25 batch were the number spelled correctly in an
+    # oblique case or folded into a derivative. Stem matching (2026-07-25) covers those.
+    for en, ru in (
+        ("If any of these 10 felt targeted.", "Если какой-то из этих десяти пунктов попал."),
+        ("I'm just going to click the 5.", "Просто нажму на пятёрку."),
+        ("The Oregon Trail of 50 years ago.", "Oregon Trail пятидесятилетней давности."),
+        ("It has 8 cores.", "У него восьми ядер."),
+    ):
+        r = _check(en, ru)
+        assert r["missing_numbers"] == [], (en, ru, r["missing_numbers"])
+        assert "num_loss" not in r["flags"]
+
+
+def test_stem_suppression_still_misses_a_root_vowel_change() -> None:
+    # KNOWN residue, asserted so it is a documented limit rather than a surprise: два→дву-,
+    # три→тре-, сто→ста change the root itself, so a 3-char prefix cannot match ("два" vs
+    # "двумерном"). Left alone deliberately — num_loss fired 7 times in 4321 sentences and the
+    # stem fix took the bulk of that; a hand-written root table for three numerals costs more
+    # than the noise it removes. Revisit only if a batch shows this class actually recurring.
+    assert _check("the derivative in 2D.", "производную в двумерном.")["missing_numbers"] == ["2"]
+    # The opposite residue, and the price of a 3-char stem: "сто" is a prefix of ordinary words
+    # ("стоит", "стало"), so a dropped 100 can be suppressed by unrelated prose. A MISS, which is
+    # the direction this module documents as safe — unlike a false alarm, it costs no attention.
+    assert _check("It costs 100 dollars.", "Дорого стоит.")["missing_numbers"] == []
+
+
+def test_a_genuinely_dropped_number_still_fires_after_the_stem_change() -> None:
+    # The loosened suppressor must not blind the detector: no numeral stem in the RU at all.
+    r = _check("The RTX 4080 runs at 60 fps.", "Видеокарта работает плавно.")
+    assert "60" in r["missing_numbers"] and "num_loss" in r["flags"]
+    r = _check("We shipped 7 features this month.", "Мы выпустили новые функции за месяц.")
+    assert "7" in r["missing_numbers"]
+
+
 # --- negation -----------------------------------------------------------------
 def test_negation_preserved() -> None:
     r = _check("I do not like this game.", "Мне не нравится эта игра.")
