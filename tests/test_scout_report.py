@@ -1576,9 +1576,12 @@ def test_triage_nav_links_flagged_videos_and_is_absent_when_clean() -> None:
 
 # --- cross-surface divergence (the acceptance test for the queue-page merge) -------
 def test_the_two_surfaces_print_identical_batch_cells() -> None:
-    # ONE dub workdir, BOTH renderers: the ten data cells of the batch row must be IDENTICAL
-    # strings, and both headers must come from queueview.BATCH_COLUMNS. This is the whole point
+    # ONE dub workdir, BOTH renderers: every data cell of the batch row must be an IDENTICAL
+    # string, and both headers must come from queueview.BATCH_COLUMNS. This is the whole point
     # of the merge — the digest and the page can no longer disagree about the same bytes.
+    # The count is derived from BATCH_COLUMNS rather than hardcoded (was 10, 11 since the `flags`
+    # column): a literal here means adding a column fails in a test about SAMENESS, which says
+    # nothing about the column and trains the reader to bump the number.
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
         _dubbed(root, "vid00000001")
@@ -1596,9 +1599,10 @@ def test_the_two_surfaces_print_identical_batch_cells() -> None:
     for _k, lbl in queueview.BATCH_COLUMNS:
         assert f"<th>{html.escape(lbl)}</th>" in page
     row_line = next(ln for ln in digest.splitlines() if ln.startswith("vid00000001 | "))
-    digest_cells = row_line.split(" | ")[2:-1]          # video, title | TEN CELLS | triage
+    digest_cells = row_line.split(" | ")[2:-1]          # video, title | DATA CELLS | triage
     page_cells = _dub_row_cells(page, 1)
-    assert len(digest_cells) == len(page_cells) == 10
+    n_data = len(queueview.BATCH_COLUMNS) - 3           # minus video, title, triage
+    assert len(digest_cells) == len(page_cells) == n_data
     assert digest_cells == page_cells
 
 

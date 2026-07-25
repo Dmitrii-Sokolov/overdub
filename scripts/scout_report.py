@@ -128,10 +128,13 @@ def clock(sec) -> str:
 
 
 def secs(sec) -> str:
-    """Short duration for the timing strip. '—' for unknown, same reason as clock()."""
-    if not isinstance(sec, (int, float)) or isinstance(sec, bool) or sec < 0:
-        return "—"
-    return f"{sec:.0f} с" if sec < 90 else f"{sec / 60:.1f} мин"
+    """Short duration for the timing strip — ONE unit with a decimal, via the shared formatter.
+
+    Was a local rule (`"%.0f с"` under 90 s, else minutes) with no hours case at all, so a report
+    could show "196.3 мин" beside a totals line in a different shape. Delegating means every
+    duration on this page reads the same way (operator rule 2026-07-25); `clock()` above stays
+    separate on purpose — a video's runtime is a timecode, not a quantity."""
+    return queueview.format_dur(sec, ru=True)
 
 
 # --------------------------------------------------------------------------- style
@@ -661,10 +664,17 @@ def render(entries: list[dict], totals: dict, queue_name: str | None, stamp: str
         # video — the route-B translate wave between transcribe and synthesize is outside every
         # stage timer, so it is always smaller than the night the operator actually spent.
         out.append(f'<p class="sub">{len(dubs)} видео · работа пайплайна '
-                   f'{queueview.format_hm(tot["total_wall"], ru=True)} '
+                   f'{queueview.format_dur(tot["total_wall"], ru=True)} '
                    f'(сумма по видео, не время прогона) · '
                    f'throughput {tot["throughput"]} · '
                    f'{tot["n_triage"]} требуют прослушивания</p>')
+        # The batch stage split — what to optimise, in the one place that sees the whole batch.
+        # Per-video shares cannot answer it (one long video dominates its own row and nothing else),
+        # which is why this is a batch-level line and not a column.
+        if tot["stages"]:
+            out.append('<p class="sub">этапы: ' + ' · '.join(
+                f'{html.escape(name)} {queueview.format_dur(sec, ru=True)} {pct}%'
+                for name, sec, pct in tot["stages"]) + '</p>')
     out.append("</header>")
 
     if n_triage:

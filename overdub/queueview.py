@@ -224,7 +224,11 @@ def collect_entries(queue, workdirs, work_root, *, limit=500, rebuild=False, cfg
 # different completeness numbers for the same run). The label row is exactly what the text
 # digest prints.
 BATCH_COLUMNS = (
-    ("video", "video"), ("title", "title"), ("wall_s", "wall_s"), ("rtf", "rtf"),
+    ("video", "video"), ("title", "title"), ("wall", "wall"), ("rtf", "rtf"),
+    # `flags` leads the flag group as act/total: the operator's first question about a row is "how
+    # much is wrong with this one", and answering it used to mean adding five columns by eye
+    # (operator report 2026-07-25). The five stay — they say WHAT is wrong, which the sum cannot.
+    ("flags", "flags"),
     ("floor", "floor"), ("tr", "tr"), ("vf", "vf"), ("cp", "cp"), ("adv", "adv"),
     ("src", "src"), ("spd_max", "spd_max"), ("n_over", ">1.8"), ("triage", "triage"),
 )
@@ -245,8 +249,13 @@ def batch_row(run) -> dict:
     src = run.get("source", {}) or {}
     cp = run.get("completeness", {}) or {}
     cells = [
-        ("wall_s", str(t.get("total_wall_s", ""))),
+        # a duration, not a raw second count — same rule as the totals line (format_dur)
+        ("wall", format_dur(t.get("total_wall_s"))),
         ("rtf", str(t.get("rtf"))),
+        # actionable/total. Both numbers, because either alone misleads: "2" hides that 21 other
+        # things fired, "21" reads as a disaster when 19 are advisory names the operator has
+        # already been told to ignore.
+        ("flags", f"{run.get('flags_actionable', 0)}/{run.get('flags_total', 0)}"),
         ("floor", f"{fr:.1%}" if fr is not None else "n/a"),
         ("tr", str((run.get("translate", {}) or {}).get("n_failed", 0))),
         ("vf", str((run.get("verify", {}) or {}).get("n_flagged", 0))),
@@ -276,43 +285,58 @@ def batch_row(run) -> dict:
 _FLOOR_CHAIN_HINT = 40
 
 
-def format_hm(sec, *, ru: bool = False) -> str:
-    """Seconds → "3h 16m" (`ru=True`: «3 ч 16 мин»). Under an hour: "47m" / "18s".
+def format_dur(sec, *, ru: bool = False) -> str:
+    """Seconds → the LARGEST fitting unit with one decimal: "3.3h" / «3.3 ч», "47.3m", "18.4s".
 
-    Exists because 11778.0s was the only form three batch footers had for a night's work, and a
-    five-digit second count is not a duration a human reads at 8am (operator report 2026-07-25).
-    Returns "—" for a non-number, matching scout_report.clock/secs: a measured zero prints "0s",
-    an unknown never gets to look like one."""
+    ONE unit, never two (operator rule 2026-07-25): "3h 16m" made the reader parse two numbers
+    and then add them, and mixed forms across a report cannot be compared at a glance — a column
+    of "3.3h / 0.8h / 12.4m" sorts by eye, "3h 16m / 47m / 12m" does not. Exists at all because
+    11778.0s was the only form three batch footers had for a night's work.
+
+    Returns "—" for a non-number: a measured zero prints "0.0s", an unknown never gets to look
+    like one (same contract as scout_report.clock, which stays H:MM:SS — a video's RUNTIME is a
+    timecode you scrub to, not a quantity you compare)."""
     if not isinstance(sec, (int, float)) or isinstance(sec, bool) or sec < 0:
         return "—"
     h_u, m_u, s_u = (" ч", " мин", " с") if ru else ("h", "m", "s")
-    sep = " "                       # "3h 16m" / «3 ч 16 мин» — the pair never runs together
-    t = int(round(sec))
-    if t < 60:
-        return f"{t}{s_u}"
-    h, m = t // 3600, (t // 60) % 60
-    return f"{h}{h_u}{sep}{m}{m_u}" if h else f"{m}{m_u}"
+    if sec >= 3600:
+        return f"{sec / 3600:.1f}{h_u}"
+    if sec >= 60:
+        return f"{sec / 60:.1f}{m_u}"
+    return f"{sec:.1f}{s_u}"
 
 
 def batch_totals(runs) -> dict:
-    """Batch footer numbers: {total_wall, wall_hm, throughput, n_triage} — run_report's totals
-    math moved verbatim. throughput is video-seconds per wall-second ("×1.54" style); "n/a" on
-    zero wall (an all-resumed batch where no stage ran leaves nothing to divide by).
+    """Batch footer numbers: {total_wall, wall_dur, throughput, n_triage, stages} — run_report's
+    totals math moved verbatim. throughput is video-seconds per wall-second ("×1.54" style);
+    "n/a" on zero wall (an all-resumed batch where no stage ran leaves nothing to divide by).
 
-    `wall_hm` is the same number in H/M, because every surface printing `total_wall` printed raw
-    seconds. NAMING, read before reusing it: this is the SUM of per-video stage walls, NOT the
-    elapsed time of the batch — on route B the Sonnet translate wave sits between transcribe and
-    synthesize with no stage timer over it, so the 2026-07-25 batch summed 3h 16m inside a ~5.2 h
-    night. Every caller must label it as work summed per video; `totals_of` in scout_report
-    refuses to add a work sum to a wall clock for the same reason, and this must not become the
-    back door that does it."""
+    `wall_dur` is the same number as a readable duration, because every surface printing
+    `total_wall` printed raw seconds. NAMING, read before reusing it: this is the SUM of per-video
+    stage walls, NOT the elapsed time of the batch — on route B the Sonnet translate wave sits
+    between transcribe and synthesize with no stage timer over it, so the 2026-07-25 batch summed
+    3.3h inside a ~5.2 h night. Every caller must label it as work summed per video; `totals_of`
+    in scout_report refuses to add a work sum to a wall clock for the same reason, and this must
+    not become the back door that does it.
+
+    `stages` is [(name, sec, pct), ...] descending — the batch-level stage split, which is the
+    number an optimisation decision actually needs. Per-video `breakdown_pct` already existed but
+    answered a different question: one 26-minute video's shares say nothing about where a night
+    went. Empty list when no stage timing survived."""
     total_wall = round(sum((r.get("timings", {}) or {}).get("total_wall_s", 0) or 0
                            for r in runs), 1)
     sum_video = sum(((r.get("timings", {}) or {}).get("video_sec") or 0) for r in runs)
     thru = f"×{sum_video / total_wall:.2f}" if total_wall > 0 else "n/a"
     n_triage = sum(1 for r in runs if r.get("needs_triage"))
-    return {"total_wall": total_wall, "wall_hm": format_hm(total_wall),
-            "throughput": thru, "n_triage": n_triage}
+    per_stage: dict[str, float] = {}
+    for r in runs:
+        for name, val in ((r.get("timings", {}) or {}).get("stages", {}) or {}).items():
+            if isinstance(val, (int, float)) and not isinstance(val, bool):
+                per_stage[name] = per_stage.get(name, 0.0) + float(val)
+    stages = [(n, round(v, 1), round(100 * v / total_wall, 1) if total_wall else 0.0)
+              for n, v in sorted(per_stage.items(), key=lambda kv: -kv[1])]
+    return {"total_wall": total_wall, "wall_dur": format_dur(total_wall),
+            "throughput": thru, "n_triage": n_triage, "stages": stages}
 
 
 def render_summary_block(summary):
@@ -353,10 +377,19 @@ def render_run_report(run, offenders, summary=None):
     if t.get("rtf_work") is not None:
         mark = "" if t.get("work_complete") else "~"
         work_part = f" · work {t.get('total_work_s')}s / RTF{mark} {t['rtf_work']}"
-    top3 = sorted((t.get("breakdown_pct", {}) or {}).items(),
-                  key=lambda kv: kv[1], reverse=True)[:3]
-    top_part = (" · top: " + ", ".join(f"{k} {v}%" for k, v in top3)) if top3 else ""
-    timings_line = f"- timings: {t.get('total_wall_s', 0)}s wall · {rtf_part}{work_part}{top_part}"
+    timings_line = (f"- timings: {format_dur(t.get('total_wall_s', 0))} "
+                    f"({t.get('total_wall_s', 0)}s) · {rtf_part}{work_part}")
+    # EVERY stage with its own duration, descending — not the old "top: a%, b%, c%". Three shares
+    # out of seven cannot answer "what do I optimise": the tail was invisible, and a percentage
+    # with no seconds beside it cannot be compared across videos of different lengths (operator
+    # report 2026-07-25). breakdown_pct is preferred over recomputing so this line and run.json
+    # can never disagree; the seconds come from stages, the same dict breakdown_pct was built from.
+    pct = t.get("breakdown_pct", {}) or {}
+    st = t.get("stages", {}) or {}
+    ordered = sorted(pct.items(), key=lambda kv: -kv[1])
+    stages_line = ("- stages: " + " · ".join(
+        f"{name} {format_dur(st.get(name))} {share}%" for name, share in ordered)) if ordered \
+        else None
 
     a = run.get("asr", {}) or {}
     fr = a.get("floor_ratio")
@@ -401,7 +434,10 @@ def render_run_report(run, offenders, summary=None):
                  f"over {pr.get('n_distinct')} distinct latin tokens"
                  if pr.get("n_invented") is not None else None)
 
-    lines = [head, timings_line, asr_line, flags_line]
+    lines = [head, timings_line]
+    if stages_line:
+        lines.append(stages_line)
+    lines += [asr_line, flags_line]
     if pron_line:
         lines.append(pron_line)
     # Source anomalies, rendered whenever non-empty INDEPENDENT of the

@@ -597,8 +597,11 @@ def _summarize(results: list[tuple[str, str, str]], not_run: list[str], halted: 
         tot = queueview.batch_totals(runs)
         triage = [r.get("video_id") for r in runs if r.get("needs_triage")]
         print(f"\n── batch sweep ({order}) " + "─" * 20)
-        print(f"{len(runs)} run(s) · pipeline work {tot['wall_hm']} ({tot['total_wall']}s "
+        print(f"{len(runs)} run(s) · pipeline work {tot['wall_dur']} ({tot['total_wall']}s "
               f"summed per video) · throughput {tot['throughput']}")
+        if tot["stages"]:
+            print("stages: " + " · ".join(
+                f"{name} {queueview.format_dur(sec)} {pct}%" for name, sec, pct in tot["stages"]))
         print(f"needs triage ({len(triage)}): {', '.join(triage) if triage else 'none'}")
     return 1 if fails else (3 if halted else 0)
 

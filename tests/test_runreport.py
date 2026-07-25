@@ -1064,13 +1064,17 @@ def test_batch_row_golden_cells() -> None:
         "completeness": {"n_flagged": 8, "n_actionable": 3, "n_advisory": 5},
         "source": {"scanned": True, "n_flagged": 4},
         "speed": {"max": 2.13, "n_over_1_8": 1},
+        "flags_actionable": 6, "flags_total": 15,
     }
     row = queueview.batch_row(run)
     assert row["video_id"] == "vid00000001"
     assert row["title"] == "Talk"                           # RAW — truncation is per-medium
     assert row["needs_triage"] is True
     assert row["cells"] == [
-        ("wall_s", "123.4"), ("rtf", "0.256"), ("floor", "3.4%"), ("tr", "2"),
+        # wall is a DURATION since 2026-07-25 (one unit, one decimal), and `flags` leads the flag
+        # group as actionable/total — the row's "how much is wrong here" answer, which previously
+        # meant adding five columns by eye.
+        ("wall", "2.1m"), ("rtf", "0.256"), ("flags", "6/15"), ("floor", "3.4%"), ("tr", "2"),
         ("vf", "1"), ("cp", "3"), ("adv", "5"), ("src", "4"),
         ("spd_max", "2.13"), ("n_over", "1"),
     ]
@@ -1085,7 +1089,10 @@ def test_batch_row_floor_na_src_dash_and_blank_wall() -> None:
     cells = dict(row["cells"])
     assert cells["floor"] == "n/a"
     assert cells["src"] == "-"
-    assert cells["wall_s"] == ""
+    # no timings at all → format_dur's unknown dash, NOT "0.0s": a run that never timed a stage
+    # must not read as one that finished instantly (the same rule clock/secs follow)
+    assert cells["wall"] == "—"
+    assert cells["flags"] == "0/0"
     assert cells["rtf"] == "None"
     assert cells["spd_max"] == "None"
     assert cells["n_over"] == "0"
@@ -1115,21 +1122,26 @@ def test_batch_totals() -> None:
         {"timings": {"total_wall_s": 50.0, "video_sec": None}, "needs_triage": False},
     ]
     tot = queueview.batch_totals(runs)
-    assert tot == {"total_wall": 150.0, "wall_hm": "2m", "throughput": "×2.00", "n_triage": 1}
+    assert tot == {"total_wall": 150.0, "wall_dur": "2.5m", "throughput": "×2.00",
+                   "n_triage": 1, "stages": []}
     assert queueview.batch_totals([])["throughput"] == "n/a"    # zero wall — nothing to divide
 
 
-def test_format_hm_is_readable_at_batch_scale() -> None:
-    # The defect it fixes: three surfaces printed "11778.0s" for a night's work (operator report
-    # 2026-07-25) — five digits of seconds is not a duration anyone reads at 8am.
-    assert queueview.format_hm(11778.0) == "3h 16m"
-    assert queueview.format_hm(11778.0, ru=True) == "3 ч 16 мин"
-    assert queueview.format_hm(2820) == "47m"                   # under an hour: no "0h"
-    assert queueview.format_hm(18.4) == "18s"                   # under a minute stays seconds
-    assert queueview.format_hm(0) == "0s"                       # a measured zero is a number
+def test_format_dur_is_one_unit_with_a_decimal() -> None:
+    # Two defects, one rule (operator report + rule 2026-07-25): three surfaces printed
+    # "11778.0s" for a night's work, and the first fix printed "3h 16m" — two numbers the reader
+    # has to add, and a shape that cannot be compared down a column. ONE unit, one decimal.
+    assert queueview.format_dur(11778.0) == "3.3h"
+    assert queueview.format_dur(11778.0, ru=True) == "3.3 ч"
+    assert queueview.format_dur(2820) == "47.0m"                # under an hour → minutes
+    assert queueview.format_dur(2820, ru=True) == "47.0 мин"
+    assert queueview.format_dur(18.4) == "18.4s"                # under a minute → seconds
+    assert queueview.format_dur(3600) == "1.0h"                 # boundary belongs to the bigger unit
+    assert queueview.format_dur(60) == "1.0m"
+    assert queueview.format_dur(0) == "0.0s"                    # a measured zero is a number
     for bad in (None, "600", True, -1):
-        # same contract as scout_report.clock/secs: unknown must never render as a measured value
-        assert queueview.format_hm(bad) == "—"
+        # same contract as scout_report.clock: unknown must never render as a measured value
+        assert queueview.format_dur(bad) == "—"
 
 
 def test_the_totals_line_names_what_the_number_is() -> None:
@@ -1139,17 +1151,53 @@ def test_the_totals_line_names_what_the_number_is() -> None:
     runs = [{"video_id": "v", "timings": {"total_wall_s": 11778.0, "video_sec": 26136.0},
              "needs_triage": False}]
     tot = queueview.batch_totals(runs)
-    line = (f"totals: pipeline work {tot['wall_hm']} ({tot['total_wall']}s summed over "
+    line = (f"totals: pipeline work {tot['wall_dur']} ({tot['total_wall']}s summed over "
             f"{len(runs)} videos, not batch elapsed)")
-    assert "3h 16m" in line and "not batch elapsed" in line
+    assert "3.3h" in line and "not batch elapsed" in line
     assert "wall 11778.0s" not in line
+
+
+def test_batch_totals_carries_the_stage_split() -> None:
+    # "which stage do I optimise" is a BATCH question, and per-video breakdown_pct cannot answer
+    # it — one long video dominates its own row and says nothing about the night (operator request
+    # 2026-07-25). Descending, seconds AND share, summing to ~100%.
+    runs = [
+        {"timings": {"total_wall_s": 100.0, "video_sec": 200.0,
+                     "stages": {"synthesize": 60.0, "transcribe": 30.0, "mux": 10.0}}},
+        {"timings": {"total_wall_s": 100.0, "video_sec": 200.0,
+                     "stages": {"synthesize": 40.0, "transcribe": 50.0, "download": 10.0}}},
+    ]
+    tot = queueview.batch_totals(runs)
+    assert tot["stages"] == [("synthesize", 100.0, 50.0), ("transcribe", 80.0, 40.0),
+                             ("mux", 10.0, 5.0), ("download", 10.0, 5.0)]
+    assert sum(pct for _n, _s, pct in tot["stages"]) == 100.0
+    # a stage present in only ONE video still appears (mux/download above) — a stage that ran
+    # rarely is exactly what a share-only view hides
+    assert {n for n, _s, _p in tot["stages"]} == {"synthesize", "transcribe", "mux", "download"}
+
+
+def test_the_per_video_digest_lists_every_stage_not_the_top_three() -> None:
+    # Four of seven stages used to be invisible ("top: a%, b%, c%"), and a share with no seconds
+    # beside it cannot be compared across videos of different lengths.
+    run = {"video_id": "v", "needs_triage": False,
+           "timings": {"total_wall_s": 200.0, "rtf": 0.4, "video_sec_source": "info_json",
+                       "stages": {"synthesize": 100.0, "transcribe": 50.0, "verify": 30.0,
+                                  "mux": 15.0, "assemble": 5.0},
+                       "breakdown_pct": {"synthesize": 50.0, "transcribe": 25.0, "verify": 15.0,
+                                         "mux": 7.5, "assemble": 2.5}},
+           "asr": {"floor_ratio": 0.01, "floor_longest_run": 3}}
+    line = next(ln for ln in queueview.render_run_report(run, []).splitlines()
+                if ln.startswith("- stages:"))
+    assert line == ("- stages: synthesize 1.7m 50.0% · transcribe 50.0s 25.0% · verify 30.0s 15.0%"
+                    " · mux 15.0s 7.5% · assemble 5.0s 2.5%")
+    assert "top:" not in queueview.render_run_report(run, [])
 
 
 def test_batch_columns_is_the_single_header_source() -> None:
     # The header the digest prints IS " | ".join of BATCH_COLUMNS labels — one constant, no
     # second list to drift. Both the literal and the script's stdout are pinned.
     header = " | ".join(label for _key, label in queueview.BATCH_COLUMNS)
-    assert header == ("video | title | wall_s | rtf | floor | tr | vf | cp | adv | src | "
+    assert header == ("video | title | wall | rtf | flags | floor | tr | vf | cp | adv | src | "
                       "spd_max | >1.8 | triage")
     with tempfile.TemporaryDirectory() as d:
         work = _mkwork(d, report=_two_unit_report(),
