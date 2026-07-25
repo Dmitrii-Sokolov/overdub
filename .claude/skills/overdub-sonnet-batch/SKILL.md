@@ -130,12 +130,19 @@ synthesize and the subtitles. Run it after the batch instead — which is what t
 suggests for a single video — and every id renumbers, `invalidate_downstream` deletes
 `translation.json`/`summary.md`, and that video pays a full re-translate + re-synthesize.
 
-**What it is fixing, measured on the 2026-07-25 batch (24 videos, run WITHOUT this step):** 17
-units shipped needing `atempo` between ×1.8 and **×12.5** — `iWRmtPdFbGw#10` had a 0.46 s slot for
+**What it is fixing.** Sentences whose slot is impossibly short for their text, because the SOURCE
+timing is invented or the source itself is duplicated — `iWRmtPdFbGw#10` had a 0.46 s slot for
 5.2 s of speech, `8zJlKmgMT44#130-133` were four ASR duplicates of one sentence sharing a 5.74 s
-slot. Those are invented timings and duplicated source, not long Russian: 10 of the 17 carried
-`rate_implausible` on the EN side, i.e. the seeds this sweep keys on. An ×12 unit is
-unconditionally unintelligible, so it is worth a sweep that usually does nothing.
+slot. That is a whisper defect, not long Russian, which is why repairing it BEFORE translate is
+the cheap position: the seeds this sweep keys on (`rate_implausible` on the EN side) are exactly
+what such units carry. A unit compressed past ×2 is degraded and past ×4 unintelligible, so the
+sweep is worth running even though it usually does nothing.
+
+*(The counts once quoted here — "17 units at ×1.8..×12.5, 10 of them seeded" — were recomputed
+2026-07-25 and were wrong: 17 mixed a SENTENCE-row count with units, and ×12.5 was one sentence's
+pre-repair figure, since repaired to 2.04. Over all of `work/` the real population is 7 units of
+3575, worst 2.63 — and all of it measured on F5 at the old grouping. PLAN "Numbers to re-measure"
+carries the correction; do not restate a population number here until a Silero batch exists.)*
 
 Skip it only for a queue you have already repaired (`sentences.json` newer than the repair stamp).
 A video whose digest `- asr:` line says `alignment collapse suspected` is never a skip.
