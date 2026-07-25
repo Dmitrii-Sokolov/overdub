@@ -55,10 +55,14 @@ themselves. Rationale: DECISIONS 2026-07-25.
   it (`translate_unload` POSTs keep_alive:0); the Sonnet route never loads it at
   all. The old blanket "never load two heavy models at once" was an artifact of
   Gemma's size and blocked model reuse across a batch for no VRAM reason.
-- **No tempo cap.** `atempo` speeds segments up as much as their slot
-  requires, applied at assembly — always after verification, never before.
-  Per-segment speed factor goes to the run report; audibly broken segments
-  are acceptable losses, silent ones are not.
+- **No tempo cap upward; a floor downward.** `atempo` speeds a segment up as
+  much as its slot requires — uncapped, by design. Since 2026-07-25 it also
+  SLOWS an under-filled unit toward its slot, bounded by `atempo_floor` (0.75,
+  an ear verdict: degradation starts at 0.65). Both directions apply at
+  assembly, always after verification, never before, and strictly inside the
+  unit's own slot — the dub's timeline is identical at every floor, so picture
+  sync never depends on this knob. Per-segment speed factor goes to the run
+  report; audibly broken segments are acceptable losses, silent ones are not.
 - **Output is MKV** with original audio, RU dub, EN subs, RU subs. The original
   video stream is never re-encoded.
 
@@ -76,8 +80,12 @@ ESpeech-TTS-1_RL-V2 (F5-TTS, worker in `.venv-f5tts`) still works and is still w
 Chatterbox was rejected in the day-1 ear test. Two things Silero forces on the pipeline:
 **it silently DELETES Latin script** (verified — a sentence with `Reddit` renders byte-identical to
 the same sentence without the word), which is why `text_tts` is Cyrillic-by-contract via the
-`pronounce` chain; and **it has no `supports_target`**, so slot fitting is the pipeline's job now
-(the open blocker — PLAN). Adapter default is v5_5_ru; v4_ru only to reproduce old runs
+`pronounce` chain; and **it has no `supports_target`**, so slot fitting is the pipeline's job now.
+That job is half done (2026-07-25): `atempo_floor` stretches under-filled units and closed 70% of
+the measured silence, while sizing the TRANSLATION to the slot is still open (PLAN item 1a). The
+duration model those two share lives in `overdub/tts/voice_rate` and is keyed on `tts_voice` —
+speaking rate is a VOICE fact (eugene 19.85 ru ch/s vs baya 14.41) and an unmeasured voice
+disables the model rather than borrowing a rate. Adapter default is v5_5_ru; v4_ru only to reproduce old runs
 (DECISIONS 2026-07-19). No voice cloning — fixed narrator voice. Don't
 hardcode engine specifics outside the engine adapter. Three venvs, never merge them:
 `.venv-asr` (pipeline), `.venv-f5tts` (F5 worker), `.venv-demucs` (separate stage);

@@ -1,5 +1,48 @@
 # DECISIONS
 
+## 2026-07-25 — session retrospective: three times the arithmetic was right and the SHAPE was wrong
+
+Recorded because the pattern repeated three times in one session, in three different layers, and
+only once was it caught by the person who made it.
+
+**1. Item 1(b), the pre-synthesis bar.** Its premise: "17 units ship at cf ≥ 1.8, up to ×12.5,
+silently". Recomputed before writing code: 7 units of 3575, worst 2.63. The 17 mixed a
+sentence-row count with a unit count, the ×12.5 was one sentence's pre-repair figure, and "silently"
+was false — three surfaces already print it. On top of that, all 36 workdirs are F5 at the old
+grouping, so the corpus described a different engine than the one being fixed. Caught by measuring
+before building. **Outcome: the item was not built.**
+
+**2. Item 1(a), the slot fit.** Its premise: "the translation is ~29% too short, so make the
+translator write longer". The hole was actually DISTRIBUTED — many units each missing a little —
+which a uniform multiplier answers far better than per-sentence length work. A floor on `atempo`
+closed 70% of the silence in the assembly layer, with no prompt change and no re-translation.
+**Outcome: (a) demoted from blocker to polish.**
+
+**3. The listening test for that floor.** Its premise: "assemble at each floor and listen". A floor
+only binds units below it, so the 45 s window offered held two units, one of which never reached
+the floor — the test could not have shown degradation. Caught by the USER, who said it looked wrong
+and proposed the fix: one phrase, four tempos, back to back. **Outcome: the verdict changed from
+0.85 to 0.75 — 79 seconds of silence, twice the effect.**
+
+**The common failure is not bad arithmetic. It is measuring a quantity that is not the one under
+discussion.** Sentence rows instead of units; total shortfall instead of its distribution; a dub
+instead of a coefficient. Each number was computed correctly and answered the wrong question.
+
+**The cheap defence, and it is a question, not a process:** before running a measurement, ask
+whether the experiment actually moves the variable being argued about. That single question would
+have caught all three. It is also what the user asked, unprompted, about the tempo clips.
+
+**Corollaries worth keeping:**
+- A green test proves nothing until the implementation is mutated — and the mutation harness must
+  distinguish a failing assertion from a module that does not import. A docstring typo once made
+  all eight mutations report "caught" with zero tests executed.
+- Adversarial review earns its cost on work you believe is finished. It found a shipped regression
+  in the subtitle placement (tail fragments opening 10.6 s after their audio) that the author's own
+  verification missed, because the author measured cue DURATIONS and the defect was in cue DELAY.
+- **Documentation goes stale by NUMBER, not only by name.** Grepping the route-B skill for engine
+  names came back clean twice; the retracted "17 units / ×12.5" figures were sitting in it the whole
+  time. When a number is retired, grep for the number.
+
 ## 2026-07-25 — `atempo_floor = 0.75`, and the listening test that produced it was the second one
 
 Under-filled units are now stretched toward their slot, bounded by a floor. The floor is an EAR

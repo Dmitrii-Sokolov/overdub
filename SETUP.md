@@ -2,9 +2,11 @@
 
 ## Strategy: pipeline venv + F5 worker venv + demucs venv + Ollama as a separate OS process
 
-1. **`.venv-asr`** — the pipeline venv: faster-whisper (STT + verify), Silero (fallback TTS via
-   torch.hub), the `overdub` package itself. torch cu128 line.
-2. **`.venv-f5tts`** — the F5/ESpeech TTS venv (torch 2.8 cu128). The production engine runs
+1. **`.venv-asr`** — the pipeline venv: faster-whisper (STT + verify), **Silero — THE TTS engine
+   since 2026-07-25** (via torch.hub, no asset to fetch and no separate venv), the `overdub`
+   package itself. torch cu128 line. A default run needs only this venv plus `.venv-demucs`.
+2. **`.venv-f5tts`** — the F5/ESpeech TTS venv (torch 2.8 cu128), needed ONLY when
+   `tts_engine = "f5"` is set explicitly. That engine runs
    here as a worker subprocess (`overdub/tts/f5_worker.py`) driven over stdio — f5-tts is
    dependency-incompatible with `.venv-asr` (torch 2.11 vs 2.8, numpy downgrade, torchcodec ABI,
    ~110 extra packages; measured via pip dry-run, see DECISIONS 2026-07-16). Never merge them.
@@ -14,7 +16,7 @@
 4. **Ollama** — standalone Windows app/service, its own bundled CUDA; NOT a pip package, never in a
    venv. Treat as a black-box localhost service.
 
-## F5/ESpeech TTS venv + assets (production engine)
+## F5/ESpeech TTS venv + assets (opt-in engine — skip unless `tts_engine = "f5"`)
 
 ```powershell
 py -3.12 -m venv .venv-f5tts ; .venv-f5tts\Scripts\Activate.ps1

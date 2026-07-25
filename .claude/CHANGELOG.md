@@ -1,5 +1,24 @@
 # CHANGELOG
 
+## 2026-07-25 (last) — docs catch up with the engine switch and with the tempo floor
+
+The engine switch landed in code on 2026-07-25 but four documents still described F5 as
+production and Silero as the fallback — a reader following README or SETUP would have set up the
+wrong stack.
+
+| file | was | now |
+|---|---|---|
+| `README.md` step 4 | "ESpeech-TTS-1_RL-V2 renders … Silero is the fallback engine" | Silero is THE engine; F5 behind `tts_engine = "f5"`. Determinism stated, since it is why there is no reseed loop and why timing fit is the pipeline's job |
+| `README.md` step 6 + stack table | "atempo, uncapped" | uncapped UP, floored DOWN at 0.75, both inside the unit's slot; subtitle paragraph added (`en.srt` on source timings, `ru.srt` on the dub) |
+| `README.md` step 5 | "before any speed-up" | before any tempo change in either direction; reseed described as engine-conditional |
+| `CLAUDE.md` hard constraints | "**No tempo cap.**" | "**No tempo cap upward; a floor downward.**" + the timeline-invariance note |
+| `CLAUDE.md` stack | "slot fitting is the pipeline's job now (the open blocker)" | half done — floor shipped, translation sizing open; duration model named and its per-voice keying stated |
+| `STACK.md` stage 3 | "ESpeech/F5 (production) + Silero (fallback)" | roles swapped, F5 marked opt-in |
+| `SETUP.md` venv list | `.venv-f5tts` described as required | required only for the opt-in engine; a default run needs `.venv-asr` + `.venv-demucs` |
+
+Also in the route-B skill (separate commits): the preflight checked F5 assets and nothing for the
+engine actually in use, and the Step 1b rationale still quoted the retracted "17 units at ×1.8..×12.5".
+
 ## 2026-07-25 (last) — slot fit, part (c): ru.srt follows the dub, and underfill becomes visible
 
 First landing of PLAN item 1. Two changes, both in the slot↔placement layer, neither touching

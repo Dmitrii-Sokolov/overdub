@@ -128,14 +128,14 @@ disabling it so spills fail loudly. When Gemma is resident, free the other model
 
 ---
 
-## Stage 3 — TTS: ESpeech/F5 (production) + Silero v5_5_ru (fallback) + whisper-small verify
+## Stage 3 — TTS: Silero v5_5_ru (THE engine since 2026-07-25) + ESpeech/F5 (opt-in) + whisper-small verify
 
 **Code:** adapter `overdub/tts/f5.py` (spawns `f5_worker.py` in `.venv-f5tts`, line-JSON over stdio,
 reader-thread timeouts, respawn-once, 3-strike `TtsFatalError`) · Silero `overdub/tts/silero.py` ·
 synthesize stage + reseed-retry `overdub/stages/synthesize.py`. Assets: SETUP.md. Engine history
 (Chatterbox rejected day-1, Silero v4 → F5 bake-off 2026-07-16): DECISIONS + `bakeoff/tts-research-2026-07.md`.
 
-**F5 / ESpeech (production):**
+**F5 / ESpeech (opt-in via `tts_engine = "f5"`; what pre-2026-07-25 artifacts used):**
 - Startup ~30 s; ~0.7–0.8 GiB VRAM; output 24 kHz mono (vocos-mel-24khz — a checkpoint fact, not a
   knob); RUAccent turbo3.1 puts stresses in-worker.
 - **`nfe` is the speed knob and cost is EXACTLY linear in it** (Euler solver, one DiT forward/step).

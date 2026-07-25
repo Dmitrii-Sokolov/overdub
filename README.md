@@ -22,25 +22,38 @@ hundreds of hours of single-speaker content.
    **primary** — Claude Sonnet in semi-automatic mode (sub-agent workflow;
    subscription, better quality, much faster — it replaces the pipeline's
    heaviest stage). See "Running" below.
-4. **Synthesize (TTS)** — ESpeech-TTS-1_RL-V2 (F5-TTS, worker process in its
-   own venv) renders Russian audio. Adjacent sentences group into render units
-   for natural prosody; native speed slot-fills each unit's time span. The
-   narrator is a fixed reference clip (see "Voices" below) — one voice for every
-   video, no per-speaker cloning. Each fresh unit is round-tripped through
-   whisper-small in-stage; low similarity triggers reseed-retry (keep-best).
-   Silero (`eugene`, CPU) is the fallback engine — slightly lower quality, but
-   it needs no voice sample at all (adapter default is v5_5_ru; v4_ru is kept
-   only to reproduce pre-2026-07-19 runs, DECISIONS 2026-07-19).
+4. **Synthesize (TTS)** — Silero v5_5_ru (`eugene`, CPU) renders Russian audio;
+   it has been THE engine since 2026-07-25, chosen on speed and hardware cost
+   with the quality difference accepted as a deliberate trade and later
+   ear-confirmed on finished videos (DECISIONS 2026-07-25). One fixed narrator
+   voice for every video, no per-speaker cloning and no voice sample needed.
+   Adjacent sentences group into render units for natural prosody. Silero is
+   DETERMINISTIC and has no native slot fitting, which shapes the two stages
+   below: there is nothing to reseed, and timing fit is the pipeline's job.
+   ESpeech-TTS-1_RL-V2 (F5-TTS, worker in `.venv-f5tts`) still runs behind
+   `tts_engine = "f5"` and is what pre-2026-07-25 artifacts used; it brings back
+   reference-clip narration and its own slot filling.
 5. **Verify** — the independent judge: every render unit is transcribed back
    with whisper-small and compared against the normalized TTS text (the same
    normalizer on both sides); failures are flagged in the run report — never
-   hidden, never blocking. Runs on raw audio, before any speed-up.
+   hidden, never blocking. Runs on raw audio, before any tempo change in either
+   direction. On a seed-capable engine a low-similarity unit is re-rendered with
+   a new seed (keep-best); on Silero a failure is flagged directly, since
+   re-rendering the same text returns the same audio.
 6. **Separate + Mux** — htdemucs extracts a no-vocals bed from the original
    audio; the RU track is the dub laid over that bed at original level
    (`dub_mix = "bed"`, production default; `replace`/`duck` available). `ffmpeg`
-   fits each unit into its slot (`atempo`, uncapped — extreme speed factors are
-   logged, not fixed), aligns dub loudness to the original and muxes the final
-   MKV. The original video stream is never re-encoded.
+   fits each unit into its slot with `atempo`: speeding up is UNCAPPED (extreme
+   factors are logged, not fixed), slowing an under-filled unit is bounded by
+   `atempo_floor` (0.75). Both stay strictly inside the unit's own slot, so the
+   dub's timeline — and picture sync — is unaffected by the setting. Then dub
+   loudness is aligned to the original and the final MKV is muxed. The original
+   video stream is never re-encoded.
+
+   Subtitles: `en.srt` carries the original timings (it transcribes the English
+   track the MKV still ships), while `ru.srt` follows the DUB — each cue opens
+   where its audio actually landed, since grouping makes a unit's speech
+   continuous and a source-timed cue would drift from the voice reading it.
 
 ## Running
 
@@ -361,7 +374,7 @@ embedded as subtitle tracks for free.
 | Download | yt-dlp | |
 | STT | faster-whisper large-v3 | CUDA |
 | Translation | Gemma-3-12B via Ollama · Claude Sonnet (semi-auto) | local default · primary cloud route (DECISIONS 2026-07-18) |
-| TTS | ESpeech-TTS-1_RL-V2 (F5-TTS) | GPU worker in `.venv-f5tts`; pluggable adapter; fallback: Silero (CPU, no voice sample — v5_5_ru default, v4_ru only for old runs) |
+| TTS | Silero v5_5_ru (`eugene`) | THE engine since 2026-07-25 — CPU, in `.venv-asr`, no voice sample, deterministic. Opt-in alternative: ESpeech-TTS-1_RL-V2 (F5-TTS) as a GPU worker in `.venv-f5tts`; v4_ru only to reproduce pre-2026-07-19 runs |
 | Verification | faster-whisper small | ASR round-trip check |
 | Separation | htdemucs (Demucs) | no-vocals bed for the mix, `.venv-demucs` |
 | Mux | ffmpeg | atempo fitting, bed mix, MKV output |
