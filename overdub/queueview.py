@@ -434,10 +434,23 @@ def render_run_report(run, offenders, summary=None):
                  f"over {pr.get('n_distinct')} distinct latin tokens"
                  if pr.get("n_invented") is not None else None)
 
+    # Slot fill — the one number the speed line above CANNOT carry: speed_factor is floored at
+    # 1.0, so an under-filled dub reads "clean" there by construction (8zJlKmgMT44 reported
+    # median 1.0 / p95 1.0 while ~23% of its dub was silence). Printed only when the assemble
+    # block has it; a run.json predating 2026-07-25 carries None, which is UNKNOWN, not 1.0.
+    # Reads in BOTH directions on purpose: the same corpus holds videos at 1.02-1.15, where the
+    # slot is too SHORT and atempo is doing the work.
+    asm = run.get("assemble", {}) or {}
+    fill_line = (f"- fill: med {asm.get('fill_median')} raw/slot"
+                 f" · slot silence {format_dur(asm.get('slot_silence_sec') or 0)}"
+                 if asm.get("fill_median") is not None else None)
+
     lines = [head, timings_line]
     if stages_line:
         lines.append(stages_line)
     lines += [asr_line, flags_line]
+    if fill_line:
+        lines.append(fill_line)
     if pron_line:
         lines.append(pron_line)
     # Source anomalies, rendered whenever non-empty INDEPENDENT of the

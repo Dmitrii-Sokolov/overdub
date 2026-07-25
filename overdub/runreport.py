@@ -600,6 +600,12 @@ def _build_run_report(work, cfg):
             "duration_sec": ar.get("duration_sec"),
             "n_sped": int(ar.get("n_sped", 0) or 0),
             "in_span_silence_sec": ar.get("in_span_silence_sec"),
+            # Both None on a report written before 2026-07-25 — absent is UNKNOWN, never a
+            # measured zero, same rule as the pronounce block. The speed block above cannot
+            # carry this: its metric is floored at 1.0, so it reads "clean" on an under-filled
+            # dub by construction.
+            "fill_median": ar.get("fill_median"),
+            "slot_silence_sec": ar.get("slot_silence_sec"),
         },
         "mux": {
             "dub_mix": mr.get("dub_mix"),

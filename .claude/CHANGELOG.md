@@ -1,5 +1,46 @@
 # CHANGELOG
 
+## 2026-07-25 (last) — slot fit, part (c): ru.srt follows the dub, and underfill becomes visible
+
+First landing of PLAN item 1. Two changes, both in the slot↔placement layer, neither touching
+synthesized audio.
+
+**ru.srt cues are placed from the actual audio** (`assemble._ru_cue_rows`). A cue's onset is now
+the unit's offset plus the sentence's character share of the unit's PLACED duration — shared over
+`text_tts`, the string the engine voiced — and its end runs to the next cue's onset, so the silence
+after an under-filled unit stays readable instead of being cut off (user call: reading time is why
+a cue exists). A unit that placed no audio falls back to its sentences' source timings.
+`en.srt` is deliberately unchanged: it transcribes the original English track, which the MKV still
+carries, so re-timing it would desync it from its own audio. `placed` is now stashed onto the plan
+row — the one piece of state the SRT writer was missing; it was a loop-local before.
+
+**Underfill is measurable for the first time.** `report.json`/`run.json` gain
+`assemble.fill_median` (raw/slot, NOT floored at 1.0) and `assemble.slot_silence_sec` (against the
+SLOT, not the span), plus a `- fill:` digest line. The existing speed block cannot carry this:
+`speed_factor = max(1.0, raw/slot)`, so it reports 1.0 for a hole by construction — which is why
+the blocker video reads median 1.0 / p95 1.0 / n_over 1 while a quarter of it is silence.
+
+**Measured on a hardlinked mirror of `work-exp/silero-grp-mid/8zJlKmgMT44`** (the grouping-A/B
+baseline arm was never written to; the mirror was deleted after):
+
+| | value |
+|---|---|
+| fill median | **0.7104** |
+| slot silence | **283.1 s** of a 1058.8 s dub (26.7%) |
+| in-span silence, same run | 241.8 s — the old number understates the hole by 41 s |
+| speed block, same run | median 1.0 · p95 1.0 · n_over_1_8 1 |
+| cue onset shift vs source timings | median 0.71 s · p90 3.15 s · max 8.02 s |
+| cues moved > 1 s | 103 of 246 matched |
+| opening cue at its group's audio start | 70 of 70 |
+| cue duration profile | median 3.27 s (was 3.45), p90 5.79 (5.42), max 11.67 (10.63) |
+
+Tests: 521 → 530, new `tests/test_assemble_srt.py` (placement only; `test_assemble_cues.py` keeps
+`_split_cue`'s presentation contract). **Mutation-checked, and the check earned its keep:** six
+mutations, five caught immediately, and the survivor exposed a test asserting something it did not
+test — an empty `text_tts` is caught by the `or text_ru` fallback, so the width floor never ran.
+The floor's real invariant is a division by zero when a unit has no text at all; the test now says
+that, and all six mutations are caught.
+
 ## 2026-07-25 (last) — Silero becomes the only engine: hiss filter, grouping re-cut, stress marks, measurement gate
 
 Rationale for every item is in DECISIONS 2026-07-25; this is the what.

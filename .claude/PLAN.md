@@ -54,30 +54,50 @@ dictionary still lacks).
 
 Ordered. The first is the blocker.
 
-**1. Slot fit — one pass over the slot↔placement layer, three symptoms.** The holes are a PACE
-MISMATCH and that is what makes them tractable: measured per unit on `8zJlKmgMT44`, Silero runs
-16.4-21.4 ru chars/s (CV 5.5%, p90/p10 1.16×) while the English speaker runs 4.7-66.2 en chars/s
-(CV 41.7%). The slot length is set by a moving quantity, the dub's pace is an engine constant —
-"translate to roughly the same length" cannot fit slots that were never the same shape. Damage
-today: median slot filled to 0.73 vs F5's 0.90, 45 of 69 units hold a hole >3 s, 21 hold >5 s,
-267 s of silence vs F5's 124 s; closing the median hole by tempo alone needs 1.37×, past `atempo`'s
-comfortable range. `<break>` was tried and rejected here (DECISIONS 2026-07-25) — it addresses
-swallowed pauses, which is not what the holes are made of. Three parts, same layer, one visit:
-   - **(a) Target character count into the translate prompt.** Take the SOURCE span, divide by
-     Silero's measured rate, make the translator hit THAT number instead of imitating source length;
-     `atempo` <1 absorbs the remainder. Silero's rate being stable is the whole reason this closes.
-   - **(b) A pre-synthesis bar on implausibly short slots.** 17 units shipped at cf ≥ 1.8, up to
-     ×12.5 (`iWRmtPdFbGw#10`: 0.46 s slot for 5.24 s of speech; `8zJlKmgMT44#130-133`: four source
-     duplicates sharing one 5.74 s slot) and `assemble_flag` was None on all 17 — garbage ships
-     silently. Flag and merge/drop before TTS spends time on it. With 78% of units at cf ≤ 1.05 a
-     hard bar at the top costs almost nothing. (Two of the 17 were repaired 2026-07-25; the count
-     is now 14 and pre-repair — see "Numbers to re-measure".)
-   - **(c) Subtitles drift from the audio under the new grouping.** Sound inside a group is
-     continuous (internal pauses eaten) while `ru.srt` is written in `assemble._write_srt` from
-     per-sentence `segs` at original timings: at 1.2/20/600 the p90 divergence is **1.28 s** against
-     0.30 s before (measured 2026-07-25 over 37 videos / 5401 sentences). Candidate: place the cue
-     by ACTUAL placement — the unit's character share of its `placed_sec`, which `_split_cue`
-     already does inside one sentence.
+**1. Slot fit — the pipeline has no duration model. Re-framed 2026-07-25 (user call): the fit is
+TWO-SIDED.** The original framing ("Silero under-fills, translate longer") did not survive reading
+the corpus: on 3 of the 5 videos in `work-silero-v5` Silero **over**-runs its slots (raw/slot
+medians 1.023, 1.145, 1.017; 16/30, 19/31, 21/37 units under atempo), and on 2 it under-fills
+(0.791, 0.816). 0.73 was one video's SOURCE pace, not an engine property. What is actually missing
+is a duration model in either direction: predict how long the RU will take, and size the text to
+the slot — longer where there is a hole, shorter where atempo is doing ×12.5 today. The engine side
+is a usable constant because Silero's own rate is stable (CV 5.5%), but it is **per VOICE, not per
+engine**: eugene 18.8-19.5 ru ch/s against baya 14.4, aidar 14.9, kseniya 15.5, xenia 17.8, so the
+knob keys on `tts_voice`.
+
+**(c) SHIPPED 2026-07-25** — ru.srt follows the dub and underfill is measurable (CHANGELOG). That
+landing also re-measured the Silero side of this item correctly, at the shipped grouping: fill
+median **0.7104**, slot silence **283.1 s** of a 1058.8 s dub. Note `in_span_silence` understated
+it by 41 s, and the speed block reported median 1.0 / p95 1.0 on that same run — the symptom was
+being measured and thrown away. The F5 side of the old comparison (0.90 / 124 s) is still an
+old-grouping number; no F5 run exists at 1.2/20/600 (see "Numbers to re-measure").
+
+Remaining, and each one now has a code-level obstacle found by reading rather than assumed:
+   - **(a) Size the translation to the slot, both directions.** Target chars = slot ÷ the voice's
+     rate; `atempo` trims the remainder. Four obstacles, all confirmed in code: (i) **`atempo` <1
+     does not exist** — `assemble` computes a factor only when `nat > slot` and shells to ffmpeg
+     only `if factor > 1.0`, so the stretch branch must be BUILT, with a floor (mirror `f5.plan_speed`'s
+     0.75) or the narrator drawls; (ii) **the `runaway` gate fights the target** — `_is_bad` caps
+     `text_ru` at `translate_max_len_ratio=3.0 × len(src_en)`, so for any source slower than
+     ~6.3 en ch/s the CORRECT length is flagged, costing up to 4 reseeds and in the limit shipping
+     `src_en`, i.e. English into the dub; re-anchor it on the target, not on the source length;
+     (iii) **the length rule lives in 4 hand-synced copies** (`translate.py:SYSTEM`,
+     `skills/overdub-sonnet-batch/references/translate-contract.md`, that skill's `SKILL.md`,
+     `README.md`) and route B's prompt is assembled by an agent at runtime — a target has to reach
+     BOTH routes, so compute it in a shared helper that `translate.py` and
+     `scripts/build_translation.py` both call, and enforce/report it in the latter or route-B
+     compliance is unverifiable; (iv) **the route-A resume key ignores timings** (skip is
+     `done[sid]['src_en'] == s['text']`), so after `--repair-asr` a translation sized for a slot
+     that no longer exists is silently kept.
+   - **(b) A pre-synthesis bar on implausible slots.** 17 units shipped at cf ≥ 1.8, up to ×12.5,
+     with `assemble_flag` None on all 17 (14 after the two 2026-07-25 repairs). Obstacles: the
+     existing 1.8 bar is computed POST-synthesis from rendered samples and is a module constant
+     duplicated in `assemble.py` and `runreport.py` with a "keep in sync" comment — a pre-synthesis
+     bar cannot reuse that quantity and should promote the number to config rather than add a third
+     copy. **Dropping a unit is forbidden** by four never-drop invariants; MERGING is cheap and
+     self-heals (units are keyed by id-tuple, so the cache misses and verify/assemble re-run). A
+     regroup is WARN-only today, so a bar that regroups needs `--force` or it silently never
+     applies.
 
 **2. Phoneme transliteration from CMUdict — do it before the stress audit, it blocks that.** The
 letter rules guess from spelling what the dictionary knows phonetically: `buy → буи` vs `B AY1`,
@@ -171,11 +191,13 @@ shipped 2026-07-25 (marks honoured, verify strips them, CMUdict in-repo); this i
 
 Three groups, three different reasons. **Do not quote across a group boundary.**
 
-**(A) `8zJlKmgMT44` slot/silence figures were taken under two different groupings.** The
-Silero-vs-F5 comparison ran at the old 0.4/12/300 (136 units, in-span silence 224 s vs 47 s on a
-1063 s dub); the blocker's damage figures ran at the shipped 1.2/20/600 (69 units, median fill 0.73,
-267 s vs F5's 124 s). Same video, incompatible arithmetic — the 1.37× slowdown estimate belongs to
-the second. Re-measure both sides on the shipped grouping before quoting "how much silence".
+**(A) `8zJlKmgMT44` — the Silero side is now re-measured; the F5 side is not.** Silero at the
+shipped 1.2/20/600, measured 2026-07-25 with the new metric: **fill median 0.7104, slot silence
+283.1 s** of a 1058.8 s dub (`in_span_silence` reads 241.8 s on the same run and understates by
+41 s — it excludes the inter-unit gap). **Quote these, not the old pair.** Still unresolved: F5's
+0.90 / 124 s comes from grouping 0.4/12/300 and NO F5 run exists at the shipped grouping, so the
+Silero-vs-F5 fill comparison has no valid form today; it needs an F5 arm at 1.2/20/600 or it stays
+uncited. Same for the older cross-engine figures (136 units, 224 s vs 47 s) — old grouping.
 Also pre-repair: the "17 units at cf ≥ 1.8" count is now 14 (two videos repaired 2026-07-25).
 
 **(B) F5-era batch shares are void on the Silero path.** synthesize 47.6% · transcribe 21.3% ·

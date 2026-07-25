@@ -141,6 +141,56 @@ def _write_srt(path, rows) -> None:
     os.replace(tmp, path)
 
 
+def _ru_cue_rows(plans, segs, sr) -> list[tuple[float, float, str]]:
+    """ru.srt rows follow the DUB, not the source timeline.
+
+    Grouping makes a unit's audio continuous — the inter-sentence pauses inside a group are
+    swallowed — while a source-timed cue still carries them, so the two drift apart: p90
+    divergence 1.28 s at the shipped 1.2/20/600 grouping against 0.30 s before it. The onset
+    therefore comes from where the audio ACTUALLY landed (the unit's offset plus the
+    sentence's character share of the unit's placed duration) and the end runs to the NEXT
+    cue's onset: reading time is why a cue exists, and the silence after an under-filled unit
+    belongs to the text that was just spoken.
+
+    The share is taken over text_tts — the string the engine actually voiced — so a sentence
+    carrying "x2" ("в два раза") is timed by what was said, not by what is displayed.
+
+    A unit that placed no audio (empty_tts, missing_audio, assemble_error) falls back to its
+    sentences' ORIGINAL timings: a silent unit has no placement to speak of, and never-drop
+    outranks accuracy here. en.srt is deliberately NOT re-timed — it transcribes the original
+    English track, which the MKV still carries unmodified, so moving it would desync it from
+    its own audio to match a dub it does not belong to."""
+    rows: list[tuple[float, float, str]] = []
+    for p in plans:
+        ids = p["u"]["ids"]
+        dur = p.get("placed", 0) / sr
+        if dur <= 0:
+            rows += [(segs[i]["start"], segs[i]["end"], segs[i]["text_ru"]) for i in ids]
+            continue
+        at = p["offset"] / sr
+        # min width 1: an empty text_tts inside a spoken unit must still take a slice, or the
+        # sentences after it in the same unit would inherit its time and read early.
+        widths = [max(len((segs[i].get("text_tts") or segs[i].get("text_ru") or "").strip()), 1)
+                  for i in ids]
+        total_w = sum(widths)
+        for sid, w in zip(ids, widths):
+            b = at + dur * w / total_w
+            rows.append((at, b, segs[sid]["text_ru"]))
+            at = b
+    # Stretch each cue to the next one's onset, then keep onsets monotone: a fallback row
+    # carries SOURCE timings and can otherwise open before the placed row preceding it.
+    # _write_srt floors b to a + 0.05, so even a fully squeezed row still displays.
+    out: list[tuple[float, float, str]] = []
+    prev = 0.0
+    for k, (a, b, text) in enumerate(rows):
+        if k + 1 < len(rows):
+            b = max(b, rows[k + 1][0])
+        a = max(a, prev)
+        out.append((a, max(b, a), text))
+        prev = a
+    return out
+
+
 class AssembleStage:
     name = "assemble"
 
@@ -220,6 +270,7 @@ class AssembleStage:
         n_sped = n_over = 0
         max_f = 1.0
         in_span_silence = 0.0
+        slot_silence = 0.0
         for p in plans:
             u, lead, offset, slot, factor, req, aflag = (
                 p["u"], p["lead"], p["offset"], p["slot"], p["factor"], p["req"], p["aflag"])
@@ -251,6 +302,7 @@ class AssembleStage:
             except Exception as e:
                 aflag = aflag or "assemble_error"
                 print(f"       [flag] u{lead}: {aflag} {e}", file=sys.stderr)
+            p["placed"] = placed                           # ru.srt cues are placed from this
             if placed == 0 and u.get("text_tts"):
                 aflag = aflag or "missing_audio"
             if p["combined"] >= _BROKEN:
@@ -261,6 +313,12 @@ class AssembleStage:
             span_sec = u["end"] - u["start"]
             if u.get("text_tts"):
                 in_span_silence += max(0.0, span_sec - placed / sr)
+                if slot is not None:
+                    # against the SLOT, not the span: the span excludes the inter-unit gap the
+                    # dub is free to speak into, so in_span_silence understates the hole a
+                    # listener actually hears (241.8 s reported vs 283 s of real slot hole on
+                    # the blocker video).
+                    slot_silence += max(0.0, (slot - placed) / sr)
             for sid in u["ids"]:
                 report.upsert(
                     rep, sid, status=segs[sid]["status"], translate_flag=segs[sid].get("flag"),
@@ -272,13 +330,18 @@ class AssembleStage:
                     assemble_flag=aflag,
                 )
 
+        # The last unit has no slot (nothing follows it to bound one), so it cannot report a
+        # fill — None rather than a silently short sample when nothing qualifies.
+        fills = [p["nat"] / p["slot"] for p in plans if p["slot"]]
+        fill_median = round(float(np.median(fills)), 4) if fills else None
+
         dub_tmp = ctx.work.dub_audio.with_suffix(".wav.tmp")
         sf.write(str(dub_tmp), buf, sr, format="WAV", subtype="PCM_16")
         lowpass = effective_lowpass(cfg.dub_lowpass_hz, sr)
         if lowpass:
             _apply_lowpass(dub_tmp, sr, lowpass)
         _write_srt(ctx.work.en_srt, [(s["start"], s["end"], s["src_en"]) for s in segs])
-        _write_srt(ctx.work.ru_srt, [(s["start"], s["end"], s["text_ru"]) for s in segs])
+        _write_srt(ctx.work.ru_srt, _ru_cue_rows(plans, segs, sr))
         report.prune(rep, {s["id"] for s in segs})
         rep["assemble"] = {
             "sample_rate": sr, "duration_sec": round(total / sr, 3),
@@ -286,6 +349,14 @@ class AssembleStage:
             "n_sped": n_sped, "max_speed_factor": round(max_f, 4),
             "n_over_1_8_combined": n_over,
             "in_span_silence_sec": round(in_span_silence, 1),
+            # Fill is raw/slot BEFORE atempo and is deliberately NOT floored at 1.0 the way
+            # speed_factor is: that floor is why the whole speed block reads "clean" (median
+            # 1.0, p95 1.0) on a video that is 23% hole — it can only ever report compression.
+            # One number that moves in both directions is the point, now that underfill is
+            # known to be the SOURCE speaker's pace rather than an engine property: the same
+            # corpus has videos sitting at 1.02-1.15.
+            "fill_median": fill_median,
+            "slot_silence_sec": round(slot_silence, 1),
             "lowpass_hz": lowpass,
         }
         # artifact flips BEFORE the stamp: a crash between them leaves new-dub + old-stamp,
@@ -296,5 +367,7 @@ class AssembleStage:
         shutil.rmtree(tmp_dir, ignore_errors=True)
         if lowpass:
             print(f"       lowpass {lowpass} Hz applied to dub_ru.wav")
+        fill_txt = f"{fill_median:.2f}" if fill_median is not None else "n/a"
         print(f"       dub_ru.wav {total / sr:.1f}s ({n_sped} sped, max ×{max_f:.2f}, "
-              f"{n_over} over 1.8× combined, in-span silence {in_span_silence:.0f}s)")
+              f"{n_over} over 1.8× combined, fill med {fill_txt}, "
+              f"slot silence {slot_silence:.0f}s, in-span silence {in_span_silence:.0f}s)")
