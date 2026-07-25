@@ -89,15 +89,26 @@ Remaining, and each one now has a code-level obstacle found by reading rather th
      compliance is unverifiable; (iv) **the route-A resume key ignores timings** (skip is
      `done[sid]['src_en'] == s['text']`), so after `--repair-asr` a translation sized for a slot
      that no longer exists is silently kept.
-   - **(b) A pre-synthesis bar on implausible slots.** 17 units shipped at cf ≥ 1.8, up to ×12.5,
-     with `assemble_flag` None on all 17 (14 after the two 2026-07-25 repairs). Obstacles: the
-     existing 1.8 bar is computed POST-synthesis from rendered samples and is a module constant
-     duplicated in `assemble.py` and `runreport.py` with a "keep in sync" comment — a pre-synthesis
-     bar cannot reuse that quantity and should promote the number to config rather than add a third
-     copy. **Dropping a unit is forbidden** by four never-drop invariants; MERGING is cheap and
-     self-heals (units are keyed by id-tuple, so the cache misses and verify/assemble re-run). A
-     regroup is WARN-only today, so a bar that regroups needs `--force` or it silently never
-     applies.
+   - **(b) A pre-synthesis bar — NOT BUILT, and the item's own numbers were wrong (2026-07-25).**
+     Measured over every `work/` dir before writing any code: **7 units of 3575 across 6 videos sit
+     at cf ≥ 1.8, worst 2.63.** The "17 units, up to ×12.5" this item used to claim mixed three
+     things — a SENTENCE-row count (12), a pre-repair `speed_factor` from one sentence
+     (`iWRmtPdFbGw#10`, since repaired to 2.04), and a different video set. "Ships silently" was
+     also false: `assemble` prints a `[flag]` line per unit at/over the bar, `n_over_1_8_combined`
+     goes to `report.json`, and the digest prints `n>1.8` per video — only the `assemble_flag`
+     FIELD stays None. Three findings kill the instrument as specified: (1) **every one of the 36
+     `work/` manifests is `engine=f5` at grouping gap 0.4** — there is no Silero-at-1.2/20/600
+     corpus at all, and the 5-video `work-silero-v5` set tops out at cf 1.790, i.e. ZERO offenders;
+     (2) merging cannot fix them anyway — every candidate needs a merged span of 20.1-36.6 s
+     against `group_span_max` 20.0, so the lever is the CAP, not a new bar; (3) a constant-rate
+     predictor is too coarse to gate on: worst-case predicted/actual 0.715 forces a 1.29 threshold
+     to avoid misses, which would flag ~8.4 units per 24-video batch against ~0.65 real ones — the
+     bar would mostly flag its own error. **Revisit only with a Silero batch at the shipped
+     grouping in hand**, and re-derive the population from it rather than from this file.
+     Kept for whenever that happens: dropping a unit is forbidden by four never-drop invariants,
+     merging self-heals (units keyed by id-tuple), and `done()` compares the manifest's own units
+     rather than a fresh partition — so a regroup returns True and never applies without a
+     partition check.
 
 **2. Phoneme transliteration from CMUdict — do it before the stress audit, it blocks that.** The
 letter rules guess from spelling what the dictionary knows phonetically: `buy → буи` vs `B AY1`,
@@ -198,7 +209,15 @@ shipped 1.2/20/600, measured 2026-07-25 with the new metric: **fill median 0.710
 0.90 / 124 s comes from grouping 0.4/12/300 and NO F5 run exists at the shipped grouping, so the
 Silero-vs-F5 fill comparison has no valid form today; it needs an F5 arm at 1.2/20/600 or it stays
 uncited. Same for the older cross-engine figures (136 units, 224 s vs 47 s) — old grouping.
-Also pre-repair: the "17 units at cf ≥ 1.8" count is now 14 (two videos repaired 2026-07-25).
+**Retired, do not re-quote: "17 units at cf ≥ 1.8, up to ×12.5".** Recomputed over all of `work/`
+2026-07-25: **7 units of 3575, worst 2.63** (12 SENTENCE rows — the two counts were being mixed,
+and the ×12.5 was one sentence's pre-repair `speed_factor`).
+
+**(D) Everything measured on `work/` is F5 at grouping 0.4.** All 36 manifests report
+`engine=f5`, `group_gap_max=0.4` — so every compression, slot and unit-count figure derived from
+that corpus describes the OLD engine at the OLD grouping. The only Silero evidence is
+`work-silero-v5` (5 videos, max cf 1.790) and the single re-measured `8zJlKmgMT44`. Any threshold
+or population claim about the shipped configuration needs a Silero batch at 1.2/20/600 first.
 
 **(B) F5-era batch shares are void on the Silero path.** synthesize 47.6% · transcribe 21.3% ·
 download 9.8% · verify 8.3% · mux 7.9% · separate 4.9%; batch RTF 0.451 (7.26 h → 3.27 h); the
