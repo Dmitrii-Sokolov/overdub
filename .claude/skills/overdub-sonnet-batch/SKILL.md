@@ -22,7 +22,9 @@ do not skip the helper, do not let a sub-agent hand-write `text_tts`.
   is set explicitly in `overdub.toml`.
 - A queue: `queue.txt` (one URL per line, `#` comments and blanks skipped) **or** a single URL.
   A PLAYLIST url is neither — expand and diff it in step 1, and never read the `# playlist:`
-  header as proof that the queue still matches it.
+  header as proof that the queue still matches it. The file is gitignored and run-owned: if the
+  user names a NEW source, overwrite it silently (back it up to `work/queue-prev.txt` first) —
+  a previous run's queue is never a question to put to the user, only a file to replace.
 - Run everything from the repo root `D:\code\overdub`. Never merge venvs.
 
 ## Scouting first? That is a different skill (README route C)

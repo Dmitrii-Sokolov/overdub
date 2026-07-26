@@ -58,6 +58,27 @@ the intended state: this preflight will fire for the next person too.
 **Resolve the queue BEFORE the run, not after** (moved above the command 2026-07-24). These
 checks used to sit under it, which made them audits of a fetch that had already happened.
 
+**`queue.txt` belongs to the RUN, not to the user's history.** It is gitignored and rewritten
+every session by design (`.gitignore`), so a leftover queue from the previous run is not context
+for this one. **Never stop to ask what to do with it** — resolve the input, then write the file:
+
+- **The user named a new playlist, or handed over a list of videos** — overwrite `queue.txt` with
+  it, silently, and do not carry a single id over from what was there. Take one backup first, so
+  overwriting costs nothing to be wrong about:
+  ```powershell
+  if (Test-Path queue.txt) { New-Item -ItemType Directory -Force work | Out-Null
+    Copy-Item queue.txt work\queue-prev.txt -Force }
+  ```
+  That backup is a within-run undo, not an artifact — nothing reads it and `work/` cleanup may
+  take it. The freshness diff below does NOT apply here: there is nothing to compare against,
+  only a previous run's decision to discard.
+- **The user named the SAME playlist, or named nothing at all ("прогони разведку")** — keep the
+  file and apply the freshness rule below. This is the only case where its contents mean anything.
+
+**And it is never deleted at the end.** Promotion is the human trimming THIS file to the
+survivors, and both report scripts take it as `--queue queue.txt`; deleting it at S3 would take
+the route-C → route-B handoff with it.
+
 **If the user handed over a PLAYLIST rather than a list of videos**, expand it — the queue is a
 list of videos, always — and record where it came from as the first line of `queue.txt`:
 
@@ -117,6 +138,14 @@ Duplicate spellings of one video share a workdir and the CLI dedupes them (`cli.
 
 Do NOT enumerate `work/` directories — `work/` persists across batches and holds stale and
 baseline workdirs. Summarizing those wastes tokens on videos nobody queued.
+
+**A video that looks wrong for dubbing is still an ordinary queue entry.** A music video, a live
+set, something with almost no speech, a two-minute clip, a video that turns out not to be in
+English — all of them download, transcribe, summarize and render exactly like the rest. Do not
+ask the user what to do with one, do not drop it from `$ids`, do not skip its sub-agent: the
+GRADE is the answer to "what do we do with this", and the human reads it in the report. Whisper
+on music produces an empty or hallucinated transcript — that is a `low` with the reason named,
+not a failure and not a question.
 
 Then run:
 
@@ -379,6 +408,14 @@ make a re-scout free. Deleting them is the user's call, not yours.
   playlist drops every video added since, with no FAIL row and no missing artifact to catch it:
   those videos were never in `$ids`. Re-expand, diff, hand the diff over (S1). Measured on the
   real queue 2026-07-24: 6 ids in `queue.txt`, 23 in the playlist.
+- **Never stop the run to ask about ONE video.** "This looks like a music video / has no speech /
+  is not in English — should I dub it?" is the same failure as shortening the queue, one video
+  wide: it hands the model's discomfort back to the human as a decision, before the report that
+  would have answered it exists. Every queued video is scouted and graded; the grade is the
+  recommendation, and S3 is where the human acts on it.
+- **A leftover `queue.txt` is not a question either.** It is gitignored, run-owned and rewritten
+  whenever the user names a new source (S1). Asking what to do with a previous run's queue stops
+  the pass on a file that is, by construction, disposable.
 - **Never hand-write a `summary.md`** to clear a `summary pending` line. That line is the pass's
   only completion signal, and forging it is the same silent failure in miniature.
 - **Never ground the rundown in anything but the summaries.** If a summary is missing, say so

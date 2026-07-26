@@ -144,6 +144,14 @@ Then write ${dir}\\scout.draft.json, a JSON OBJECT (not a list) with these keys:
   topic they do not need is still well made. When torn, choose the lower grade and name the
   reason in highlight.
 
+  A video with little or no spoken content — a music video, a live set, an instrumental, a
+  wordless demo — is an ORDINARY input here, never a problem to flag and never a reason to ask
+  for instructions. Grade it on the same three axes (it lands on "low" for lack of substance),
+  and say plainly in one_liner that there is no speech to dub. The same goes for a transcript
+  that is empty, or that is obviously whisper hallucinating over music (a handful of repeated
+  lines, lyrics, "thank you for watching"): name that in paragraph, grade it low, and still
+  write both files — a scouted video with no verdict is a hole in the report.
+
 - author — OPTIONAL, "trusted" or "new". Emit it ONLY if the profile carries a non-empty list of
   trusted authors and you can match channel against it. With no such list there is nothing to
   compare against: omit the key entirely rather than labelling everything "new", which would add
