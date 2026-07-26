@@ -37,6 +37,20 @@ Both skills also gained the rule as a non-negotiable, and `scout-summarize.js` n
 no-speech material grades on the usual three axes (lands on `low`, reason named) and still writes
 both artifacts — an empty or hallucinated transcript is a verdict, not a hole in the report.
 
+**A second batch the same day confirmed both fixes and undercut the numbers.** 5 videos ("Test 2")
+through the corrected route-B skill: the queue was overwritten silently with `work/queue-prev.txt`
+as the backup, no stop-question was asked, and both flagged videos of the first batch came back
+clean on a listen (user). The measurements did NOT hold still — 4 of 5 need a listen against 2 of
+7, `NGOAUJtdk-4` fills 0.71 of its slots with 48.5 s of silence in a 447 s dub. Eleven unique
+videos now exist at the shipped config, and the two batches disagree on the triage rate by 29% vs
+80%; PLAN (D) records the range rather than an average, because averaging two samples this far
+apart would manufacture a baseline out of noise.
+
+**Dropped from PLAN: the F5 arm at the shipped grouping** (user call). "The Silero-vs-F5 fill
+comparison needs an F5 run at 1.2/20/600 or it stays uncited" was carried as an open debt, but the
+only decision it could inform — which engine ships — was made on 2026-07-25. F5-era numbers are
+now history to be cited as F5's, not work owed.
+
 ## 2026-07-25 (last) — docs catch up with the engine switch and with the tempo floor
 
 The engine switch landed in code on 2026-07-25 but four documents still described F5 as
