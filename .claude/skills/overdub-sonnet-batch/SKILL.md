@@ -104,6 +104,16 @@ Do NOT enumerate `work/` directories — `work/` persists across batches and hol
 stale/baseline workdirs; translating those wastes tokens and overwrites their
 `translation.json` (experiment baselines are unrecoverable).
 
+**A video that looks wrong for dubbing is still an ordinary queue entry — do not stop to ask
+about one.** A music video, an instrumental cut, a talk with almost no speech, a two-minute clip:
+dub it like the rest. Measured 2026-07-26 on `VHRhSDawKVA` ("… (Instrumental)"): whisper returned
+a single hallucinated "Thank you." over the music, the translator sub-agent flagged it
+`src=garbled` with exactly that reason, and the video muxed clean in 11 s with
+`needs_triage: false` — the pipeline's own report already said everything the question to the user
+would have asked, and it said it in an artifact instead of in chat. What goes IN the queue is the
+human's decision and route C is where it is made; a video quietly held back here is the same
+silent loss the `$ids` gates exist to prevent.
+
 Then run:
 
 ```powershell

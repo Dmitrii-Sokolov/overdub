@@ -1,5 +1,42 @@
 # CHANGELOG
 
+## 2026-07-26 — first batch at the shipped Silero config, and the two stop-questions it exposed
+
+**The run.** 7 videos through route B on Silero v5_5_ru at grouping 1.2/20/600 with
+`atempo_floor` active — the first corpus that describes the configuration actually shipped
+(everything else in `work/` is F5 at 0.4; PLAN "Numbers to re-measure" (D)).
+
+| | |
+|---|---|
+| muxed | 7 of 7 |
+| `needs_triage` | 2 (`sHImlfVM9r4`, `kSl2mxseXkM`, 1 actionable flag each) |
+| max combined factor | **1.22** — no unit within reach of the 1.8 bar |
+| fill median, per video | 0.79 · 0.80 · 0.85 · 0.85 · 0.89 · 0.95 (the instrumental has none) |
+| slot silence | 97.1 s over 3349 s of dub |
+| units stretched by the floor | 187 across the batch |
+
+Read it as a first reading, not a baseline: 7 videos, one of them 5 s long, and those medians are
+per video — averaging them would be the grain error `knowledge/measurement-discipline.md` is about.
+
+**Two questions the orchestrator stopped to ask, both of which it should have answered itself.**
+Neither is a pipeline defect; both are skill-doc gaps, now closed (commit `fc16d31` + this one).
+
+- *"There is a `queue.txt` from a previous run — what should I do with it?"* The file is
+  gitignored and rewritten every session by design; a new source overwrites it silently (one
+  backup to `work/queue-prev.txt`), and only the same-playlist / no-input case keeps the old
+  contents and diffs them. It is never deleted at the end — promotion (route C → B) and both
+  `--queue` report scripts read it.
+- *"One of these is a music video — should I dub it?"* `VHRhSDawKVA`
+  ("… (Instrumental)") answers it: whisper hallucinated one "Thank you." over the music, the
+  translator sub-agent flagged it `src=garbled` naming the cause, and it muxed clean in 11 s with
+  `needs_triage: false`. The report said everything the question would have asked. A video held
+  back at this seam is the same silent loss the `$ids` gates exist to prevent — what goes IN the
+  queue is the human's call, made in route C.
+
+Both skills also gained the rule as a non-negotiable, and `scout-summarize.js` now says that
+no-speech material grades on the usual three axes (lands on `low`, reason named) and still writes
+both artifacts — an empty or hallucinated transcript is a verdict, not a hole in the report.
+
 ## 2026-07-25 (last) — docs catch up with the engine switch and with the tempo floor
 
 The engine switch landed in code on 2026-07-25 but four documents still described F5 as

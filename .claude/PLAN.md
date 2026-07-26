@@ -17,6 +17,12 @@ four different things by 2026-07-22 (DECISIONS 2026-07-22). Do not reintroduce i
 
 Route C (scout) is in daily use and works end to end. Route B (Sonnet dub) is the primary dubbing
 route; a 24-video batch shipped 2026-07-25 with zero crashes and the seven fixes it earned are in.
+**A 7-video route-B batch shipped 2026-07-26 — the first corpus at the SHIPPED engine and
+grouping** (Silero v5_5_ru, 1.2/20/600, `atempo_floor` active): 7 of 7 muxed, 2 need a listen
+(1 actionable flag each), batch max combined factor **1.22** — no unit anywhere near the 1.8 bar —
+per-video fill medians 0.79-0.95 over 6 videos, and 97.1 s of slot silence against 3349 s of dub.
+It closes the corpus precondition under "Numbers to re-measure" (D). One of the seven was an
+instrumental with no speech and it went through untouched (route-B skill, step 1).
 Silero v5_5_ru is the ONLY engine since 2026-07-25 — **ear-confirmed on finished videos, quality
 sufficient** (DECISIONS 2026-07-25 later). What the switch cost is timing: Silero has no
 `supports_target`, so fitting speech to its slot is now the pipeline's job, and that is the blocker.
@@ -110,8 +116,11 @@ Remaining, and each one now has a code-level obstacle found by reading rather th
      against `group_span_max` 20.0, so the lever is the CAP, not a new bar; (3) a constant-rate
      predictor is too coarse to gate on: worst-case predicted/actual 0.715 forces a 1.29 threshold
      to avoid misses, which would flag ~8.4 units per 24-video batch against ~0.65 real ones — the
-     bar would mostly flag its own error. **Revisit only with a Silero batch at the shipped
-     grouping in hand**, and re-derive the population from it rather than from this file.
+     bar would mostly flag its own error. **The corpus precondition is now met** — the 7-video
+     batch of 2026-07-26 is Silero at 1.2/20/600 — and its first reading points the same way as
+     `work-silero-v5`: batch max combined factor 1.22, zero units at or over 1.8, so there is
+     still nothing for the bar to catch. Re-derive the population from that batch (and the next
+     one) rather than from this file before building anything.
      Kept for whenever that happens: dropping a unit is forbidden by four never-drop invariants,
      merging self-heals (units keyed by id-tuple), and `done()` compares the manifest's own units
      rather than a fresh partition — so a regroup returns True and never applies without a
@@ -220,11 +229,16 @@ uncited. Same for the older cross-engine figures (136 units, 224 s vs 47 s) — 
 2026-07-25: **7 units of 3575, worst 2.63** (12 SENTENCE rows — the two counts were being mixed,
 and the ×12.5 was one sentence's pre-repair `speed_factor`).
 
-**(D) Everything measured on `work/` is F5 at grouping 0.4.** All 36 manifests report
-`engine=f5`, `group_gap_max=0.4` — so every compression, slot and unit-count figure derived from
-that corpus describes the OLD engine at the OLD grouping. The only Silero evidence is
-`work-silero-v5` (5 videos, max cf 1.790) and the single re-measured `8zJlKmgMT44`. Any threshold
-or population claim about the shipped configuration needs a Silero batch at 1.2/20/600 first.
+**(D) Everything measured on `work/` BEFORE 2026-07-26 is F5 at grouping 0.4.** Those 36 manifests
+report `engine=f5`, `group_gap_max=0.4` — so every compression, slot and unit-count figure derived
+from that corpus describes the OLD engine at the OLD grouping, and the boundary is now a DATE, not
+the directory. **The gap is closed on the corpus side:** the 7-video batch of 2026-07-26
+(`sHImlfVM9r4`, `Yiy0cU6ChSw`, `NfoFdsc2ODQ`, `VHRhSDawKVA`, `CeotyuztIkg`, `FpOAn6Dh44k`,
+`kSl2mxseXkM`) is Silero at the shipped 1.2/20/600 with the floor active — first reading: max
+combined factor 1.22, per-video fill medians 0.79-0.95 (6 videos; the instrumental has none),
+slot silence 97.1 s over 3349 s of dub, 2 of 7 `needs_triage`. Treat that as a first reading, not
+a baseline: 7 videos, one of them 5 s long, and the fill medians are PER VIDEO — do not average
+them into a batch figure, and do not quote any of it beside an F5-era number.
 
 **(B) F5-era batch shares are void on the Silero path.** synthesize 47.6% · transcribe 21.3% ·
 download 9.8% · verify 8.3% · mux 7.9% · separate 4.9%; batch RTF 0.451 (7.26 h → 3.27 h); the
