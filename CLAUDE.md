@@ -49,8 +49,9 @@ themselves. Rationale: DECISIONS 2026-07-25.
 - **12 GB VRAM budget — a budget, not a prohibition** (revised 2026-07-19, see
   DECISIONS). Keep the resident total under it and account for what is loaded;
   co-residency is allowed when the arithmetic works. Measured: whisper large-v3
-  ~3.1 GB, htdemucs ~3.0, F5/ESpeech worker ~0.8, whisper-small ~0.5 — all four
-  at once is ~7.4 GB and fits. The one model that makes it tight is
+  ~3.1 GB, htdemucs ~3.0, whisper-small ~0.5 — and TTS costs nothing on the
+  shipped engine (Silero is CPU; the opt-in F5 worker would add ~0.8). The
+  default resident set is ~6.6 GB and fits. The one model that makes it tight is
   Gemma-3-12B (~8-9 GB), so on the local translate route free the others around
   it (`translate_unload` POSTs keep_alive:0); the Sonnet route never loads it at
   all. The old blanket "never load two heavy models at once" was an artifact of

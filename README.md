@@ -57,10 +57,11 @@ hundreds of hours of single-speaker content.
 
 ## Running
 
-Prereqs (SETUP.md): `.venv-asr` + `.venv-f5tts` (+ `.venv-demucs` for the
-default bed mix), F5 assets under `models/`, `ffmpeg` on PATH. `yt-dlp` is
-resolved from `.venv-asr\Scripts` first, PATH second; both tools are preflighted
-with a clear error instead of a raw WinError 2.
+Prereqs (SETUP.md): `.venv-asr` + `.venv-demucs` (for the default bed mix),
+`ffmpeg` on PATH. Silero runs inside `.venv-asr` and needs no assets under
+`models/`; `.venv-f5tts` and the F5 checkpoints matter only if you set
+`tts_engine = "f5"`. `yt-dlp` is resolved from `.venv-asr\Scripts` first, PATH
+second; both tools are preflighted with a clear error instead of a raw WinError 2.
 
 ### A. Batch with local translation (Gemma) — fully turn-key
 
@@ -385,19 +386,19 @@ embedded as subtitle tracks for free.
   stage sweep, so peak VRAM is the largest single model rather than the sum —
   which is what makes one model load per BATCH safe even on the Gemma route
   (~8-9 GB, the only model that makes 12 GB tight). Measured: whisper large-v3
-  ~3.1 GB, htdemucs ~3.0, F5 worker ~0.8, whisper-small ~0.5.
+  ~3.1 GB, htdemucs ~3.0, whisper-small ~0.5. **TTS costs no VRAM at all on the
+  shipped engine** — Silero runs on CPU (the opt-in F5 worker holds ~0.8 GiB).
 - **Secondary (deferred):** Intel Arc B390 iGPU. whisper.cpp (SYCL/OpenVINO) and
-  llama.cpp (SYCL) are proven there for STT/translation; F5 on XPU is an
-  unproven spike — Silero (CPU) would be the safe TTS there. See PLAN deferred.
+  llama.cpp (SYCL) are proven there for STT/translation; Silero-on-CPU makes the
+  TTS side a non-question there. See PLAN deferred.
 
-Throughput budget: ≤ x5 video duration — comfortably cleared. Two changes on
-2026-07-19 roughly halved batch wall-clock: `f5_nfe` 48 → 16 (2.16× on synthesis,
-ear-checked) and stage-major batching (each model loads once per batch). On the
-12-video reference batch those stages went from ~53 min to a projected ~28 min.
-Translation is the bottleneck on the local route (~45% of wall-clock; the Sonnet
-route removes it entirely); synthesis is no longer close behind it. F5 holds
-~0.7–0.8 GiB, and with stage-major the peak is the largest single model rather
-than the sum, so the 12 GB budget has real headroom (see CLAUDE.md).
+Throughput budget: ≤ x5 video duration — comfortably cleared. Batch wall-clock
+is dominated by transcribe on the Sonnet route and by translation on the local
+Gemma route (~45%); synthesis stopped being a factor when the engine moved to
+Silero (RTF ~0.02-0.3 on CPU). **Stage-share numbers older than 2026-07-26
+describe F5 and are void** — see PLAN "Numbers to re-measure" (B); the re-time
+on Silero is an open item, so treat any percentage split here as unmeasured
+until it lands.
 
 ## Constraints / assumptions
 
@@ -407,17 +408,28 @@ than the sum, so the 12 GB budget has real headroom (see CLAUDE.md).
   semi-automatic mode — the primary route (subscription, better quality, much
   faster). Cloud is always explicit, never a silent fallback.
 - Source is always English, output is always Russian.
-- No tempo compression cap — segments are sped up as much as their slot
-  requires; occasional broken segments are acceptable losses (PoC).
-- Fixed narrator voice (an F5 reference clip) — "same voice as the speaker"
-  (cloning the source speaker cross-lingually) was dropped after the day-1
-  engine bake-off; Silero `eugene` is the fallback narrator.
+- No tempo cap upward, a floor downward (`atempo_floor`, 0.75 since
+  2026-07-25): a segment is sped up as much as its slot requires and an
+  under-filled one is stretched toward its slot, both strictly inside that
+  slot. Occasional broken segments are acceptable losses (PoC).
+- Fixed narrator voice — Silero `eugene`, baked into the model, no reference
+  clip. "Same voice as the speaker" (cloning the source speaker
+  cross-lingually) was dropped after the day-1 engine bake-off.
 
 ## Voices, cloning and the law
 
-The TTS engine is a zero-shot voice cloner: the narrator voice is defined by a
-short reference clip (5–12 s + its exact transcript), not baked into the model.
-That flexibility comes with rules. This section is not legal advice.
+**On the shipped engine this section is mostly moot.** Silero's narrator is
+baked into the model — there is no reference clip, no voice sample on disk and
+no third party's voice involved, so nothing below about cloning applies to a
+default run. What DOES apply to it: the model's own licence is
+non-commercial (CC BY-NC, per `bakeoff/tts-research-2026-07.md`; unverified
+against the current model card), which is fine for personal listening and is a
+gate for anything published.
+
+Everything below concerns the **opt-in F5/ESpeech path** (`tts_engine = "f5"`),
+which IS a zero-shot voice cloner: its narrator voice is defined by a short
+reference clip (5–12 s + its exact transcript), not baked into the model. That
+flexibility comes with rules. This section is not legal advice.
 
 - **Every voice sample shipped in or referenced by this repository is public
   domain** — cut from [LibriVox](https://librivox.org) recordings, which their
@@ -436,21 +448,17 @@ That flexibility comes with rules. This section is not legal advice.
   provided the reference clip comes from a lawful source. Publishing the
   result is a different matter entirely: don't, unless the voice is yours,
   licensed, or public domain.
-- **Default narrator reference:** the demo clip from the ESpeech author's HF
+- **That path's narrator reference:** the demo clip from the ESpeech author's HF
   Space ([Den4ikAI/ESpeech-TTS](https://huggingface.co/spaces/Den4ikAI/ESpeech-TTS),
   `ref/example.mp3`) — the best-sounding voice across our narrator auditions.
   Its rights are **not clarified** (a real person's voice, unknown provenance),
   so the clip is not committed to this repository: it is fetched from the Space
   at setup time, and anything synthesized with it stays personal-use only.
-  Public-domain fallback narrators (LibriVox readers) are recorded in
+  Public-domain alternatives (LibriVox readers) are recorded in
   `.claude/DECISIONS.md` and re-creatable with `scripts/lv_pick_refs.py`.
 - **Repository policy:** only public-domain reference samples are committed
   here, and the documentation stays person-agnostic — no instructions for
   cloning any specific individual's voice.
-- **No-sample alternative:** the Silero fallback needs no reference clip at
-  all — slightly lower quality than F5/ESpeech, zero rights questions and zero
-  voice-sample setup (v5_5_ru in the adapter — audibly better than the v4_ru
-  it replaced, DECISIONS 2026-07-19).
 
 ## Status
 

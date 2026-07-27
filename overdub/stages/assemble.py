@@ -50,10 +50,10 @@ _CUE_SEAM = re.compile(r"(?<=[,;:.!?…])\s")
 def effective_lowpass(hz: int | None, sr: int | None) -> int | None:
     """The cutoff actually applied to the dub track, or None when the filter is a no-op.
 
-    Skipped unless the cutoff sits comfortably below Nyquist: at 24 kHz (F5) an 11 kHz
-    biquad rides the band edge and would recolour the production engine for nothing — the
-    hiss it targets is a 48 kHz Silero artifact living above 12 kHz. run() and done() both
-    call THIS, so the gate can never disagree with what was written."""
+    Skipped unless the cutoff sits comfortably below Nyquist: the hiss it targets is a
+    48 kHz Silero artifact living above 12 kHz, while on a 24 kHz track (the opt-in F5
+    engine) an 11 kHz biquad would ride the band edge and recolour the voice for nothing.
+    run() and done() both call THIS, so the gate can never disagree with what was written."""
     return hz if hz and sr and hz < sr * 0.4 else None
 
 

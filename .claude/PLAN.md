@@ -370,9 +370,11 @@ batch.
 ## Deferred — the F5 path (only if the Silero switch fails)
 
 F5/ESpeech is out of the pipeline (DECISIONS 2026-07-25) and comes back out of git history if
-Silero does not work out. Everything below was live roadmap work for F5 and is parked WITH its
-measurements, so a revival does not re-derive them — but none of it is work today, and none of it
-is a reason to keep per-engine knobs around.
+Silero does not work out. **That condition keeps failing to trigger:** the ear passed the shipped
+Silero config on both 2026-07-26 batches, and its CC BY-NC licence was accepted for personal use
+(user, 2026-07-27). Treat this section as an archive with a trigger, not as work in waiting —
+everything below was live roadmap work for F5 and is parked WITH its measurements so a revival does
+not re-derive them. None of it is a reason to keep per-engine knobs around.
 
 - **Parallel F5 workers — occupancy gate PASSED 2026-07-24, build never started.** `nvidia-smi dmon`
   at nfe=16 over 40 real units: median SM 5%, mean 26.6%, 60% of the active window below 10%
@@ -402,9 +404,13 @@ is a reason to keep per-engine knobs around.
 - In-pipeline Anthropic API translate flag (approved in principle, DECISIONS 2026-07-18; build ONLY
   if the manual sub-agent seam becomes the bottleneck — it is not, and that seam is where translate,
   summary and scout sub-agents all hang).
-- Gender-matched narrator (median-F0 → M/F reference; blocked on a female PD reference — search the
-  HF Space Den4ikAI/ESpeech-TTS discussions and the author's channels first; fallback re-scan
-  LibriVox female readers — xenium5 rejected on mic, chekhov01 on timbre).
+- Gender-matched narrator — **the old blocker died with the engine switch (2026-07-27).** It read
+  "blocked on a female PD reference; search the ESpeech HF Space, fall back to re-scanning LibriVox
+  readers", which was F5's problem: on Silero the female voices ship with the model (kseniya =
+  backup, xenia, baya), so matching is `tts_voice` per video, not a hunt for a clip. What is left is
+  a design question and an ear pass: whether the narrator's voice should follow the speaker's median
+  F0 at all, and whether kseniya holds up over a full video. Shares the F0 pass with the
+  grammatical-gender item above — measure once, use twice.
 - Multi-speaker violation detector (ECAPA vs dominant-voice centroid → report flag; full diarization
   stays out of scope); UTMOS/MOS verification (high cost, low effect until batch stats prove the
   duration heuristic insufficient); unit sim threshold re-tune (base 0.9 — only if production flags
@@ -428,8 +434,13 @@ is a reason to keep per-engine knobs around.
   (`bakeoff/tts-research-2026-07.md`) records Silero v5 as **CC BY-NC** and explicitly weighed
   "Apache vs hard NC" as an argument for the engine that is no longer in the pipeline — i.e. the
   2026-07-25 switch moved the project ONTO the non-commercial side of that comparison, and nothing
-  in the docs re-examined the gate afterwards. Unverified against the current model card; verify
-  before any distribution of dubs, and before any plan that ends in "other users".
+  in the docs re-examined the gate afterwards. **NC accepted for personal use (user, 2026-07-27)**,
+  so this is not a gate on the current use — it is a gate on publication and on "other users".
+  Unverified against the current model card; verify before any distribution.
+  **Known escape hatch if NC ever binds:** `docs/russian-tts-guide.md` puts Silero's `v5_cis_base`
+  with the ~30 `ru_*` voices under **MIT**, at the cost of setting stresses yourself — which this
+  pipeline is already building toward (CMUdict + the stress audit). Same engine family, so the
+  adapter would not change; the voice and the stress preprocessor would.
 
 ## Open questions
 
