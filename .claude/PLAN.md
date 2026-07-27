@@ -34,21 +34,14 @@ batches need **0 of 7 and 1 of 5** listens, not 2 and 4, and the single survivor
 defect rather than a detector artefact.
 Silero v5_5_ru is the ONLY engine since 2026-07-25 — **ear-confirmed on finished videos, quality
 sufficient** (DECISIONS 2026-07-25 later). What the switch cost is timing: Silero has no
-`supports_target`, so fitting speech to its slot is now the pipeline's job, and that is the blocker.
+`supports_target`, so fitting speech to its slot is now the pipeline's job — half done since
+2026-07-25 (`atempo_floor`), and no longer a blocker: see Open.
 
-**Before the next dubbing batch** — two standing caveats, neither a bug:
-- `_title_of` is a networked `yt-dlp --print title` (30 s timeout) for pre-2026-07-20 workdirs; in
-  the finish sweep those queue back-to-back — an offline resume of 12 videos can sit ~6 min in one
-  block at the very end.
-- **One promotion end to end is still unconfirmed on real media.** Promotion = the SAME videos
-  going through route C and then route B: scout writes `sentences.json` and only `source.wav`, the
-  human trims the queue, the dub run then has to (i) fast-skip `transcribe` — the whole economic
-  point, or scouting pays for large-v3 twice — and (ii) re-run `download`, because the final MKV
-  needs `source.mkv` and scout never wrote one. Every run so far has been route C **or** route B,
-  never C-then-B on one video, so neither half is observed. Confirming it costs one small queue:
-  scout 2 videos, dub the same 2, then read their `run.json` — `timings.stages.transcribe` near
-  zero and `download` clearly non-zero is the pass. Cheap, and it stays untested until someone
-  spends that.
+**Before the next dubbing batch** — one standing caveat, not a bug: `_title_of` is a networked
+`yt-dlp --print title` (30 s timeout) for pre-2026-07-20 workdirs; in the finish sweep those queue
+back-to-back — an offline resume of 12 videos can sit ~6 min in one block at the very end.
+(The unconfirmed C→B promotion moved out of this block into Open on 2026-07-27 — it is work, not a
+caveat.)
 
 **`work-exp/` is not an archive and has already lost data once.** `context-earcheck/`,
 `stats-batch/` and `gemma-ab/` NO LONGER EXIST (only `nfe-sweep/`, `nfe16/`, and the 2026-07-2x
@@ -70,81 +63,103 @@ first one whose rate is measured rather than re-scored; if it drifts back toward
 is padding it before adding a detector — and the `- pronounce:` line (ranged 9..248 per video; a video near 200 names the tokens the
 dictionary still lacks).
 
-## Open — the Silero pipeline
+## Open — ordered by value, re-cut 2026-07-27
 
-Ordered. The first is the blocker.
+**There is no blocker.** The previous ordering opened with "the first is the blocker"; the stretch
+branch shipped 2026-07-25 and the ear then passed the shipped config on both 2026-07-26 batches, so
+nothing below gates a batch. Document order IS the priority order, it is a VALUE order, and the
+next measurement is allowed to overturn it.
 
-**1. Slot fit — the pipeline has no duration model. Re-framed 2026-07-25 (user call): the fit is
-TWO-SIDED.** The original framing ("Silero under-fills, translate longer") did not survive reading
-the corpus: on 3 of the 5 videos in `work-silero-v5` Silero **over**-runs its slots (raw/slot
-medians 1.023, 1.145, 1.017; 16/30, 19/31, 21/37 units under atempo), and on 2 it under-fills
-(0.791, 0.816). 0.73 was one video's SOURCE pace, not an engine property. What is actually missing
-is a duration model in either direction: predict how long the RU will take, and size the text to
-the slot — longer where there is a hole, shorter where atempo is doing ×12.5 today. The engine side
-is a usable constant because Silero's own rate is stable (CV 5.5%), but it is **per VOICE, not per
-engine**: eugene 18.8-19.5 ru ch/s against baya 14.4, aidar 14.9, kseniya 15.5, xenia 17.8, so the
-knob keys on `tts_voice`.
+**Slugs, not numbers** (DECISIONS 2026-07-22 — the numbering had crept back in and is removed
+again). Retired aliases are noted once per item so an old reference resolves; do not reuse them.
 
-**(c) SHIPPED 2026-07-25** — ru.srt follows the dub and underfill is measurable (CHANGELOG). That
-landing also re-measured the Silero side of this item correctly, at the shipped grouping: fill
-median **0.7104**, slot silence **283.1 s** of a 1058.8 s dub. Note `in_span_silence` understated
-it by 41 s, and the speed block reported median 1.0 / p95 1.0 on that same run — the symptom was
-being measured and thrown away. The F5 side of the old comparison (0.90 / 124 s) is still an
-old-grouping number; no F5 run exists at 1.2/20/600 (see "Numbers to re-measure").
+### Name list at ASR — the proper-noun class
 
-**THE STRETCH BRANCH SHIPPED 2026-07-25 and it demoted the rest of this item.** `atempo_floor`
-= 0.75 (ear verdict: degradation starts at 0.65 — DECISIONS) cuts slot silence 283 → 84 s on
-`8zJlKmgMT44`, a 70% reduction, entirely in assembly: no prompt change, no re-translation, no
-re-synthesis, and the dub's duration is unchanged at every floor so picture sync never moves.
-**(a) is therefore no longer the blocker** — it is the polish that removes the 84 s residue and
-the audible stretch on the 42-of-69 units pinned at the floor. Do it deliberately, not urgently;
-the risks below are real and there is no longer a hole forcing the pace.
+`model.transcribe` passes neither `initial_prompt` nor `hotwords` today
+(`stages/transcribe.py:385`). Measured 2026-07-26: `vLIDHi-1PVU` ("Designing Claude Code") came
+back with **16 × "Cloud" and 0 × "Claude"** at large-v3/fp16/beam 5 — so DECISIONS 2026-07-20's
+proper-noun class is not a beam-1-only artifact. Fixing it at the translate seam is possible but
+partial and expensive: it needs a `src` flag on every normalised record, it makes 27 of 28
+`entity_loss` offenders false, and it cannot reach `en.srt` at all (not re-timed by design,
+`assemble.py:199` — one MKV shipped with 15 × "Cloud" in EN subs against 35 × "Claude" in RU). A
+name list closes all three surfaces at once. **First here because it is the only known defect that
+survives into a finished MKV and cannot be reached from any later stage.**
 
-Remaining, and each one now has a code-level obstacle found by reading rather than assumed:
-   - **(a) Size the translation to the slot, both directions.** Target chars = slot ÷ the voice's
-     rate (`tts.target_chars`, shipped); `atempo` trims the remainder. Obstacles, all confirmed in
-     code: (i) ~~`atempo` <1 does not exist~~ **BUILT** (`assemble._tempo_for`); (ii) **the
-     `runaway` gate fights the target** — `_is_bad` caps
-     `text_ru` at `translate_max_len_ratio=3.0 × len(src_en)`, so for any source slower than
-     ~6.3 en ch/s the CORRECT length is flagged, costing up to 4 reseeds and in the limit shipping
-     `src_en`, i.e. English into the dub; re-anchor it on the target, not on the source length;
-     (iii) **the length rule lives in 4 hand-synced copies** (`translate.py:SYSTEM`,
-     `skills/overdub-sonnet-batch/references/translate-contract.md`, that skill's `SKILL.md`,
-     `README.md`) and route B's prompt is assembled by an agent at runtime — a target has to reach
-     BOTH routes, so compute it in a shared helper that `translate.py` and
-     `scripts/build_translation.py` both call, and enforce/report it in the latter or route-B
-     compliance is unverifiable; (iv) **the route-A resume key ignores timings** (skip is
-     `done[sid]['src_en'] == s['text']`), so after `--repair-asr` a translation sized for a slot
-     that no longer exists is silently kept.
-   - **(b) A pre-synthesis bar — NOT BUILT, and the item's own numbers were wrong (2026-07-25).**
-     Measured over every `work/` dir before writing any code: **7 units of 3575 across 6 videos sit
-     at cf ≥ 1.8, worst 2.63.** The "17 units, up to ×12.5" this item used to claim mixed three
-     things — a SENTENCE-row count (12), a pre-repair `speed_factor` from one sentence
-     (`iWRmtPdFbGw#10`, since repaired to 2.04), and a different video set. "Ships silently" was
-     also false: `assemble` prints a `[flag]` line per unit at/over the bar, `n_over_1_8_combined`
-     goes to `report.json`, and the digest prints `n>1.8` per video — only the `assemble_flag`
-     FIELD stays None. Three findings kill the instrument as specified: (1) **every one of the 36
-     `work/` manifests is `engine=f5` at grouping gap 0.4** — there is no Silero-at-1.2/20/600
-     corpus at all, and the 5-video `work-silero-v5` set tops out at cf 1.790, i.e. ZERO offenders;
-     (2) merging cannot fix them anyway — every candidate needs a merged span of 20.1-36.6 s
-     against `group_span_max` 20.0, so the lever is the CAP, not a new bar; (3) a constant-rate
-     predictor is too coarse to gate on: worst-case predicted/actual 0.715 forces a 1.29 threshold
-     to avoid misses, which would flag ~8.4 units per 24-video batch against ~0.65 real ones — the
-     bar would mostly flag its own error. **The corpus precondition is now met** — the 7-video
-     batch of 2026-07-26 is Silero at 1.2/20/600 — and its first reading points the same way as
-     `work-silero-v5`: batch max combined factor 1.22, zero units at or over 1.8, so there is
-     still nothing for the bar to catch. Re-derive the population from that batch (and the next
-     one) rather than from this file before building anything.
-     Kept for whenever that happens: dropping a unit is forbidden by four never-drop invariants,
-     merging self-heals (units keyed by id-tuple), and `done()` compares the manifest's own units
-     rather than a fresh partition — so a regroup returns True and never applies without a
-     partition check.
+**Conditions, non-negotiable:** it changes source text, so it goes into `asr_key` beside the beam;
+and it is adopted only off `asr_probe.py --variant` on the six fixtures, never because it reads
+well — an `initial_prompt` also biases decoding elsewhere in the transcript, which is exactly what
+the probe measures. Open sub-question before any code: where the names come from (video title +
+channel are free and on disk; a per-queue list is an operator step). Rationale: DECISIONS 2026-07-26.
 
-**2. Phoneme transliteration from CMUdict — do it before the stress audit, it blocks that.** The
-letter rules guess from spelling what the dictionary knows phonetically: `buy → буи` vs `B AY1`,
-`fields → фиелдс` vs `F IY1 L D Z`, `update → упдейт` vs `AH0 P D EY1 T`, `execute → эксекют` vs
-`EH1 K S AH0 K Y UW2 T`. An ARPAbet→Cyrillic table is ~39 phonemes against ~55 letter rules —
-smaller AND more accurate. Coverage over the corpus's invented tokens: 79% of types, 77% of
+### Promotion C→B, confirmed once *(was a pre-batch caveat)*
+
+**One promotion end to end is still unconfirmed on real media.** Promotion = the SAME videos going
+through route C and then route B: scout writes `sentences.json` and only `source.wav`, the human
+trims the queue, the dub run then has to (i) fast-skip `transcribe` — the whole economic point, or
+scouting pays for large-v3 twice — and (ii) re-run `download`, because the final MKV needs
+`source.mkv` and scout never wrote one. Every run so far has been route C **or** route B, never
+C-then-B on one video, so neither half is observed. Confirming it costs one small queue: scout 2
+videos, dub the same 2, then read their `run.json` — `timings.stages.transcribe` near zero and
+`download` clearly non-zero is the pass. It is this high because both daily routes already depend
+on it working and nobody has looked.
+
+### Sonnet budget per batch
+
+Route B spends 2 sub-agents per video (translator + summarizer), route C one, and the price is
+visible NOWHERE — not in `run.json`, not in the digest, not in the report. **This is the scarce
+resource now that disk is not**: machine time is not the bound either (3 h 16 m of work for 24
+videos), and the 2026-07-27 disk re-measurement removed the only other stated ceiling. An estimate
+per video (agents × tokens) and a share of the weekly limit per batch would make "does a 100-video
+queue fit in a week" arithmetic instead of a surprise at #60.
+
+### Slot fit — size the translation to the slot *(was item 1(a))*
+
+**The fit is TWO-SIDED** (re-framed 2026-07-25, user call). The original framing ("Silero
+under-fills, translate longer") did not survive reading the corpus: on 3 of the 5 videos in
+`work-silero-v5` Silero **over**-runs its slots (raw/slot medians 1.023, 1.145, 1.017; 16/30,
+19/31, 21/37 units under atempo), on 2 it under-fills (0.791, 0.816), and 0.73 was one video's
+SOURCE pace, not an engine property. What is missing is a duration model in either direction. The
+engine side is a usable constant because Silero's rate is stable (CV 5.5%), but it is **per VOICE,
+not per engine**: eugene 18.8-19.5 ru ch/s against baya 14.4, aidar 14.9, kseniya 15.5, xenia 17.8,
+so the knob keys on `tts_voice`.
+
+**Two thirds of this item already shipped** — ru.srt follows the dub and underfill is measurable
+(2026-07-25, CHANGELOG; the numbers live in "Numbers to re-measure" (A)), and `atempo_floor` = 0.75
+cut slot silence 283 → 84 s on `8zJlKmgMT44` in assembly alone. What is left is the polish that
+removes the 84 s residue and the audible stretch on the 42-of-69 units pinned at the floor. Ranked
+below the three above because the ear has now passed twice without it.
+
+Target chars = slot ÷ the voice's rate (`tts.target_chars`, shipped); `atempo` trims the remainder.
+Obstacles, all confirmed in code: (i) ~~`atempo` <1 does not exist~~ **BUILT**
+(`assemble._tempo_for`); (ii) **the `runaway` gate fights the target** — `_is_bad` caps `text_ru`
+at `translate_max_len_ratio=3.0 × len(src_en)`, so for any source slower than ~6.3 en ch/s the
+CORRECT length is flagged, costing up to 4 reseeds and in the limit shipping `src_en`, i.e. English
+into the dub; re-anchor it on the target, not on the source length; (iii) **the length rule lives
+in 4 hand-synced copies** (`translate.py:SYSTEM`,
+`skills/overdub-sonnet-batch/references/translate-contract.md`, that skill's `SKILL.md`,
+`README.md`) and route B's prompt is assembled by an agent at runtime — a target has to reach BOTH
+routes, so compute it in a shared helper that `translate.py` and `scripts/build_translation.py`
+both call, and enforce/report it in the latter or route-B compliance is unverifiable; (iv) **the
+route-A resume key ignores timings** (skip is `done[sid]['src_en'] == s['text']`), so after
+`--repair-asr` a translation sized for a slot that no longer exists is silently kept.
+
+### Input prosody — punctuation and SSML *(promoted from Backlog 2026-07-27)*
+
+The cheapest unpulled lever in the file, and the one that answers "the dub is fine but it reads
+flat". `docs/russian-tts-guide.md` attributes ~70% of prosody quality to the INPUT and names flat
+ASR+MT punctuation as the main cause of monotony — exactly our input shape. Silero accepts SSML
+(`<speak> <p> <s> <prosody> <break>`) while the adapter sends plain `text=`; `<p>`/`<s>` alone give
+pauses and a contour reset. Two cautions before any code: `text_tts` is Cyrillic-by-contract
+because Silero DELETES Latin script, so markup has to be proven not to trip that; and verify
+compares against `text_tts`, so tags must be stripped on the comparison side exactly as stress
+marks already are. Judged by ear, like everything else in this half of the list.
+
+### Phoneme transliteration from CMUdict *(was item 2)* — blocks the stress audit
+
+The letter rules guess from spelling what the dictionary knows phonetically: `buy → буи` vs
+`B AY1`, `fields → фиелдс` vs `F IY1 L D Z`, `update → упдейт` vs `AH0 P D EY1 T`, `execute →
+эксекют` vs `EH1 K S AH0 K Y UW2 T`. An ARPAbet→Cyrillic table is ~39 phonemes against ~55 letter
+rules — smaller AND more accurate. Coverage over the corpus's invented tokens: 79% of types, 77% of
 occurrences; the absent tail is brands and neologisms (`mcp`, `anthropic`, `vercel`, `shadcn`,
 `tmux`), so the letter rules STAY as the out-of-dictionary fallback. This is also what closes the
 open-class residue the ~55-rule ceiling made awkward: `execute → эксекют` (18 hits), `adventures →
@@ -152,22 +167,29 @@ open-class residue the ~55-rule ceiling made awkward: `execute → эксекю�
 `ex-`/`ie`/`-ute` is ambiguous in English ("exit" wants экс, "execute" wants эгз) — hence the
 dictionary, not another rule. Needs an ear check either way.
 
-**3. Voice post-processing.** Compression/EQ for a brighter, more attractive timbre. `assemble` has
-only `lowpass` today (Silero vocoder hiss), no dynamics. Candidates: `acompressor`,
-`adynamicequalizer` (2-4 kHz presence lift), `speechnorm`, `loudnorm` by LUFS at the end instead of
-peak normalization. Same chain, after verify. Judge by ear — metrics do not adjudicate this.
+### Stress audit of the dictionary *(was item 4)* — gated on the item above
 
-**4. Stress audit of the dictionary** using `stress_index`/`apply_stress`; English stress wins on
-disagreement (user call). Gated on item 2: of the top 60 invented tokens only 10 disagree with
-Silero's own stress and half of those would mark an already-broken transliteration
-(`execute → +эксекют`), so accenting first entrenches the defect. Needs an EAR pass — 34 of 60
-automatic stresses were already correct, where a mark is pure noise in the data. The mechanism
-shipped 2026-07-25 (marks honoured, verify strips them, CMUdict in-repo); this is the content pass.
+Using `stress_index`/`apply_stress`; English stress wins on disagreement (user call). Of the top 60
+invented tokens only 10 disagree with Silero's own stress and half of those would mark an
+already-broken transliteration (`execute → +эксекют`), so accenting first entrenches the defect.
+Needs an EAR pass — 34 of 60 automatic stresses were already correct, where a mark is pure noise in
+the data. The mechanism shipped 2026-07-25 (marks honoured, verify strips them, CMUdict in-repo);
+this is the content pass.
 
-**5. Re-time the batch once 1 lands.** "Synthesize dominates" is F5's shape, not Silero's — see
-"Numbers to re-measure" (B).
+### Voice post-processing *(was item 3)*
 
-## Next after the blocker
+Compression/EQ for a brighter, more attractive timbre. `assemble` has only `lowpass` today (Silero
+vocoder hiss), no dynamics. Candidates: `acompressor`, `adynamicequalizer` (2-4 kHz presence lift),
+`speechnorm`, `loudnorm` by LUFS at the end instead of peak normalization. Same chain, after
+verify. Judge by ear — metrics do not adjudicate this. Below the input lever on purpose: the guide
+puts the input first, and an EQ chain applied to flat delivery is polish on the wrong layer.
+
+### Re-time the batch on Silero *(was item 5)*
+
+"Synthesize dominates" is F5's shape, not Silero's — see "Numbers to re-measure" (B). Do it after
+the slot-fit item lands, or the numbers describe a pipeline that is about to change.
+
+## Also open — independent, none of them ordered against the list above
 
 - **Feed `src != ok` from `translation.json` into `repair.seed_ids_from_detectors`** (user-selected
   as the next step, 2026-07-25). The one defect class NO detector sees by construction: a clause
@@ -178,29 +200,12 @@ shipped 2026-07-25 (marks honoured, verify strips them, CMUdict in-repo); this i
   pass caught them (`src=garbled`), and that signal is printed and dies. Constraint: seeds are read
   BEFORE translation (`auto --batch` on a fresh transcript is the normal case), so src-seeds can
   only ever be an ADDITIONAL source when `translation.json` already exists.
-- **Give whisper a name list (`initial_prompt` / `hotwords`) — the proper-noun class at the
-  SHIPPED beam.** `model.transcribe` passes neither today (`stages/transcribe.py:385`). Measured
-  2026-07-26: `vLIDHi-1PVU` ("Designing Claude Code") came back with **16 × "Cloud" and 0 ×
-  "Claude"** at large-v3/fp16/beam 5 — so DECISIONS 2026-07-20's proper-noun class is not a
-  beam-1-only artifact. Fixing it at the translate seam is possible but partial and expensive:
-  it needs a `src` flag on every normalised record, it makes 27 of 28 `entity_loss` offenders
-  false, and it cannot reach `en.srt` at all (not re-timed by design, `assemble.py:199` — one MKV
-  shipped with 15 × "Cloud" in EN subs against 35 × "Claude" in RU). A name list closes all three
-  surfaces at once. **Conditions, non-negotiable:** it changes source text, so it goes into
-  `asr_key` beside the beam; and it is adopted only off `asr_probe.py --variant` on the six
-  fixtures, never because it reads well — an `initial_prompt` also biases decoding elsewhere in
-  the transcript, which is exactly what the probe measures. Rationale: DECISIONS 2026-07-26.
 - **Sentence rebuild loses endings — ours, not whisper's.** 166 of 388 source anomalies are
   `truncated`, clustered in live Q&A where whisper emits no terminal punctuation (`2qrzI8YCVgI`,
   `Tu2cCEMwvHI`). Same root, second symptom: `aVwxzDHniEw#67` = "is the derivative of a Bezier
   curve?" in a 1.06 s slot — one sentence cut in half by the rebuild, and `rate_implausible` does
   not fire (36 ch/s against a 40 bound). Repair cannot help either by construction; only re-joining
   at rebuild can. Distinct from the 143 `garbled` / 60 `dup_neighbour`, which really are whisper's.
-- **Measure what a batch costs in weekly Sonnet limits.** Route B spends 2 sub-agents per video
-  (translator + summarizer), route C one, and the price is visible NOWHERE — not in `run.json`, not
-  in the digest, not in the report. This is the scarce resource: machine time is not (3 h 16 m of
-  work for 24 videos). An estimate per video (agents × tokens) and a share of the weekly limit per
-  batch would make "does a 100-video queue fit in a week" arithmetic instead of a surprise at #60.
 - **Clean `work/<id>/` after a successful mux — hygiene, NOT a queue-size lever.** Delete BINARIES
   only (`source.mkv`, `source.wav`, `source_bed.wav`, `dub_ru.wav`, `segments/`); json/md are
   pennies. Transcript, translation and summary survive; the cost is re-synthesis of everything
@@ -280,7 +285,7 @@ and are not comparable), and none of it is quotable beside an F5-era number.
 download 9.8% · verify 8.3% · mux 7.9% · separate 4.9%; batch RTF 0.451 (7.26 h → 3.27 h); the
 2026-07-24 36-run split (synthesize 52.6 + verify 7.6 + mux 7.4 + separate 4.8 = 72.7%); and the
 "3.3 h → ~1.9 h, RTF → ~0.26" projection, which extrapolates one video to a batch. Closed by
-roadmap item 5.
+"Re-time the batch on Silero".
 
 **(C) Wall-clock contaminated — anything derived from `timings.json` stage walls before
 2026-07-22.** The ~72 s/video fixed cost, the Silero-vs-F5 whole-pipeline RTF pair (0.14-0.17 vs
@@ -294,14 +299,12 @@ separately as `startup_s`.
 **Throughput / weaker hardware.** With TTS fast on CPU and the GPU idle during synthesis, the
 remaining GPU load is whisper-large (transcribe) + whisper-small (verify) — a low-VRAM or GPU-less
 host becomes plausible, and the Arc B390 path gets a realistic TTS story (Silero-on-CPU sidesteps
-the unproven F5-on-XPU spike). Re-time first (item 5).
+the unproven F5-on-XPU spike). Re-time first ("Re-time the batch on Silero").
 
 **From [`docs/russian-tts-guide.md`](../docs/russian-tts-guide.md)** (user-supplied, July 2026) —
-levers we have not pulled: monotone is mostly an INPUT problem (~70% of prosody quality is the
-input; flat ASR+MT punctuation is named as the main cause of monotony — exactly our input shape,
-and the cheapest unpulled lever we have); Silero DOES take SSML (`<speak> <p> <s> <prosody>
-<break>`) while our adapter sends `text=` only, and `<p>`/`<s>` alone give pauses and contour reset;
-per-chunk silence trimming + crossfade at joins (our "seams"); a versioned stress dictionary
+levers we have not pulled. The input/SSML pair moved into Open 2026-07-27 ("Input prosody"); what
+stays here: per-chunk silence trimming + crossfade at joins (our "seams"); a versioned stress
+dictionary
 (`terms.tsv`) for domain terms — the class `pronounce_audit.json` surfaces and nothing consumes.
 `sample_rate` 24000 is called "plastic" and 48000 recommended: we already run 48000.
 
@@ -407,18 +410,35 @@ is a reason to keep per-engine knobs around.
   duration heuristic insufficient); unit sim threshold re-tune (base 0.9 — only if production flags
   misbehave); Arc B390 path (whisper.cpp/llama.cpp SYCL); streamed mixing in mux (trigger:
   multi-hour sources — the numpy mix holds a ~2-3 GB transient even after chunked RMS/peak).
-- **Rights-clear narrator reference — HARD gate before ANY publication of dubs.** Today's demo-clip
-  narrator is personal-use only, and the ESpeech Apache provenance caveat needs a re-check (weights
-  possibly derived from a CC-BY-NC base).
+- **A pre-synthesis bar on the compression factor — parked 2026-07-27, do not build on this file's
+  numbers.** There is nothing to catch: the two shipped-config batches top out at cf 1.22 and
+  `work-silero-v5` at 1.790, i.e. ZERO units at or over the 1.8 bar. Two further findings stand
+  whenever it is revisited — merging cannot fix an offender anyway (every candidate needed a merged
+  span of 20.1-36.6 s against `group_span_max` 20.0, so the lever is the CAP), and a constant-rate
+  predictor is too coarse to gate on (worst-case predicted/actual 0.715 forces a 1.29 threshold →
+  ~8.4 flags per 24-video batch against ~0.65 real ones, i.e. the bar mostly flags its own error).
+  Build constraints kept so a revival does not re-derive them: dropping a unit is forbidden by four
+  never-drop invariants, merging self-heals (units keyed by id-tuple), and `done()` compares the
+  manifest's own units rather than a fresh partition, so a regroup returns True and never applies
+  without a partition check. Trigger to reopen: a batch that actually produces units over the bar.
+- **Publication rights — HARD gate before ANY publication of dubs, and the engine switch CHANGED
+  its shape (not re-checked since 2026-07-25).** The old wording covered F5's demo-clip narrator
+  (personal-use only) and ESpeech's Apache provenance caveat; on the Silero path there is no
+  reference clip at all, so what governs is the MODEL's own licence. Our own bakeoff
+  (`bakeoff/tts-research-2026-07.md`) records Silero v5 as **CC BY-NC** and explicitly weighed
+  "Apache vs hard NC" as an argument for the engine that is no longer in the pipeline — i.e. the
+  2026-07-25 switch moved the project ONTO the non-commercial side of that comparison, and nothing
+  in the docs re-examined the gate afterwards. Unverified against the current model card; verify
+  before any distribution of dubs, and before any plan that ends in "other users".
 
 ## Open questions
 
 - **"Keep length" is being replaced, not tuned.** The SYSTEM prompt asks the LLM to keep RU close in
-  length to the EN; item 1(a) replaces that with an explicit target character count, and F5's
+  length to the EN; "Slot fit" replaces that with an explicit target character count, and F5's
   slot-fill stretch — the other half of the old trade — no longer exists on the Silero path. The
   measured Gemma-vs-Qwen tightness comparison (508 segs: Gemma ~2% shorter, stretched on 46% of
   segments vs 39%, leftover silence 1.2% vs 0.8%) is F5-era evidence about a knob that is going
-  away. Do not tune the old prompt; land item 1(a).
+  away. Do not tune the old prompt; land "Slot fit".
 
 ## Closed
 

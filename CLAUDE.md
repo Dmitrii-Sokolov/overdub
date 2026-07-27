@@ -82,7 +82,7 @@ Chatterbox was rejected in the day-1 ear test. Two things Silero forces on the p
 the same sentence without the word), which is why `text_tts` is Cyrillic-by-contract via the
 `pronounce` chain; and **it has no `supports_target`**, so slot fitting is the pipeline's job now.
 That job is half done (2026-07-25): `atempo_floor` stretches under-filled units and closed 70% of
-the measured silence, while sizing the TRANSLATION to the slot is still open (PLAN item 1a). The
+the measured silence, while sizing the TRANSLATION to the slot is still open (PLAN, "Slot fit"). The
 duration model those two share lives in `overdub/tts/voice_rate` and is keyed on `tts_voice` —
 speaking rate is a VOICE fact (eugene 19.85 ru ch/s vs baya 14.41) and an unmeasured voice
 disables the model rather than borrowing a rate. Adapter default is v5_5_ru; v4_ru only to reproduce old runs
