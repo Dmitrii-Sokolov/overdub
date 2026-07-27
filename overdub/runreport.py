@@ -58,8 +58,11 @@ _BROKEN = 1.8   # combined compression factor at/above which a unit is "candidat
 # dup_adjacent and rate_implausible joined them 2026-07-25: both read the EN SOURCE, so they
 # describe an ASR defect a listener cannot fix by opening the dub (they were the top two
 # contributors to a 23-of-24 triage rate). `--repair-asr` acts on those, not the listen queue.
+# neg_loss joined 2026-07-27 on measured precision, not on theory: 24 inspected fires, 0 real
+# (DECISIONS 2026-07-27). It stays COUNTED — `n_neg_loss` still prints and the offenders list
+# still names it — because re-promotion has to be decidable off the same series that demoted it.
 _ADVISORY_COMPLETENESS = frozenset({"entity_loss", "length_short",
-                                    "dup_adjacent", "rate_implausible"})
+                                    "dup_adjacent", "rate_implausible", "neg_loss"})
 
 # Translate flags that do NOT decide needs_triage. english_echo measures the LATIN RATIO of a
 # translation, which on route B is a deliberate output: the prompt keeps commands, filenames and

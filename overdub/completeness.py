@@ -212,6 +212,11 @@ _NEG_IDIOMS = (
 # FALSE POSITIVE ("it is not dangerous" -> "это безопасно") is the correct trade.
 # Measured on the 13-video / 1101-sentence batch: zero effect either way (0 negated-safety
 # constructions), so this closes a LATENT hole and costs nothing observed.
+#
+# The FLAG was demoted to advisory 2026-07-27 (24 inspected fires, 0 real — DECISIONS
+# 2026-07-27); this DETECTOR keeps its prefer-fire stance deliberately. They are separable: a
+# demoted flag is still counted, and that count is the only series a re-promotion could ever be
+# argued from, so blunting the detector here would destroy the evidence instead of the noise.
 _NEG_POSITIVE_STEMS = "опасн|платн|условн|обидн|конечн|ед"   # безопасн-, бесплатн-, ..., бесед-
 _RU_NEG_RE = re.compile(
     r"(?<![а-я])(?:не|ни)[а-я]*"

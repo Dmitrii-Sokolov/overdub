@@ -22,21 +22,21 @@ grouping** (Silero v5_5_ru, 1.2/20/600, `atempo_floor` active): 7 of 7 muxed, 2 
 (1 actionable flag each), batch max combined factor **1.22** — no unit anywhere near the 1.8 bar —
 per-video fill medians 0.79-0.95 over 6 videos, and 97.1 s of slot silence against 3349 s of dub.
 It closes the corpus precondition under "Numbers to re-measure" (D). One of the seven was an
-instrumental with no speech and it went through untouched (route-B skill, step 1). **Both flagged
-videos were listened to and are fine** (user, 2026-07-26). **A second route-B batch (5 videos,
-"Test 2") followed the same day** on the corrected skills: the queue rule and the no-speech rule
-both held, and `work/queue-prev.txt` shows the overwrite ran instead of a question. Its numbers
-are worse and that is the point — **4 of 5 need a listen**, `NGOAUJtdk-4` fills only 0.71 of its
-slots with 48.5 s of silence in a 447 s dub. Eleven unique videos now exist at the shipped config;
-that is a sample, not a baseline (see (D)).
+instrumental with no speech and it went through untouched (route-B skill, step 1). **A second
+route-B batch (5 videos, "Test 2") followed the same day** on the corrected skills: the queue rule
+and the no-speech rule both held, and `work/queue-prev.txt` shows the overwrite ran instead of a
+question. `NGOAUJtdk-4` fills only 0.71 of its slots with 48.5 s of silence in a 447 s dub. Eleven
+unique videos now exist at the shipped config; that is a sample, not a baseline (see (D)).
+**Both batches were listened to end to end and are fine** (user, 2026-07-26 and 2026-07-27) — the
+ear is the instrument that adjudicates quality here, and it has now passed the shipped config
+twice. That verdict is also what demoted `neg_loss` (DECISIONS 2026-07-27): re-scored, the two
+batches need **0 of 7 and 1 of 5** listens, not 2 and 4, and the single survivor is a real verify
+defect rather than a detector artefact.
 Silero v5_5_ru is the ONLY engine since 2026-07-25 — **ear-confirmed on finished videos, quality
 sufficient** (DECISIONS 2026-07-25 later). What the switch cost is timing: Silero has no
 `supports_target`, so fitting speech to its slot is now the pipeline's job, and that is the blocker.
 
-**Before the next dubbing batch** — three standing caveats, none of them bugs:
-- `download` amortises nothing, so a 100-video queue downloads in full before the first transcribe.
-  81 GB free on D: (measured 2026-07-20) is less than one full large-queue run — queue size is
-  bounded by disk, not patience. `--scout` sidesteps this for triage (audio only), not for dubbing.
+**Before the next dubbing batch** — two standing caveats, neither a bug:
 - `_title_of` is a networked `yt-dlp --print title` (30 s timeout) for pre-2026-07-20 workdirs; in
   the finish sweep those queue back-to-back — an offline resume of 12 videos can sit ~6 min in one
   block at the very end.
@@ -64,9 +64,10 @@ next disk cleanup makes that call for you.
 unreconciled (DECISIONS 2026-07-20, provenance); listen to a repaired unit in a finished MKV once —
 repair moves a TTS unit boundary, so `atempo` on that unit moves too, and that is a property of the
 step, not of the video; the `Tu2cCEMwvHI` 116.7 s download outlier is
-undiagnosed (6-13 s for the rest of that queue); on a route-B run check `needs_triage` (16/24 after
-the demotion — if it drifts back toward N/N, look at what is padding it before adding a detector)
-and the `- pronounce:` line (ranged 9..248 per video; a video near 200 names the tokens the
+undiagnosed (6-13 s for the rest of that queue); on a route-B run check `needs_triage` — after the
+2026-07-27 demotion the two shipped-config batches re-score to 0/7 and 1/5, so the next batch is the
+first one whose rate is measured rather than re-scored; if it drifts back toward N/N, look at what
+is padding it before adding a detector — and the `- pronounce:` line (ranged 9..248 per video; a video near 200 names the tokens the
 dictionary still lacks).
 
 ## Open — the Silero pipeline
@@ -200,23 +201,14 @@ shipped 2026-07-25 (marks honoured, verify strips them, CMUdict in-repo); this i
   in the digest, not in the report. This is the scarce resource: machine time is not (3 h 16 m of
   work for 24 videos). An estimate per video (agents × tokens) and a share of the weekly limit per
   batch would make "does a 100-video queue fit in a week" arithmetic instead of a surprise at #60.
-- **Clean `work/<id>/` after a successful mux.** Delete BINARIES only (`source.mkv`, `source.wav`,
-  `source_bed.wav`, `dub_ru.wav`, `segments/`) — 18.5 of 18.7 GB, json/md are pennies. Transcript,
-  translation and summary survive; the cost is re-synthesis of everything downstream. `out/` holds a
-  second hardlink so the result survives on its own. **Blocker inside it:** mux's input must move
-  `source.mkv` → `output.mkv`, or a re-mux needs a re-download. Related to the 81 GB disk bound
-  above — this is the lever that unbounds queue size.
-- **`neg_loss` fired 19 times and every inspected case was correct** — the negation was carried
-  lexically ("Hell no" → "Чёрта с два", "no matter what" → "вне зависимости от", "are not equally
-  spaced anymore" → "перестают быть"). DECISIONS 2026-07-19 carves it out of the demotions BY NAME
-  at a stated price of "one false positive per batch is a fair price". 19 is not one.
-  **+3 on 2026-07-26, again all false** ("Nothing except humans have talked" → "говорить умели
-  только люди", "not widely known" → "малоизвестных", "doesn't align properly" → "всё съезжает"),
-  and on that batch `neg_loss` was the ONLY thing putting 3 of the 4 videos into `needs_triage` —
-  the detector is not just noisy, it is currently the main author of the triage list. Running
-  total 22 fired, 22 inspected, 0 real. **This is a
-  decision to revisit in DECISIONS with that number in hand, and it is the user's call** — not a
-  code change someone makes quietly.
+- **Clean `work/<id>/` after a successful mux — hygiene, NOT a queue-size lever.** Delete BINARIES
+  only (`source.mkv`, `source.wav`, `source_bed.wav`, `dub_ru.wav`, `segments/`); json/md are
+  pennies. Transcript, translation and summary survive; the cost is re-synthesis of everything
+  downstream. `out/` holds a second hardlink so the result survives on its own. **Blocker inside
+  it:** mux's input must move `source.mkv` → `output.mkv`, or a re-mux needs a re-download.
+  **The disk argument this item used to carry is dead (2026-07-27):** it cited 81 GB free from
+  2026-07-20; D: now has 418 GB free against a 30 GB `work/`, so nothing about queue size is
+  bounded by disk today. Re-measure free space before ever reviving that claim.
 - **Recalibrate the floor CHAIN, not the ratio.** `floor_ratio ≥ 0.085` fired on nothing (batch max
   0.070) while two videos had visible collapses; `floor_longest_run ≥ 40` separates exactly those
   two and nothing else, and now drives a digest hint (2026-07-25). `config.py`'s own comment admits
@@ -269,15 +261,18 @@ the directory. **The gap is closed on the corpus side:** the 7-video batch of 20
 (`sHImlfVM9r4`, `Yiy0cU6ChSw`, `NfoFdsc2ODQ`, `VHRhSDawKVA`, `CeotyuztIkg`, `FpOAn6Dh44k`,
 `kSl2mxseXkM`) is Silero at the shipped 1.2/20/600 with the floor active — first reading: max
 combined factor 1.22, per-video fill medians 0.79-0.95 (6 videos; the instrumental has none),
-slot silence 97.1 s over 3349 s of dub, 2 of 7 `needs_triage`. **The second batch the same day
+slot silence 97.1 s over 3349 s of dub. **The second batch the same day
 (`02nFRuEo0bc`, `vLIDHi-1PVU`, `NGOAUJtdk-4`, `005JLRt3gXI` + a repeat of `NfoFdsc2ODQ`) already
-moved every one of those figures:** fill medians 0.71-0.95, max cf 1.20, and **4 of 5**
-`needs_triage` against 2 of 7. Eleven unique videos total.
+moved every one of those figures:** fill medians 0.71-0.95, max cf 1.20. Eleven unique videos total.
 
-**Which is exactly why this is a sample and not a baseline, and the rule that follows from it:**
-do not derive a threshold, a population share or a "typical" value from it. Two batches of the
-same pipeline disagreeing on the triage rate 29% vs 80% is what a 7-point sample looks like — the
-range is the finding, the average would be an artefact. The fill medians are PER VIDEO and cannot
+**Triage rates from these two batches are RE-SCORED and the old pair is retired (2026-07-27).**
+"2 of 7 and 4 of 5" were measured with `neg_loss` still actionable; under the shipped classifier
+they are **0 of 7 and 1 of 5** (DECISIONS 2026-07-27). Do not quote the old pair, and do not treat
+either as a rate — a 12-video sample cannot carry one.
+
+**This is a sample and not a baseline, and the rule that follows from it:**
+do not derive a threshold, a population share or a "typical" value from it. The fill medians are
+PER VIDEO and cannot
 be averaged across videos (a 5 s instrumental and a 35 min talk carry one slot each in that list
 and are not comparable), and none of it is quotable beside an F5-era number.
 

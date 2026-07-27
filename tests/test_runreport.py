@@ -349,36 +349,51 @@ def test_source_side_completeness_is_advisory_not_a_listen_order() -> None:
             assert run["needs_triage"] is False, flag
 
 
-def test_num_loss_and_neg_loss_stay_actionable() -> None:
-    # The other half of the 2026-07-25 split, and the guard that keeps the demotion narrow: these
-    # two compare RU against EN, so they are claims about the TRANSLATION — exactly what a human
-    # can act on by listening. A blanket "completeness is advisory" would silently take them too.
+def _completeness_run(flag: str, key: str) -> dict:
+    segs = [_unit(0, 0, verify_flag=None, combined=1.0, speed=1.0,
+                  completeness_flags=[flag])]
+    rep = {
+        "segments": segs,
+        "verify": {"n_units": 1, "n_segments": 1, "n_flagged": 0, "n_retried": 0,
+                   "n_repaired": 0},
+        "completeness": {"n_sentences": 1, "n_flagged": 1, "n_num_loss": 0, "n_neg_loss": 0,
+                         "n_entity_loss": 0, "n_length": 0, key: 1},
+        "assemble": {"duration_sec": 50.0, "n_sped": 0, "in_span_silence_sec": 1.0},
+        "mux": {"dub_mix": "bed", "dub_gain_db": 0.0},
+    }
+    with tempfile.TemporaryDirectory() as d:
+        work = _mkwork(d, report=rep, translation=[{"id": 0, "status": "ok"}])
+        return runreport.build_run_report(work, _CFG)
+
+
+def test_num_loss_stays_actionable() -> None:
+    # The guard that keeps every demotion narrow: num_loss compares RU against EN, so it is a
+    # claim about the TRANSLATION — exactly what a human can act on by listening. A blanket
+    # "completeness is advisory" would silently take it too. It keeps its status on measured
+    # precision: the 2026-07-25 stem suppressor removed 5 of its 7 fires.
+    run = _completeness_run("num_loss", "n_num_loss")
+    assert run["completeness"]["n_actionable"] == 1
+    assert run["needs_triage"] is True
+
+
+def test_neg_loss_is_advisory_and_still_counted() -> None:
+    # DEMOTED 2026-07-27 (was half of test_num_loss_and_neg_loss_stay_actionable). It compares RU
+    # against EN like num_loss does, so the demotion is NOT about which side it reads — it is
+    # precision: 24 inspected fires across three batches, 0 real, every one a negation carried
+    # lexically ("Hell no" → "Чёрта с два", "not widely known" → "малоизвестных"). On the 5-video
+    # batch of 2026-07-26 it was the SOLE actionable flag on 3 of the 4 videos sent to triage, and
+    # the user then listened to that batch and found it fine. DECISIONS 2026-07-19 had carved it
+    # out of the module's prefer-miss default by name at a stated price of "one false positive per
+    # batch"; DECISIONS 2026-07-27 pays that debt with the number.
     #
-    # Both are on notice, and the reason they are still here is NOT measured precision: on that
-    # batch neg_loss fired 19 times and every case inspected was a correct translation carrying
-    # its negation lexically ("Hell no" → "Чёрта с два", "no matter what" → "вне зависимости от",
-    # "are not equally spaced anymore" → "перестают быть"). DECISIONS 2026-07-19 carves neg_loss
-    # out of the module's prefer-miss default BY NAME — an inverted negation is the worst silent
-    # loss there is — so demoting it is a decision to take there, with that record open, not a
-    # side effect of a triage cleanup. num_loss keeps its status on precision instead: the
-    # 2026-07-25 stem suppressor removed 5 of its 7 fires.
-    for flag, key in (("num_loss", "n_num_loss"), ("neg_loss", "n_neg_loss")):
-        segs = [_unit(0, 0, verify_flag=None, combined=1.0, speed=1.0,
-                      completeness_flags=[flag])]
-        rep = {
-            "segments": segs,
-            "verify": {"n_units": 1, "n_segments": 1, "n_flagged": 0, "n_retried": 0,
-                       "n_repaired": 0},
-            "completeness": {"n_sentences": 1, "n_flagged": 1, "n_num_loss": 0, "n_neg_loss": 0,
-                             "n_entity_loss": 0, "n_length": 0, key: 1},
-            "assemble": {"duration_sec": 50.0, "n_sped": 0, "in_span_silence_sec": 1.0},
-            "mux": {"dub_mix": "bed", "dub_gain_db": 0.0},
-        }
-        with tempfile.TemporaryDirectory() as d:
-            work = _mkwork(d, report=rep, translation=[{"id": 0, "status": "ok"}])
-            run = runreport.build_run_report(work, _CFG)
-            assert run["completeness"]["n_actionable"] == 1, flag
-            assert run["needs_triage"] is True, flag
+    # COUNTED, not deleted, and this half is the point: re-promotion has to be decidable off the
+    # same series, so a run where the count silently stops printing is worse than the noise was.
+    run = _completeness_run("neg_loss", "n_neg_loss")
+    assert run["completeness"]["n_neg_loss"] == 1                  # counted
+    assert run["completeness"]["n_flagged"] == 1                   # and printed
+    assert run["completeness"]["n_actionable"] == 0                # but not a reason to open it
+    assert run["completeness"]["n_advisory"] == 1
+    assert run["needs_triage"] is False
 
 
 def test_the_pronounce_audit_reaches_the_rollup_and_the_digest() -> None:

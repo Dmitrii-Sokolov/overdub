@@ -1,5 +1,36 @@
 # CHANGELOG
 
+## 2026-07-27 — `neg_loss` demoted to advisory, and a stale disk bound removed from PLAN
+
+**The demotion** (`runreport._ADVISORY_COMPLETENESS`). 24 inspected fires, 0 real; rationale and the
+re-promotion trigger in DECISIONS 2026-07-27. Counted and printed exactly as before — only
+`needs_triage` stops reacting. The detector in `completeness.py` is untouched on purpose: demoting
+the flag while keeping the fires is what leaves a series to argue from later.
+
+Re-scored both shipped-config batches against the constant itself (not a re-implementation of its
+logic), reading `report.json` segments per video:
+
+| batch | `needs_triage` was | now | what changed |
+|---|---|---|---|
+| 7 videos, 2026-07-26 | 2 | **0** | `sHImlfVM9r4`, `kSl2mxseXkM` — sole actionable flag was `neg_loss` |
+| 5 videos, "Test 2" | 4 | **1** | 3 of the 4 were `neg_loss`-only; `NGOAUJtdk-4` stays on 2 verify `low_similarity` |
+
+The user listened to both batches end to end and found them fine, which is what turned the fire
+count into a verdict. Existing `run.json` files on disk are NOT rewritten — they carry the
+classification in force when they were built; the numbers above are a re-score, and the next batch
+is the first one that measures the new rate directly.
+
+Tests: `test_num_loss_and_neg_loss_stay_actionable` split into `test_num_loss_stays_actionable` and
+`test_neg_loss_is_advisory_and_still_counted`, the second asserting BOTH halves (counted, printed,
+not actionable). 549 passed.
+
+**PLAN lost a stale bound.** "81 GB free on D:, queue size is bounded by disk, not patience"
+(measured 2026-07-20) was still being carried as a standing pre-batch caveat and as the
+justification for the `work/` cleanup item. Measured 2026-07-27: **418 GB free, `work/` is 30 GB.**
+The caveat is deleted and the cleanup item keeps only its real value (hygiene, and the mux-input
+blocker inside it). What actually bounds queue size is unmeasured and named in PLAN: the weekly
+Sonnet budget.
+
 ## 2026-07-26 — first batch at the shipped Silero config, and the two stop-questions it exposed
 
 **The run.** 7 videos through route B on Silero v5_5_ru at grouping 1.2/20/600 with

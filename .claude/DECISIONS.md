@@ -1,5 +1,84 @@
 # DECISIONS
 
+## 2026-07-27 — `neg_loss` is demoted to advisory; the 2026-07-19 carve-out is paid off with a number
+
+DECISIONS 2026-07-19 kept `neg_loss` actionable BY NAME, against the module's prefer-miss default,
+at a stated price: *"an inverted negation is the most dangerous silent loss there is, and one false
+positive per batch is a fair price for never missing one."* The price is now measured and it is not
+one per batch.
+
+**24 inspected fires, 0 real.** 19 on the 24-video batch of 2026-07-19 (all correct translations
+carrying the negation lexically — "Hell no" → "Чёрта с два", "no matter what" → "вне зависимости
+от"), 2 on the 7-video Silero batch of 2026-07-26, 3 on the 5-video batch the same day ("Nothing
+except humans have talked" → "говорить умели только люди", "not widely known" → "малоизвестных",
+"doesn't align properly" → "всё съезжает"). 27 fires exist across the 47 workdirs on disk, so 3
+were never inspected — the inspected series and the corpus count are different populations and must
+not be quoted as one number.
+
+**What decided it was not the count but WHOSE list it was authoring.** Re-scored both 2026-07-26
+batches against the shipped `_ADVISORY_COMPLETENESS` (the constant itself, not a copy of its logic):
+
+| | was `needs_triage` | after | sole actionable flag on the difference |
+|---|---|---|---|
+| batch 1 (7 videos) | 2 | **0** | `neg_loss` on both |
+| batch 2 (5 videos) | 4 | **1** | `neg_loss` on three of the four |
+
+The one survivor is `NGOAUJtdk-4`, and it survives on 2 verify `low_similarity` units — a real
+defect the flag had been sharing a list with. The user then listened to both batches and found them
+fine, which is the same verdict arriving through the only instrument that actually adjudicates
+this. A detector that marks 6 of 12 videos and is wrong every time is the `entity_loss` failure
+(11 of 12) with a different name.
+
+**Demoted, not deleted, and both halves are load-bearing.** `n_neg_loss` still prints, the offenders
+list still names it, `flags_total` still counts it — because the only argument that could ever
+re-promote it is the same series that demoted it, and a flag whose count stops appearing cannot
+produce one. The DETECTOR keeps its prefer-fire stance too (`_NEG_POSITIVE_STEMS` stays): blunting
+it would destroy the evidence rather than the noise.
+
+**What would reopen this:** one confirmed inverted negation reaching a finished dub. That is a
+single counter-example, not a rate — the 2026-07-19 argument about severity was never wrong, it
+was just never paid for by this detector.
+
+## 2026-07-26 — a mis-heard PRODUCT NAME is not sentence damage, and the contract had no rule for it
+
+Found on the 5-video "Test 2" route-B batch. `vLIDHi-1PVU` is an Anthropic interview titled
+*Designing Claude Code*, and whisper (large-v3, fp16, beam 5 — the shipped config, not beam 1)
+heard **"Cloud" 16 times and "Claude" zero times**: `Cloud Code`, `Cloud Relations`, `cloud .ai`,
+`cloud .md`, "multiple clouds". `02nFRuEo0bc` had the same slip once against 6 correct. So this is
+the DECISIONS 2026-07-20 proper-noun class firing at the shipped beam, not only at beam 1.
+
+**Two sub-agents, one class, opposite calls — and both were defensible.** `02nFRuEo0bc` translated
+the literal "Cloud" and set `src=context_contradiction` (rule 8: translate as-is, report).
+`vLIDHi-1PVU` normalised it to Claude across 35 records and marked them all `ok` (rule 5: brand
+names are written the standard way, `runescape` → `RuneScape`). **Rules 5 and 8 collide on a
+mis-HEARD name and the contract says which one wins nowhere.** That is the finding; the batch is
+just where it surfaced.
+
+**Decision — normalise the spelling, and flag every record you normalise.** The dub says the
+product's real name (dubbing "Клауд Код" 35 times is a worse artifact than the transcript is a
+damaged one), and `src` still carries the signal that the English was wrong. Both halves are
+required: the fix without the flag is exactly the laundering DECISIONS 2026-07-19 exists to
+prevent — a translation that reads perfectly, a `src` column of all-`ok`, and no surviving trace
+that the source was damaged. As shipped here the second half took a second pass: the agent
+reported the call in prose to the orchestrator (good) but wrote `ok` to disk (not good), and the
+prose is not an artifact anything downstream reads.
+
+**What it costs, measured, not estimated:**
+- **27 of 28 `entity_loss` offenders on that video are now false**, caused by the fix itself — the
+  detector finds "Cloud" in `src_en`, does not find it in `text_ru`, and calls it a lost entity.
+  All advisory, `needs_triage` unmoved. A file-wide name normalisation will always read as mass
+  entity loss; do not treat that count as a quality signal.
+- **The finished MKV disagrees with itself.** `en.srt` is deliberately NOT re-timed and transcribes
+  the original English track (`assemble.py:199`), so it keeps the defect: 15 × "Cloud" in `en.srt`
+  against 35 × "Claude" in `ru.srt`, in one container. Normalising at the translate seam cannot
+  reach the English side by construction.
+
+**Therefore the real fix is upstream, at ASR, and it is NOT this decision.** `model.transcribe`
+passes neither `initial_prompt` nor `hotwords` (`stages/transcribe.py:385`) — a name list would
+close the class before translate, synthesis and both subtitle tracks. It changes source text, so
+it belongs in `asr_key` beside the beam, and it must be measured on the six fixtures via
+`asr_probe.py --variant` rather than adopted because it sounds right. PLAN carries it.
+
 ## 2026-07-25 — session retrospective: three times the arithmetic was right and the SHAPE was wrong
 
 Recorded because the pattern repeated three times in one session, in three different layers, and
