@@ -129,6 +129,15 @@ cut slot silence 283 → 84 s on `8zJlKmgMT44` in assembly alone. What is left i
 removes the 84 s residue and the audible stretch on the 42-of-69 units pinned at the floor. Ranked
 below the three above because the ear has now passed twice without it.
 
+**Sized from the TEXT side 2026-07-28** (translation-layer audit, 9 files): median 18-22 ch/s against
+the slot, p90 25-31, 631 of 988 segments over 20 ch/s in the worst file — and ru/en length ratio
+**0.97**, so the pressure is the SOURCE speaker's pace, not RU expansion, which is the same
+conclusion the 0.73 above reached from the audio side. Two cautions before any of it is quoted: the
+audit's "comfortable Russian TTS is 14-16 ch/s" is not our number and sits against a measured eugene
+rate of 19.85 ru ch/s; and at that rate a 22 ch/s slot needs cf ≈ 1.11, inside the 1.22 the
+shipped-config batches already reached and the ear already passed twice. The figures SIZE this item;
+they do not reopen it as a defect.
+
 Target chars = slot ÷ the voice's rate (`tts.target_chars`, shipped); `atempo` trims the remainder.
 Obstacles, all confirmed in code: (i) ~~`atempo` <1 does not exist~~ **BUILT**
 (`assemble._tempo_for`); (ii) **the `runaway` gate fights the target** — `_is_bad` caps `text_ru`
@@ -161,7 +170,14 @@ The letter rules guess from spelling what the dictionary knows phonetically: `bu
 эксекют` vs `EH1 K S AH0 K Y UW2 T`. An ARPAbet→Cyrillic table is ~39 phonemes against ~55 letter
 rules — smaller AND more accurate. Coverage over the corpus's invented tokens: 79% of types, 77% of
 occurrences; the absent tail is brands and neologisms (`mcp`, `anthropic`, `vercel`, `shadcn`,
-`tmux`), so the letter rules STAY as the out-of-dictionary fallback. This is also what closes the
+`tmux`), so the letter rules STAY as the out-of-dictionary fallback. **The 2026-07-28
+translation-layer audit measured the same class from the other end and named its frequency peak:
+`alignment → алигнмент`, 91 occurrences.** `data/cmudict.dict` has it (`AH0 L AY1 N M AH0 N T`) and 6
+of the audit's other 7 examples — `deceptive D IH0 S EH1 P T IH0 V`, `language L AE1 NG G W AH0 JH`,
+`research R IY0 S ER1 CH`, plus `reduce`/`hero`/`models` — each giving roughly the pronunciation the
+audit asked for; only `OpenAI` sits in the brand tail. So the dictionary route already reaches the
+top offender, and the audit's own proposal (a hand-built 50-100 entry transliteration list) is the
+same fix at more maintenance for less coverage. This is also what closes the
 open-class residue the ~55-rule ceiling made awkward: `execute → эксекют` (18 hits), `adventures →
 адвентурс`, `fields → фиелдс`, `open → опен`, `waters → вейтерс`, `buy → буи`. A rule on
 `ex-`/`ie`/`-ute` is ambiguous in English ("exit" wants экс, "execute" wants эгз) — hence the
@@ -223,6 +239,15 @@ the slot-fit item lands, or the numbers describe a pipeline that is about to cha
   no `detail`, so `work_complete` stays False on a real run and `total_work_s` is an UPPER bound.
   The mechanism shipped 2026-07-22 (+ `separate` 2026-07-24); this is one measurement pass, not
   code design. Add it when a real batch makes the calls worth it.
+- **`translate-batch` has never run.** Route B step 2 was rebuilt as a workflow on 2026-07-28
+  (DECISIONS) from measurements of the batch that broke, not from a trial: the script is
+  syntax-checked and the skill is rewritten, but no queue has gone through it. First real use is the
+  test — watch three things the measurements predict and nothing yet confirms: that the status lines
+  parse (a wave landing entirely in `unclear` means the format drifted and the disk checks are
+  carrying the step), that `translate.started` markers really do land seconds apart, and that the
+  read-to-the-last-id instruction holds on the 5930-line transcript (`9eXV64O2Xp8`), which is the
+  one input that defeated the old prompt. Re-measure the orchestrator's context against the ~5.6k
+  tokens/video the projection claims before quoting that number anywhere.
 - **S2 artifact route — workable but not settled.** Sub-agents are blocked from the Write tool; the
   prompt now plainly instructs writing the two artifacts with PowerShell and handing content back if
   refused. (a) The fully compliant shape is "sub-agent returns, caller writes" — run 6's recovery
@@ -322,6 +347,42 @@ person's gender, so the field is about the grammatical gender of self-reference 
 masculine. An operator override belongs next to it (per-channel data). Getting it wrong is audible
 immediately and costs only a re-synth of the affected units — which is also why it never blocks a
 batch.
+
+**Translation-layer audit — 9 `translation.json`, ~2090 segments, read 2026-07-28.** Semantic
+translation quality and ASR-repair metadata came back clean; every finding is in the TTS
+normalization layer or in cross-segment consistency. **Provenance caveat: the audit read files named
+`translation__N_.json` and no video ids, so not one of its counts is traceable to a workdir — get the
+id mapping before quoting any number from it, and note that a `translation.json` is engine-neutral
+EXCEPT where a figure is measured against the slot (there the shipped-vs-F5 boundary of (D) applies).**
+Four of its seven findings were already open and are deliberately NOT duplicated here — the numbers
+went to the existing items instead: letter-by-letter anglicisms → "Phoneme transliteration from
+CMUdict" (Open, `алигнмент` 91× recorded there); chars/sec over the slot → "Slot fit" (Open, sized
+there, and it does not survive as a defect); a detector that fires while nothing acts → the
+`src != ok` seed item (Also open, which also carries the ordering constraint the audit missed:
+seeds are read BEFORE translation); numeral case → the accepted PoC loss at `normalize.py:29-32`,
+whose proposed fix ("delegate numeral spelling to the LLM") is design B, **rejected by DECISIONS
+2026-07-17 F1/F2** — an LLM-spelled `text_tts` diverges from the Python normalizer verify applies to
+the ASR hypothesis and silently depresses similarity on correct numeric dubs. If case-aware numerals
+are wanted, they are a `num2words` + syntactic-context pass inside `normalize.py`, never an LLM
+field. What is new:
+- **URL / domain branch in the normalizer.** `claude.ai` → "клод.ей": the dot SURVIVES, so Silero
+  reads it as a sentence end (spurious pause + falling contour mid-phrase), and `.ai` voices as "ей"
+  instead of "эй-ай"; want "клод точка эй-ай". Also `anthropic.com` → "антропик.ком",
+  `importai.substack.com`. `pronounce.py` carries `URL`/`HTTP`/`HTTPS` as acronyms and no domain
+  rule at all, so nothing owns this shape today. Cheap and self-contained; the ear-audible half is
+  the dot, not the TLD.
+- **Terminology drifts INSIDE one file, not only across a series.** One file renders "alignment"
+  three ways — 93× left in Latin, 23× "согласова-", 9× "выравнива-", sometimes in adjacent
+  segments — and produced "фейковать выравнивание". Different grain from the per-SERIES glossary
+  below: the fix is a file-scoped glossary carried across segments instead of re-derived per
+  sentence, i.e. a route-B prompt/`build_translation` change, not a `terms.tsv`.
+- **`english_echo` marks deliberately preserved terms as `failed`** — 7 segments, all on "alignment
+  faking", translations correct. Not a new class: `translate.py:65` records that 15 of 28 fires on
+  the 2026-07-25 batch were set phrases the translator kept on purpose, and the call then was
+  advisory-in-runreport rather than silenced. But the STATUS written into `translation.json` is
+  still `failed`, which is what the audit read — so decide whether the term-preservation exemption
+  belongs in `_is_bad` beside the three that are there, or whether the status is simply the wrong
+  field for an advisory.
 
 **Smaller, roughly by value:**
 - per-SERIES terminology glossary (`terms.tsv` per playlist into every translate prompt, checked
