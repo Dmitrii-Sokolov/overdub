@@ -538,7 +538,15 @@ def _build_run_report(work, cfg):
     n_failed_actionable = n_failed - sum(tr_by_type[k] for k in _ADVISORY_TRANSLATE)
     flags_actionable = (max(n_failed_actionable, 0) + v_n_flagged + n_comp_actionable
                         + n_assemble_flagged)
-    needs_triage = flags_actionable > 0 or n_over > 0
+    # A degraded tail is NOT a flag count — it is a property of the finished container, and it
+    # has to reach a human some other way than the export name, which is deliberately unchanged
+    # (the MKV lands in out/ looking exactly like a real dub). `degraded` is true when assemble
+    # stamped a reason OR mux shipped without one of its three optional tracks. Absent stamps
+    # (a legacy report, a stage that never ran) read as False, never as a measured degradation.
+    mux_tracks = mr.get("tracks") if isinstance(mr.get("tracks"), dict) else None
+    degraded = bool(ar.get("degraded")) or (mux_tracks is not None
+                                            and not all(mux_tracks.values()))
+    needs_triage = flags_actionable > 0 or n_over > 0 or degraded
 
     run = {
         "video_id": work.root.name,
@@ -614,11 +622,19 @@ def _build_run_report(work, cfg):
             # say "the text was short AND the stretch covered N of them".
             "n_stretched": ar.get("n_stretched"),
             "min_stretch_factor": ar.get("min_stretch_factor"),
+            # Why no dub was built, when that happened: "no_transcript" / "no_translation" /
+            # "no_synthesis". None on every normal run — this key exists only to name a
+            # degradation, so a consumer must read null as "not degraded", not as "unknown".
+            "degraded": ar.get("degraded"),
         },
         "mux": {
             "dub_mix": mr.get("dub_mix"),
             "dub_gain_db": mr.get("dub_gain_db"),
+            # {"dub": bool, "en_srt": bool, "ru_srt": bool} — what the container ACTUALLY
+            # carries. None for a report written before 2026-07-28 (unknown, not "complete").
+            "tracks": mux_tracks,
         },
+        "degraded": degraded,
         "flags_total": flags_total,
         "flags_actionable": flags_actionable,
         "flags_advisory": max(flags_total - flags_actionable, 0),

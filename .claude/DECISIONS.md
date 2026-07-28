@@ -1,5 +1,52 @@
 # DECISIONS
 
+## 2026-07-28 — the tail degrades instead of failing: a missing translation or dub costs a TRACK, not the artifact
+
+`mux` used to require four inputs (`source.mkv`, `dub_ru.wav`, `en.srt`, `ru.srt`) and raise
+`mux input missing` on any of them; `assemble` read `translation.json` unguarded and raised on a
+missing manifest. So a video whose translate or synthesize died produced **nothing** — the download
+and the large-v3 transcribe were already paid for, and the run ended with an empty `out/` row.
+
+**The rule adopted: a MISSING artifact degrades, an INCONSISTENT one still raises.** Missing means
+"a stage upstream did not produce this" — degrade, announce, record. Inconsistent means "the
+artifacts on disk disagree with each other" (non-contiguous ids, units that do not cover the ids, a
+dub with no manifest to source its unit spans from, `dub_mix=bed` with no bed): those still raise,
+because the never-drop invariants exist to stop a confidently WRONG dub, and losing a track is a
+reportable outcome while shipping a mis-mixed one is not.
+
+Concretely: `assemble` with no `translation.json` writes `en.srt` off `sentences.json`; with no
+manifest it writes both srt tracks off `translation.json`'s SOURCE timings (there is no placement to
+time cues against when there is no audio); neither builds a dub, both stamp `assemble.degraded`.
+`mux` requires `source.mkv` alone and ships whatever else exists.
+
+**Three sub-decisions that are not obvious:**
+
+*The export name is UNCHANGED* (user decision). A dub-less MKV lands in `out/` as
+`"<title> [<id>].mkv"`, indistinguishable from a real dub by name. The compensation is that the
+degradation must be loud everywhere else: a `[warn] mux: DEGRADED` line, `mux.tracks` in
+`report.json`, `assemble.degraded` + `mux.tracks` + a top-level `degraded` in `run.json`, and
+`needs_triage` forced true — the first case where triage is decided by a property of the CONTAINER
+rather than by a flag count. The alternative (a `(no dub)` marker in the filename) was rejected as
+churn in a directory the operator sorts by title.
+
+*The re-mux trigger is UPGRADE-ONLY.* `mux.done()` re-runs when a track has APPEARED since the
+stamp, never when one has vanished. Symmetric would be wrong twice over: `work/<id>/` cleanup
+deletes binaries after a successful mux (PLAN), and a hardlinked `work-exp/` baseline can arrive
+with an mtime OLDER than `output.mkv` — the mtime check cannot see that one, which is why the
+`tracks` stamp exists beside it rather than instead of it.
+
+*`_write_srt` leaves an identical file untouched.* The degraded branch has no done() gate of its own
+(the gate is the dub, which does not exist), so it re-runs on every resume. Rewriting the same bytes
+would trip mux's make-style freshness check and re-encode a multi-GB container once per resume,
+forever.
+
+**Known boundary, stated rather than papered over.** Under the stage-major batch driver a stage that
+RAISES marks the job `FAIL` and drops it from every later stage, so a translate crash (Ollama down)
+still yields no MKV in that run — the degradation is reached by `--only assemble mux`, by
+`--video-major`, or whenever the tail runs at all. Making the driver carry failed jobs into the tail
+was considered and declined: it would turn a real TTS failure into an `ok` row with a silently empty
+dub, which is the failure class this repo forbids.
+
 ## 2026-07-27 — `neg_loss` is demoted to advisory; the 2026-07-19 carve-out is paid off with a number
 
 DECISIONS 2026-07-19 kept `neg_loss` actionable BY NAME, against the module's prefer-miss default,

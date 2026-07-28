@@ -65,7 +65,8 @@ themselves. Rationale: DECISIONS 2026-07-25.
   sync never depends on this knob. Per-segment speed factor goes to the run
   report; audibly broken segments are acceptable losses, silent ones are not.
 - **Output is MKV** with original audio, RU dub, EN subs, RU subs. The original
-  video stream is never re-encoded.
+  video stream is never re-encoded. Since 2026-07-28 only the VIDEO is required:
+  a missing dub or srt costs that track, not the artifact (see Design rules).
 
 ## Stack (v1)
 
@@ -100,7 +101,7 @@ One command, from the repo root:
 .venv-asr\Scripts\python.exe -m pytest
 ```
 
-~450 tests, ~6 s, no GPU / network / media. `pytest` lives in `.venv-asr` only
+~580 tests, ~6 s, no GPU / network / media. `pytest` lives in `.venv-asr` only
 (`pip install -e ".[dev]"`); config is `[tool.pytest.ini_options]` in
 `pyproject.toml`. **Do not hand-roll a loop over `tests/*.py`** — that was the
 state before 2026-07-20 and it produced invented result lines. Run it from the
@@ -124,6 +125,14 @@ diverge from it.
 - All intermediate artifacts (transcript, translation, per-segment audio) are
   persisted to the work dir. Every stage must be resumable and re-runnable in
   isolation — the pipeline is semi-automated by design.
+- **A MISSING artifact degrades; an INCONSISTENT one raises** (2026-07-28, see
+  DECISIONS). `assemble` with no translation writes `en.srt` off `sentences.json`
+  and builds no dub; `mux` requires only `source.mkv` and ships whatever tracks
+  exist. Both announce it loudly and stamp it (`assemble.degraded`, `mux.tracks`,
+  `run.json.degraded`, `needs_triage` true) — the export FILENAME is unchanged, so
+  the report is the only record. Artifacts that DISAGREE (non-contiguous ids, units
+  not covering the ids, a dub with no manifest, `bed` with no bed) still raise: a
+  lost track is reportable, a confidently wrong dub is not.
 - Translation unit is the sentence (rebuilt from word timestamps), never the
   raw whisper segment: sentences are translated in order with a rolling
   context window (previous EN sentences + their RU translations). The prompt

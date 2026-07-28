@@ -14,7 +14,17 @@ so an A/B between modes compares MECHANISMS, not loudness. Units whose wav is em
 (empty_tts / synth_error) are NOT ducked — the original EN plays there at full level as the
 honest fallback. The mix is built in numpy at 48 kHz stereo and encoded by the same ffmpeg
 invocation that muxes; video is stream-copied, never re-encoded. done() self-heals: a
-dub_mix flip or a resynthesis (synth_key stamp) re-runs mux automatically.
+dub_mix flip, a resynthesis (synth_key stamp) or a track that has APPEARED since the last
+mux all re-run mux automatically.
+
+DEGRADED OUTPUT (2026-07-28). Only `source.mkv` is required. The dub and the two subtitle
+tracks are OPTIONAL: whatever is on disk is muxed, whatever is missing is omitted END TO END
+(input, -map, codec, metadata, disposition), and the omission is printed as a [warn] and
+recorded in the report's `tracks` stamp. Rationale: a video whose translate or synthesize
+never produced anything used to yield NO artifact at all — the run died on `mux input
+missing` after the video was already downloaded and transcribed. The missing-artifact case
+DEGRADES; an INCONSISTENT one (a dub with no manifest, an unknown dub_mix, bed mode with no
+bed) still raises — losing a track is a reportable outcome, shipping a wrong one is not.
 """
 
 from __future__ import annotations
@@ -107,6 +117,69 @@ def _duck_envelope(n: int, spans: list[tuple[int, int]]) -> np.ndarray:
     return env
 
 
+def mux_args(video, *, dub=None, subs=(), out, dub_mix: str) -> list[str]:
+    """The complete ffmpeg argv for the final MKV, given only the tracks that EXIST.
+
+    `dub` is the mixed RU wav or None; `subs` is an ordered sequence of (lang, path) whose
+    lang is the 3-letter code stamped on the stream. Every optional track is added or omitted
+    in ONE place — input, -map, codec, metadata and disposition together — which is the whole
+    reason this is a function and not four `if`s scattered through run(): a -map that outlives
+    its -i names an input that does not exist, and ffmpeg reports that as a stream-specifier
+    error at the end of an hour-long run, not as a missing dub.
+
+    Input indices are assigned as inputs are appended, so the subtitle inputs shift down by
+    one when there is no dub. Pure — no filesystem, no ffmpeg; the caller decides what exists.
+
+    Disposition is emitted ONLY alongside a dub. `-disposition:a:0 0` exists to un-default the
+    ORIGINAL so a player picks the RU track; with no RU track it would ship an MKV whose sole
+    audio stream is marked non-default, which some players then refuse to auto-select.
+    """
+    inputs = ["-i", str(video)]
+    maps = ["-map", "0:v:0", "-map", "0:a:0"]
+    codecs = ["-c:v", "copy", "-c:a:0", "copy"]
+    meta = ["-metadata:s:a:0", "language=eng", "-metadata:s:a:0", "title=Original"]
+    disp: list[str] = []
+    idx = 1
+    if dub is not None:
+        inputs += ["-i", str(dub)]
+        maps += ["-map", f"{idx}:a:0"]
+        codecs += ["-c:a:1", "aac", "-b:a:1", "192k"]
+        meta += ["-metadata:s:a:1", "language=rus",
+                 "-metadata:s:a:1", f"title=Russian dub ({dub_mix})"]
+        disp += ["-disposition:a:0", "0", "-disposition:a:1", "default"]
+        idx += 1
+    sub_meta: list[str] = []
+    for k, (lang, path) in enumerate(subs):
+        inputs += ["-i", str(path)]
+        maps += ["-map", f"{idx}:0"]
+        sub_meta += [f"-metadata:s:s:{k}", f"language={lang}"]
+        idx += 1
+    if subs:
+        codecs += ["-c:s", "srt"]
+    return (["ffmpeg", "-y", "-loglevel", "error"] + inputs + maps + codecs + meta + sub_meta
+            + disp + ["-f", "matroska", str(out)])
+
+
+def tracks_on_disk(work) -> dict[str, bool]:
+    """Which optional tracks a mux run right now WOULD carry. The stamp's vocabulary."""
+    return {"dub": work.dub_audio.exists(),
+            "en_srt": work.en_srt.exists(),
+            "ru_srt": work.ru_srt.exists()}
+
+
+def gained_tracks(stamped, now) -> list[str]:
+    """Tracks present NOW that the stamped mux did not carry — the re-mux trigger.
+
+    UPGRADE-ONLY on purpose. A track that has VANISHED must NOT re-mux: `work/<id>/` cleanup
+    deletes binaries after a successful mux (PLAN), and hardlinked baselines in `work-exp/`
+    can even arrive with an OLDER mtime than the output, so a symmetric comparison would
+    silently strip the RU track out of an MKV that already shipped it. Losing a track is only
+    ever an explicit operator act; gaining one is the pipeline finishing its job.
+    """
+    stamped = stamped or {}
+    return sorted(k for k, v in (now or {}).items() if v and not stamped.get(k))
+
+
 class MuxStage:
     name = "mux"
 
@@ -114,7 +187,8 @@ class MuxStage:
         if not ctx.work.output.exists():
             return False
         try:                                               # make-style freshness: a re-assembled
-            for dep in (ctx.work.dub_audio, ctx.work.source_bed):   # dub or a new bed re-muxes
+            for dep in (ctx.work.dub_audio, ctx.work.source_bed,    # dub, a new bed or a
+                        ctx.work.en_srt, ctx.work.ru_srt):          # rewritten srt re-muxes
                 if dep.exists() and dep.stat().st_mtime > ctx.work.output.stat().st_mtime:
                     print(f"       [info] mux: {dep.name} newer than output.mkv — re-muxing",
                           file=sys.stderr)
@@ -124,16 +198,29 @@ class MuxStage:
         try:
             rep = json.loads(ctx.work.report.read_text(encoding="utf-8"))
             stamp = rep.get("mux") or {}
-            man = json.loads(ctx.work.seg_manifest.read_text(encoding="utf-8"))
-            if stamp.get("dub_mix") != ctx.cfg.dub_mix:
-                print(f"       [info] mux: dub_mix changed ({stamp.get('dub_mix')} → "
-                      f"{ctx.cfg.dub_mix}) — re-muxing", file=sys.stderr)
-                return False
-            if stamp.get("synth_key") and stamp["synth_key"] != man.get("synth_key"):
-                print("       [info] mux: manifest synth_key changed — re-muxing", file=sys.stderr)
-                return False
         except Exception:
-            pass                                           # legacy/torn report → keep old gate
+            return True                                    # legacy/torn report → keep old gate
+        # BEFORE the manifest read, which is the point: a degraded workdir has no manifest, and
+        # the old order (read the manifest first, let its absence fall into `except: pass`)
+        # would skip every gate below it — i.e. a dub-less output.mkv would stay forever even
+        # once the dub arrived. mtime covers the common case; this covers an artifact that
+        # arrives with an older mtime (a hardlinked baseline).
+        gained = gained_tracks(stamp.get("tracks"), tracks_on_disk(ctx.work))
+        if stamp.get("tracks") is not None and gained:
+            print(f"       [info] mux: {', '.join(gained)} now present — re-muxing",
+                  file=sys.stderr)
+            return False
+        try:
+            man = json.loads(ctx.work.seg_manifest.read_text(encoding="utf-8"))
+        except Exception:
+            return True                                    # no manifest → nothing else to gate on
+        if stamp.get("dub_mix") != ctx.cfg.dub_mix:
+            print(f"       [info] mux: dub_mix changed ({stamp.get('dub_mix')} → "
+                  f"{ctx.cfg.dub_mix}) — re-muxing", file=sys.stderr)
+            return False
+        if stamp.get("synth_key") and stamp["synth_key"] != man.get("synth_key"):
+            print("       [info] mux: manifest synth_key changed — re-muxing", file=sys.stderr)
+            return False
         return True
 
     def run(self, ctx: Context) -> None:
@@ -142,86 +229,95 @@ class MuxStage:
             raise RuntimeError("ffmpeg not found on PATH — required for mux. "
                                "Install ffmpeg; overdub does not auto-install.")
         w = ctx.work
-        for p in (w.source_video, w.dub_audio, w.en_srt, w.ru_srt):
-            if not p.exists():
-                raise RuntimeError(f"mux input missing: {p} — run earlier stages first")
+        if not w.source_video.exists():
+            # the ONE hard input: without a video stream there is no container to degrade into
+            raise RuntimeError(f"mux input missing: {w.source_video} — run download first")
         if cfg.dub_mix not in ("replace", "duck", "bed"):
             raise ValueError(f"unknown dub_mix: {cfg.dub_mix!r}")
-        if cfg.dub_mix == "bed" and not w.source_bed.exists():
-            raise RuntimeError("source_bed.wav missing — run separate before mux (dub_mix=bed)")
-        man = json.loads(w.seg_manifest.read_text(encoding="utf-8"))
+        tracks = tracks_on_disk(w)
+        subs = [(lang, p) for lang, p in (("eng", w.en_srt), ("rus", w.ru_srt)) if p.exists()]
+        missing = [name for name, present in (("dub_ru.wav", tracks["dub"]),
+                                              ("en.srt", tracks["en_srt"]),
+                                              ("ru.srt", tracks["ru_srt"])) if not present]
+        if missing:
+            print(f"       [warn] mux: DEGRADED — {', '.join(missing)} missing; the MKV ships "
+                  f"without {'those tracks' if len(missing) > 1 else 'that track'}",
+                  file=sys.stderr)
+        if tracks["dub"]:
+            if cfg.dub_mix == "bed" and not w.source_bed.exists():
+                raise RuntimeError(
+                    "source_bed.wav missing — run separate before mux (dub_mix=bed)")
+            if not w.seg_manifest.exists():
+                # INCONSISTENT, not missing: a dub exists, so the unit spans that decide the
+                # duck envelope and the loudness reference must exist too. Guessing them would
+                # ship a wrongly-mixed track, which is the one thing degrading may not do.
+                raise RuntimeError("segments/manifest.json missing while dub_ru.wav exists — "
+                                   "re-run synthesize/assemble (mux needs the unit spans)")
+            man = json.loads(w.seg_manifest.read_text(encoding="utf-8"))
+        else:
+            man = {}
 
         dub48 = w.root / "_mix_dub48.wav"
         orig48 = w.root / "_mix_orig48.wav"
         bed48 = w.root / "_mix_bed48.wav"
         mix_wav = w.root / "_mix_ru.wav"
+        gain = 1.0
         try:
-            _extract(w.dub_audio, dub48)                   # 24k mono → 48k stereo
-            dub, _ = sf.read(str(dub48), dtype="float32")
-            _extract(w.source_video, orig48)               # original: gain reference (+ duck base)
-            orig, _ = sf.read(str(orig48), dtype="float32")
+            if tracks["dub"]:
+                _extract(w.dub_audio, dub48)               # 24k mono → 48k stereo
+                dub, _ = sf.read(str(dub48), dtype="float32")
+                _extract(w.source_video, orig48)           # original: gain reference (+ duck base)
+                orig, _ = sf.read(str(orig48), dtype="float32")
 
-            # duck/gain intervals = unit spans EXTENDED to the placed audio: the slot-fill
-            # neutral branch deliberately spills RU past the span into the free gap, and
-            # that tail must not ride over full-level EN. samples/man_sr is the pre-atempo
-            # upper bound (atempo only shortens; overshoot lands in the next ducked span).
-            man_sr = man.get("sample_rate") or _MIX_SR
-            spans = []
-            for u in units_of(man):
-                if (u.get("samples") or 0) > 0:
-                    end_sec = max(u["end"], u["start"] + u["samples"] / man_sr)
-                    spans.append((round(u["start"] * _MIX_SR), round(end_sec * _MIX_SR)))
-            gain = _dub_gain(orig, dub, spans)             # loudness ref is ALWAYS the original
-            dub *= gain
-            if cfg.dub_mix == "bed":
-                _extract(w.source_bed, bed48)
-                base = sf.read(str(bed48), dtype="float32")[0]
-                del orig
-            else:
-                base = orig
+                # duck/gain intervals = unit spans EXTENDED to the placed audio: the slot-fill
+                # neutral branch deliberately spills RU past the span into the free gap, and
+                # that tail must not ride over full-level EN. samples/man_sr is the pre-atempo
+                # upper bound (atempo only shortens; overshoot lands in the next ducked span).
+                man_sr = man.get("sample_rate") or _MIX_SR
+                spans = []
+                for u in units_of(man):
+                    if (u.get("samples") or 0) > 0:
+                        end_sec = max(u["end"], u["start"] + u["samples"] / man_sr)
+                        spans.append((round(u["start"] * _MIX_SR), round(end_sec * _MIX_SR)))
+                gain = _dub_gain(orig, dub, spans)         # loudness ref is ALWAYS the original
+                dub *= gain
+                if cfg.dub_mix == "bed":
+                    _extract(w.source_bed, bed48)
+                    base = sf.read(str(bed48), dtype="float32")[0]
+                    del orig
+                else:
+                    base = orig
 
-            n = max(len(base), len(dub))                   # the dub may outlast the video
-            if len(base) < n:
-                base = np.vstack([base, np.zeros((n - len(base), base.shape[1]), "float32")])
-            if len(dub) < n:
-                dub = np.vstack([dub, np.zeros((n - len(dub), dub.shape[1]), "float32")])
+                n = max(len(base), len(dub))               # the dub may outlast the video
+                if len(base) < n:
+                    base = np.vstack([base, np.zeros((n - len(base), base.shape[1]), "float32")])
+                if len(dub) < n:
+                    dub = np.vstack([dub, np.zeros((n - len(dub), dub.shape[1]), "float32")])
 
-            if cfg.dub_mix == "replace":
-                mix = dub
-            elif cfg.dub_mix == "duck":
-                np.multiply(base, _duck_envelope(n, spans)[:, None], out=base)   # in place
-                base += dub
-                mix = base
-            else:                                          # bed
-                base *= _BED_GAIN
-                base += dub
-                mix = base
-            peak = 0.0                                     # chunked: no full |mix| copy
-            flat = mix.reshape(-1)
-            for i in range(0, flat.size, _CHUNK):
-                c = flat[i:i + _CHUNK]
-                peak = max(peak, float(c.max(initial=0.0)), float(-c.min(initial=0.0)))
-            if peak > 0.99:                                # summing headroom guard
-                mix *= 0.99 / peak
-            sf.write(str(mix_wav), mix, _MIX_SR, format="WAV", subtype="PCM_16")
-            del base, dub, mix, flat
+                if cfg.dub_mix == "replace":
+                    mix = dub
+                elif cfg.dub_mix == "duck":
+                    np.multiply(base, _duck_envelope(n, spans)[:, None], out=base)   # in place
+                    base += dub
+                    mix = base
+                else:                                      # bed
+                    base *= _BED_GAIN
+                    base += dub
+                    mix = base
+                peak = 0.0                                 # chunked: no full |mix| copy
+                flat = mix.reshape(-1)
+                for i in range(0, flat.size, _CHUNK):
+                    c = flat[i:i + _CHUNK]
+                    peak = max(peak, float(c.max(initial=0.0)), float(-c.min(initial=0.0)))
+                if peak > 0.99:                            # summing headroom guard
+                    mix *= 0.99 / peak
+                sf.write(str(mix_wav), mix, _MIX_SR, format="WAV", subtype="PCM_16")
+                del base, dub, mix, flat
 
             tmp = w.output.with_suffix(".mkv.tmp")
             subprocess.run(
-                [
-                    "ffmpeg", "-y", "-loglevel", "error",
-                    "-i", str(w.source_video), "-i", str(mix_wav),
-                    "-i", str(w.en_srt), "-i", str(w.ru_srt),
-                    "-map", "0:v:0", "-map", "0:a:0", "-map", "1:a:0", "-map", "2:0", "-map", "3:0",
-                    "-c:v", "copy", "-c:a:0", "copy", "-c:a:1", "aac", "-b:a:1", "192k",
-                    "-c:s", "srt",
-                    "-metadata:s:a:0", "language=eng", "-metadata:s:a:0", "title=Original",
-                    "-metadata:s:a:1", "language=rus",
-                    "-metadata:s:a:1", f"title=Russian dub ({cfg.dub_mix})",
-                    "-metadata:s:s:0", "language=eng", "-metadata:s:s:1", "language=rus",
-                    "-disposition:a:0", "0", "-disposition:a:1", "default",
-                    "-f", "matroska", str(tmp),
-                ],
+                mux_args(w.source_video, dub=(mix_wav if tracks["dub"] else None),
+                         subs=subs, out=tmp, dub_mix=cfg.dub_mix),
                 check=True,
             )
             # artifact flips BEFORE the stamp (assemble's "done-gate flips LAST" discipline):
@@ -230,9 +326,16 @@ class MuxStage:
             replace_retry(tmp, w.output)
             rep = report.load(w.report)
             rep["mux"] = {"dub_mix": cfg.dub_mix, "synth_key": man.get("synth_key"),
-                          "dub_gain_db": round(20 * float(np.log10(gain)), 2)}
+                          # what the container ACTUALLY carries. done() re-muxes on a gained
+                          # track, and run.json reads it to mark a dub-less export for triage —
+                          # the export name is unchanged, so this stamp is the only record
+                          "tracks": tracks,
+                          "dub_gain_db": (round(20 * float(np.log10(gain)), 2)
+                                          if tracks["dub"] else None)}
             report.save(w.report, rep)
         finally:
             for p in (dub48, orig48, bed48, mix_wav, w.output.with_suffix(".mkv.tmp")):
                 p.unlink(missing_ok=True)
-        print(f"       → {w.output.name} (dub_mix={cfg.dub_mix})")
+        shipped = "dub_mix=" + cfg.dub_mix if tracks["dub"] else "NO DUB"
+        print(f"       → {w.output.name} ({shipped}, subs: "
+              f"{'+'.join(lang for lang, _ in subs) or 'none'})")

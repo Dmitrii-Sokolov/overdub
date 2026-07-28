@@ -1,5 +1,35 @@
 # CHANGELOG
 
+## 2026-07-28 — mux ships what exists: no translation or no dub costs a track, not the artifact
+
+**`stages/mux.py`.** Only `source.mkv` is required now. The dub and the two srt tracks are optional
+and a missing one is omitted end to end — input, `-map`, codec, metadata and disposition together —
+through a new pure `mux_args()`. The full-track argv is pinned VERBATIM against what shipped before
+the refactor, so every normal run stays byte-identical. The mix/loudness/duck block is skipped
+entirely when there is no dub (no numpy work, no `_extract` passes). `done()` gained the two srt
+files as mtime deps and a `tracks` stamp compared UPGRADE-ONLY (`gained_tracks`).
+
+**`stages/assemble.py`.** Two degraded exits before the ffmpeg check: no `translation.json` →
+`en.srt` off `sentences.json`; no manifest → both srt tracks off `translation.json` source timings.
+Neither builds a dub, both stamp `assemble.degraded` (`no_transcript` / `no_translation` /
+`no_synthesis`) and neither raises. `_write_srt` now leaves an identical file untouched, mtime
+included — without it the degraded branch (which re-runs on every resume) would re-mux the container
+forever. A stale `dub_ru.wav` is announced, never deleted.
+
+**`runreport.py`.** `assemble.degraded`, `mux.tracks` and a top-level `degraded` reach `run.json`,
+and `needs_triage` goes true on a degraded container — the export name is deliberately unchanged
+(DECISIONS 2026-07-28), so the report is the only place the truth lives. Absent stamps read as
+unknown, never as a measured zero.
+
+Verified three ways, not one. **581 passed** (549 before; +32 across `tests/test_mux_tracks.py` and
+`tests/test_assemble_degraded.py`). A mutation harness broke 10 behaviours one at a time —
+non-shifting input indices, disposition emitted with no dub, symmetric `gained_tracks`, the neutered
+tracks gate, a slot-hardcoded subtitle language, both re-instated raises, the removed identity guard,
+0.0-defaulted degraded timings, a merged degraded stamp — **10/10 caught**. And an ffmpeg/ffprobe
+smoke over synthetic 3 s media (throwaway work root, no fixture touched) confirmed the containers:
+no-dub-no-subs → 1 video + 1 audio + 0 subs, no-dub-en-only → +1 sub, full set → 1 + 2 + 2, and a
+deleted dub afterwards correctly did NOT trigger a downgrade re-mux.
+
 ## 2026-07-27 — `neg_loss` demoted to advisory, and a stale disk bound removed from PLAN
 
 **The demotion** (`runreport._ADVISORY_COMPLETENESS`). 24 inspected fires, 0 real; rationale and the

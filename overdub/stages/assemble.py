@@ -14,6 +14,15 @@ Report records fan out per SENTENCE id (group_id + the unit's speed fields dupli
 done(): dub exists AND the report's assemble synth_key stamp matches the manifest — a
 resynthesis auto-invalidates the dub (self-healing re-assemble), never silently ships
 pre-resynthesis audio.
+
+DEGRADED OUTPUT (2026-07-28). A MISSING upstream artifact no longer raises: with no
+translation.json the stage writes en.srt off sentences.json, with no manifest it writes both
+srt tracks off translation.json's SOURCE timings, and in both cases it builds no dub, stamps
+`assemble.degraded` and returns. mux then ships whatever exists (see stages/mux.py), so a
+video whose translate or synthesize died still yields a container instead of nothing. The
+line is missing vs INCONSISTENT: a non-contiguous id set, units that do not cover the ids and
+a sample-rate mismatch still raise — they mean the artifacts disagree, and shipping a
+confidently wrong dub is worse than shipping none.
 """
 
 from __future__ import annotations
@@ -125,6 +134,37 @@ def _split_cue(a: float, b: float, text: str) -> list[tuple[float, float, str]]:
     return [(a, b, text)]                                 # no usable clause seam: leave whole
 
 
+def _load_json(path):
+    """Tolerant read of an OPTIONAL upstream artifact: None on missing or torn. Same contract
+    runreport/cli use — the degraded branches must tell "absent" from "present but broken"
+    without either one raising out of the stage."""
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+def source_timed_rows(records, field) -> list[tuple[float, float, str]]:
+    """[(start, end, text)] straight off SOURCE timings — the DEGRADED subtitle track.
+
+    Reads sentences.json (`text`) when translation never happened, translation.json
+    (`src_en` / `text_ru`) when synthesis never did. Source timings on purpose, including for
+    ru: _ru_cue_rows times a cue by where its audio actually landed, and a run with no dub has
+    no placement to read. Records without numeric start/end are skipped rather than defaulted
+    to 0 — a cue stacked at the origin is worse than an absent one, and the never-drop
+    invariant lives on translation.json, which this path is not producing.
+    """
+    rows: list[tuple[float, float, str]] = []
+    for rec in records or []:
+        if not isinstance(rec, dict):
+            continue
+        a, b = rec.get("start"), rec.get("end")
+        if not isinstance(a, (int, float)) or not isinstance(b, (int, float)):
+            continue
+        rows.append((float(a), float(b), (rec.get(field) or "").strip()))
+    return rows
+
+
 def _write_srt(path, rows, *, split: bool = True) -> None:
     """rows: iterable of (start, end, text). Long cues are broken up for DISPLAY only (see
     _split_cue). end is floored to start+0.05 — a zero/negative cue is silently dropped by
@@ -142,8 +182,18 @@ def _write_srt(path, rows, *, split: bool = True) -> None:
             i += 1
             b = max(b, a + 0.05)
             out += [str(i), f"{_ts(a)} --> {_ts(b)}", (text or "…").strip(), ""]
+    text = "\n".join(out)
+    # An identical file is left UNTOUCHED, mtime included. mux.done() is make-style — it
+    # re-muxes on an srt newer than output.mkv — and the degraded branch below re-runs on
+    # every resume (its done() gate is the dub, which does not exist). Rewriting the same
+    # bytes would therefore re-mux a multi-GB container once per resume, forever.
+    try:
+        if path.read_text(encoding="utf-8") == text:
+            return
+    except OSError:
+        pass
     tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text("\n".join(out), encoding="utf-8")
+    tmp.write_text(text, encoding="utf-8")
     os.replace(tmp, path)
 
 
@@ -237,10 +287,43 @@ def _ru_cue_rows(plans, segs, sr) -> list[tuple[float, float, str]]:
     return out
 
 
+def _degraded(ctx: Context, reason: str, en_rows, ru_rows) -> None:
+    """No dub is buildable: write the subtitle tracks that ARE, stamp why, and return cleanly.
+
+    Deliberately does NOT delete a dub_ru.wav left by an earlier run — deleting a binary on a
+    degraded path could destroy the last good take of a video whose translation.json was merely
+    moved aside. It is announced instead, and mux ships it: the report says what happened, and
+    the operator decides.
+
+    The stamp REPLACES any previous assemble block. That is correct — the old numbers describe
+    a dub this workdir can no longer produce, and leaving them would let run.json report a
+    duration and a fill median for audio that is not there.
+    """
+    w = ctx.work
+    wrote: list[str] = []
+    if en_rows:
+        _write_srt(w.en_srt, en_rows)
+        wrote.append("en.srt")
+    if ru_rows:
+        _write_srt(w.ru_srt, ru_rows)
+        wrote.append("ru.srt")
+    if w.dub_audio.exists():
+        print("       [warn] assemble: dub_ru.wav from an earlier run is LEFT IN PLACE — mux "
+              "will still ship it; delete it to drop the RU track", file=sys.stderr)
+    rep = report.load(w.report)
+    rep["assemble"] = {"degraded": reason, "wrote": wrote}
+    report.save(w.report, rep)
+    print(f"       [warn] assemble: DEGRADED ({reason}) — no dub built; "
+          f"wrote {' + '.join(wrote) or 'nothing'}", file=sys.stderr)
+
+
 class AssembleStage:
     name = "assemble"
 
     def done(self, ctx: Context) -> bool:
+        # The dub is the gate, so a DEGRADED run never sticks: the stage re-runs on every
+        # resume and does the real work the moment translation.json / the manifest appear.
+        # Cheap by construction — _write_srt leaves an identical file untouched.
         if not ctx.work.dub_audio.exists():
             return False
         try:
@@ -273,12 +356,19 @@ class AssembleStage:
 
     def run(self, ctx: Context) -> None:
         cfg = ctx.cfg
+        # The two degraded exits come BEFORE the ffmpeg check on purpose: neither builds audio,
+        # so neither needs the tool, and demanding it would turn a missing translation into an
+        # environment error naming the wrong cause.
+        segs = _load_json(ctx.work.translation)
+        if not isinstance(segs, list) or not segs:
+            en = source_timed_rows(_load_json(ctx.work.sentences), "text")
+            return _degraded(ctx, "no_translation" if en else "no_transcript", en, None)
+        if not ctx.work.seg_manifest.exists():
+            return _degraded(ctx, "no_synthesis", source_timed_rows(segs, "src_en"),
+                             source_timed_rows(segs, "text_ru"))
         if shutil.which("ffmpeg") is None:
             raise RuntimeError("ffmpeg not found on PATH — required for atempo. "
                                "Install ffmpeg; overdub does not auto-install.")
-        segs = json.loads(ctx.work.translation.read_text(encoding="utf-8"))
-        if not ctx.work.seg_manifest.exists():
-            raise RuntimeError("segments/manifest.json missing — run synthesize before assemble")
         doc = json.loads(ctx.work.seg_manifest.read_text(encoding="utf-8"))
         units = units_of(doc)
         base_speed = doc.get("base_speed") or 1.0
