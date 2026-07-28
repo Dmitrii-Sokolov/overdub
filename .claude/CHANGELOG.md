@@ -1,5 +1,36 @@
 # CHANGELOG
 
+## 2026-07-28 — route B step 2 runs as a Workflow; the contract is read, not pasted
+
+**New `.claude/workflows/translate-batch.js`.** One deterministic fan-out for the whole
+resume-filtered queue: translators and summarizers in ONE `parallel()` (no barrier between them —
+they share no input and no output), `model: "sonnet"` explicit, `agentType: "general-purpose"`.
+Both prompts live in the script. The translator's first act is a `translate.started` marker, its
+mandatory first read is `references/translate-contract.md` off disk (`CONTRACT-MISSING` → stop,
+never a silent fallback), it must read `sentences.json` on to the LAST id, it self-verifies count +
+contiguity + `src` coverage before answering, and its final text is one status line —
+`OK n/total anom=k` / `INCOMPLETE n/total` / `CONTRACT-MISSING` — which the script truncates to 200
+chars regardless. Returns `{done, failed, incomplete, unclear, total}` by id; `args` is parsed even
+if stringified; an empty fan-out throws instead of reporting success. The summarizer half is the
+verified route-C prose, PowerShell-written (the harness blocks a sub-agent's Write on `*summary*.md`).
+
+**`overdub-sonnet-batch/SKILL.md` step 2 rewritten.** The two prompt skeletons and the
+paste-the-contract instruction are gone; in their place: both resume filters, a stale-marker sweep,
+the workflow call, the measured case against hand fan-out, the missing-`Workflow`-tool refusal, the
+verify-from-disk marker checks, the helper loop over `$todo`, and a second-wave filter. "Waves of ~3
+videos" is retired (the runtime caps concurrency; the barrier only added idle time). Three new
+guardrails: never hand-spawn step 2; a truncated `Read` is silent on the agent's side (28 of 152
+transcripts exceed 2000 lines, largest 5930); a derived artifact whose draft is gone is not evidence
+of work.
+
+**`references/translate-contract.md`** now declares itself a file the sub-agent OPENS rather than a
+snippet to copy, and must stay self-contained.
+
+Rationale, the attribution table behind it and the two carry-overs deliberately declined:
+DECISIONS 2026-07-28. **581 passed** — no Python touched; both workflow scripts syntax-checked in
+the async wrapper the runtime uses (`node --check` alone reports a false error on top-level
+`return`, including for the shipped `scout-summarize.js`).
+
 ## 2026-07-28 — mux ships what exists: no translation or no dub costs a track, not the artifact
 
 **`stages/mux.py`.** Only `source.mkv` is required now. The dub and the two srt tracks are optional

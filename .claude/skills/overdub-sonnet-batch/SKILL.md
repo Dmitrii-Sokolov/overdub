@@ -161,128 +161,148 @@ A video whose digest `- asr:` line says `alignment collapse suspected` is never 
 
 ## Step 2 — Translate each video with a Sonnet sub-agent (+ summarize it)
 
-**Resume filter first** — a prior interrupted step-2 run may have finished some videos
-(helper-validated `translation.json` present); the mtime clause also catches drafts gone
-stale via a re-transcribe:
+**Resume filters first** — a prior interrupted step-2 run may have finished some videos, and the
+mtime clauses also catch artifacts gone stale via a re-transcribe or a `--repair-asr` pass. Two
+filters, each keyed on its OWN artifact, because the two agents fail independently:
 
 ```powershell
 $todo = @($ids | Where-Object {
   $t = "work\$_\translation.json"
   -not (Test-Path $t) -or
     (Get-Item "work\$_\sentences.json").LastWriteTime -gt (Get-Item $t).LastWriteTime })
-```
-
-**One sub-agent per video in `$todo`, spawned in parallel in waves of ~3 videos** (two agents
-each — the translator below and the summarizer further down — so ~6 concurrent; the cap is on
-AGENTS, not videos). They are independent, but an uncapped 30-video batch = 60 concurrent Sonnet
-agents — cap the wave, wait for it, spawn the next. Use the Agent tool
-(`general-purpose`, **`model: "sonnet"` — set it explicitly**: sub-agents otherwise inherit
-the session model, silently swapping the translator; every quality verdict for this route is
-Sonnet-specific, DECISIONS 2026-07-18/19). Each sub-agent does ONE thing: read
-`sentences.json`, translate, and write
-`work/<id>/translation.draft.json` = a JSON list
-`[{"id": <int>, "text_ru": "<string>", "src": "<ok|…>"}, ...]`
-covering **every** id. Nothing else — no `text_tts`, no `src_en`, no timings.
-
-The full contract, the translation rules (mirrored from `SYSTEM` in
-`overdub/stages/translate.py`), and the draft/output schemas are in
-[`references/translate-contract.md`](references/translate-contract.md). **Read it, then paste
-its "Translation rules" + "Source anomalies" + "Draft schema" sections verbatim into every
-sub-agent prompt** so each agent translates under exactly the same rules as the local route.
-
-Sub-agent prompt skeleton (fill `<id>`):
-
-> You are a dubbing translator for the overdub pipeline. Read `D:\code\overdub\work\<id>\sentences.json`
-> (list of `{id, text, start, end}`). Translate every sentence's `text` from English into natural,
-> spoken Russian for a single-narrator voice-over, **in id order**, keeping a rolling memory of the
-> previous sentences and your Russian for them so terminology/names/pronouns stay consistent.
-> Follow these rules exactly: <paste "Translation rules" from references/translate-contract.md>.
-> Write `D:\code\overdub\work\<id>\translation.draft.json` as
-> `[{"id": 0, "text_ru": "...", "src": "ok"}, ...]`
-> with one entry for EVERY id in sentences.json, in order. Output only `text_ru` and `src` — do
-> NOT add text_tts, do NOT respell numbers, do NOT touch timings. For every sentence also judge
-> the ENGLISH source: if it is garbled, self-contradictory, truncated mid-thought, duplicative of
-> its neighbour, or an enumeration item that repeats or contradicts what came before, translate it
-> **AS IS** — never repair or smooth it — and set `src` to the matching kind plus a short English
-> `src_note` saying what looks wrong (rule 8 / the vocabulary table in the contract). Otherwise
-> set `src` to `"ok"`. Every record gets a `src`. For long videos (300+ sentences) write the file
-> incrementally — append batches of ~50 entries per edit, never one giant single-shot write.
-> Report the count written and the count of non-`ok` sentences.
-
-Then, for each video, assemble + validate the real artifact with the helper (it fills
-`src_en`/timings, derives `text_tts` via the pipeline's own normalizer, gates each line through
-`_is_bad`, and enforces id-contiguity — the contract is NOT left to the agent):
-
-```powershell
-.venv-asr\Scripts\python.exe -X utf8 scripts\build_translation.py work\<id>
-```
-
-The helper **exits non-zero and loud** on any missing id, extra id, or non-contiguous set —
-that is the safety net. If it fails, fix the draft (or re-run that one sub-agent) and re-run the
-helper; do not proceed with a partial `translation.json`. It also clamps the `src` vocabulary,
-prints each anomaly with its EN source at the seam, and reports how many records carried a `src`
-at all — all as `[warn]`s: a source-anomaly problem is never a helper failure (a hard exit would
-leave `translation.json` unwritten and hand that video to the silent Gemma path).
-
-**A second sub-agent per video writes the ~200-word Russian summary.** Same input file, same wave,
-same `general-purpose` + **`model: "sonnet"` — set it explicitly** (a summary written by an
-inherited session model is not the artifact this route was verified with, DECISIONS 2026-07-18/19).
-It is INFORMATIONAL — it gates nothing, skips nothing, and no code reads a verdict out of it
-(decided 2026-07-19). Its own resume filter, keyed on its own artifact:
-
-```powershell
 $sumTodo = @($ids | Where-Object {
   $s = "work\$_\summary.md"
   -not (Test-Path $s) -or
     (Get-Item "work\$_\sentences.json").LastWriteTime -gt (Get-Item $s).LastWriteTime })
 ```
 
-**There is NO helper script for this one, deliberately.** The summary derives no machine-consumed
-field, so there is no contract for a helper to own — unlike `text_tts` / `src_en` / id-contiguity,
-which is exactly why `build_translation.py` is not optional. The digest and the queue page (`scout_report`) read
+**A missing `translation.draft.json` OUTRANKS a present `translation.json`. Always.** The
+`translation.json` is DERIVED from the draft; with the draft gone it describes work whose input no
+longer exists, and it is not evidence that anything is done. Do not resolve the contradiction by
+opening the `translation.json` and finding it well-formed — it will always be well-formed, that is
+what `build_translation.py` guarantees. Add the video to `$todo` and re-translate it. (Route C
+learned this the expensive way on 2026-07-21: an orchestrator investigated the same contradiction,
+concluded the derived artifacts were "консистентны и полны", skipped the whole step and published a
+flawless-looking report representing zero work.)
+
+**Delete stale markers for the videos about to be respawned**, or the fan-out check below pairs a
+fresh run with the previous attempt's timestamps:
+
+```powershell
+@($todo + $sumTodo) | Select-Object -Unique |
+  ForEach-Object { Remove-Item "work\$_\translate.started" -ErrorAction SilentlyContinue }
+```
+
+### DO NOT spawn the sub-agents yourself. Run the workflow.
+
+```
+Workflow: {name: "translate-batch", args: {ids: [...$todo], sumIds: [...$sumTodo], root: "D:\\code\\overdub"}}
+```
+
+Pass `ids`/`sumIds` as real JSON arrays, not a stringified list. Both lists are the
+RESUME-FILTERED ones — never the whole queue. The workflow refuses an empty fan-out rather than
+reporting success having translated nothing.
+
+**Hand fan-out is not a slower alternative here, it is the failure mode this step was rebuilt to
+remove** (2026-07-28). Measured on the 117-video batch of 2026-07-27, transcript `c9a89f27`:
+
+```
+translator prompts   87 spawns   403,364 chars   (median 4.5k, generated token by token)
+inbound reports     123 msgs     270,832 chars   (mean 2.4k, worst 13,547 for a 9-line fix)
+SendMessage out      40 calls     92,460 chars
+idle_notification   133 blocks    15,794 chars
+orchestrator context  60k -> 893k tokens, ~350k of it the traffic above
+```
+
+That run died at 89% of a 1M window. Step 4 never ran, and **84 of 117 summaries were silently
+never written** — no FAIL row, no flag, nothing in chat: the orchestrator simply ran out of room
+and dropped half of its own step. A sub-agent isolates its OWN context, but its prompt and its
+final report stay in the orchestrator's history forever, so hand fan-out makes the orchestrator pay
+TWICE per video (~9.6k tokens) instead of not at all. Route C measured the same thing from the
+other side — prompts generate at ~8.5 s per 1000 chars, so 403k chars is ~57 min of pure typing —
+and proved wording cannot fix it: an orchestrator explicitly reasoned "spawning six sub-agents in a
+single message", announced it, and emitted six messages anyway.
+
+**The prompts live in `.claude/workflows/translate-batch.js`, not here.** Edit the script. The
+contract is no longer pasted into anything: the sub-agent reads
+[`references/translate-contract.md`](references/translate-contract.md) off disk itself (9.1k chars
+per spawn) under a MANDATORY-READ rule, and an agent that cannot read it returns `CONTRACT-MISSING`
+and stops instead of translating to its own taste.
+
+**This step needs a session that has the `Workflow` tool.** It is NOT available to sub-agents
+(verified three ways on route C, 2026-07-21), so a sub-agent — and presumably a headless or
+scheduled run — cannot perform Step 2. If you do not have the tool: **stop here and say so.** Do
+not substitute anything. The only fallback available is the hand fan-out above, which is precisely
+what the measurements condemn, and a slow path that looks like success is worse than an honest
+refusal.
+
+The whole queue goes in ONE call — the runtime caps concurrency (~16 agents) and queues the rest,
+so the old "waves of ~3 videos" advice is obsolete and its per-wave barrier only added idle time.
+A queue past ~450 videos would approach the 1000-agent-per-workflow backstop (two agents each);
+split it there, not before.
+
+It returns `{done, failed, incomplete, unclear, total}`, all by id. `failed` is a dropped agent or
+a `CONTRACT-MISSING`; `incomplete` is an agent that could not cover every id; `unclear` is a status
+line that did not parse — **not a failure**, and the disk decides.
+
+### Verify from disk, not from the run's account
+
+```powershell
+# 1. every spawned video got a marker — its absence means that agent never started
+@($todo + $sumTodo) | Select-Object -Unique |
+  Where-Object { -not (Test-Path "work\$_\translate.started") }     # must print nothing
+# 2. the markers are SECONDS apart, not ~100 s — gaps near 100 s mean the fan-out did not happen
+@($todo + $sumTodo) | Select-Object -Unique | Where-Object { Test-Path "work\$_\translate.started" } |
+  ForEach-Object { (Get-Item "work\$_\translate.started").LastWriteTime } | Sort-Object |
+  Select-Object -First 5
+```
+
+This check exists because on 2026-07-20 an orchestrator's own account of a wave was wrong in both
+specifics it offered, while the completion times it reported were accurate: **an agent's report of
+what it OBSERVED is worth more than its report of what it DID.** The same rule settles `unclear` —
+run the helper and let the artifact answer.
+
+### Assemble and validate the real artifact
+
+For every id in `$todo` (including `unclear` ones), run the helper — it fills `src_en`/timings,
+derives `text_tts` via the pipeline's own normalizer, gates each line through `_is_bad`, and
+enforces id-contiguity, so the contract is never left to the agent:
+
+```powershell
+$todo | ForEach-Object { .venv-asr\Scripts\python.exe -X utf8 scripts\build_translation.py "work\$_" }
+```
+
+The helper **exits non-zero and loud** on any missing id, extra id, or non-contiguous set — that is
+the safety net, and it is why a truncated transcript read costs a respawn rather than half a dub.
+It also clamps the `src` vocabulary, prints each anomaly with its EN source at the seam, and
+reports how many records carried a `src` at all — all as `[warn]`s: a source-anomaly problem is
+never a helper failure (a hard exit would leave `translation.json` unwritten and hand that video to
+the silent Gemma path).
+
+**Second wave for whatever did not land.** Re-run the workflow with just those ids — the failure is
+per video, so the re-run is too:
+
+```powershell
+$again = @($ids | Where-Object { -not (Test-Path "work\$_\translation.json") -or
+  (Get-Item "work\$_\sentences.json").LastWriteTime -gt (Get-Item "work\$_\translation.json").LastWriteTime })
+```
+
+Two rounds that both leave the same video short is a video to look at by hand, not to respawn a
+third time — read its `sentences.json` size first (a 5930-line transcript is the known hard case).
+
+### The summary half
+
+Same wave, same workflow, own resume filter, own artifact. It is INFORMATIONAL — it gates nothing,
+skips nothing, and no code reads a verdict out of it (decided 2026-07-19). **There is NO helper
+script for it, deliberately**: it derives no machine-consumed field, so there is no contract for a
+helper to own — unlike `text_tts` / `src_en` / id-contiguity, which is exactly why
+`build_translation.py` is not optional. The digest and the queue page (`scout_report`) read
 `summary.md` directly and sanitize it on read (heading markers stripped, runaway text truncated,
 empty treated as absent), so a malformed summary can never break either surface.
 
-**HOW the sub-agent writes it — say this in the prompt, do not leave it to the agent
-(2026-07-25).** The harness blocks the Write tool for a sub-agent on a path matching
-`*summary*.md` ("Subagents should return findings as text, not write report files"). The rule is
-right in general and wrong here — `work/<id>/summary.md` is a pipeline INPUT that two report
-surfaces read, not an agent's account of its own work — but it is HARNESS-level: it is not in
-`~/.claude/hooks`, not in `settings.json`, and nothing local turns it off. Measured on 2026-07-25,
-with the mechanism unstated, two summarizers on the same batch diverged: one stopped and handed
-back the text (correct), the other wrote to a temp file and `mv`'d it into place (an end-run).
-So state the mechanism, and state the fallback:
-
-- write with PowerShell, never the Write tool — `[System.IO.File]::WriteAllText(path, $text,
-  (New-Object System.Text.UTF8Encoding($false)))`, i.e. the same shape
-  `.claude/workflows/scout-summarize.js` already uses on route C;
-- if that is refused or unavailable for ANY reason, **STOP and return the prose as your final
-  text** — the caller writes it. Do NOT hunt for a third route to disk.
-
-The caller-writes path is fully compliant and costs ~8.5 s per 1000 chars of orchestrator
-generation (PLAN "S2 artifact route"), i.e. ~20 s per video — worth paying when it is needed,
-worth avoiding when a documented mechanism works.
-
-Sub-agent prompt skeleton (fill `<id>`):
-
-> You are a triage summarizer for the overdub pipeline. Read
-> `D:\code\overdub\work\<id>\sentences.json` (list of `{id, text, start, end}` — the COMPLETE
-> English transcript, in order) and write `D:\code\overdub\work\<id>\summary.md`: a summary in
-> RUSSIAN of about 200 words. The reader has NOT watched the video and is deciding whether to. So
-> answer two things, in prose: (a) is this worth watching at all, and for whom — say so plainly,
-> including "смотреть не стоит" if that is the honest read; (b) what is the single most interesting
-> thing in it / what to look out for, and roughly where (use the `start` timestamps, `M:SS`).
-> Ground every claim in the transcript — do not invent facts, names, or numbers that are not there,
-> and if the transcript is too garbled or thin to judge, say that instead of guessing. Plain
-> paragraphs only: no markdown headings, no bullet lists, no title, no preamble like "Вот краткое
-> содержание" — the file's whole content is the summary text. **Write EXACTLY TWO paragraphs
-> separated by a BLANK LINE: paragraph 1 is (a), paragraph 2 is (b), and paragraph 2 must OPEN with
-> the interesting thing itself (e.g. "Самое интересное — …"), never with a verdict about whether to
-> watch.** The queue report reads paragraph 2 as its «самое интересное» column and takes its first
-> sentence verbatim, so a one-paragraph summary leaves that cell empty and a paragraph 2 that opens
-> with "Смотреть стоит…" fills it with the wrong answer (measured 2026-07-25: 2 of 24 summaries
-> ran the two points together, ~6 opened paragraph 2 with the verdict). Read the file in one pass;
-> write it in one pass.
+The prose half of that prompt is **identical to the summarizer in
+`.claude/workflows/scout-summarize.js`** (route C / S2) — if you change one, change the other, or
+the two routes produce different artifacts under one name.
 
 ## Step 3 — Resume the full pipeline
 
@@ -412,6 +432,21 @@ re-sorts the queue). Mention the path in your summary. Skip it for a fully clean
 - **The helper is not optional.** It is the only thing validating the contract on the resume
   path (`TranslateStage.done()` only checks that the file exists — a malformed hand-written
   `translation.json` would sail straight into synthesize and produce garbage or crash there).
+- **Never hand-spawn step 2's sub-agents.** It is not a slower path, it is a losing one: measured
+  2026-07-27, 117 videos cost the orchestrator ~9.6k tokens per spawn (prompt + report, both of
+  which stay in its history forever), filled 89% of a 1M window, and cost the run its step 4 and
+  84 of its 117 summaries — dropped silently, because a context ceiling produces no FAIL row.
+  Run `translate-batch`; if the `Workflow` tool is absent, stop and say so.
+- **A truncated transcript read is silent on the agent's side.** `Read` returns 2000 lines by
+  default and 28 of 152 `sentences.json` files exceed that (largest 5930 lines / 988 sentences),
+  so a naive read hands the translator the first third of the video with no warning. Only
+  `build_translation.py`'s missing-id exit catches it, one full respawn later. The workflow's
+  prompt requires reading on to the last id; keep that requirement if you edit it.
+- **A derived artifact whose draft is gone is not evidence of work.** `translation.json` without
+  `translation.draft.json` describes inputs that no longer exist, and it will always look
+  well-formed — that is what the helper guarantees. Re-translate; never reason your way out of the
+  contradiction by inspecting the derived file (route C, 2026-07-21: that reasoning published a
+  flawless-looking report representing zero work).
 - **A matching `# playlist:` header is not evidence that the queue is current.** It is a
   snapshot written when the queue was built (`queueview.queue_playlist`, for the report header).
   Concluding "the URL is the same, so everything is already downloaded" skips every video added

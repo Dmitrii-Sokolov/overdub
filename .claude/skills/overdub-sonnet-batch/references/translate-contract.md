@@ -1,7 +1,16 @@
 # Translate-seam contract (route B)
 
 Everything a Sonnet sub-agent needs to translate one video, plus the exact schemas of the three
-artifacts involved. The division of labour is the whole point:
+artifacts involved.
+
+**This file is READ BY THE SUB-AGENT ITSELF, off disk, as its mandatory first read** (since
+2026-07-28 — `.claude/workflows/translate-batch.js` points at it). It used to be pasted into every
+prompt, which cost 9.1k chars per video of orchestrator generation and gave two copies of one
+contract room to drift. So: it is a document an agent opens, not a snippet to copy. Write it that
+way, and keep it self-contained — nothing here may depend on surrounding prompt text. An agent that
+cannot read it returns `CONTRACT-MISSING` and stops rather than translating to its own taste.
+
+The division of labour is the whole point:
 
 | Who | Produces | Owns |
 |---|---|---|

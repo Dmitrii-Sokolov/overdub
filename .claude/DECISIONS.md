@@ -1,5 +1,64 @@
 # DECISIONS
 
+## 2026-07-28 — route B step 2 fans out through a Workflow: hand fan-out spends the orchestrator's context TWICE per video
+
+The 117-video batch of 2026-07-27 finished its dubs and killed its orchestrator: context went
+60k → 893k tokens (89% of a 1M window), step 4 never ran, and **84 of 117 summaries were never
+written** — silently, because a context ceiling produces no FAIL row and no missing-artifact gate
+fires on an informational file. Attribution over that transcript (`c9a89f27`, 1.75 M chars of
+messages):
+
+```
+Agent prompts (108 spawns)        460,198 chars   26.3%   <- 87 translators, 403,364 of it
+inbound teammate reports          422,373 chars   24.1%   <- mean 2.4k, worst 13,547
+SendMessage to agents (40)         92,460 chars    5.3%
+ALL tool_result (pipeline output) 185,816 chars   10.6%
+```
+
+**The 30 hours of video cost ~10% of the window; talking about them cost ~62%.** The mechanism is
+not obvious and is the whole reason this is written down: a sub-agent isolates its OWN context, but
+its prompt and its final report stay in the orchestrator's history **forever**. Fan-out by hand
+therefore makes the orchestrator pay twice per video (~9.6k tokens) rather than not at all —
+delegation that costs more than doing the work inline. The cost is strictly linear in queue length
+against a constant window, so the ceiling (~95 videos) was arithmetic, not bad luck.
+
+**Adopted: `.claude/workflows/translate-batch.js`, one call per resume-filtered queue.** Agent
+results return to the SCRIPT, not to the model's context. Route C had already proved the pattern at
+S2 and measured the second half of the bill — prompts generate at ~8.5 s per 1000 chars, so 403k
+chars of translator prompt is ~57 min of pure typing per batch — and proved that wording cannot fix
+it (an orchestrator reasoned "spawning six sub-agents in a single message", announced it, emitted
+six messages anyway). Projected saving on the same batch: **~350k tokens, 39% of the window**;
+per-spawn cost 9.6k → 5.6k; ceiling ~95 → ~165 videos.
+
+**It does NOT make the cost constant** and must not be sold as such. What remains is the per-video
+PowerShell checks, ad-hoc investigation agents (10 of the 108 spawns, and the right tool for a
+one-off finding), and the orchestrator's own reasoning — ~5.6k tokens per video. Steps 1/3/4 were
+left alone.
+
+**Carried over from route C, with the reasoning intact rather than the code:** the prompt lives in
+the script; the contract is READ off disk by the agent (9.1k chars/spawn) under a mandatory-read
+rule with a `CONTRACT-MISSING` stop marker instead of a silent fallback; the agent's final text is
+a STATUS LINE and the script `.slice(0,200)`s it anyway, because on 2026-07-27 the same instruction
+produced a 13.5k-char essay about nine edited lines; the return value is a worklist by id; a
+`translate.started` marker makes the fan-out verifiable from the filesystem rather than from the
+run's account; and an empty `ids` throws instead of reporting success.
+
+**Two things deliberately NOT carried over.** *Per-video timing in the report*: route C's
+`build_scout.py` consumes `scout.started`, but the route-B equivalent would need a new artifact,
+changes to `build_translation.py` and `run_report.py`, and their tests — for a number no surface
+reads today. The marker is written and used only as the fan-out check. *A validate-and-retry loop
+inside the workflow*: a workflow script has no filesystem or shell access, so `build_translation.py`
+cannot run from it. The retry is three-beat instead — the agent verifies its own draft before
+answering, the skill runs the helper after the workflow returns, and a second workflow call takes
+whatever did not land.
+
+**New, from measurement rather than from route C:** `Read` returns 2000 lines by default and 28 of
+152 `sentences.json` files exceed it (largest 5930 lines / 988 sentences), so a naive read hands the
+translator the first third of the video with no warning at all. This is the likeliest explanation
+for 87 translator spawns over a 117-video queue: `build_translation.py`'s missing-id exit caught the
+truncation and each catch cost a full respawn. The workflow prompt now requires reading on to the
+last id and self-verifying coverage before answering.
+
 ## 2026-07-28 — the tail degrades instead of failing: a missing translation or dub costs a TRACK, not the artifact
 
 `mux` used to require four inputs (`source.mkv`, `dub_ru.wav`, `en.srt`, `ru.srt`) and raise
