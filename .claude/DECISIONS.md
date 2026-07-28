@@ -59,6 +59,21 @@ for 87 translator spawns over a 117-video queue: `build_translation.py`'s missin
 truncation and each catch cost a full respawn. The workflow prompt now requires reading on to the
 last id and self-verifying coverage before answering.
 
+**Confirmed on the first run, same day** (5-video queue, CHANGELOG 2026-07-28): markers 3.5 s apart,
+782/782 on a 4694-line transcript, `src` on 100% of records, step 2 costing the orchestrator 1428
+chars. **The ~350k / ~5.6k-per-video projection above is NOT yet measured** — at four videos the
+session is dominated by steps 1/3/4 and by manual debugging, so it stays a projection until an
+ordinary batch re-measures it. What the run did establish is narrower and still worth having: the
+share of the orchestrator's own traffic spent on step 2 went from 62% to 0.7%.
+
+**And it revalidated the guard-porting decision twice in one run.** The caller passed `args` as a
+STRING — route C's measured 8-of-8 mistake, reproduced on route B's first call — and the ported
+parsing branch absorbed it. Then the one defect the run DID surface was in the part with no route-C
+precedent: a status line parsed from the TRUNCATED answer with an anchored pattern. The general
+lesson is the reason it is written here rather than only in CHANGELOG: **a cap that protects context
+must not also be the parse window.** Truncation is a storage decision; classification has to read
+what actually arrived.
+
 ## 2026-07-28 — the tail degrades instead of failing: a missing translation or dub costs a TRACK, not the artifact
 
 `mux` used to require four inputs (`source.mkv`, `dub_ru.wav`, `en.srt`, `ru.srt`) and raise

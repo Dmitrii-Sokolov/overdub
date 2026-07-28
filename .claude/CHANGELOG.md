@@ -1,5 +1,37 @@
 # CHANGELOG
 
+## 2026-07-28 — `translate-batch` first run: the mechanism held, and the status parser was wrong
+
+**The run** (5-video queue; 4 translated + 4 summarized, the fifth carried by the resume filter).
+Verified from disk and from `journal.jsonl`, not from the run's account. `translate.started` markers
+landed **3.5 s apart** across the whole wave — the number that says the fan-out was real, against
+~100 s per video for hand fan-out. `PMvIWws8WEo` (**4694 lines / 782 sentences**, more than twice
+the 2000-line `Read` default) came back **782/782**: the read-to-the-last-id instruction holds on
+the input class that used to fail silently. All four drafts carried `src` on **100%** of records
+with `src_note` on every anomaly (6/6/2/12), **zero** forbidden fields (`text_tts`, `src_en`,
+`start`) and **zero** `_is_bad` flags after the helper. 5 videos in the queue → 5 MKV in `out/`.
+Step 2 cost the orchestrator **1428 chars** — a 237-char call and a 1191-char launch receipt, 0.7%
+of the session's content against 62% for the batch that broke.
+
+**Defect 1, the ported guard earning itself on day one.** The call went out as
+`args: "{\"ids\": [...]}"` — a STRING, exactly the mistake route C measured 8 times out of 8. The
+string-parsing branch caught it; without it the fan-out would have been empty.
+
+**Defect 2, fixed here.** Three translators returned the bare status line; the fourth prefixed it
+with `Verified: 169 records (id 0-168), contiguous, no gaps/duplicates...` and its perfect draft
+landed in `unclear`. Two causes, not one: the pattern was anchored (`/^OK\b/`), and the 200-char cap
+was applied BEFORE parsing, which pushed the trailing `OK 169/169 anom=12` past the cut — so a
+merely-forgiving pattern would still have missed it. Now `parseStatus` reads the FULL answer and the
+cap only bounds what is kept; it prefers a COUNTED status (`OK n/total`, `INCOMPLETE n/total`) over a
+bare keyword and is case-SENSITIVE, so the word "ok" in prose cannot score a failure as a success.
+The prompt now demands the status as the last line and cites this run. 13 parser cases pass —
+including the five real answers from `journal.jsonl` — and a mutant restoring the old logic is
+**caught by exactly the 2 cases that describe the defect**, so the suite is not a restatement.
+
+Also caught pre-flight: a backtick in the new prompt text would have closed its JS template literal.
+`node --check` in the runtime's async wrapper is the check that finds this — bare `node --check`
+reports a false error on top-level `return` for every workflow script, shipped ones included.
+
 ## 2026-07-28 — route B step 2 runs as a Workflow; the contract is read, not pasted
 
 **New `.claude/workflows/translate-batch.js`.** One deterministic fan-out for the whole

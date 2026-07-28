@@ -125,10 +125,16 @@ reason you are trusted with a file — build_translation.py will exit hard on a 
 full respawn, whereas you can still fix it right now.
 
 Your final text is a STATUS LINE, not a report. Return exactly ONE of these and nothing else — no
-summary of your choices, no list of the anomalies, no terminology notes, no preamble:
+summary of your choices, no list of the anomalies, no terminology notes, no preamble, and above all
+no account of the verification you just did:
   OK <written>/<total> anom=<count>        — draft complete and verified
   INCOMPLETE <written>/<total>             — you could not cover every id; say nothing more
   CONTRACT-MISSING                         — the contract file could not be read
+The status must be the LAST line of your answer with nothing after it. Measured 2026-07-28 on the
+first real run: 3 of 4 translators returned the bare line, and the fourth prefixed it with
+"Verified: 169 records (id 0-168), contiguous, no gaps/duplicates..." — its draft was perfect and it
+still landed in the unclear bucket, because a caller cannot tell a narrated success from a narrated
+failure without opening the file itself.
 Anything you would want to explain belongs in src_note inside the file, where the helper prints it
 at the seam and a human can act on it. Prose returned here is read by nobody and costs the caller
 its context window — that is measured, not hypothetical: on the 2026-07-27 batch these reports came
@@ -198,16 +204,39 @@ const TASKS = [
 
 log(`fanning out ${IDS.length} translators + ${SUM_IDS.length} summarizers (all at once)`)
 
+// Status is parsed from the FULL answer and only then truncated. The 200-char cap is a log/context
+// guard, not a parse window: on 2026-07-28 one translator prefixed its status with a 190-char
+// verification narrative, which pushed "OK 169/169 anom=12" past the cut — so parsing the truncated
+// text would have lost the status even with a forgiving pattern. Cap what is KEPT, read what came.
+const STATUS_RE = /(CONTRACT-MISSING|INCOMPLETE\s+\d+\s*\/\s*\d+|OK(?:\s+\d+\s*\/\s*\d+)?)/g
+
+// Case-SENSITIVE on purpose: the prompt specifies uppercase, and a case-insensitive "ok" would
+// match the word in ordinary prose ("the file looks ok") and score a failure as a success.
+function parseStatus(full) {
+  const hits = String(full || '').match(STATUS_RE)
+  if (!hits) return null                                   // -> unclear; the disk decides
+  // Prefer a COUNTED status (OK n/total, INCOMPLETE n/total) — it cannot be a stray word. Falling
+  // back to the last bare hit models the prompt's "status on the last line" rule.
+  const counted = hits.filter((h) => /\d/.test(h))
+  const pick = (counted.length ? counted : hits).pop()
+  if (pick.startsWith('CONTRACT-MISSING')) return 'contract'
+  if (pick.startsWith('INCOMPLETE')) return 'incomplete'
+  return 'ok'
+}
+
 const results = await parallel(TASKS.map((t) => () =>
   agent(t.kind === 'translate' ? translatorPrompt(t.id) : summarizerPrompt(t.id), {
     label: `${t.kind}:${t.id}`,
     phase: t.kind === 'translate' ? 'Translate' : 'Summarize',
     model: 'sonnet',            // explicit: the route was verified on Sonnet (DECISIONS 07-18/19)
     agentType: 'general-purpose',
-  // Hard cap on what comes back. The prompt asks for one status line; this is what makes it true
+  // Hard cap on what is KEPT. The prompt asks for one status line; this is what makes it true
   // regardless. On 2026-07-27 the same instruction ("report the count written") produced a mean of
   // 2.4k chars and a worst case of 13.5k, so the instruction alone is not a mechanism.
-  }).then((text) => ({ ...t, text: String(text || '').slice(0, 200).trim() }))
+  }).then((text) => {
+    const full = String(text || '')
+    return { ...t, status: parseStatus(full), text: full.slice(0, 200).trim() }
+  })
 ))
 
 // Buckets, by id rather than by count: the operator's next move is per video — respawn THIS one.
@@ -221,11 +250,10 @@ const unclear = { translate: [], summarize: [] }
 
 TASKS.forEach((t, i) => {
   const r = results[i]
-  const text = r ? r.text : ''
   if (!r) failed[t.kind].push(t.id)                            // runtime dropped the agent
-  else if (/CONTRACT-MISSING/i.test(text)) failed.translate.push(t.id)
-  else if (/^INCOMPLETE\b/i.test(text)) incomplete.push(t.id)
-  else if (/^OK\b/i.test(text)) done[t.kind].push(t.id)
+  else if (r.status === 'contract') failed[t.kind].push(t.id)
+  else if (r.status === 'incomplete') incomplete.push(t.id)
+  else if (r.status === 'ok') done[t.kind].push(t.id)
   else unclear[t.kind].push(t.id)
 })
 

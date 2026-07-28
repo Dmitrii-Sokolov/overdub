@@ -239,15 +239,19 @@ the slot-fit item lands, or the numbers describe a pipeline that is about to cha
   no `detail`, so `work_complete` stays False on a real run and `total_work_s` is an UPPER bound.
   The mechanism shipped 2026-07-22 (+ `separate` 2026-07-24); this is one measurement pass, not
   code design. Add it when a real batch makes the calls worth it.
-- **`translate-batch` has never run.** Route B step 2 was rebuilt as a workflow on 2026-07-28
-  (DECISIONS) from measurements of the batch that broke, not from a trial: the script is
-  syntax-checked and the skill is rewritten, but no queue has gone through it. First real use is the
-  test — watch three things the measurements predict and nothing yet confirms: that the status lines
-  parse (a wave landing entirely in `unclear` means the format drifted and the disk checks are
-  carrying the step), that `translate.started` markers really do land seconds apart, and that the
-  read-to-the-last-id instruction holds on the 5930-line transcript (`9eXV64O2Xp8`), which is the
-  one input that defeated the old prompt. Re-measure the orchestrator's context against the ~5.6k
-  tokens/video the projection claims before quoting that number anywhere.
+- **`translate-batch` — one run in, and the mechanism held; two paths still unexercised.** First
+  real use 2026-07-28 (5-video queue: 4 translated + 4 summarized, the fifth carried by the resume
+  filter). All three predictions confirmed — markers **3.5 s apart** across the wave, the 4694-line /
+  782-sentence transcript came back **782/782**, `src` on 100% of records in all four drafts with
+  zero forbidden fields and zero `_is_bad` flags. Step 2 cost the orchestrator **1428 chars** (0.7%
+  of the session, against 62% for hand fan-out). Two defects found and fixed the same day
+  (CHANGELOG 2026-07-28): a narrated status line, and the args-as-string call that the ported guard
+  caught on the first try. **What this run did NOT test:** (i) the projected ~5.6k tokens/video — at
+  4 videos steps 1/3/4 and manual debugging dominate the session, so the figure stays a projection
+  and must not be quoted as measured; (ii) the `failed` / `incomplete` / second-wave branches —
+  nothing failed, so that code has never executed; (iii) the 5930-line `9eXV64O2Xp8` transcript,
+  the true worst case, which is 20% longer than what did run. Fold (i) and (ii) into the next
+  ordinary batch rather than staging a run for them.
 - **S2 artifact route — workable but not settled.** Sub-agents are blocked from the Write tool; the
   prompt now plainly instructs writing the two artifacts with PowerShell and handing content back if
   refused. (a) The fully compliant shape is "sub-agent returns, caller writes" — run 6's recovery
@@ -258,6 +262,10 @@ the slot-fit item lands, or the numbers describe a pipeline that is about to cha
   (`~/.claude/knowledge/claude-code/agent-orchestration.md`) and `paragraph` runs to 1500 chars. Do
   not reach for it without re-reading that note. Until decided, an occasional classifier stop is a
   respawn, not a reason to reinstate any instruction about what is blocked.
+  **First sample outside route C, 2026-07-28: route B's four summarizers wrote `summary.md` via the
+  PowerShell path 4/4 with no refusal and no end-run** — the caller-writes fallback (a) was not
+  needed once, which is weak evidence that stating the mechanism is enough and the ~200 s/6 videos
+  in (a) may never have to be paid. Four agents is a sample, not a rate; the question stays open.
 - **Repair-window `hotwords` / `initial_prompt` — last on purpose.** Fixes the one confirmed
   regression from the 2026-07-20 ear check (DECISIONS 2026-07-20 explains why this does not reopen
   the repetition loop); available in faster-whisper 1.2.1, verified; word-list sources cheapest

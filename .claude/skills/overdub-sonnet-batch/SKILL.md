@@ -199,9 +199,18 @@ fresh run with the previous attempt's timestamps:
 Workflow: {name: "translate-batch", args: {ids: [...$todo], sumIds: [...$sumTodo], root: "D:\\code\\overdub"}}
 ```
 
-Pass `ids`/`sumIds` as real JSON arrays, not a stringified list. Both lists are the
-RESUME-FILTERED ones — never the whole queue. The workflow refuses an empty fan-out rather than
-reporting success having translated nothing.
+Pass `ids`/`sumIds` as **real JSON arrays, not a stringified list** — this is the easy mistake and
+it was made on the very first call (2026-07-28, `args: "{\"ids\": [...]}"`), matching route C's 8
+out of 8. The script parses a string anyway, so it costs nothing; do it right regardless, because
+the guard is a net and not a contract. Both lists are the RESUME-FILTERED ones — never the whole
+queue. The workflow refuses an empty fan-out rather than reporting success having translated
+nothing.
+
+**First run, 2026-07-28 (5 videos):** markers 3.5 s apart, a 4694-line / 782-sentence transcript
+returned 782/782, `src` on 100% of records in all four drafts, zero `_is_bad` flags, 5/5 muxed —
+and step 2 cost the orchestrator 1428 chars against 62% of a window for the hand fan-out it
+replaced. Nothing failed, so the `failed` / `incomplete` / second-wave branches below are still
+unexercised code: read their output, do not assume it.
 
 **Hand fan-out is not a slower alternative here, it is the failure mode this step was rebuilt to
 remove** (2026-07-28). Measured on the 117-video batch of 2026-07-27, transcript `c9a89f27`:
