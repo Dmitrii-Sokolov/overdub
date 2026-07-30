@@ -37,6 +37,12 @@ sufficient** (DECISIONS 2026-07-25 later). What the switch cost is timing: Siler
 `supports_target`, so fitting speech to its slot is now the pipeline's job — half done since
 2026-07-25 (`atempo_floor`), and no longer a blocker: see Open.
 
+**Route D (digest) exists since 2026-07-30 and has never run on a real queue.** Five videos piloted
+by hand (2.9 to 90 min), the two-pass read+compress chain verified end to end, zero truncations on
+the page, recall 5/6 against the human reference digest on the one video where a reference exists.
+What is unproven: the `--queue` path (every pilot used argv workdirs), a queue larger than two, and
+the cost at scale — see "Sonnet budget per batch" and the route-D backlog entry.
+
 **Before the next dubbing batch** — one standing caveat, not a bug: `_title_of` is a networked
 `yt-dlp --print title` (30 s timeout) for pre-2026-07-20 workdirs; in the finish sweep those queue
 back-to-back — an offline resume of 12 videos can sit ~6 min in one block at the very end.
@@ -105,12 +111,18 @@ on it working and nobody has looked.
 
 ### Sonnet budget per batch
 
-Route B spends 2 sub-agents per video (translator + summarizer), route C one, and the price is
-visible NOWHERE — not in `run.json`, not in the digest, not in the report. **This is the scarce
-resource now that disk is not**: machine time is not the bound either (3 h 16 m of work for 24
-videos), and the 2026-07-27 disk re-measurement removed the only other stated ceiling. An estimate
-per video (agents × tokens) and a share of the weekly limit per batch would make "does a 100-video
-queue fit in a week" arithmetic instead of a surprise at #60.
+Route B spends 2 sub-agents per video (translator + summarizer), route C one, **route D two on
+Opus**, and the price is visible NOWHERE — not in `run.json`, not in the digest, not in the report.
+**This is the scarce resource now that disk is not**: machine time is not the bound either (3 h 16 m
+of work for 24 videos), and the 2026-07-27 disk re-measurement removed the only other stated ceiling.
+An estimate per video (agents × tokens) and a share of the weekly limit per batch would make "does a
+100-video queue fit in a week" arithmetic instead of a surprise at #60.
+
+Route D is the first route with a MEASURED figure to put in such a table (2026-07-30 pilot, from the
+workflow's own usage lines): **~200k tokens per video** for the full chain — ~100k read + ~100k
+compress — and 1.06M across the whole 9-agent pilot. That makes route D roughly **2× route B per
+video** and puts a 24-video digest queue near 5M tokens. The number came from reading five task
+notifications by hand; nothing in the pipeline records it, which is the gap this item is about.
 
 ### Slot fit — size the translation to the slot *(was item 1(a))*
 
@@ -328,6 +340,38 @@ next pass. **NOT contaminated, contrary to an earlier claim in this file:** `nfe
 separately as `startup_s`.
 
 ## Backlog
+
+**Route D (digest) — economy and brevity.** The route works and is the most expensive thing in the
+repo per video: **~200k tokens** for its two Opus passes against ~100k for route B's two Sonnet ones,
+so a 24-video queue is ~5M and a 100-video queue does not fit a week. Both halves of the complaint
+have named levers, and none of them should be pulled from the armchair — each needs one measured wave,
+which the pilot artifacts make cheap.
+
+*Economy*, cheapest first. (a) **A cheaper model for pass 1 has never been tried.** The passes are
+asymmetric: pass 1 is mechanical (report what the transcript contains), pass 2 is the judgement half
+(decide which point dies). Sonnet-read + Opus-compress would cut most of the bill; the check is recall
+against the reference video, which exists as a fixture (`fGKNUvivvnc`, human digest committed at
+[`docs/digest-reference.md`](../docs/digest-reference.md) with its six findings and the scoring rule;
+Opus scored 5/6). (b) **Skip pass 2 below a threshold**: `Bj9BD2D3DzA`
+(2.9 min, 28 sentences) read out at 5,672 chars and compressed to 2,042, so on a short video the
+second agent mostly buys formatting. The threshold has to be measured, not guessed — one wave over
+three short videos answers it. (c) The five `digest.long.json` on disk **are already a compressor
+fixture**: `compressOnly` re-scores any prompt change for ~100k tokens per video with no re-read, which
+is how the 2026-07-30 tier fix was tested. **Preserve them before a `work/` cleanup takes them** —
+`work-exp/` has lost baselines to one sweep already.
+
+*Brevity.* Three length levers are measured and only ONE binds — the point count (DECISIONS
+2026-07-30: sentence counts, character budgets and a requested ratio all missed; the ladder was obeyed
+5 runs of 5). So the only remaining knob is `_POINTS_LADDER` in `build_digest.py`, and lowering the
+above-an-hour ceiling from 6 to 4 is the whole decision. Current top is **6.6k chars for a 90-minute
+video** (~5 min of reading), against 2.0-4.0k for everything shorter. Decide it by READING one long
+digest and asking whether four points would have answered "did I miss anything" — not by the number.
+A third compression pass is the wrong answer: another agent per video, against the economy item above.
+
+*Also unproven, and cheap to close on the next real run:* the `--queue` path (every pilot video was
+passed as an argv workdir), a queue larger than two, and whether `digest.md` is ever actually read —
+it duplicates the page by construction and was added on the strength of the reference document being a
+Markdown file, which is an assumption about how the artifact gets used, not a measurement.
 
 **Throughput / weaker hardware.** With TTS fast on CPU and the GPU idle during synthesis, the
 remaining GPU load is whisper-large (transcribe) + whisper-small (verify) — a low-VRAM or GPU-less
