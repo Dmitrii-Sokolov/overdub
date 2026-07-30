@@ -1,5 +1,131 @@
 # DECISIONS
 
+## 2026-07-30 — route D digests in TWO passes, because a composing agent cannot be given a length
+
+Three runs over one video (`fGKNUvivvnc`, 59 min, 691 sentences, the source of the reference digest
+the format was taken from). Same transcript every time; the only variable was how brevity was asked
+for. Document size counts the five prose fields:
+
+```
+pass structure          brevity instruction        chars   points   cap truncations
+single                  "1-3 sentences"           11,266     7            10
+single                  "up to ~450 characters"   11,591     9            12
+read + compress         "cut to a third of this"   4,041     5             0
+```
+
+**A character budget in a composing prompt does not bind: +3% against a predicted −70%.** The
+mechanism is mechanical, not motivational — a model cannot count characters in output it has not
+produced yet, and the budget line sits beside a concrete, actionable instruction in the same prompt
+("put the mechanism, the number, the example, the counter-argument in each point"). The actionable
+one wins. Replacing sentence counts with character budgets swapped one weak lever for another and
+made the count worse (7 → 9 points).
+
+**Then the caps did exactly the damage the length fight was supposed to prevent.** On the second run
+a truncation deleted the «plan A / plan B» framing out of the tail of one point — the one finding of
+the reference digest that the first run had missed entirely. A cap is not a style guard: it deletes
+content, and because the concrete anchor usually sits at the END of a sentence, it deletes the
+marginal finding first. Any "shave every field to fit" scheme has this property.
+
+**Adopted: pass 1 optimises coverage with no length pressure, pass 2 owns the fit.** Compression is a
+different task from composition — the editor HOLDS the text, so "cut this to a third" is arithmetic it
+can perform rather than a guess about unwritten output. Measured on three videos of 8, 59 and 59
+minutes: **2.87× / 2.88× / 2.89×**, spread 0.02, every field inside its cap, zero truncations, points
+9→5 / 6→4 / 7→4 (all inside the duration ceiling), every surviving timestamp preserved — and the
+«plan A / plan B» anchor kept in a point compressed 953 → 431 chars, i.e. exactly what the blind cap
+had thrown away.
+
+**The compressor is denied the transcript on purpose.** It reads only `digest.long.json`, so it can
+lose material but cannot introduce any — a property that is checkable rather than merely instructed.
+The cut ORDER is the load-bearing half of its prompt: whole overlapping points first, then framing and
+hedging, then prose inside a point, and the concrete anchor last.
+
+**Costs, named.** ~2× tokens per video (measured: ~100k read + ~107k compress on the 59-minute
+reference). The read pass and the compress pass are cached SEPARATELY (`digest.long.json` /
+`digest.draft.json`, two resume lists, `ids` vs `compressOnly`) precisely because the expensive half
+must never be re-paid for a compressor tweak — on this pilot all three videos were re-compressed
+against existing long drafts, with zero re-reads. `digest.long.json` is never deleted: diffing it
+against the draft is the only way to see what compression cost, and it is what made this measurement
+possible at all.
+
+**The ratio is NOT a knob either, and the point count is.** Second round of measurement, same day,
+after the read pass was freed of length pressure and started producing 19.6k chars for a 90-minute
+video:
+
+```
+instruction to the compressor        result
+"cut to one third"                   2.78x  2.85x  2.87x  2.88x  2.89x   (five videos, 5.7k-11.6k in)
+"cut to one fifth"                   2.99x                               (same video, same 19.6k in)
+point ceiling (4 / 6 / 8 by runtime) 11->6  9->5  7->4  6->4  5->3       (obeyed exactly, every run)
+```
+
+~2.9× is this edit task's own compression rate; the one-third instruction coincided with it, which is
+why it looked like control. Ask for a fifth and you get a third. **What is obeyed literally is the
+COUNTABLE STRUCTURAL instruction — the number of points — in five runs out of five.** So the size of
+the page is governed by the ladder, and per-field character numbers are aspirations that push in the
+right direction and settle nothing.
+
+**Consequence, adopted: `_POINT_TEXT_MAX` is 900, above what the model writes, not at what we asked
+for (450).** A cap set at the aspiration enforces style by DELETING CONTENT — that is the «plan A /
+plan B» loss above, and it is not a trade worth making at any density. The cap goes back to catching a
+runaway (a 3000-char "point"). The false tier ("over 12k input → cut to a fifth") was removed from the
+compressor prompt rather than left in as decoration: an instruction that does not bind teaches the
+next reader that it does.
+
+**Where that leaves the sizes** (five videos, 2.9 to 90 minutes): 2,042 / 2,374 / 3,393 / 4,041 /
+6,551 chars, i.e. 1.5-5 minutes of reading against 3-90 minutes of video, and monotone in runtime. The
+reference document's ~2,000 for an hour is NOT reachable this way and is not being chased further: it
+was written as a chat message, while this is a card on a page, and a 200-char bullet cannot answer
+"did I miss anything" about an hour of material. **The one remaining lever that would work is lowering
+the ladder for long videos (6 → 4 above an hour), and it costs coverage** — 11 real topics into 4
+points. That is a user decision, one constant wide (`_POINTS_LADDER`), deliberately not taken here.
+
+## 2026-07-30 — the digest is a SEPARATE route with a separate page, and it grades nothing
+
+Route C's grade answers "does this earn an evening". A digest answers "what is in it" — and the two
+were briefly one idea, so here is why they are not.
+
+**A verdict and a retelling cannot share a page.** Put them side by side and every row asks the
+reader which question they came for; worse, a grade next to a retelling reads as the retelling's
+verdict, so the digest inherits an authority it did not earn. The scout page is scanned (six columns,
+one row per video, a chip to sort your evening by); the digest page is READ (a document per video).
+Merging them would also have forced one order to serve both jobs. So: `work/digest-report.html`,
+its own fields, and route C untouched.
+
+**No verdict field anywhere in route D, on purpose.** Not `quality`, not watch/skip, no ranking, and
+the page never sorts. The one field that looks like advice — «Стоит смотреть, если» — is deliberately
+an INVENTORY of what stayed in the video (the argument between two positions, a demo, code on screen,
+tone) rather than a recommendation. The moment it becomes advice this route is a worse copy of route
+C: it would be a personal verdict again, which is the thing 2026-07-20 already reversed once, and it
+would collapse toward "no" for the same reason.
+
+**Opus, where route C uses Sonnet.** A grade is a short judgement over a transcript and Sonnet is
+measured as sufficient for it. A digest has to hold an hour of argument at once, decide what the
+shape of it is, and choose which four to eight things earn a line — a harder job, and the one place
+in this pipeline where the model choice shows up directly in the deliverable rather than in a number.
+Set explicitly in the workflow: an inherited session model makes two runs of one queue incomparable.
+
+**Points scale with the material (3-4 / 5-6 / 6-8 by runtime), and the band only warns.** A fixed
+length was the alternative and it is worse in both directions: on a 20-minute tutorial it pads, and
+on a three-hour panel it silently drops topics — which is the exact failure "did I miss anything" is
+asked to protect against, made invisible. Since the count is editorial, `build_digest` warns outside
+the band and refuses only at 20 (a transcript pasted back as bullets).
+
+**Timestamps are collected because they can be CHECKED.** `at` is optional navigation, but it also
+turns two failures into measurements the build script can catch: a marker past the end of the video
+is a fabrication (dropped and said out loud), and a last marker inside the first 60% of the runtime
+says the agent read the opening and stopped. Nothing else on the page can detect a front-loaded
+digest — it looks complete, because it is complete about the part it read.
+
+**Accepted costs, named rather than dismissed.** (1) `digest.draft.json` / `digest.json` / `digest.md`
+are NOT in `invalidate_downstream`, exactly like `scout.json`: the staleness mechanism is D2's mtime
+filter, which means a transcript repaired on the local Gemma route leaves a stale digest on disk until
+the next D2 pass over that queue. Adding them to the target list would make the pipeline own a route-D
+artifact and is a separate change with its own rationale. (2) The digest page reuses
+`queueview.collect_entries`, so a queue of dubbed videos builds run rollups this page ignores — one
+queue walk with one drop policy was worth more than saving that work. (3) `digest.md` duplicates the
+page's content by construction; it is DERIVED from the same JSON in one deterministic function, which
+is what keeps it from being a second version rather than a second format.
+
 ## 2026-07-28 — route B step 2 fans out through a Workflow: hand fan-out spends the orchestrator's context TWICE per video
 
 The 117-video batch of 2026-07-27 finished its dubs and killed its orchestrator: context went

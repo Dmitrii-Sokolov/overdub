@@ -1,5 +1,140 @@
 # CHANGELOG
 
+## 2026-07-30 — route D first run: the mechanism held, the length lever did not, D2 is now two passes
+
+**The run.** 3 videos (8 / 59 / 59 min, 86 / 691 / 782 sentences), all transcripts already on disk so
+D1 cost nothing. `digest.started` markers landed **8 s apart** across the wave — the number that says
+the fan-out was real, against ~100 s per video for hand fan-out. 3/3 drafts, `build_digest` exit 0,
+**20 of 20 `at` markers valid, zero fabricated, zero coverage warnings** — including on the
+782-sentence transcript, the input class that used to fail silently on route B. Cost: 282k subagent
+tokens for 3 videos (~94k each), wave 6.2 min.
+
+**Recall against the human reference** (`fGKNUvivvnc` is the source of `docs`-external
+`digest-example.md`): **5 of 6** findings on the first run — 6+9 circuit with the 1959 journal, the
+cross-language concept, rhyme planning with concept substitution, backwards reasoning under a hinted
+answer, the two hallucination circuits. Missed: Plan A / Plan B. Sharper than the reference on the
+caveats: 20% microscope, 10-20% of "how did it do X", 2 hours per case, Claude 3.5 Haiku, cherry-picked
+examples — plus the observation that it is Anthropic's own podcast about Anthropic's own paper with no
+external skeptic, which the human version does not make. On the 8-minute segment it flagged an ASR
+error in-line ("Prime Minister of the United States" → obviously the UK) and an unattributed line,
+which is the behaviour the prompt asks for.
+
+**Defect 1: the length lever does not exist.** Sentence counts → character budgets moved the document
++3% (11,266 → 11,591) against a predicted −70%, and made the point count worse (7 → 9). See DECISIONS
+for the mechanism. **Defect 2, worse: the caps deleted a finding.** A truncation cut the «plan A / plan
+B» framing out of one point's tail — the only reference finding the first run had missed. **Fixed by
+splitting D2 into read + compress**, measured at 2.87× / 2.88× / 2.89× with zero truncations and the
+anchor preserved. `digest.long.json` (read pass) and `digest.draft.json` (compress pass) are cached
+separately, so a compressor tweak never re-pays the transcript read — all three pilot videos were
+re-compressed with zero re-reads.
+
+**Defect 3: a flat point band cannot express padding.** 6 points on an 8-minute segment passed the
+3..8 check silently while the ladder asks for 3-4. `_points_ceiling` is now duration-aware (≤25 min → 4,
+≤2 h → 6, else 8; unknown duration gets the top, since warning would be a guess) and fires as a warn.
+After the fix: 4 points on that video.
+
+**Also caught pre-flight, and it would have invalidated the whole measurement:** every example in the
+digest prompt was lifted from the reference video itself — the headline "three interpretability
+researchers…" and two bullet titles that are two of the six findings being scored. Replaced with an
+invented video, plus a rule in the prompt that examples may never come from the corpus.
+
+`build_digest` never falls back to `digest.long.json` when the draft is missing — publishing the
+uncompressed version would be a silent format regression — and says which pass to re-run instead.
+Suite: 631 → 633 (the new ladder test fails on a mutant that restores the flat band).
+
+**Second round, after freeing the read pass of length pressure** (2 more videos, 90 min / 988
+sentences and 2.9 min / 28 sentences, both through the full two-pass chain):
+
+- **The three unverified things now are verified.** The `pipeline()` chaining is real — the 2.9-minute
+  video compressed *while* the 90-minute one was still reading (read done 11:34:03, its draft 11:42:35,
+  the long video's read finishing 11:42:24), so there is no barrier between stages. The skill's own
+  resume-filter PowerShell ran verbatim for the first time and produced the right two lists. And
+  `digest_sec` is finally populated: **1200 s** for the 90-minute chain, **605 s** for the 2.9-minute
+  one.
+- **The short end of the ladder behaves.** 2.9 min → **3 points** under a ceiling of 4, zero
+  truncations: the agent did not pad 28 sentences up to the ceiling, which the old flat 3..8 band could
+  not have checked at all.
+- **New defect, and it retires the "ratio" as a control.** The freed read pass wrote 19.6k chars for
+  the 90-minute video (vs 11.6k under the old prompt), and a flat one-third divisor put the digest at
+  6.9k — on target for the ratio, twice over every field budget, 8 fields truncated. Asking the
+  compressor for a FIFTH produced **2.99×**: ~2.9× is its own rate, and the one-third instruction had
+  merely coincided with it. What *is* obeyed exactly, in 5 runs of 5, is the point count. So
+  `_POINT_TEXT_MAX` moves to **900 — above what the model writes rather than at what we asked for** —
+  because a cap set at the aspiration enforces style by deleting content, which is the whole «plan A /
+  plan B» lesson. The false tier was deleted from the prompt instead of left as decoration.
+- Page rebuilt over all five pilot videos: **22 points, zero truncation markers**, sizes 2.0k / 2.4k /
+  3.4k / 4.0k / 6.6k chars for 2.9 / 8 / 59 / 59 / 90 minutes of video.
+
+## 2026-07-30 — NEW route D: digest a queue (retell it) — `overdub-digest`, Opus, its own page
+
+**What it answers, and why it is not route C.** "What is actually in this video", for two reading
+moments: after watching (did I miss anything) and before (what should I expect). Route C answers
+"is this worth my evening" and its whole output is a grade plus one line of justification; a digest
+carries no verdict, nothing sorts on it, and it needs ~10× the words. Two pages rather than one
+section, because a verdict column beside a retelling makes the reader decide which one they came for.
+
+**No new pipeline mode.** D1 runs the existing `--batch queue.txt --scout`: audio-only fetch →
+transcribe → stop is already exactly route D's input, and both stages fast-skip on anything on disk.
+A queue that has been through route C or a dub therefore costs D1 seconds. Its per-video
+`summary pending|ok` line belongs to route C and says nothing about a digest — stated in the skill,
+because the word invites exactly that mistake.
+
+**NEW `.claude/workflows/digest-videos.js`** — `parallel()` fan-out, one agent per resume-filtered
+id, `model: 'opus'` explicit (a digest holds a whole hour of argument at once and decides its shape;
+an inherited session model makes two runs of one queue incomparable), `agentType: 'general-purpose'`,
+prompt in the script, `args` parsed even when handed over as a string. Empty ids throws rather than
+reporting success over nothing. Marker first (`digest.started`), one artifact out
+(`digest.draft.json`), `NO-TRANSCRIPT` as the stop marker, and the write goes through PowerShell
+`ConvertTo-Json` so PowerShell owns the escaping of multi-paragraph Russian prose — a hand-assembled
+JSON with one unescaped newline costs the whole video a re-run.
+
+**NEW `scripts/build_digest.py`** — the same division of labour as `build_scout.py`: the agent writes
+judgement, the helper owns everything deterministic (title, channel, upload_date, duration + its
+source, sentence count, stage timings, the wave stamps, the per-video window from the marker) and
+writes `digest.json` + `digest.md`. Fatal: a missing/blank prose field, a `points` list that is not a
+non-empty list of well-formed items, and >20 points ("that is a transcript, not a digest").
+Warn-and-keep: an over-long field (truncated with a visible marker), a point count outside 3..8 (the
+band is editorial), a missing marker (the wave becomes a floor, never a smaller measured number).
+Three checks are about the CONTENT: an `at` marker that does not parse is dropped, one past the end
+of the video is dropped **as fabricated**, and a digest whose last marker sits in the first 60% of the
+runtime is warned about — that is the "read the opening and stopped" failure, and it is invisible on
+the page. `digest.md` is DERIVED from the same document (the reference shape: bold headline, thesis,
+bullet list, context, bold worth-watching line), never written by the agent, so page and file cannot
+disagree. `lead_in()` owns the bullet's terminal period for both renderers.
+
+**NEW `scripts/digest_report.py`** → `work/digest-report.html`. Header (tally + timing strip:
+download, transcribe, the digest wave's wall clock, the queue's own runtime), a scan table
+(№ · превью · название · время · что это · **темы** — the point titles joined, this page's
+at-a-glance answer to "what is touched on"), then a card per video with the whole document. Queue
+order, never sorted. Three unfinished states kept apart (`нет пересказа` / `не расшифровано` /
+`не скачано`) because each needs a different action, each named on stdout with that action. No chip
+on a finished row — the page grades nothing, and a badge on every row would be a column of one
+value. No audio, no dub metrics: a digested video renders the same whether or not it was dubbed.
+
+**Page furniture is re-bound, not copied** (`_CSS`, `clock`, `secs`, the preview and escaping
+helpers, `totals_of`), same shape as `scout_report`'s own `dub_blocks` re-binding, dependency
+one-way. `scout_report.totals_of` gained a keyword-only `wave_key` (default unchanged) so the digest
+page measures its wave off `digest_sec` through the SAME math — that function carries three measured
+bug histories in its comments and a copy would be a copy of those.
+
+**Caching, three layers, and the third one is the rule that matters:** the pipeline's fast-skip on
+`source.wav`/`sentences.json`; D2's resume filter keyed on `digest.draft.json` **and its mtime
+against `sentences.json`** (so a `--force`/`--repair-asr` transcript invalidates the digest that
+describes the old one); and the page, which is pure assembly and cheap to rebuild. **The key is the
+DRAFT, never `digest.json`** — that file is derived and always well-formed, which is precisely why
+its presence proves nothing (route C measured an orchestrator publishing a six-video report built
+entirely from stale ones).
+
+**NEW `tests/test_digest.py`** — 48 tests, tmp dirs only, no GPU/network/media: the document
+contract (fatal vs capped), points as the artifact, timecode parsing and both fabrication guards,
+the coverage warning, timings never self-reported, the Markdown twin against the reference shape,
+and on the page — queue order both ways, the three states, escaping, no verdict chip, body-fragment
+output, and that the wave is read off the digest key and not the scout one. Suite: 581 → 629, green.
+
+Not done, deliberately: `digest.*` is not in `invalidate_downstream` (same as `scout.json` — the
+mtime filter is the staleness mechanism, see DECISIONS), and `scripts/scout_report.py` stays over
+the 800-line soft limit (it was already, and splitting a working page is its own task).
+
 ## 2026-07-28 — `translate-batch` first run: the mechanism held, and the status parser was wrong
 
 **The run** (5-video queue; 4 translated + 4 summarized, the fifth carried by the resume filter).

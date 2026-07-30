@@ -290,6 +290,131 @@ because the full contract needs `source.mkv`, which re-fetches the audio bytes
 inside the merged container. That is ~5% extra traffic for zero new machinery,
 accepted deliberately (DECISIONS 2026-07-20).
 
+### D. Digest a queue — retell it, no grade and no dub
+
+A different question from route C's. Scout asks **"does this earn an evening"**
+and answers with a grade; a digest asks **"what is actually in it"** and answers
+with a document. Two reading moments: after watching, to check nothing was
+missed, and before, to know what to expect.
+
+There is no new pipeline mode — the input is the same transcript, so D1 is the
+route-C command and both stages fast-skip on anything already on disk:
+
+```powershell
+.venv-asr\Scripts\python.exe -X utf8 -m overdub --batch queue.txt --scout
+```
+
+A queue that has been through route C (or a dub) therefore costs seconds here.
+Its per-video `summary pending|ok` line belongs to route C and says nothing
+about a digest.
+
+**Then TWO Opus passes per video**, orchestrated by the `overdub-digest` skill
+(`.claude/workflows/digest-videos.js` fans them out as a pipeline, so each video
+compresses the moment its own read returns):
+
+1. **read** — reads `sentences.json` and `source.info.json`, writes
+   `work/<id>/digest.long.json`: complete coverage, no length pressure at all.
+2. **compress** — reads only that file (never the transcript, so it can lose
+   material but cannot introduce any) and writes `work/<id>/digest.draft.json`:
+   the same document cut to roughly a third.
+
+The split is measured, not stylistic: a single pass cannot be given a length.
+Sentence counts and character budgets both left the document at ~11.5k chars
+against a predicted 3.5k, and the caps then deleted a finding out of a point's
+tail — the one finding of the reference digest the run had otherwise missed
+(DECISIONS 2026-07-30). Compression is a different task: the editor holds the
+text, and across five videos it lands at ~2.9× (2.78 / 2.85 / 2.87 / 2.88 / 2.89)
+with zero truncations.
+
+**~2.9× is the model's own rate, not a setting** — asked for a fifth on a 19.6k
+input, it produced 2.99×. The one instruction obeyed literally is the POINT COUNT
+(11→6, 9→5, 7→4, 6→4, 5→3, every run inside the ladder), so document size is
+governed by the ladder and the per-field character numbers are aspirations. That
+is also why `_POINT_TEXT_MAX` sits at 900, above what the model writes rather than
+at the 450 asked for: a cap set at the aspiration enforces style by deleting
+content.
+
+Cost is ~2× per video (~200k tokens: ~100k read + ~100k compress), and the two
+passes are cached separately so a compressor change never re-pays the transcript
+read. Resulting sizes, 2.9 to 90 minutes of video: 2.0k / 2.4k / 3.4k / 4.0k /
+6.6k chars.
+
+Both files carry the same five fields:
+
+| field | what it is |
+|---|---|
+| `headline` | one line: format, runtime, who is speaking, subject |
+| `thesis` | the central claim the whole video hangs off — the position, not the topic |
+| `points` | `[{title, text, at?}]` — what is COVERED, with the mechanism/number/example. The compress pass keeps at most 4 up to ~25 min, 6 up to ~2 h, 8 beyond — **this ceiling is what actually sets the length of the page** |
+| `context` | why the material exists, plus the honest caveats (what the speakers admit does not work, what is dated) |
+| `not_covered` | what a digest CANNOT carry — the argument between two positions, a demo, code on screen, tone. An inventory of what stayed in the video, never a recommendation |
+
+The read pass's first action is to touch `work/<id>/digest.started`, an empty
+marker whose mtime, against the draft's, is what that video's whole D2 chain cost
+— both passes, not one agent's window. **Opus for both, not Sonnet**
+(DECISIONS 2026-07-30): a grade is a short judgement, a digest has to hold an
+hour of argument at once, and deciding which point to drop is the judgement that
+decides what the page says.
+
+`scripts/build_digest.py work/<id> --wave-start <epoch>` then assembles
+`work/<id>/digest.json` and renders `work/<id>/digest.md` — the same document as
+a pasteable Markdown file, derived deterministically so the page and the file
+cannot disagree. It owns everything factual (title, channel, upload date,
+duration and its source, sentence count, timings) and rejects a draft that is
+missing a field or whose `points` is not a well-formed list. **Route D grades
+nothing**, so unlike `build_scout` there is no verdict vocabulary to typo.
+
+Four of its checks are about the content, not the shape, and each names a
+different pass to re-run:
+
+- an `at` marker that does not parse is dropped (the point keeps its text);
+- one past the end of the video is dropped **as fabricated**, and said out loud;
+- a digest whose LAST marker sits in the first 60% of the runtime gets a
+  warning — that is the "read the opening and stopped" failure, and it is
+  invisible on the page, because such a digest looks complete about the part it
+  did read;
+- the point count is checked against the RUNTIME (≤25 min → 4, ≤2 h → 6, else 8;
+  an unknown duration gets the top, since warning would be a guess). A flat
+  3..8 band cannot express padding: 6 points on an 8-minute segment passed it
+  silently on the first run.
+
+It never falls back to `digest.long.json` when the draft is missing — shipping the
+uncompressed version would be a format regression with no signal anywhere — and
+names the compress pass instead.
+
+Then build the page:
+
+```powershell
+.venv-asr\Scripts\python.exe -X utf8 scripts\digest_report.py --queue queue.txt
+```
+
+Writes `work/digest-report.html`: a tally and a timing strip (download,
+transcribe, the digest wave's wall clock, the queue's own runtime), a scan table
+(№ · превью · название · время · что это · **темы** — the point titles joined,
+the at-a-glance answer to "what is touched on"), then a card per video with the
+whole document. Queue order, never sorted. A finished row carries **no chip**:
+the page grades nothing, and a badge on every row would be a column of one
+value. A queued video with no digest gets one of three explicit states —
+`нет пересказа` (the sub-agent did not run), `не расшифровано`, `не скачано` —
+each printed on stdout with the action that clears it. Body fragment, so it
+publishes as a Claude Artifact unchanged and still opens locally.
+
+**Caching, and the last rule is the one that matters.** The transcript is the
+pipeline's own fast-skip. D2 is cached in two independent halves, because they
+cost very differently: a stale or missing `digest.long.json` needs both passes
+(`ids`), while a fresh long digest whose `digest.draft.json` is missing or older
+needs **compression only** (`compressOnly`) — so a compressor tweak never
+re-pays the transcript read. Both key on mtime against `sentences.json`, so a
+`--scout --force` or `--repair-asr` transcript invalidates everything derived
+from it. The page is pure assembly and free to rebuild. The keys are the two
+AGENT artifacts, never the built `digest.json` — that file is derived and always
+well-formed, which is exactly why its presence proves nothing about whether an
+agent ran.
+
+**Promotion** — a digested queue enters route A or B with no cleanup:
+`transcribe` fast-skips, `download` re-runs for `source.mkv` (~5% extra
+traffic), and the digest artifacts survive untouched.
+
 ### Repairing an ASR defect
 
 When whisper collapses — a repetition loop, or a sentence stamped onto an

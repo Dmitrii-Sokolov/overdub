@@ -16,6 +16,12 @@ step's gate is what keeps a half-scouted queue from reading as a finished one.
 costs the audio fetch and a sub-agent per video — go straight to the `overdub-sonnet-batch`
 skill (route B) or a plain `--batch` run (route A). Scout is for a queue nobody has watched.
 
+And if the question is **what is IN the video** rather than whether it earns an evening — a
+retelling, "did I miss anything", "what should I expect" — that is the `overdub-digest` skill
+(route D). A scout summary is ~200 words with a grade attached; a digest is a document with no
+verdict in it. Answering a digest request with a scout pass produces a grade nobody asked for and
+a summary too short to check anything against.
+
 Nothing here writes `translation.json`, so a scouted video is not half-translated — it is
 untranslated, and it re-enters the dubbing route with no cleanup (see "Promotion" below).
 

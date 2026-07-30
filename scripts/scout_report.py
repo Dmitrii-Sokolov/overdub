@@ -878,12 +878,18 @@ def _views(entries: list[dict]) -> list[dict]:
     return views
 
 
-def totals_of(entries: list[dict]) -> dict:
+def totals_of(entries: list[dict], *, wave_key: str = "summarize_sec") -> dict:
     """Pipeline stages are SUMS — they ran one after another, so their sum is the work done.
     Summarization is a WALL CLOCK: the sub-agents run concurrently, so summing their windows
     would exceed the elapsed time and mean nothing (2026-07-21: 1053 s of agent windows inside a
     311 s wave). It spans the first agent's own start to the last draft — see the comment on the
     grouping below for why the operator's `wave.start` stamp is NOT that start.
+
+    `wave_key` names the per-video field the agent wave is measured from — `summarize_sec` on this
+    page, `digest_sec` on the digest page (scripts/digest_report.py). PARAMETERIZED rather than
+    copied because the math below is subtle in three separately-measured ways and a second copy
+    would be a copy of those bugs; the returned keys stay `summarize*` for every caller, since what
+    they name is "the sub-agent wave", not any one route's word for it.
 
     THERE IS DELIBERATELY NO GRAND TOTAL. The previous version added the two sums to the wall
     clock and called it "итого обработка"; that number is neither the work done nor the elapsed
@@ -924,7 +930,7 @@ def totals_of(entries: list[dict]) -> dict:
             continue
         if dr < st:                       # carry-over from an earlier wave, not part of this one
             continue
-        sec = (e.get("timings") or {}).get("summarize_sec")
+        sec = (e.get("timings") or {}).get(wave_key)
         ok = isinstance(sec, (int, float)) and not isinstance(sec, bool) and sec >= 0
         groups.setdefault(st, []).append((dr, sec if ok else None))
 
