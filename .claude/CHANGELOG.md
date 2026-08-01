@@ -1,5 +1,69 @@
 # CHANGELOG
 
+## 2026-08-01 — route E: a queue cleaned into readable English text, chunk by chunk
+
+**What it is.** `transcribe → --repair-asr auto → clean → work/<id>/clean.md`. The one route whose
+output is as long as its input: filler and false starts out, wording, register and sentence order
+untouched, nothing summarised and nothing translated. Skill `overdub-clean`, workflow
+`clean-transcript`, assembler `scripts/build_clean.py`, 29 tests. Full suite 655, green.
+
+**One agent per CHUNK, not per video, and that is the whole design.** Routes C and D are
+output-tiny (read 60k, write 3k); this one is output-heavy, and a per-video agent fails silently —
+it cleans the opening faithfully and compresses harder toward the tail, with nothing in the artifact
+saying which half you are reading. ~80 sentences ≈ 7k characters of output keeps the task
+mechanical. Boundaries come from `build_clean.py --plan` (target 80, slid ±15% to the longest pause)
+and the SAME function re-derives them at join time, so a plan and its assembler cannot disagree.
+Measured on a real 643-sentence transcript: 8 chunks, sizes 86/68/79/87/79/78/77/89 — the spread is
+the slide finding pauses.
+
+**This is the first route with a real completeness check, and it is free.** Output and input are the
+same language in the same sentence order, so every id must come back. An emptied line is `""`, an
+absent id is fatal — indistinguishable in a text file after the fact, which is why the build refuses
+the second. Quality signals warn and never block: per-chunk length ratio (a chunk that summarised
+shows up as its own number, so only it is re-run), document ratio, dropped digit runs, dropped
+capitalised terms, share of emptied lines.
+
+**The entity detector is correct here and must not be ported back.** `completeness.entity_loss` was
+deleted from the translate seam on 2026-08-01 because the prompt permits Russifying names and a
+transliterated name can never substring-match. EN→EN does not carry that objection.
+
+**Repair before clean, enforced by code rather than discipline.** A repair renumbers every id, so
+`invalidate_downstream` now deletes `clean/`, `clean.json` and `clean.md` alongside
+`translation.draft.json` — a clean pass run first is correctly thrown away. Route E needs the repair
+more than the dubbing routes do: a repetition loop passes the ear in half a second and sits on the
+page as a repeated paragraph.
+
+**First run, same day: `nVA0ASqbBhY`, a 4 h 21 min video** — 2690 sentences → 34 chunks → 877
+paragraphs, 121k characters of `clean.md`. Cost: download 1.7 min, transcribe 38.0 min (RTF 0.15,
+one ASR pass, 24 repair windows), clean wave ≥12.5 min, join a few seconds — **~52 min for a
+4.3-hour video, about a fifth of its runtime.**
+
+**The wave figure is a FLOOR and cannot be tightened as built.** Route D stamps `digest.started` as
+each agent's first act; route E has no marker, so 12.5 min is the span from the FIRST chunk file
+written to the last and misses however long the first agent worked before writing (~1-2 min at this
+chunk size). Do not quote it as the wave's wall clock.
+
+**Ratio held with no tail: min 0.83 / p10 0.86 / median 0.91 / max 0.97 across 34 chunks** (91%
+overall, 165 lines emptied = 6%, worst chunk 13/92 = 14% against a 25% floor). So both ratio floors
+are INERT — 0.60 sits 0.23 under the observed minimum and would not catch a chunk that cut a third
+of its text. They stay unchanged anyway, and the reason is now specific rather than "unmeasured":
+ratio tracks the source's FILLER SHARE, i.e. the genre, and this is one technical conversation dense
+with "um/uh". Candidate 0.70 after 3-4 videos of different types (INBOX).
+
+**The contract held on the axis ratio cannot see.** 43% of sentences came back byte-identical, 74%
+at similarity ≥0.90, and all 6 most-changed lines were pure filler ("Um... I mean that..." →
+"That..."). No paraphrasing observed. The metric's own limit: on a 20-character line, dropping two
+words scores 0.4 mechanically.
+
+**The entity detector fired 5 times and was wrong 5 times** — every one a spelling CORRECTION:
+Chroniker→Kronecker, Kotan→cotan, Jacoby→Jacobi, Lazenby→Lasenby, and "Keane and Crane"→"Keenan
+Crane", where ASR had split one name into two people. The code comment predicted this class; at
+0/5 precision the warning is noise within two runs. Fix queued in INBOX (suppress when a similar
+token appears in the same id), and those five pairs are its fixture.
+
+**Still unmeasured:** chunk size (80) and the two paragraph thresholds (1.0 s pause, 900 chars) were
+never varied — one run cannot tell whether 877 paragraphs is right, only that it is not absurd.
+
 ## 2026-07-30 — route D first run: the mechanism held, the length lever did not, D2 is now two passes
 
 **The run.** 3 videos (8 / 59 / 59 min, 86 / 691 / 782 sentences), all transcripts already on disk so
