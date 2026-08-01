@@ -259,8 +259,9 @@ def batch_row(run) -> dict:
         ("floor", f"{fr:.1%}" if fr is not None else "n/a"),
         ("tr", str((run.get("translate", {}) or {}).get("n_failed", 0))),
         ("vf", str((run.get("verify", {}) or {}).get("n_flagged", 0))),
-        # cp = ACTIONABLE completeness flags; adv = advisory-only ones (entity_loss /
-        # length_short), counted but never a reason to open the video — see the advisory set in
+        # cp = ACTIONABLE completeness flags; adv = advisory-only ones (length_short,
+        # dup_adjacent, rate_implausible, neg_loss), counted but never a reason to open the
+        # video — see the advisory set in
         # runreport. PRE-SCHEMA FALLBACK CONTRACT: a run.json written before the
         # actionable/advisory split carried only n_flagged, so cp falls back to it (adv to 0).
         # This MUST be the same chain render_run_report's flags line uses (n_actionable →

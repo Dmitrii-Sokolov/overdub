@@ -53,15 +53,22 @@ _VERIFY_FLAGS = ("empty_ref", "missing_wav", "unreadable_wav", "empty_hyp", "low
 _BROKEN = 1.8   # combined compression factor at/above which a unit is "candidate broken"
                 # (mirrors assemble._BROKEN — the same triage bar, one number to keep in sync)
 # Completeness flags that are informational only: they are counted and printed but never decide
-# needs_triage. See completeness.py — entity_loss names personal-name Russification as its
-# dominant IRREDUCIBLE false positive, and length_short is the deliberately coarse weak signal.
-# dup_adjacent and rate_implausible joined them 2026-07-25: both read the EN SOURCE, so they
+# needs_triage. See completeness.py — length_short is the deliberately coarse weak signal.
+# dup_adjacent and rate_implausible joined 2026-07-25: both read the EN SOURCE, so they
 # describe an ASR defect a listener cannot fix by opening the dub (they were the top two
 # contributors to a 23-of-24 triage rate). `--repair-asr` acts on those, not the listen queue.
 # neg_loss joined 2026-07-27 on measured precision, not on theory: 24 inspected fires, 0 real
 # (DECISIONS 2026-07-27). It stays COUNTED — `n_neg_loss` still prints and the offenders list
 # still names it — because re-promotion has to be decidable off the same series that demoted it.
-_ADVISORY_COMPLETENESS = frozenset({"entity_loss", "length_short",
+# entity_loss was the original member and its DETECTOR is gone as of 2026-08-01 (DECISIONS):
+# demoting it was not enough, because an advisory flag still costs a line in every offenders
+# list and an embedded player on the listen page — 1179 of 1186 units on the 19-video batch.
+# The NAME stays in this set as a tombstone and must not be removed: every report.json written
+# before that date still carries per-sentence entity_loss flags, and this set is subtractive
+# (`flags - _ADVISORY_COMPLETENESS`), so dropping the name would silently promote a dead flag to
+# ACTIONABLE and light up needs_triage on every historical workdir. Pinned by
+# test_legacy_report_with_entity_loss_still_reads.
+_ADVISORY_COMPLETENESS = frozenset({"length_short", "entity_loss",
                                     "dup_adjacent", "rate_implausible", "neg_loss"})
 
 # Translate flags that do NOT decide needs_triage. english_echo measures the LATIN RATIO of a
@@ -462,22 +469,21 @@ def _build_run_report(work, cfg):
     cr = cr if isinstance(cr, dict) else {}
     completeness = {k: int(cr.get(k, 0) or 0) for k in
                     ("n_sentences", "n_flagged", "n_num_loss", "n_neg_loss",
-                     "n_entity_loss", "n_length", "n_dup_adjacent", "n_rate_implausible")}
+                     "n_length", "n_dup_adjacent", "n_rate_implausible")}
 
-    # Split completeness by what a human can ACT on. entity_loss fires mostly on personal names
-    # the naming rule PERMITS to be Russified — completeness.py's own docstring calls that its
-    # dominant, IRREDUCIBLE false positive — and length_short is documented there as the weak,
-    # deliberately-coarse signal. Pooling both into needs_triage marked 11 of 12 videos in the
-    # AI-Fluency batch as needing a look, which carries the same information as marking none.
-    # They stay counted and printed; they just stop deciding whether a human opens the video.
+    # Split completeness by what a human can ACT on. length_short is documented in
+    # completeness.py as the weak, deliberately-coarse signal; pooling it into needs_triage
+    # marked 11 of 12 videos in the AI-Fluency batch as needing a look, which carries the same
+    # information as marking none. It stays counted and printed; it just stops deciding whether
+    # a human opens the video.
     #
     # 2026-07-25 adds the second half of the same argument, measured on a 24-video batch that came
     # back 23/24 needing triage — the metric had died again. dup_adjacent and rate_implausible
     # inspect the EN SOURCE (completeness.py says so in its own docstring): they report an ASR
     # defect, and opening the dub does not let a human fix a sentence whisper duplicated. They are
-    # the top two contributors to that 23 (35 and 54 hits). Now advisory for the SAME reason as
-    # entity_loss, still counted, still printed, still in the offenders list — the source-anomaly
-    # pass and `--repair-asr` are where a source defect gets acted on, not the listen queue.
+    # the top two contributors to that 23 (35 and 54 hits). Advisory for the SAME reason, still
+    # counted, still printed, still in the offenders list — the source-anomaly pass and
+    # `--repair-asr` are where a source defect gets acted on, not the listen queue.
     segs_all = report.get("segments") if isinstance(report, dict) else None
     segs_all = segs_all if isinstance(segs_all, list) else []
     n_comp_actionable = sum(
@@ -526,9 +532,9 @@ def _build_run_report(work, cfg):
                    + n_src)
     # Source anomalies are ADVISORY in v1: counted in flags_total, printed everywhere, but they
     # do NOT move flags_actionable or needs_triage. An LLM asked to report source damage has no
-    # measured precision yet, and _ADVISORY_COMPLETENESS above demoted entity_loss for exactly
-    # this reason -- it marked 11 of 12 videos, which carries the same information as marking
-    # none. Promotion is ONE line (add n_src to flags_actionable) and is gated on one batch's
+    # measured precision yet, and _ADVISORY_COMPLETENESS above demoted (and 2026-08-01 deleted)
+    # entity_loss for exactly this reason -- it marked 11 of 12 videos, which carries the same
+    # information as marking none. Promotion is ONE line (add n_src to flags_actionable) and is gated on one batch's
     # measured fire rate; this demotion is provisional, not permanent.
     # needs_triage answers "does a human have to OPEN this video", so only actionable flags and
     # speed offenders decide it; flags_total keeps counting everything for trend/comparison.

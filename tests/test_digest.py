@@ -168,7 +168,7 @@ def _dubbed(root: Path, vid: str, *, title="Dub Talk", duration=300.0) -> Path:
         "verify": {"model": "small", "n_units": 1, "n_segments": 1, "n_flagged": 0,
                    "n_retried": 0, "n_repaired": 0},
         "completeness": {"n_sentences": 1, "n_flagged": 0, "n_num_loss": 0, "n_neg_loss": 0,
-                         "n_entity_loss": 0, "n_length": 0},
+                         "n_length": 0},
         "assemble": {"duration_sec": duration, "n_sped": 0, "in_span_silence_sec": 0.0},
         "mux": {"dub_mix": "bed", "dub_gain_db": 3.0}}), encoding="utf-8")
     (d / "translation.json").write_text(json.dumps(

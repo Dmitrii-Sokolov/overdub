@@ -145,7 +145,7 @@ class VerifyStage:
         # Non-blocking triage flags only; never gates the pipeline. Written
         # UNCONDITIONALLY per sentence (None/[] when clean) so a re-run after a translation fix
         # overwrites stale flags — the same stale-clearing discipline the unit loop uses above.
-        n_num = n_neg = n_ent = n_len = n_dup = n_rate = n_comp_flag = 0
+        n_num = n_neg = n_len = n_dup = n_rate = n_comp_flag = 0
         src_texts = [s.get("src_en") or "" for s in segs]
         dups = completeness.duplicate_adjacent(src_texts)
         rates = completeness.implausible_rate(
@@ -164,7 +164,6 @@ class VerifyStage:
                 completeness_flags=fl,
                 completeness_len_ratio=c["length_ratio"],
                 completeness_missing_numbers=(c["missing_numbers"] or None),
-                completeness_missing_entities=(c["missing_entities"] or None),
                 completeness_negation_lost=(True if c["negation_lost"] else None),
                 completeness_duplicate_of=twin,
                 completeness_chars_per_sec=cps,
@@ -173,19 +172,18 @@ class VerifyStage:
                 n_comp_flag += 1
             n_num += "num_loss" in fl
             n_neg += "neg_loss" in fl
-            n_ent += "entity_loss" in fl
             n_len += "length_short" in fl
             n_dup += "dup_adjacent" in fl
             n_rate += "rate_implausible" in fl
         rep["completeness"] = {"len_ratio_min": cfg.completeness_len_ratio_min,
                                "n_sentences": len(segs), "n_flagged": n_comp_flag,
                                "n_num_loss": n_num, "n_neg_loss": n_neg,
-                               "n_entity_loss": n_ent, "n_length": n_len,
+                               "n_length": n_len,
                                "n_dup_adjacent": n_dup, "n_rate_implausible": n_rate}
 
         report.save(ctx.work.report, rep)
         print(f"       {len(units)} units / {len(segs)} sentences verified "
               f"({n_flag} flagged, {n_retried} retried, {n_repaired} repaired)")
         print(f"       {len(segs)} sentences completeness-checked "
-              f"({n_comp_flag} flagged: num {n_num}, neg {n_neg}, ent {n_ent}, len {n_len}, "
+              f"({n_comp_flag} flagged: num {n_num}, neg {n_neg}, len {n_len}, "
               f"dup {n_dup}, rate {n_rate})")

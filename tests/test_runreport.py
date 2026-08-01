@@ -77,7 +77,7 @@ def _two_unit_report(**verify_extra):
         "verify": {"model": "small", "n_units": 2, "n_segments": 4, "n_flagged": 1,
                    "n_retried": 0, "n_repaired": 0},
         "completeness": {"n_sentences": 4, "n_flagged": 0, "n_num_loss": 0, "n_neg_loss": 0,
-                         "n_entity_loss": 0, "n_length": 0},
+                         "n_length": 0},
         "assemble": {"duration_sec": 100.0, "n_sped": 1, "in_span_silence_sec": 5.0},
         "mux": {"dub_mix": "bed", "dub_gain_db": 3.0},
     }
@@ -306,7 +306,7 @@ def test_needs_triage_false_clean_run() -> None:
         "segments": segs,
         "verify": {"n_units": 2, "n_segments": 2, "n_flagged": 0, "n_retried": 0, "n_repaired": 0},
         "completeness": {"n_sentences": 2, "n_flagged": 0, "n_num_loss": 0, "n_neg_loss": 0,
-                         "n_entity_loss": 0, "n_length": 0},
+                         "n_length": 0},
         "assemble": {"duration_sec": 50.0, "n_sped": 0, "in_span_silence_sec": 1.0},
         "mux": {"dub_mix": "bed", "dub_gain_db": 0.0},
     }
@@ -324,7 +324,8 @@ def test_source_side_completeness_is_advisory_not_a_listen_order() -> None:
     # rate_implausible both inspect the EN SOURCE — completeness.py's own docstring says so — so
     # they report a whisper defect, and no amount of listening to the dub fixes a sentence the
     # ASR duplicated. On a 24-video batch they were the top two contributors to a 23-of-24 triage
-    # rate, i.e. the same "marks everything, says nothing" failure the entity_loss demotion fixed.
+    # rate, i.e. the same "marks everything, says nothing" failure the entity_loss demotion — and
+    # ultimately its deletion, 2026-08-01 — was aimed at.
     # They stay COUNTED (n_dup_adjacent, n_flagged, the offenders list); they stop deciding.
     for flag, key in (("dup_adjacent", "n_dup_adjacent"),
                       ("rate_implausible", "n_rate_implausible")):
@@ -335,7 +336,7 @@ def test_source_side_completeness_is_advisory_not_a_listen_order() -> None:
             "verify": {"n_units": 1, "n_segments": 1, "n_flagged": 0, "n_retried": 0,
                        "n_repaired": 0},
             "completeness": {"n_sentences": 1, "n_flagged": 1, "n_num_loss": 0, "n_neg_loss": 0,
-                             "n_entity_loss": 0, "n_length": 0, key: 1},
+                             "n_length": 0, key: 1},
             "assemble": {"duration_sec": 50.0, "n_sped": 0, "in_span_silence_sec": 1.0},
             "mux": {"dub_mix": "bed", "dub_gain_db": 0.0},
         }
@@ -357,7 +358,7 @@ def _completeness_run(flag: str, key: str) -> dict:
         "verify": {"n_units": 1, "n_segments": 1, "n_flagged": 0, "n_retried": 0,
                    "n_repaired": 0},
         "completeness": {"n_sentences": 1, "n_flagged": 1, "n_num_loss": 0, "n_neg_loss": 0,
-                         "n_entity_loss": 0, "n_length": 0, key: 1},
+                         "n_length": 0, key: 1},
         "assemble": {"duration_sec": 50.0, "n_sped": 0, "in_span_silence_sec": 1.0},
         "mux": {"dub_mix": "bed", "dub_gain_db": 0.0},
     }
@@ -434,7 +435,7 @@ def test_english_echo_counts_but_does_not_order_a_listen() -> None:
                            status="failed", translate_flag="english_echo")],
         "verify": {"n_units": 1, "n_segments": 1, "n_flagged": 0, "n_retried": 0, "n_repaired": 0},
         "completeness": {"n_sentences": 1, "n_flagged": 0, "n_num_loss": 0, "n_neg_loss": 0,
-                         "n_entity_loss": 0, "n_length": 0},
+                         "n_length": 0},
         "assemble": {"duration_sec": 50.0, "n_sped": 0, "in_span_silence_sec": 1.0},
         "mux": {"dub_mix": "bed", "dub_gain_db": 0.0},
     }
@@ -630,7 +631,7 @@ def test_verify_by_type_unknown_bucket() -> None:
         "segments": segs,
         "verify": {"n_units": 1, "n_segments": 1, "n_flagged": 1, "n_retried": 0, "n_repaired": 0},
         "completeness": {"n_sentences": 1, "n_flagged": 0, "n_num_loss": 0, "n_neg_loss": 0,
-                         "n_entity_loss": 0, "n_length": 0},
+                         "n_length": 0},
     }
     with tempfile.TemporaryDirectory() as d:
         work = _mkwork(d, report=rep, translation=[{"id": 0, "status": "ok"}])
@@ -649,7 +650,7 @@ def test_flags_total_counts_completeness_and_assemble() -> None:
         "segments": segs,
         "verify": {"n_units": 2, "n_segments": 2, "n_flagged": 0, "n_retried": 0, "n_repaired": 0},
         "completeness": {"n_sentences": 2, "n_flagged": 2, "n_num_loss": 1, "n_neg_loss": 1,
-                         "n_entity_loss": 0, "n_length": 0},
+                         "n_length": 0},
         "assemble": {"duration_sec": 50.0, "n_sped": 0, "in_span_silence_sec": 1.0},
         "mux": {"dub_mix": "bed", "dub_gain_db": 0.0},
     }
@@ -672,7 +673,7 @@ def test_speed_null_when_unassembled() -> None:
         "segments": segs,
         "verify": {"n_units": 1, "n_segments": 2, "n_flagged": 1, "n_retried": 0, "n_repaired": 0},
         "completeness": {"n_sentences": 2, "n_flagged": 0, "n_num_loss": 0, "n_neg_loss": 0,
-                         "n_entity_loss": 0, "n_length": 0},
+                         "n_length": 0},
     }
     with tempfile.TemporaryDirectory() as d:
         work = _mkwork(d, report=rep,
@@ -693,7 +694,7 @@ def test_n_over_prefers_assemble_rollup() -> None:
         "segments": segs,
         "verify": {"n_units": 1, "n_segments": 1, "n_flagged": 0, "n_retried": 0, "n_repaired": 0},
         "completeness": {"n_sentences": 1, "n_flagged": 0, "n_num_loss": 0, "n_neg_loss": 0,
-                         "n_entity_loss": 0, "n_length": 0},
+                         "n_length": 0},
         "assemble": {"duration_sec": 50.0, "n_sped": 1, "in_span_silence_sec": 0.0,
                      "n_over_1_8_combined": 0},
         "mux": {"dub_mix": "bed", "dub_gain_db": 0.0},
@@ -860,6 +861,28 @@ def test_source_items_capped_at_limit() -> None:
         assert ids == sorted(ids)
 
 
+def test_legacy_report_with_entity_loss_still_reads() -> None:
+    # entity_loss was deleted 2026-08-01, but every report.json written before that date still
+    # carries n_entity_loss and per-sentence entity_loss flags. Those workdirs must keep
+    # building a run report — and the dead flag must not sneak back in as ACTIONABLE just
+    # because it is no longer in the advisory set.
+    segs = [_unit(0, 0, verify_flag=None, combined=1.0, speed=1.0,
+                  completeness_flags=["entity_loss"])]
+    rep = {
+        "segments": segs,
+        "verify": {"n_units": 1, "n_segments": 1, "n_flagged": 0, "n_retried": 0, "n_repaired": 0},
+        "completeness": {"n_sentences": 1, "n_flagged": 1, "n_num_loss": 0, "n_neg_loss": 0,
+                         "n_entity_loss": 1, "n_length": 0},
+        "assemble": {"duration_sec": 50.0, "n_sped": 0, "in_span_silence_sec": 1.0},
+        "mux": {"dub_mix": "bed", "dub_gain_db": 0.0},
+    }
+    with tempfile.TemporaryDirectory() as d:
+        work = _mkwork(d, report=rep, translation=[{"id": 0, "status": "ok"}])
+        run = runreport.build_run_report(work, _CFG)
+    assert run["needs_triage"] is False
+    assert run["completeness"]["n_actionable"] == 0
+
+
 def test_source_anomalies_are_advisory_not_actionable() -> None:
     # Advisory in v1: an LLM told to report source damage has NO measured precision yet, and
     # entity_loss (marked 11 of 12 videos) is the precedent. Counted in flags_total, printed
@@ -870,7 +893,7 @@ def test_source_anomalies_are_advisory_not_actionable() -> None:
         "segments": segs,
         "verify": {"n_units": 1, "n_segments": 1, "n_flagged": 0, "n_retried": 0, "n_repaired": 0},
         "completeness": {"n_sentences": 1, "n_flagged": 0, "n_num_loss": 0, "n_neg_loss": 0,
-                         "n_entity_loss": 0, "n_length": 0},
+                         "n_length": 0},
         "assemble": {"duration_sec": 50.0, "n_sped": 0, "in_span_silence_sec": 1.0},
         "mux": {"dub_mix": "bed", "dub_gain_db": 0.0},
     }

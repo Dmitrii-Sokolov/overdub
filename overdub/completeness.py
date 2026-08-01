@@ -6,12 +6,17 @@ Pure, deterministic, no LLM, no VRAM, no I/O. Public API:
     duplicate_adjacent(texts: list[str]) -> dict[int, int]  # per DOCUMENT (EN source)
     implausible_rate(texts, durations) -> dict[int, float]  # per DOCUMENT (EN source + timing)
 
-check() returns {"length_ratio", "missing_numbers", "negation_lost", "missing_entities",
-"flags"} where flags is a subset of ["num_loss", "neg_loss", "entity_loss", "length_short"].
-The two DOCUMENT-level detectors contribute the fifth and sixth flags, "dup_adjacent" and
-"rate_implausible", which the caller appends (verify.py) — check() sees one sentence pair at a
-time and can reach neither a neighbour nor a timestamp. Both of those inspect the EN SOURCE:
-they catch ASR defects, not translation ones.
+check() returns {"length_ratio", "missing_numbers", "negation_lost", "flags"} where flags is a
+subset of ["num_loss", "neg_loss", "length_short"]. The two DOCUMENT-level detectors contribute
+the fourth and fifth flags, "dup_adjacent" and "rate_implausible", which the caller appends
+(verify.py) — check() sees one sentence pair at a time and can reach neither a neighbour nor a
+timestamp. Both of those inspect the EN SOURCE: they catch ASR defects, not translation ones.
+
+REMOVED 2026-08-01: entity_loss, a sixth detector that flagged a Titlecase Latin token from
+src_en missing as a substring from text_ru. Deleted on measured precision, not theory — see
+DECISIONS 2026-08-01. Do not reintroduce a substring test here: the translation prompt PERMITS
+Russifying personal names, and a transliterated-and-declined name ("Koster" -> "Костера") can
+never substring-match, so the test cannot be right about its own dominant input class.
 
 The check is a pure src_en <-> text_ru TEXT comparison. It compares RAW strings (light
 casefold only) and NEVER pipes them through normalize.py: normalize_for_tts spells digits
@@ -20,7 +25,7 @@ into Russian words ("100" -> "сто") and transliterates Latin to Cyrillic ("Mi
 on (an exact digit substring, and a kept-Latin run). The only normalize.py reuse is the
 number-speller normalize._n2w, used solely as a false-positive SUPPRESSOR (see below).
 
-All five flags are NON-BLOCKING triage hints written to report.json. Each is precise-but-not-
+All four flags are NON-BLOCKING triage hints written to report.json. Each is precise-but-not-
 perfect; every detector has a documented false-positive source and the whole check is
 designed to prefer a MISS over a false alarm (the weak length signal most of all). None of
 these flags ever halts the pipeline or changes flow — they exist for a human triaging the run.
@@ -74,19 +79,6 @@ neg_loss  (signal B) — an EN negation marker present in src_en with NO RU nega
     не/ни/без token ("not playing" -> "в одиночку"); and, by the deliberate trade above, a
     correct translation into a positive-polarity бе[зс]- word ("not dangerous" -> "безопасно").
     Irreducible without a lexicon; triage-only.
-
-entity_loss  (signal B) — a Latin proper NAME present in src_en but absent (case-insensitively)
-    from text_ru. Leans on the rule "keep game/brand/platform/company NAMES in LATIN script":
-    such a name stays Latin in text_ru and substring-matches; a dropped or Cyrillicized one does
-    not. Candidates are Titlecase Latin tokens (first letter upper, NOT all-caps) of base length
-    >= 2, minus a stoplist (function words, pronouns incl. 'i', weekday/month names) and the
-    sentence-initial token. ALL-CAPS acronyms are excluded on purpose — including their PLURAL
-    form (LLMs/GPUs/APIs: ALL-CAPS stem + trailing lowercase s, which reads as Titlecase to the
-    shape check): the prompt allows both to be Russianized (AI -> ИИ, LLMs -> нейросети), so
-    including them is near-pure noise.
-    FALSE POSITIVE (dominant, irreducible): personal names, which the naming rule PERMITS to be
-    Russified (Jimmy -> Джимми, Bruce Lee -> Брюс Ли). Also translated quoted work titles. No
-    cheap person-vs-brand discriminator exists; this flag is triage-only, as designed.
 
 dup_adjacent  (signal C, CROSS-SENTENCE — the only detector that is not a src_en<->text_ru
     comparison) — two ADJACENT source sentences that are near-identical (ratio >
@@ -234,58 +226,6 @@ def _negation_lost(src_phrased_cf: str, text_ru: str) -> bool:
     return not _RU_NEG_RE.search(ru)
 
 
-# --- entity detector ----------------------------------------------------------
-# Latin tokens whose Titlecase shape mimics a proper name but that are NOT names. Bigger is
-# safer here: every added word only suppresses a fire (a miss), never creates one.
-_ENTITY_STOP = {
-    # pronouns (incl. the always-capitalized 'i')
-    "i", "you", "he", "she", "it", "we", "they", "me", "him", "her", "us", "them",
-    "my", "your", "his", "its", "our", "their", "mine", "yours", "hers", "ours", "theirs",
-    "this", "that", "these", "those", "who", "whom", "whose", "which", "what",
-    # articles / conjunctions / prepositions / frequent sentence openers
-    "the", "a", "an", "and", "or", "but", "so", "if", "then", "than", "as", "at", "by",
-    "for", "from", "in", "into", "of", "on", "onto", "to", "with", "without", "about",
-    "after", "before", "over", "under", "up", "down", "out", "off", "through", "between",
-    "not", "no", "yes", "well", "oh", "ok", "okay", "like", "just", "now", "here", "there",
-    "when", "where", "why", "how", "while", "because", "though", "although", "also", "too",
-    "very", "really", "actually", "maybe", "perhaps", "yeah", "yep", "nope", "hey",
-    # common capitalized-at-start auxiliaries / verbs
-    "is", "are", "was", "were", "be", "been", "being", "am", "do", "does", "did", "done",
-    "have", "has", "had", "will", "would", "can", "could", "should", "shall", "may", "might",
-    "must", "get", "got", "let", "make", "made", "go", "going", "went", "come", "came",
-    "see", "say", "said", "think", "know", "want", "need", "one", "two", "some", "any",
-    # weekdays + months (always capitalized in EN, translated + lowercased in RU)
-    "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
-    "january", "february", "march", "april", "may", "june", "july", "august",
-    "september", "october", "november", "december",
-}
-
-
-def _missing_entities(src_phrased: str, text_ru: str) -> list[str]:
-    ru_cf = text_ru.casefold()
-    missing: list[str] = []
-    seen: set[str] = set()
-    for idx, m in enumerate(pronounce.TOKEN_RE.finditer(src_phrased)):
-        base = re.split(r"['’]", m.group(0))[0]           # pre-apostrophe base: I'll -> I
-        if len(base) < 2:
-            continue
-        if not (base[0].isupper() and not base.isupper()):  # Titlecase only, exclude ALL-CAPS
-            continue
-        if len(base) >= 3 and base.endswith("s") and base[:-1].isupper():  # plural acronym: LLMs
-            continue
-        low = base.casefold()
-        if idx == 0:                                      # sentence-initial belt-and-suspenders
-            continue
-        if low in _ENTITY_STOP:
-            continue
-        if low in ru_cf:                                  # kept-Latin name -> substring present
-            continue
-        if low not in seen:
-            seen.add(low)
-            missing.append(base)
-    return missing
-
-
 # --- adjacent-duplicate detector (cross-sentence, EN source) ------------------
 # Ratio above which an adjacent pair is a duplicate. NOT a tuned knob: on the 13-video /
 # 1101-sentence batch EVERY threshold in 0.70..0.95 yields the same single fire (ytEN_iAk09c
@@ -405,13 +345,13 @@ def implausible_rate(texts: list[str], durations: list[float]) -> dict[int, floa
 
 # --- public API ---------------------------------------------------------------
 def check(src_en: str, text_ru: str, cfg) -> dict:
-    """Run the four PER-SENTENCE completeness detectors on one sentence pair.
+    """Run the three PER-SENTENCE completeness detectors on one sentence pair.
 
     Returns a dict with the per-sentence signals and a `flags` list (subset of
-    ["num_loss", "neg_loss", "entity_loss", "length_short"], empty when clean). Deterministic,
-    no I/O. See the module docstring for each detector's rule and false-positive caveat. The
-    fifth flag, dup_adjacent, is cross-sentence and comes from duplicate_adjacent() — it can
-    never appear in this function's output.
+    ["num_loss", "neg_loss", "length_short"], empty when clean). Deterministic, no I/O. See the
+    module docstring for each detector's rule and false-positive caveat. The fourth flag,
+    dup_adjacent, is cross-sentence and comes from duplicate_adjacent() — it can never appear
+    in this function's output.
     """
     src_en = src_en or ""
     text_ru = text_ru or ""
@@ -420,15 +360,12 @@ def check(src_en: str, text_ru: str, cfg) -> dict:
     length_ratio = round(len(text_ru) / max(len(src_en), 1), 3)
     missing_numbers = _missing_numbers(src_en, text_ru)
     negation_lost = _negation_lost(src_phrased.casefold(), text_ru)
-    missing_entities = _missing_entities(src_phrased, text_ru)
 
     flags: list[str] = []
     if missing_numbers:
         flags.append("num_loss")
     if negation_lost:
         flags.append("neg_loss")
-    if missing_entities:
-        flags.append("entity_loss")
     if len(src_en) >= _MIN_SRC_LEN and length_ratio < cfg.completeness_len_ratio_min:
         flags.append("length_short")
 
@@ -436,6 +373,5 @@ def check(src_en: str, text_ru: str, cfg) -> dict:
         "length_ratio": length_ratio,
         "missing_numbers": missing_numbers,
         "negation_lost": negation_lost,
-        "missing_entities": missing_entities,
         "flags": flags,
     }

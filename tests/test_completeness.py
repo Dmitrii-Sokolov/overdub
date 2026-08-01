@@ -167,60 +167,13 @@ def test_negation_dropped_before_bes_lookalike_is_caught() -> None:
     assert "neg_loss" in r["flags"]
 
 
-# --- entities -----------------------------------------------------------------
-def test_entity_preserved() -> None:
-    r = _check("I mostly play Minecraft now.", "Сейчас в основном играю в Minecraft.")
-    assert r["missing_entities"] == []
-    assert "entity_loss" not in r["flags"]
-
-
-def test_entity_lost() -> None:
+# --- entities: DELETED 2026-08-01 ---------------------------------------------
+# The entity_loss detector is gone (DECISIONS 2026-08-01). This test pins the removal so a
+# reintroduction has to be deliberate: a dropped Latin name must produce NO flag now.
+def test_dropped_latin_name_no_longer_flags() -> None:
     r = _check("I switched from Minecraft to Fortnite.", "Я перешёл на другую игру.")
-    assert "Minecraft" in r["missing_entities"] and "Fortnite" in r["missing_entities"]
-    assert "entity_loss" in r["flags"]
-
-
-def test_entity_inflected_latin_not_flagged() -> None:
-    # kept-Latin name with a Russian case suffix: substring check still matches.
-    r = _check("I played a lot of Minecraft.", "Я много играл в Minecraft-е.")
-    assert r["missing_entities"] == []
-
-
-def test_entity_pronoun_i_not_flagged() -> None:
-    # "I'll"/"I'm" are Titlecase because 'I' is always capitalized -> must be stoplisted.
-    r = _check("I'll tell you what I think.", "Я скажу, что думаю.")
-    assert r["missing_entities"] == []
-    assert "entity_loss" not in r["flags"]
-
-
-def test_entity_sentence_initial_not_flagged() -> None:
-    # sentence-initial token is dropped (belt-and-suspenders), even if it looks like a name.
-    r = _check("Minecraft is my favorite.", "Моя любимая игра — Minecraft.")
-    assert r["missing_entities"] == []
-
-
-def test_entity_acronym_russianized_not_flagged() -> None:
-    # ALL-CAPS acronyms are excluded: the prompt allows AI -> ИИ.
-    r = _check("This AI is impressive.", "Этот ИИ впечатляет.")
-    assert r["missing_entities"] == []
-    assert "entity_loss" not in r["flags"]
-
-
-def test_entity_plural_acronym_russianized_not_flagged() -> None:
-    # "LLMs" = ALL-CAPS stem + lowercase plural s, which reads as Titlecase to the shape check
-    # and used to slip past the ALL-CAPS exclusion. Still an acronym the prompt allows to be
-    # Russianized (LLMs -> нейросети) -> must not fire. Non-initial so it reaches the filter.
-    r = _check("These LLMs keep improving fast.", "Эти нейросети быстро развиваются.")
-    assert r["missing_entities"] == []
-    assert "entity_loss" not in r["flags"]
-
-
-def test_entity_titlecase_name_ending_in_s_still_fires() -> None:
-    # Boundary of the plural-acronym exclusion: "Windows" ends in s but its stem is NOT
-    # ALL-CAPS, so it stays a name candidate and a dropped one must still fire.
-    r = _check("I switched from Windows to Linux.", "Я перешёл на другую систему.")
-    assert "Windows" in r["missing_entities"]
-    assert "entity_loss" in r["flags"]
+    assert r["flags"] == []
+    assert "missing_entities" not in r
 
 
 # --- length -------------------------------------------------------------------
@@ -399,14 +352,15 @@ def test_clean_sentence_no_flags() -> None:
     r = _check("Social gaming used to be a staple of my life.",
                "Совместные игры раньше были неотъемлемой частью моей жизни.")
     assert r["flags"] == []
-    assert r["missing_numbers"] == [] and r["missing_entities"] == []
+    assert r["missing_numbers"] == []
     assert r["negation_lost"] is False
 
 
 def test_all_signals_at_once() -> None:
-    # a sentence dropping a number, a negation, an entity, and most of its length.
+    # a sentence dropping a number, a negation, and most of its length. The dropped names
+    # (Skyrim, Steam) no longer contribute a flag — entity_loss was deleted 2026-08-01.
     r = _check("You should not buy 3 copies of Skyrim on Steam today okay.", "Купи.")
-    assert set(r["flags"]) == {"num_loss", "neg_loss", "entity_loss", "length_short"}
+    assert set(r["flags"]) == {"num_loss", "neg_loss", "length_short"}
 
 
 if __name__ == "__main__":

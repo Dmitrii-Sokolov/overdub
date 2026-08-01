@@ -1,5 +1,44 @@
 # DECISIONS
 
+## 2026-08-01 — entity_loss DELETED, not demoted again
+
+The detector flagged a Titlecase Latin token present in `src_en` and absent as a substring from
+`text_ru`. It had already been advisory since the AI-Fluency batch (11 of 12 videos marked), so it
+cost nothing in `needs_triage`. It is now gone from the code.
+
+Measured on the 19-video batch of this date: **1179 flagged sentences, 654 distinct missing
+tokens.** The user inspected the fires by hand (`work/entity_loss_review.txt`) and found the
+translation correct in every case examined — 0 real losses.
+
+Two things decided it, and the second is why demotion was not enough a second time:
+
+1. **The test cannot be right about its own dominant input class.** The translation prompt PERMITS
+   Russifying personal names, and a transliterated-and-declined name can never substring-match:
+   `Ralf Koster` → «Рафа Костера», `Mihaly Csikszentmihalyi` → «Михая Чиксентмихайи». Both correct,
+   both flagged. This is not a threshold to tune — it is the mechanism. A cheap filler stoplist
+   (`Right` 61, `Thank` 38, `God` 21, `Mm`/`Um`/`Uh` 46 …) was measured at the SENTENCE grain and
+   silences only 244 of 1179 (20.7%); the surviving 935 are person names with a long tail of 405
+   tokens seen exactly once — the shape of a name list, not of a tunable signal.
+2. **An advisory flag is not free.** It still costs a line in every offenders list and an embedded
+   audio player on the listen page: `scout_report.py` embedded 1186 units and produced a 2012 MB
+   `work/scout-report.html` that no browser opens. 1179 of those 1186 were this detector. The
+   capability the page exists for — actually LISTENING to a flagged unit — was lost silently, with
+   the script exiting 0.
+
+Deleting the code does NOT destroy the series that would allow re-promotion: 19 `report.json` files
+on disk keep `n_entity_loss` and the per-sentence flags, `work/entity_loss_review.txt` keeps every
+instance with its EN/RU pair, and git keeps the implementation.
+
+**The flag NAME stays in `_ADVISORY_COMPLETENESS` as a tombstone.** That set is subtractive
+(`flags - _ADVISORY_COMPLETENESS`), so removing the name would promote a dead flag to ACTIONABLE
+and light up `needs_triage` on every historical workdir. Found by the test written for exactly that
+case, not by reasoning — see `test_legacy_report_with_entity_loss_still_reads`.
+
+Do not reintroduce a substring test in `completeness.py`. A future entity detector needs a
+person-vs-brand discriminator or a transliteration-aware match; neither is a threshold change.
+
+Suite: 633 → 627 (8 entity tests removed, 2 added).
+
 ## 2026-07-30 — route D digests in TWO passes, because a composing agent cannot be given a length
 
 Three runs over one video (`fGKNUvivvnc`, 59 min, 691 sentences, the source of the reference digest

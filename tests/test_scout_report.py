@@ -1067,7 +1067,7 @@ def _dubbed(root: Path, vid: str, *, verify_flags=("low_similarity", None), tran
               "verify": {"model": "small", "n_units": len(segs), "n_segments": len(segs),
                          "n_flagged": n_fl, "n_retried": 0, "n_repaired": 0},
               "completeness": {"n_sentences": len(segs), "n_flagged": 0, "n_num_loss": 0,
-                               "n_neg_loss": 0, "n_entity_loss": 0, "n_length": 0},
+                               "n_neg_loss": 0, "n_length": 0},
               "assemble": {"duration_sec": duration, "n_sped": n_fl,
                            "in_span_silence_sec": 0.0},
               "mux": {"dub_mix": "bed", "dub_gain_db": 3.0}}
