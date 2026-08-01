@@ -205,6 +205,15 @@ class WorkDir:
     def summary(self) -> Path: return self.root / "summary.md"            # sonnet seam (informational)
 
     @property
+    def clean_dir(self) -> Path: return self.root / "clean"               # route E: per-chunk agent drafts
+
+    @property
+    def clean_doc(self) -> Path: return self.root / "clean.json"          # route E: joined document
+
+    @property
+    def clean_md(self) -> Path: return self.root / "clean.md"             # route E: the deliverable
+
+    @property
     def thumb(self) -> Path: return self.root / "thumb.jpg"               # scout report: 160px preview, data-URI'd into the page
 
     @property
@@ -296,6 +305,10 @@ class WorkDir:
             self.pronounce_audit,
             self.root / "translation.draft.json",        # route-B Sonnet draft: keyed by id, and
                                                          # a repair renumbers every later id
+            self.clean_doc,                              # route E, same reason as the draft above:
+            self.clean_md,                               # every route-E artifact is keyed by id,
+            *sorted(self.clean_dir.glob("*.json")),      # so a renumber silently re-points each
+                                                         # cleaned line at a different sentence
             self.seg_manifest,                           # synthesize
             self.report,                                 # verify + assemble + mux
             self.dub_audio,                              # assemble

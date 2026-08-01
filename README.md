@@ -415,6 +415,66 @@ agent ran.
 `transcribe` fast-skips, `download` re-runs for `source.mkv` (~5% extra
 traffic), and the digest artifacts survive untouched.
 
+### E. Clean a queue into readable English text — no grade, no retelling, no dub
+
+The question is **"let me read this instead of watching it"**. Routes C and D
+compress (a grade, a retelling); this one does not: the output is the video's own
+English, roughly as long as the source, cleaned enough to read. Deliverable:
+`work/<id>/clean.md`.
+
+E1 is the same transcript command as C and D (`--scout`), so a queue that has
+been through either costs seconds here. Then, and **before anything is cleaned**:
+
+```powershell
+.venv-asr\Scripts\python.exe -X utf8 -m overdub --batch queue.txt --repair-asr auto
+```
+
+The order is enforced by the code, not by discipline: a repair renumbers every
+id, so `invalidate_downstream` deletes `clean/`, `clean.json` and `clean.md`
+along with the translate artifacts. Repair matters more here than on the dubbing
+routes — a repetition loop passes the ear in half a second, but sits on the page
+as a repeated paragraph.
+
+**Then one Sonnet sub-agent per CHUNK**, orchestrated by the `overdub-clean`
+skill (`.claude/workflows/clean-transcript.js`). Per chunk, not per video,
+because this is the one route whose output is as long as its input: a per-video
+agent cleans the opening faithfully and compresses harder the further it goes,
+and nothing in the artifact says which half you are reading. ~80 sentences is
+~7k characters of output, where the task stays mechanical.
+
+`scripts/build_clean.py --plan` owns the cut (target 80, slid to the longest
+pause nearby) and the same function re-derives it at join time, so a plan and its
+assembler cannot disagree. Each agent writes `work/<id>/clean/<from>-<to>.json`
+as `[{id, text}]` for its own range only.
+
+The contract is what makes this route checkable, and it is the only route in the
+repo that is: output and input are the same language in the same sentence order,
+so **every id must come back**. An emptied line is written `""` (pure filler);
+an absent id fails the build, because the two are indistinguishable in a text
+file afterwards. `build_clean.py` then joins, exits on any missing / foreign /
+duplicated id, and warns — never blocks — on the quality signals: per-chunk and
+whole-document length ratio (a chunk that summarised instead of cleaning shows up
+as its own number), dropped digit runs, dropped capitalised terms, and the share
+of emptied lines.
+
+The entity check is precise here for a reason that does **not** generalise: EN→EN
+keeps a name a name, so a substring test is right about its dominant input class.
+That is exactly the objection that deleted `completeness.entity_loss` on the
+translate seam (DECISIONS 2026-08-01) — do not port these detectors there.
+
+`clean.md` carries a metadata header and timecoded paragraphs broken on the
+speaker's own pauses (≥1.0 s, or ~900 chars without one; a stamp every ~2 min).
+Both thresholds are hypotheses sited on speech rhythm, not measured constants.
+
+**Caching** — the per-chunk drafts, keyed on mtime against `sentences.json`, so a
+failed wave costs only its failures. `clean.json` and `clean.md` are derived and
+are never cache keys: a present `clean.md` proves nothing about whether an agent
+ran.
+
+**Promotion** — nothing to clean up; a cleaned video is untranslated, not
+half-translated. It enters route A/B at the top (`download` re-runs for
+`source.mkv`) or route D at D2.
+
 ### Repairing an ASR defect
 
 When whisper collapses — a repetition loop, or a sentence stamped onto an
