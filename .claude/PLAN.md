@@ -234,6 +234,17 @@ the slot-fit item lands, or the numbers describe a pipeline that is about to cha
   curve?" in a 1.06 s slot — one sentence cut in half by the rebuild, and `rate_implausible` does
   not fire (36 ch/s against a 40 bound). Repair cannot help either by construction; only re-joining
   at rebuild can. Distinct from the 143 `garbled` / 60 `dup_neighbour`, which really are whisper's.
+- **Persist the batch capacity measurement — it currently survives only in a chat message.**
+  Step 4 computes audio ÷ machine time from the per-step stamps (route-B skill, "Capacity",
+  added 2026-08-02: 2 videos, digest said ×4.13, the machine did ×2.56), but nothing writes it
+  down. `run.json` carries no timestamp and `timings.json` has no batch level, so the ratio
+  cannot be recomputed once the session ends and every night is planned off a single sample.
+  Cheapest shape: append-only `work/capacity.jsonl` written by step 4 — queue ids, `audio_s`,
+  the four step seconds, and a config fingerprint. The fingerprint is load-bearing: the point is
+  comparing nights, and a series that silently spans an engine or grouping change is exactly the
+  trap `run.json` is already in (no engine field in any of them — 193 checked 2026-08-02 — so its
+  own provenance is only recoverable from CHANGELOG dates). Do NOT fold it into `run.json` — that file is
+  per-video and this quantity is per-batch.
 - **Clean `work/<id>/` after a successful mux — hygiene, NOT a queue-size lever.** Delete BINARIES
   only (`source.mkv`, `source.wav`, `source_bed.wav`, `dub_ru.wav`, `segments/`); json/md are
   pennies. Transcript, translation and summary survive; the cost is re-synthesis of everything
