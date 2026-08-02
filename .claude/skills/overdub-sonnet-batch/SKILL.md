@@ -114,10 +114,14 @@ would have asked, and it said it in an artifact instead of in chat. What goes IN
 human's decision and route C is where it is made; a video quietly held back here is the same
 silent loss the `$ids` gates exist to prevent.
 
-Then run:
+Then run — **stamped**. Step 4 has to divide the queue's audio by the time the machine actually
+spent, and no artifact records that (see step 4, "Capacity"). The stamp is three lines, costs
+nothing, and reads the same whether the command runs in the foreground or the background:
 
 ```powershell
+$t0 = Get-Date
 .venv-asr\Scripts\python.exe -X utf8 -m overdub --batch queue.txt --only download transcribe
+"STEP_ELAPSED_S=$([int]((Get-Date) - $t0).TotalSeconds)"
 ```
 
 Single video: same command with the URL instead of `--batch queue.txt`.
@@ -132,7 +136,9 @@ same step-1 command until clean; completed stages fast-skip.
 ### Step 1b — Repair the transcript BEFORE translating it (added 2026-07-25)
 
 ```powershell
+$t0 = Get-Date
 .venv-asr\Scripts\python.exe -X utf8 -m overdub --batch queue.txt --repair-asr auto
+"STEP_ELAPSED_S=$([int]((Get-Date) - $t0).TotalSeconds)"
 ```
 
 **Cheap, and this is the only position where it is cheap.** `auto` seeds on `dup_adjacent` +
@@ -366,7 +372,9 @@ Then the exact command from the local route (no `--only`). `TranslateStage.done(
 assemble → separate → mux run as usual:
 
 ```powershell
+$t0 = Get-Date
 .venv-asr\Scripts\python.exe -X utf8 -m overdub --batch queue.txt
+"STEP_ELAPSED_S=$([int]((Get-Date) - $t0).TotalSeconds)"
 ```
 
 - Final MKVs land in `out/`; per-video artifacts in `work/<id>/`.
@@ -413,10 +421,47 @@ Then summarize for the user in Russian, grounded ONLY in that output (do not inv
 - **Batch totals:** total wall across videos, aggregate throughput, and WHICH video_ids need
   eyes (the `need triage` list) — so the user knows what to open first, not just that something
   is off.
+- **Capacity:** the audio-per-hour-of-machine-time ratio, computed from the step stamps — see
+  the subsection below. It is the only figure in the report that answers "how much fits in a
+  night", and the digest's `throughput` is not it.
 
 Keep it short and honest: name what the digest flags, don't soften a `TRIAGE` into "всё хорошо".
 A clean batch is a one-liner ("N видео, все чистые, X ч звука за Y мин"); a flagged batch leads
 with the videos and segments that need a listen.
+
+### Capacity — how much video fits in a night (added 2026-08-02)
+
+**The digest's `throughput` cannot answer that and must never be quoted as if it could.** It is
+Σ(`video_sec`) / Σ(`total_wall_s`), and `total_wall_s` is the SUM OF THE SEVEN STAGE TIMERS —
+verified by adding up `vWidan8ggGo`'s seven stages, which reproduce its `total_wall_s` exactly.
+Everything between the timers is invisible to it: process starts, the gaps between invocations,
+and on this route the whole Sonnet translate wave, which is not a stage at all — `translate`
+appears in the `stages` map of NO `run.json` on disk (checked over all 193 of them, 2026-08-02;
+re-check the property, not the count, if you need it again).
+
+So compute the real ratio from the stamps. Three `STEP_ELAPSED_S=` lines (steps 1, 1b, 3) plus
+step 2's workflow `duration_ms ÷ 1000`. The queue's audio comes off the run reports:
+
+```powershell
+.venv-asr\Scripts\python.exe -X utf8 -c "import json,pathlib,sys; print('audio_s=%.0f' % sum(json.loads((pathlib.Path('work')/i/'run.json').read_text(encoding='utf-8'))['timings']['video_sec'] for i in sys.argv[1:]))" @ids
+```
+
+Report it as `аудио X ч / машина Y ч = ×Z`, then turn it into the number the user actually plans
+with: **за 8-часовую ночь пройдёт ~8×Z часов исходного видео.**
+
+**List the four addends you summed.** A total with no addends is indistinguishable from a
+remembered one, and this is the one figure in the report that no artifact can contradict.
+
+Say once what the ratio excludes: the human's pauses between steps and the orchestrator's own
+thinking time between commands. It is therefore the MACHINE ceiling and reads slightly high for
+an attended session. When the steps ran back to back, quote the session span (first start → last
+end) beside it — the two agreeing within a few percent is the evidence that nothing idled.
+
+Measured 2026-08-02 on a 2-video queue, 3.22 h of audio: digest `throughput ×4.13`, actual
+machine time 4532 s = **×2.56** (session span 4618 s = ×2.51). Split: step 1 1148 s · step 1b
+41 s · **step 2 1676 s** · step 3 1667 s — the translate wave was the largest single line item at
+37% of the batch and appears in no existing number. Planning a night on ×4.13 overbooks it by
+~60%.
 
 **When the batch has flagged units, also offer the clickable page** — one HTML with an inline
 audio player per flagged unit (expected vs whisper-heard, click to listen), so the user can
