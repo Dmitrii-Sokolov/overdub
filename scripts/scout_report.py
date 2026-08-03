@@ -297,7 +297,6 @@ body{margin:0;background:#f7f8fa;}
 .sr .tag{display:inline-block;white-space:nowrap;font-size:.72rem;font-weight:560;
   letter-spacing:.02em;padding:2px 8px;border-radius:999px;border:1px solid var(--line);
   color:var(--dim);}
-.sr .a-focus{border-color:var(--accent);color:var(--accent);}
 
 /* triage nav: the morning-listen entry points, an index instead of a re-sort */
 .sr .nav{margin-top:14px;padding:10px 14px;border:1px solid var(--line);border-radius:8px;
