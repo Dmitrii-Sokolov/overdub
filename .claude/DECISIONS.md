@@ -1,8 +1,14 @@
 # DECISIONS
 
-Why we chose what we chose. Newest first — **append at the top**. Entries are never rewritten to
-match today's code; when the code moves out from under one, it gets a `> SUPERSEDED` line and
-stays, because the rejected alternative is the part worth keeping.
+Why we chose what we chose. Newest first — **append directly below the `---` that closes the Index,
+never above it.** Entries are not rewritten to match today's code: when the code moves out from
+under one it gets a `> SUPERSEDED <date>` line and stays, because the rejected alternative is the
+part worth keeping. Content is cut only when it is pure scheduling that already lives in `PLAN.md`,
+and the cut is stamped in place (`Trimmed <date>: …`) rather than made silently.
+
+**An appended entry is two edits: the entry and its line in the Index.** The Index is
+hand-maintained and reads as complete whether or not it is — `tests/test_decisions_index.py`
+is what keeps that honest.
 
 The bottom third of the file is a forward-ordered archive of the founding week — see the ARCHIVE
 divider. Look things up through this index, not by scrolling.
@@ -58,6 +64,7 @@ divider. Look things up through this index, not by scrolling.
 - `07-16` dead-air elimination BUILD † · `07-16` interim ear verdict
 
 **Pipeline, batch, artifacts**
+- `08-03` CHANGELOG.md retired; measurements retire to DECISIONS
 - `07-28` the tail DEGRADES instead of failing: a miss costs a track, not the artifact
 - `07-19` stage-major is the default batch order · `07-19` the VRAM rule is a budget
 - `07-17` batch queue + stop switch · `07-19` run report: two non-obvious `run.json` choices
@@ -109,6 +116,27 @@ still the live design and is the reason removing the profile costs as little as 
 still shipped a personal `watch`/`maybe`/`skip`, this removal would have gutted it.
 
 Suite: 641 → 639 (2 author tests removed, 1 assertion added).
+
+## 2026-08-03 — `.claude/CHANGELOG.md` is RETIRED; measurements retire HERE instead
+
+2204 lines of append-only history in which every entry restated a commit. What the file uniquely
+carried — the batch stage-shares and the whole-pipeline RTF pair — was already marked void in PLAN
+"Numbers to re-measure" (B) and (C), so retiring it lost nothing that was still true. Shipped work
+is read from git history now, and `CLAUDE.md` says so where the artifact list used to be.
+
+**This merges two of the four artifact roles, deliberately.** PLAN used to retire measurements to
+CHANGELOG and rationale here; it now retires both here. The global framework calls role-mixing an
+antipattern and is right about the usual case — but the property that made CHANGELOG worth keeping
+is that its entries are DATED records of what was true when written, and this file already has it
+(2026-07-22, the named-not-numbered entry: DECISIONS keeps its numbers precisely because rewriting
+them would destroy that provenance). A separate file bought ordering and nothing else, against a
+second place to look and a second place to drift.
+
+**What it costs.** Every "CHANGELOG <date>" pointer degraded to a bare date when it was retargeted.
+The date still works as a `git log --since/--until` key, but the reader has to know that — do not
+add another one. And the GLOBAL `/summarize` command and the `project-artifacts` skill still route
+shipped work to `.claude/CHANGELOG.md` unconditionally; neither knows a project can opt out. When
+one offers to write the file, the answer is no: this repo's `CLAUDE.md` outranks both.
 
 ## 2026-08-01 — entity_loss DELETED, not demoted again
 
@@ -346,8 +374,7 @@ STRING — route C's measured 8-of-8 mistake, reproduced on route B's first call
 parsing branch absorbed it. Then the one defect the run DID surface was in the part with no route-C
 precedent: a status line parsed from the TRUNCATED answer with an anchored pattern. The general
 lesson is why it earns an entry at all: **a cap that protects context must not also be the parse
-window.** Truncation is a storage decision; classification has to read
-what actually arrived.
+window.** Truncation is a storage decision; classification has to read what actually arrived.
 
 ## 2026-07-28 — the tail degrades instead of failing: a missing translation or dub costs a TRACK, not the artifact
 
@@ -882,10 +909,10 @@ opinion it does not need.
 
 **Status note, same day.** The harness this entry was written for (`exp_asr_sweep.py`, its region
 scorer and its runbook) was deleted hours later and replaced by `scripts/asr_probe.py`. The reason
-was written up in `CHANGELOG.md`, which has since been retired from this repo — it is in git
-history. The premise below outlived it and is the reason the probe exists in
-the shape it does; the two-corpus machinery described further down did not, because the probe runs
-one corpus and says so. Read this for the premise, not for the file layout.
+was written up in `CHANGELOG.md`, retired from this repo in f68291f — read it with
+`git show f68291f^:.claude/CHANGELOG.md`. The premise below outlived it and is the reason the probe
+exists in the shape it does; the two-corpus machinery described further down did not, because the
+probe runs one corpus and says so. Read this for the premise, not for the file layout.
 
 `exp_nfe_sweep`'s central premise is FALSE for ASR and the instrument is inverted accordingly. F5
 is deterministic for a fixed (text, seed, speed, nfe), so that harness buys coverage with more
@@ -1015,8 +1042,9 @@ roadmap to use it).
 
 **DECISIONS keeps its numbers deliberately** — as did CHANGELOG, before it was retired. They are
 dated records of what was true when written, and rewriting them to today's vocabulary would
-destroy exactly the provenance that makes them worth keeping. Only PLAN — the forward-looking file — and live code comments were
-converted. `.claude-tasks/` session records were left alone for the same reason.
+destroy exactly the provenance that makes them worth keeping. Only PLAN — the forward-looking
+file — and live code comments were converted. `.claude-tasks/` session records were left alone for
+the same reason.
 
 ## 2026-07-21 — One queue page: the scout report is the base, the triage page merged into it
 
@@ -1740,7 +1768,7 @@ The split is documented rather than fixed because re-sorting 1100 lines of the r
 load-bearing document buys ordering and risks content. The index at the top is the lookup path;
 physical order is not.
 
-**Append new entries at the TOP of the file, never here.**
+**Append new entries directly below the `---` that closes the Index, never here.**
 
 ## 2026-07-15 — Founding decisions
 
@@ -2246,7 +2274,9 @@ with automatic duck-fallback is the likely production shape. dub_mix default sta
 > render units and L3 mix (duck/bed) are LIVE.
 
 Panel (minimalist/contracts/audio + 3 judges) + 4-lens adversarial review (20 findings,
-1 refuted, all fixed). Three composable layers against the measured 607-s underfill:
+1 refuted, all fixed). Three composable layers against the measured 607-s underfill (an F5-era
+figure whose decomposition was trimmed 2026-08-03; the live Silero baseline is 283 s of slot
+silence on `8zJlKmgMT44`, in `2026-07-25 — atempo_floor = 0.75`):
 
 **L1 slot-fill native speed — parent-side pure `plan_speed()` (2/3 judges).** F5's duration
 canvas is deterministic (`out ≈ ref_sec·gen_bytes/ref_bytes/speed`, raw pre-accent bytes both
@@ -2636,7 +2666,7 @@ Caveat: n=1 video, lifestyle content — indicative, not a multi-content-type A/
 
 ## 2026-07-19 — Completeness check (verify-side, deterministic A+B) — shipped, all 4 detectors kept
 
-> **PARTLY SUPERSEDED** — the title no longer holds. `entity_loss` was DELETED 2026-08-01 and
+> **PARTLY SUPERSEDED 2026-08-01** — the title no longer holds. `entity_loss` was DELETED and
 > `neg_loss` demoted to advisory 2026-07-27; `dup_adjacent` and `rate_implausible` are live.
 
 After rejecting the LLM-judge / embedding semantic check as PoC over-engineering (the analysis
