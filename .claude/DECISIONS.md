@@ -1,5 +1,33 @@
 # DECISIONS
 
+## 2026-08-03 — the viewer profile is REMOVED; scout grades the material and nothing else
+
+`.claude/viewer-profile.md` and everything that read it are gone: the S0 preflight in the
+`overdub-scout` skill, the `viewer-profile-prompt.md` reference that built the file, the
+MANDATORY-FIRST-READ block and `PROFILE-MISSING` abort in `.claude/workflows/scout-summarize.js`,
+and the `.gitignore` rule that kept the file out of the repo.
+
+**What scout loses.** The profile was the only thing that made `highlight` answer "interesting to
+THIS reader" rather than "interesting". Nothing replaces it — that was the decision, not an
+oversight. Scout is now a pure assessment of the material on the three axes it already owned
+(substance, currency, delivery), and the write-up is the same for everyone who runs it.
+
+**The `author` axis died with it.** `trusted`/`new` existed solely to match a channel against the
+profile's trusted-author list. With no list there is nothing to compare against, so `_AUTHOR` and
+its clamp are out of `build_scout.py`, the `a-trust` marker and CSS are out of `scout_report.py`,
+and the key is out of the summarizer prompt. `test_the_grade_is_about_the_material_not_the_reader`
+now asserts `not hasattr(build_scout, "_AUTHOR")` alongside the older tombstones, so a
+reintroduction fails loudly rather than quietly rendering a column of one value.
+
+**Existing `scout.json` files keep their `author` key.** Nothing migrates them and nothing reads
+it — the renderer simply ignores an unknown key. A rebuild drops it.
+
+The 2026-07-20 entry below stays: it records why the verdict vocabulary became a grade, which is
+still the live design and is the reason removing the profile costs as little as it does. Had scout
+still shipped a personal `watch`/`maybe`/`skip`, this removal would have gutted it.
+
+Suite: 641 → 639 (2 author tests removed, 1 assertion added).
+
 ## 2026-08-01 — entity_loss DELETED, not demoted again
 
 The detector flagged a Titlecase Latin token present in `src_en` and absent as a substring from

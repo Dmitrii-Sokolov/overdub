@@ -105,10 +105,6 @@ _DUB_CLEAN = {"label": "чисто", "cls": "t-clean"}
 # queue 28 of 30 videos took the same value, and a field that never varies is a column that
 # trains the reader to ignore it. "Требует концентрации" is now a clause the summarizer writes
 # into the highlight, so it appears only when it is true.
-#
-# Shown ONLY for a trusted author: a marker on every row would be a column of one value while
-# the profile's trusted list is empty (build_scout._AUTHOR).
-_TRUSTED = {"label": "доверенный автор", "cls": "a-trust"}
 
 
 def _load_json(path: Path):
@@ -302,7 +298,6 @@ body{margin:0;background:#f7f8fa;}
   letter-spacing:.02em;padding:2px 8px;border-radius:999px;border:1px solid var(--line);
   color:var(--dim);}
 .sr .a-focus{border-color:var(--accent);color:var(--accent);}
-.sr .a-trust{border-style:dashed;}
 
 /* triage nav: the morning-listen entry points, an index instead of a re-sort */
 .sr .nav{margin-top:14px;padding:10px 14px;border:1px solid var(--line);border-radius:8px;
@@ -388,13 +383,11 @@ def _row(e: dict) -> str:
     # needed. It leads the highlight because the grade and the reason it earned are one thought —
     # under the title it sat between the title and the description and split them.
     v = e["v"]
-    trusted = ('<span class="tag a-trust">' + html.escape(_TRUSTED["label"]) + "</span>"
-               if e.get("author") == "trusted" else "")
     return (
         f'<tr id="r{e["n"]}">'
         f'<td class="idx">{e["n"]}</td>'
         f'<td class="pic">{_thumb_box(e)}</td>'
-        f'<td class="name">{_title_link(e)}{trusted}</td>'
+        f'<td class="name">{_title_link(e)}</td>'
         # runtime next to the title, not at the end of a prose cell: it is scanned down the
         # column ("what fits in an evening"), which a value buried in text cannot be
         f'<td class="num dur">{clock(e["duration"])}</td>'
@@ -505,8 +498,6 @@ def _card(e: dict, out_dir: Path, *, embed: bool) -> str:
         # cannot carry. Everywhere else v already equals the grade/dub chip, so this only fires
         # for a scouted-then-torn video.
         chips.append(_chip(v))
-    if e.get("author") == "trusted":
-        chips.append('<span class="tag a-trust">' + html.escape(_TRUSTED["label"]) + "</span>")
 
     out = [
         f'<article class="card {v["cls"]}" id="v{e["n"]}">',
@@ -715,8 +706,8 @@ def render(entries: list[dict], totals: dict, queue_name: str | None, stamp: str
     out.extend(_card(e, out_dir or Path("."), embed=embed) for e in entries)
     out.append("</section>")
 
-    out.append('<p class="foot">overdub · scout · вердикты выставлены по '
-               '<code>.claude/viewer-profile.md</code>; они рекомендация, а не решение.</p>')
+    out.append('<p class="foot">overdub · scout · оценка материала '
+               '(содержание · актуальность · подача); она рекомендация, а не решение.</p>')
     out.append("</div>")
     return "\n".join(out)
 
@@ -849,7 +840,6 @@ def _views(entries: list[dict]) -> list[dict]:
             "n": e["n"], "vid": e["vid"], "work": work, "kind": kind, "v": v,
             "grade": grade, "dub": dub, "run": run, "units": e["units"],
             "summary": e["summary"], "scout_doc": doc,
-            "author": (doc or {}).get("author"),
             "thumb_b64": _thumb_b64(work.root / "thumb.jpg"),
             "thumb_wh": jpeg_size(work.root / "thumb.jpg"),
             "title": title, "duration": duration,

@@ -150,21 +150,7 @@ def test_the_grade_is_about_the_material_not_the_reader() -> None:
     assert build_scout._QUALITY == ("high", "medium", "low")
     assert not hasattr(build_scout, "_VERDICTS")
     assert not hasattr(build_scout, "_ATTENTION")      # cost axis folded into the highlight text
-
-
-def test_author_is_optional_and_a_bad_value_is_clamped_not_fatal() -> None:
-    # Opposite of the verdict/attention contract, deliberately: the trusted list is empty today,
-    # so this axis is optional, and dropping a usable verdict over a mislabelled optional field
-    # would cost more than it saves.
-    with tempfile.TemporaryDirectory() as d:
-        w = _workdir(Path(d), "vid00000001", draft=_DRAFT)
-        assert _build(w)["author"] is None                      # absent → not assessed
-    with tempfile.TemporaryDirectory() as d:
-        w = _workdir(Path(d), "vid00000001", draft={**_DRAFT, "author": "легенда"})
-        assert _build(w)["author"] is None                      # unknown → clamped, still built
-    with tempfile.TemporaryDirectory() as d:
-        w = _workdir(Path(d), "vid00000001", draft={**_DRAFT, "author": "trusted"})
-        assert _build(w)["author"] == "trusted"
+    assert not hasattr(build_scout, "_AUTHOR")         # trusted-author axis died with the profile
 
 
 def test_empty_prose_field_is_fatal() -> None:
@@ -821,18 +807,6 @@ def test_the_row_itself_carries_no_grade_colour() -> None:
     # the colour that remains is the chip's, in the highlight cell
     assert '<span class="chip v-watch">высокое</span>' in page
     assert '<span class="chip v-skip">слабое</span>' in page
-
-
-def test_trusted_author_marker_only_when_assessed() -> None:
-    with tempfile.TemporaryDirectory() as d:
-        root = Path(d)
-        _scouted(root, "vid00000001", "high")                      # no author key
-        _scouted(root, "vid00000002", "high", author="trusted")
-        q = _queue(root, ["vid00000001", "vid00000002"])
-        out = root / "r.html"
-        _report(["--queue", str(q), "--config", str(_cfg(root)), "--out", str(out)])
-        page = out.read_text(encoding="utf-8")
-    assert page.count("доверенный автор") == 2                      # only the second video
 
 
 def test_unscanned_row_carries_no_cost_label() -> None:

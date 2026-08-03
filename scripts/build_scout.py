@@ -69,21 +69,11 @@ from overdub.workdir import (                                       # noqa: E402
 # in the renderer, where it can be changed without invalidating every scout.json on disk.
 # Quality of the MATERIAL -- substance, currency, delivery -- and deliberately NOT "should this
 # person watch it" (revised 2026-07-20). The previous verdict vocabulary was watch/maybe/skip,
-# judged against the viewer profile, and the first real queue came back 0 watch / 1 maybe /
-# 9 skip: a personal verdict is a decision taken FOR the reader, it collapses toward "no", and it
-# cannot be checked against anything. An assessment of the material can: two people can disagree
-# about whether to watch a well-made video, but not about whether it is well made.
-#
-# The viewer profile stays in the loop, demoted to context: it shapes WHAT gets named as the
-# interesting part and what counts as already-known, never the grade.
+# judged per-reader, and the first real queue came back 0 watch / 1 maybe / 9 skip: a personal
+# verdict is a decision taken FOR the reader, it collapses toward "no", and it cannot be checked
+# against anything. An assessment of the material can: two people can disagree about whether to
+# watch a well-made video, but not about whether it is well made.
 _QUALITY = ("high", "medium", "low")
-
-# OPTIONAL third axis: is this a known-good author. Optional on purpose -- the trusted-author
-# list in the profile is empty today, so every video would carry the same "new" value, and a
-# column of one repeated value is noise that trains the reader to ignore that column. Absent
-# means "not assessed"; the renderer shows a marker only for "trusted". Filling the profile's
-# list later lights this up with NO code change here.
-_AUTHOR = ("trusted", "new")
 
 _ONE_LINER_MAX = 200        # visible cap, same discipline as runreport._SUMMARY_MAX_CHARS
 _HIGHLIGHT_MAX = 240        # one sentence; the scan table's widest text column
@@ -182,14 +172,6 @@ def build(work: WorkDir, wave_start: float | None) -> dict:
     if quality not in _QUALITY:
         sys.exit(f"[FAIL] {draft_path}: quality {quality!r} is not one of {_QUALITY} -- "
                  f"it is what the report colours on, so it is never guessed")
-    author = raw.get("author")
-    if author is not None and author not in _AUTHOR:
-        # Clamped to absent, NOT fatal: unlike the two labels above, this axis is optional by
-        # design (see _AUTHOR), and refusing the whole video over a mislabelled optional field
-        # would drop a usable verdict from the report.
-        print(f"[warn] {work.root.name}: author {author!r} is not one of {_AUTHOR} -- recorded "
-              f"as not assessed")
-        author = None
     one_liner = _text_field(raw, "one_liner", _ONE_LINER_MAX, draft_path)
     # The most interesting/useful thing IN the video, kept apart from WHAT it is (one_liner).
     # Replaced the old `reason` field, which justified a personal verdict: this states what the
@@ -302,7 +284,6 @@ def build(work: WorkDir, wave_start: float | None) -> dict:
         "duration_source": dur_src,
         "n_sentences": len(sents),
         "quality": quality,
-        "author": author,                            # None = not assessed (see _AUTHOR)
         "one_liner": one_liner,
         "highlight": highlight,
         "paragraph": paragraph,

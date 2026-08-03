@@ -143,9 +143,9 @@ to 270k characters, the worst of them 13,547 characters describing nine edited l
 
 // The prose half of this prompt is IDENTICAL to the summarizer in .claude/workflows/
 // scout-summarize.js (route C / S2). Change it in one place and change it in the other, or the two
-// routes start producing different artifacts under one name. The route-C copy additionally reads
-// the viewer profile and writes scout.draft.json; this one writes only summary.md, which is all the
-// dubbing route's digest and queue page read.
+// routes start producing different artifacts under one name. The route-C copy additionally writes
+// scout.draft.json; this one writes only summary.md, which is all the dubbing route's digest and
+// queue page read.
 function summarizerPrompt(id) {
   const dir = ROOT + '\\work\\' + id
   return `You are a triage summarizer for the overdub pipeline. Read

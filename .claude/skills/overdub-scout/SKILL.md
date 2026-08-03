@@ -9,7 +9,7 @@ Scout answers **"is this worth dubbing"** before anything expensive runs:
 **download (audio only) → transcribe → stop**, then one Sonnet sub-agent per video writes the
 summary. No translation, no TTS, no MKV, no Ollama, no `source.mkv` on disk.
 
-A preflight and three steps, in order. Do not reorder them and do not skip the gates — each
+Three steps, in order. Do not reorder them and do not skip the gates — each
 step's gate is what keeps a half-scouted queue from reading as a finished one.
 
 **When NOT to use this skill.** If the queue is already chosen, scouting buys nothing and still
@@ -24,40 +24,6 @@ a summary too short to check anything against.
 
 Nothing here writes `translation.json`, so a scouted video is not half-translated — it is
 untranslated, and it re-enters the dubbing route with no cleanup (see "Promotion" below).
-
-## S0 — Preflight: the viewer profile (do this FIRST, before touching the queue)
-
-```powershell
-Test-Path .claude\viewer-profile.md
-```
-
-**If it exists, read it now** and carry it into S2 — nothing else in this preflight applies.
-
-**If it does not exist, STOP and put the choice to the user before running anything.** Do not
-scout first and sort the profile out later: S1 is the expensive half (a download and a
-large-v3 pass per video) and it would be spent on a pass that cannot produce usable verdicts.
-And never proceed by rating on generic video quality — a verdict with no basis looks exactly
-like a grounded one in the report, which is the failure this whole file is built to avoid.
-
-Offer exactly two ways forward, in this order:
-
-1. **Generate it from their own history.** The prompt is committed at
-   [`references/viewer-profile-prompt.md`](references/viewer-profile-prompt.md). Read that file
-   and hand the user the part below its `---` separator, ready to paste into a fresh chat on
-   claude.ai. **This cannot be done from here:** Claude Code has no access to their conversation
-   history, profile or memory, which are the whole point of the exercise. Do not offer to write
-   the profile yourself from what you can see in this session — that produces a plausible file
-   with no evidence behind it, the worst of the three outcomes. When they come back with the
-   result, write it to `.claude/viewer-profile.md` verbatim.
-2. **Take a file they already have.** If they hand over a path or paste the contents, write it
-   to `.claude/viewer-profile.md` as is. Do not "improve" it, do not reformat it into the
-   section headings above — the summarizer reads it as free text, and an unfamiliar shape is
-   the author's choice, not a defect. Only say something if it is empty or is clearly not a
-   profile.
-
-`.claude/viewer-profile.md` is **gitignored** — one person's skills and gaps, not repo content.
-The prompt that builds it is committed. So a fresh clone has the tool and not the data, which is
-the intended state: this preflight will fire for the next person too.
 
 ## S1 — Resolve the queue, then scout the batch
 
@@ -270,9 +236,8 @@ finished inside the shadow of the next spawn, which is why making the agents fas
 nothing.
 
 `Workflow` removes both costs: `parallel()` is deterministic fan-out that does not depend on a
-model emitting N blocks, and the script assembles the prompt instead of generating it. The
-sub-agent reads `viewer-profile.md` off disk itself, so the prompt drops from 23.7k to 6.6k
-chars and nothing large is generated at all.
+model emitting N blocks, and the script assembles the prompt instead of generating it — against
+the 23.7k chars the orchestrator used to re-type per video, nothing large is generated at all.
 
 ```powershell
 # args.ids is the RESUME-FILTERED list from below — never the whole queue
@@ -281,8 +246,8 @@ chars and nothing large is generated at all.
 Workflow: {name: "scout-summarize", args: {ids: [...$sumTodo], root: "D:\\code\\overdub"}}
 ```
 
-It returns `{done, failed, total}`. **`failed` is per video and actionable** — a `PROFILE-MISSING`
-agent or one the runtime dropped. Re-run the workflow with just those ids.
+It returns `{done, failed, total}`. **`failed` is per video and actionable** — an agent the
+runtime dropped. Re-run the workflow with just those ids.
 
 **Verify from disk, not from the run's account.** Two things, and the first is the one that goes
 missing quietly:
@@ -322,13 +287,6 @@ $sumTodo | ForEach-Object {
 **The sub-agent prompt lives in `.claude/workflows/scout-summarize.js`, not here.** It used to be
 pasted into this file and re-typed by the orchestrator for every video; that is exactly the cost
 the workflow removes, and two copies of one prompt drift. Edit the script.
-
-**The profile is no longer pasted into the prompt.** The sub-agent reads
-`.claude/viewer-profile.md` off disk itself — 16.8k chars, 71% of the old prompt's weight, for a
-file the agent can open in one call. The old instruction to paste it existed because a sub-agent
-that cannot read the profile would silently grade on generic quality; that risk is now handled
-where it belongs, by making the read MANDATORY and having the agent return `PROFILE-MISSING` and
-stop rather than carry on without it. The workflow surfaces those ids in `failed`.
 
 The prose half of that prompt is **identical to the summarizer in the `overdub-sonnet-batch`
 skill's Step 2** — if you change that half, change it there too.

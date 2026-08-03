@@ -204,14 +204,14 @@ the dub? Run it before route A or B on any queue you have not read.
 summarize stage: after the scout pass one Sonnet
 sub-agent per video reads `sentences.json` and writes two files —
 `work/<id>/summary.md` (prose, shared with route B) and
-`work/<id>/scout.draft.json` (`{quality, one_liner, highlight, paragraph}`, plus
-an optional `author` — the judgement the report renders; `one_liner` says what
+`work/<id>/scout.draft.json` (`{quality, one_liner, highlight, paragraph}` — the
+judgement the report renders; `one_liner` says what
 the video IS, `highlight` says what is most interesting IN it, and they are kept
 apart because the scan table asks both questions at once). Its first action is to
 touch `work/<id>/scout.started`, an empty marker whose mtime is how long that
 agent's own run took. The sub-agent also reads `source.info.json`, so
 channel and upload date are available to it — a transcript alone carries neither,
-which would leave any staleness or author rule in the profile unenforceable.
+and without the upload date the currency axis has nothing to judge from.
 `scripts/build_scout.py` then assembles `work/<id>/scout.json`, owning everything
 deterministic (title, duration, sentence count, timings) and rejecting an
 unknown grade outright — the same split of labour `build_translation.py`
@@ -235,16 +235,7 @@ clocks. Nothing is ever self-reported by a model: the filesystem stamps it.
 deliberately not a "should you watch this" verdict — the first real queue came
 back 0 watch / 1 maybe / 9 skip under one, because a personal verdict is a
 decision taken for the reader and it collapses toward "no". A grade about the
-material can be argued with; a verdict about a person cannot. An optional `author`
-axis (`trusted`) is rendered only when the profile carries a trusted-author list.
-
-**The viewer profile is context, not the criterion.** `.claude/viewer-profile.md`
-— one person's stacks, what they already know, and what makes a video useless to
-them — steers what gets named as the interesting part and what counts as already
-known. It does not move the grade. The file is **gitignored** (personal); the
-prompt that builds it from your own chat history is committed at
-`.claude/skills/overdub-scout/references/viewer-profile-prompt.md`, and the skill
-refuses to scout until the profile exists.
+material can be argued with; a verdict about a person cannot.
 
 Then build the report — two lists over the same videos, **in queue order**:
 

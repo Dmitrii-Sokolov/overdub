@@ -486,9 +486,7 @@ field. What is new:
 - **Improving the GRADE's quality** (closed as a roadmap item 2026-07-20): grades read as reasonable
   against real material, which was the bar. Making them BETTER is undefined — no reference set, no
   disagreement log, no measurement, so any prompt change would be judged by vibe. Decide what a
-  wrong grade looks like first. Cheap diagnostic if a queue ever comes back wrong: the profile's
-  four "калибровочные примеры" are videos its owner will certainly watch — scout them, they should
-  come back `high`. Run it on suspicion, not as routine.
+  wrong grade looks like first.
 - Promoting `n_src` from advisory into `flags_actionable` — **blocked on measuring the
   source-anomaly detector's fire rate and precision on a real Sonnet batch first.** Zero measured
   precision today, and `entity_loss` on 11 of 12 videos is the standing precedent.

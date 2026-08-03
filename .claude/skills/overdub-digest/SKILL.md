@@ -10,9 +10,8 @@ not "dub it" (route B). Two reading moments, one artifact: after watching, to ch
 missed; before watching, to know what to expect.
 
 **download (audio only) → transcribe → stop**, then one Opus sub-agent per video writes the digest.
-No translation, no TTS, no MKV, no Ollama, no `source.mkv` on disk, and no viewer profile — a
-retelling is about the video, not about the reader, so there is nothing here to personalize and
-nothing to grade.
+No translation, no TTS, no MKV, no Ollama, no `source.mkv` on disk, and no grade — a retelling is
+about the video, not a verdict on it.
 
 Three steps, in order. Do not reorder them and do not skip the gates — each step's gate is what
 keeps a half-digested queue from reading as a finished one.

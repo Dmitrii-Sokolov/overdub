@@ -34,10 +34,6 @@ cfg-silero-v5/
 output/
 # personal-use voice audition page (repo policy: person-agnostic docs, PD samples only)
 bakeoff/narrators_personal.html
-# scout viewer profile: one person's skills, gaps and interests — personal by nature, and the
-# scout verdicts are only as good as it is. The PROMPT that builds it IS committed, at
-# .claude/skills/overdub-scout/references/viewer-profile-prompt.md
-.claude/viewer-profile*.md
 *.mp4
 *.mkv
 *.webm
