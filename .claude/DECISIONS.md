@@ -1,5 +1,87 @@
 # DECISIONS
 
+Why we chose what we chose. Newest first — **append at the top**. Entries are never rewritten to
+match today's code; when the code moves out from under one, it gets a `> SUPERSEDED` line and
+stays, because the rejected alternative is the part worth keeping.
+
+The bottom third of the file is a forward-ordered archive of the founding week — see the ARCHIVE
+divider. Look things up through this index, not by scrolling.
+
+## Index
+
+**Scout — route C**
+- `08-03` viewer profile removed; nothing personalizes the grade
+- `07-21` one queue page: scout report is the base, triage merged in
+- `07-21` scout preview: 160px, inlined once, no 2x source
+- `07-20` grades the MATERIAL, not the reader
+- `07-20` scout mode: audio-only fetch, no local summarizer, own flag
+
+**Digest — route D**
+- `07-30` digests in TWO passes (a composing agent cannot be given a length)
+- `07-30` separate route, separate page, grades nothing
+
+**Translate**
+- `07-28` route B step 2 fans out through a Workflow
+- `07-18` Sonnet semi-automatic is the PRIMARY route
+- `07-19` 4-way bake-off † · `07-18` Gemma replaces Qwen3 † · `07-15` translate stage BUILD †
+
+**TTS / synthesize**
+- `07-25` **Silero is the ONLY engine** — the entry that supersedes the whole F5 cluster
+- `07-25` ear-confirmed on finished videos (and what it does NOT close)
+- `07-25` `atempo_floor = 0.75`
+- `07-19` Silero v5 audition · `07-18` Silero v5 acknowledged
+- `07-15` day-1 bake-off: Chatterbox rejected
+- `07-19` F5 speed ledger † · `07-19` `f5_nfe` 48→16 † · `07-16` F5Engine BUILD † ·
+  `07-16` ESpeech bake-off † · `07-16` ESpeech narrator voice †
+
+**ASR / transcribe**
+- `07-24` `condition_on_previous` survives measurement
+- `07-24` transcribe-speed axis closed (fp16 large-v3 at its ceiling)
+- `07-22` batched inference is a DIFFERENT decode, not a faster one
+- `07-22` the decode config is a key, the verifier is not
+- `07-20` isolated-window re-ASR has a measured cost · `07-20` `--repair-asr` exits 0
+- `07-19` repairing a whisper hallucination · `07-19` collapsed alignment: guard the cause
+- `07-17` segmentation cluster · `07-17` whisper punctuation is the ROOT fix
+- `07-15` word-level sentence resegmentation
+
+**Verify / completeness**
+- `08-01` `entity_loss` DELETED, not demoted again
+- `07-27` `neg_loss` demoted to advisory
+- `07-26` a mis-heard PRODUCT NAME is not sentence damage
+- `07-19` `dup_adjacent` + `rate_implausible` · `07-19` completeness check, 4 detectors †
+- `07-19` triage signal: narrow `refusal`
+- `07-17` base similarity gate 0.8 → 0.9
+- `07-16` verify is ASR-BLIND, confirmed on real content
+
+**Mix / dead air**
+- `07-17` dead air CLOSED by ear (final) · `07-17` compression back to atempo, bed is the mode
+- `07-16` dead-air elimination BUILD † · `07-16` interim ear verdict
+
+**Pipeline, batch, artifacts**
+- `07-28` the tail DEGRADES instead of failing: a miss costs a track, not the artifact
+- `07-19` stage-major is the default batch order · `07-19` the VRAM rule is a budget
+- `07-17` batch queue + stop switch · `07-19` run report: two non-obvious `run.json` choices
+- `07-15` pipeline tail design panel
+
+**Measurement & method** — the entries most likely to save you a day
+- `07-25` retrospective: three times the arithmetic was right and the SHAPE was wrong
+- `07-22` measuring ASR inverts the sweep's premise; and the HOST DRIFTS
+- `07-22` overhead is SUBTRACTED per stage, never summed across kinds
+- `07-22` the roadmap is named, not numbered, because the numbers were lying
+- `07-21` an agent's report of what it DID is not evidence; the transcript is
+- `07-20` two kinds of timing, kept apart; the filesystem does the stamping
+- `07-19` measurement gotchas that will recur · `07-19` `no_repeat_ngram_size` REJECTED
+
+**Scope & founding constraints**
+- `07-25` what this repo produces is a TOOL; a video is never the deliverable
+- `07-15` founding decisions · `07-15` PoC reframe · `07-15` stack verification
+- `07-17` proper nouns: pronunciation chain
+- `07-16` local-only constraint amended †
+
+† carries a `SUPERSEDED` header — the code it describes is gone or changed. Read the header first.
+
+---
+
 ## 2026-08-03 — the viewer profile is REMOVED; scout grades the material and nothing else
 
 `.claude/viewer-profile.md` and everything that read it are gone: the S0 preflight in the
@@ -1312,6 +1394,10 @@ the 246 ch/s record as suspect until someone reconciles them.**
 
 ## 2026-07-19 — F5 speedup: the full lever ledger, including the ones that do NOT exist
 
+> **SUPERSEDED 2026-07-25** — the F5/ESpeech engine was removed (see "Silero becomes the ONLY
+> engine"); every lever below is unreachable. Kept for the levers proven NOT to exist, which is
+> the half that would otherwise be re-investigated from scratch.
+
 Roadmap item 1 named four levers. Two of them were already done by somebody else and one cannot
 run on this host — findings that cost a day to establish and would cost another day to re-derive.
 This table is the point of the entry: **half the value of this work is knowing what not to try.**
@@ -1427,6 +1513,9 @@ files is all-or-nothing inside that window). Ceiling is 13.2 s × (N−1) ≈ 2.
 
 ## 2026-07-19 — `f5_nfe` 48 → 16 ADOPTED; and two of four speed levers were already dead
 
+> **SUPERSEDED 2026-07-25** — F5 was removed; `f5_nfe` no longer exists in the config or the
+> code. Kept for the two levers measured dead, so they are not re-proposed.
+
 **Ear verdict (user, full 5.7-minute video `RyvXxApfHkk`, nfe=48 vs nfe=16 side by side):** the
 only defects heard — noise and odd intonation — are present in the nfe=48 render TOO, so they are
 properties of the engine and the input, not of the step count. Adopted.
@@ -1500,14 +1589,6 @@ Known costs, to be handled rather than dismissed: export moves after the mux sta
 per (stage, video), per-video status must survive across stages so one failure does not cascade,
 and the first finished MKV arrives near the END of the batch instead of after ~5 minutes — fine
 for overnight runs, worse for a two-video run, so it should be `--batch` only.
-
-## 2026-07-19 — Roadmap reprioritized: F5 speed first, any-language shelved
-
-User call. New roadmap order: F5 speedup → Sonnet live-run → `--repair-asr` → video summary.
-Deciding factor: faster synthesis accelerates every subsequent batch AND touching the synth path
-will surface fresh defects — feeding exactly the quality loop the next two items exercise.
-Any-language → backlog: the biggest effort on the list, it breaks the EN→RU hard constraint, and
-it is not needed while the EN queue lasts. Reconsider the shelving when the EN queue runs dry.
 
 ## 2026-07-19 — `no_repeat_ngram_size` REJECTED; and the guard threshold's separation is gone
 
@@ -1664,6 +1745,20 @@ from a real distribution instead of single samples.
 i.e. off). They attack the repetition loop that FEEDS the temperature fallback, so they are the
 only lever that could narrow the run-to-run spread rather than catch its tail. Not adopted
 blind: a too-small n mangles legitimate repetition silently, which is the forbidden class.
+
+---
+
+# ARCHIVE — the founding period (2026-07-15 → 07-19), in FORWARD order
+
+Everything ABOVE this line runs newest-first. Everything BELOW runs oldest-first: it was written
+as a build journal over the first five days and never re-sorted. The two halves overlap on
+2026-07-19, so an entry from that date can be in either.
+
+The split is documented rather than fixed because re-sorting 1100 lines of the repo's most
+load-bearing document buys ordering and risks content. The index at the top is the lookup path;
+physical order is not.
+
+**Append new entries at the TOP of the file, never here.**
 
 ## 2026-07-15 — Founding decisions
 
@@ -1868,6 +1963,12 @@ own `start`, NEVER butt-join clips, or it destroys sync and the pause budget.
 
 ## 2026-07-15 — Translate stage: design panel + review (BUILD)
 
+> **PARTLY SUPERSEDED 2026-07-25** — the in-process Ollama/qwen translate path is gone;
+> translation runs through Sonnet sub-agents (route B). Everything below about the endpoint,
+> `think: false` and the sliding context window is archive. The NORMALIZER half is LIVE:
+> `normalize_for_tts`, the same-function-on-both-sides verify symmetry, and the magnitude-bug
+> class it was built to make visible.
+
 Design settled by a 3-approach multi-agent panel (simplicity vs quality vs
 robustness biases) + lens judges + synthesis, then an adversarial review pass.
 
@@ -1987,6 +2088,9 @@ the file extension, so any caller passing a temp/suffixless path must pass `form
 
 ## 2026-07-16 — TTS bake-off #2: ESpeech (F5-TTS RU) wins by ear; voice cloning explored, EN-clone dropped
 
+> **SUPERSEDED 2026-07-25** — ESpeech/F5 was removed in favour of Silero v5_5_ru. Kept for the
+> EN-clone rejection, which is a result about the technique rather than about this engine.
+
 **Ear verdict (user, real pipeline output on 4szRHy_CT7s):** ESpeech-TTS-1_RL-V2 with the
 author's demo reference is the unambiguous leader over Silero v4 (current), Silero v5, Misha
 F5-RU v2 and every cloning variant. Objective metrics agree: mean sim 0.992, 0 verify flags,
@@ -2027,6 +2131,9 @@ merging ultra-short sentences upstream or reseed-retry when the F5Engine lands.
 
 ## 2026-07-16 — Narrator voice: ESpeech demo reference adopted; voice experiments closed
 
+> **SUPERSEDED 2026-07-25** — the ESpeech reference voice went with the engine. The narrator is
+> now Silero v5_5_ru, which takes no reference sample at all.
+
 **Decision (user, ear, full-video runs):** the fixed narrator is the ESpeech author's demo
 reference (HF Space `Den4ikAI/ESpeech-TTS`, `ref/example.mp3`) — best across every audition round:
 mean sim 0.992, 0 flags, mean atempo ×1.03 on the sample video. Rights unclarified (a real
@@ -2054,6 +2161,12 @@ Repo policy unchanged: PD samples only, person-agnostic docs.
 integration items, not nice-to-haves.
 
 ## 2026-07-16 — F5Engine integration: design panel + adversarial review (BUILD)
+
+> **SUPERSEDED 2026-07-25** — this engine was removed; nothing below describes code that exists,
+> and `.venv-f5tts` is not a live dependency. Kept for three mechanics that outlived it: the
+> fd-level `os.dup(1)`/`os.dup2(2,1)` before heavy imports, the single-writer manifest invariant
+> (a second writer means silent timing desync), and `synth_key`, which is still what gates all
+> wav reuse.
 
 Settled by a 3-bias design panel (minimalist / operability / quality) + 3 lens judges
 (contracts / windows-ops / scope), synthesis by the main session; then a 4-lens adversarial
@@ -2144,6 +2257,10 @@ with automatic duck-fallback is the likely production shape. dub_mix default sta
 
 ## 2026-07-16 — Dead-air elimination: design panel + review (BUILD)
 
+> **PARTLY SUPERSEDED 2026-07-25** — L1 slot-fill is written against F5's deterministic duration
+> canvas and died with the engine; Silero's slot behaviour is a separate open item (PLAN). L2
+> render units and L3 mix (duck/bed) are LIVE.
+
 Panel (minimalist/contracts/audio + 3 judges) + 4-lens adversarial review (20 findings,
 1 refuted, all fixed). Three composable layers against the measured 607-s underfill:
 
@@ -2190,34 +2307,21 @@ sensitivity at the same 0.8 threshold (re-tune queued — PLAN open question); s
 keep source timings while grouped audio renders continuously (drift bounded by the 12 s
 span cap; on the ear checklist); --repair granularity becomes the unit, not the sentence.
 
-## 2026-07-16 — Phase 3 closed by ear; roadmap reprioritized: dead air first
+## 2026-07-16 — Verify is ASR-blind, confirmed on real content (id101)
 
-**Ear verdict (user, 39-min F5 control run):** id26/id136/id200 fine, id150 almost fine
-("Minecraft, Valheim" good, "No Man's Sky" bad), id189 acceptable, id101 (ultra-short "Okay.")
-bad. Overall approved → default `tts_engine` flipped to "f5"; Silero stays the fallback.
+Trimmed 2026-08-03: the rest of this entry was an F5-era ear verdict and a roadmap reorder, both
+dead. One data point survives and it is load-bearing.
 
-**id101 is a load-bearing data point:** its round-trip sim was 1.0 yet the ear says bad — the
-ASR-blindness of verify is now CONFIRMED on real content, not just on synthetic babble. The
-ultra-short class needs structural fixes (merge/grouping), not retry luck; and the babble
-detector (duration heuristic) moves up in relevance.
-
-**Dead-air decomposition (measured, control run):** 665 s of silence in a 2333 s dub =
-607 s RU-underfill (the fast ESpeech narrator finishes each sentence well before the EN span
-ends; the dub buffer is digital zero there) + 68 s inherited inter-sentence gaps (median
-0.14 s) + 6 s spill. The problem is NOT bad timings — it is systematic underfill plus a
-zero-noise-floor track. Consequence: the fix is three composable layers (slot-fill native F5
-speed incl. stretch, sentence grouping gap≤0.4 s, overlay mix duck/bed), not timing surgery.
-
-**Priority reorder (user):** dead-air first (simpler, bigger payoff), proper nouns second
-(harder, smaller payoff — F5 already softened it: id189 0.95 vs Silero's 0.661), everything
-else after those two. Cloud-translate note: after F5, translate is ~45% of wall-clock
-(co-bottleneck with synth), not 80% — the founding premise of roadmap item "cloud translate"
-weakened but the item stays.
-
-**Translate quality nit (ear):** ids 134–137 voice «причина» three times in a row — the
-rolling context window keeps terminology consistent but has no repetition-avoidance. INBOX.
+**id101 ("Okay.", ultra-short) scored a round-trip similarity of 1.0 and the ear said bad.** The
+ASR-blindness of verify is therefore CONFIRMED on real content, not only on synthetic babble: a
+round trip can agree with itself perfectly over audio a listener rejects. The ultra-short class
+needs structural fixes (merge/grouping), not retry luck.
 
 ## 2026-07-16 — Local-only constraint amended: optional cloud-translate mode approved
+
+> **SUPERSEDED 2026-07-18** — cloud translation stopped being an opt-in exception two days later:
+> the Sonnet route became PRIMARY. Kept because it records an amendment to a FOUNDING constraint,
+> which is the one class of decision that must never vanish from this file.
 
 **User decision:** an explicitly opt-in cloud translation mode (Anthropic API, Sonnet-class) is
 a permitted exception to the founding local-only constraint. Rationale: translate is 80% of
@@ -2262,28 +2366,18 @@ pipeline defects. The dead-air problem group is CLOSED. Accepted residuals, name
 in-span silence on the speech-only control (bed ≈ replace there — no stem to carry) and
 delivery-correlated artifacts. Roadmap top is now proper nouns (PLAN item 1).
 
-## 2026-07-17 — Priorities set; base sim gate → 0.9; UTMOS and four items demoted
+## 2026-07-17 — Base similarity gate raised 0.8 → 0.9
 
-**Near-term roadmap (user):** proper nouns → batch queue → stop switch → babble duration
-heuristic. New batch-queue requirement: output files named by original video title + video id
-(yt-dlp metadata).
+Trimmed 2026-08-03: this entry also carried a near-term roadmap, a UTMOS deferral and a PLAN
+restructuring. All three are scheduling, long since consumed. The threshold decision is live —
+`similarity_threshold` is still read in four files.
 
-**Base similarity_threshold 0.8 → 0.9 (user).** Units are long joined strings that dilute
+**Base `similarity_threshold` 0.8 → 0.9 (user).** Units are long joined strings that dilute
 local defects — the 17:02 word-drop scored 0.836 and passed the per-sentence-calibrated 0.8;
-both current runs sit comfortably above 0.9 (unit min 0.926 / 0.9415). Further tuning
-deferred entirely until production flags misbehave. Known side effect, accepted: Silero
-fallback runs will flag more (its per-sentence sample min was 0.875) — flags are warnings,
-the pipeline never blocks.
-
-**UTMOS (4b) judged high-cost/low-effect for now:** the duration heuristic covers the cheap
-majority of the babble class; MOS adds a model integration plus calibration data that only
-batch runs will produce. Revisit only if the heuristic provably misses defects.
-
-**Demoted to PLAN Deferred (not near-term, user):** cloud translate, gender-matched narrator,
-multi-speaker violation detector, sim-threshold re-tune analysis, Arc B390 path (Phase 4
-section removed from PLAN; Silero-on-CPU remains the safe TTS there, F5-on-XPU is an
-unproven spike). Phase 2 section dissolved into roadmap items 2-4 — PLAN now holds one
-roadmap, one backlog, one deferred list.
+both runs of the day sat comfortably above 0.9 (unit min 0.926 / 0.9415). Further tuning
+deferred entirely until production flags misbehave. Known side effect, accepted: more flags on
+the lower-similarity engine path (Silero's per-sentence sample min was 0.875 — it was the
+fallback then and is the only engine now) — flags are warnings, the pipeline never blocks.
 
 ## 2026-07-17 — Batch queue + stop switch (BUILD)
 
@@ -2438,6 +2532,9 @@ polishing the symptom.
 
 ## 2026-07-18 — Gemma-3-12B replaces Qwen3-14B as the translation model
 
+> **SUPERSEDED 2026-07-25** — neither model is in the pipeline; the local-LLM translate path was
+> removed entirely. Kept for the comparison method, not for the winner.
+
 **Decision: Gemma-3-12B is the default translator; Qwen3-14B is removed entirely — not kept even
 as an option.** The user's standing observation ("Qwen местами сыпется") was confirmed and fixed.
 
@@ -2501,6 +2598,9 @@ the highest-value verify upgrade (PLAN roadmap 1).
 
 ## 2026-07-19 — 4-way translate bake-off on x7DfiXqSEdM: Gemma prompt-bundle dropped, Sonnet isolation dropped
 
+> **PARTLY SUPERSEDED 2026-07-25** — the Gemma arms went with the local translate path. The
+> Sonnet findings still describe the live route.
+
 Single-video A/B/C/D on one frozen `sentences.json` (x7DfiXqSEdM, 427 sentences, ~39 min,
 first-person vlog monologue on social gaming), same input, four translators:
 1. **gemma-base** — current SYSTEM prompt (shipping local default).
@@ -2551,6 +2651,9 @@ falsified it). The verify-side completeness check (PLAN roadmap 1) remains the r
 Caveat: n=1 video, lifestyle content — indicative, not a multi-content-type A/B.
 
 ## 2026-07-19 — Completeness check (verify-side, deterministic A+B) — shipped, all 4 detectors kept
+
+> **PARTLY SUPERSEDED** — the title no longer holds. `entity_loss` was DELETED 2026-08-01 and
+> `neg_loss` demoted to advisory 2026-07-27; `dup_adjacent` and `rate_implausible` are live.
 
 After rejecting the LLM-judge / embedding semantic check as PoC over-engineering (the analysis
 earlier this day), built the cheap deterministic A+B insurance via an ultracode workflow (8 agents:
