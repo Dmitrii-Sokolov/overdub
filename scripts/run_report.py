@@ -1,4 +1,4 @@
-"""Human-readable run-report digest (route A + route B morning triage).
+"""Human-readable run-report digest (morning triage for any route that ends in a dub).
 
 Surfaces the per-run rollups (`work/<id>/run.json`) as a deterministic ENGLISH digest: one
 block per video (header + timings + flags + offenders) plus a batch table and totals line. This

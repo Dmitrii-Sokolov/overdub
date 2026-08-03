@@ -42,8 +42,10 @@ MAX_CHARS = 240         # char cap before clause-split
 HALLUC_RUN = 4          # >=N identical consecutive tokens => whisper hallucination
 MIN_WORD_DUR = 0.02     # floor for a synthesized pseudo-word duration
 MIN_SENT_CHARS = 15     # EN chars below which a sentence is "ultra-short" and merged into a
-                        # neighbor: a TTS engine sizing its canvas by text length garbles tiny
-                        # texts garble/echo the reference tail (the id43 "Решениям." class)
+                        # neighbor. Calibrated on the retired F5 engine, which sized its duration
+                        # canvas by text length and made tiny texts echo the reference tail (the
+                        # id43 "Решениям." class). NOT re-validated on Silero — do not read this
+                        # threshold as measured on the shipped engine.
 MERGE_GAP_MAX = 0.6     # never merge across a pause longer than this (seconds) — the gap
                         # becomes continuous synthesized speech, i.e. deliberate sync drift
 MERGE_TOTAL_GAP_MAX = 1.5   # cap on the CUMULATIVE silence a chain of merges may absorb

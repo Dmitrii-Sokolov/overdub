@@ -417,8 +417,8 @@ def test_the_pronounce_audit_reaches_the_rollup_and_the_digest() -> None:
         assert run["flags_actionable"] == 0 and run["needs_triage"] is False   # advisory
         assert "- pronounce: 60 invented readings (53 by rule, 7 letter-spelled)" in \
             queueview.render_run_report(run, [])
-    # No audit file → None, never 0: route A predates the artifact, and a torn workdir must not
-    # report a measured zero. The digest then prints no line at all.
+    # No audit file → None, never 0: a workdir built before the artifact existed, and a torn
+    # workdir, must not report a measured zero. The digest then prints no line at all.
     with tempfile.TemporaryDirectory() as d:
         work = _mkwork(d, translation=[{"id": 0, "status": "ok"}])
         run = runreport.build_run_report(work, _CFG)
@@ -1119,7 +1119,7 @@ def test_batch_row_golden_cells() -> None:
 
 
 def test_batch_row_floor_na_src_dash_and_blank_wall() -> None:
-    # A partial / route-A run: no words.json (floor n/a), src not scanned ("-", which must
+    # A partial / unscanned run: no words.json (floor n/a), src not scanned ("-", which must
     # never read as a clean 0), no timings (wall_s prints empty, rtf prints None — today's
     # exact strings, pinned).
     row = queueview.batch_row({"video_id": "v", "asr": {"floor_ratio": None},

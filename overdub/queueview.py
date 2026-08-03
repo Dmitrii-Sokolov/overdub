@@ -270,8 +270,9 @@ def batch_row(run) -> dict:
         # divergence the merge exists to kill).
         ("cp", str(cp.get("n_actionable", cp.get("n_flagged", 0)))),
         ("adv", str(cp.get("n_advisory", 0))),
-        # src: advisory source-anomaly count. "-" means NOT SCANNED (route A, or a pre-schema
-        # run.json) -- never conflate that with a scanned-and-clean "0". --rebuild backfills.
+        # src: advisory source-anomaly count. "-" means NOT SCANNED (a translation written
+        # without the source-anomaly pass, or a pre-schema run.json) -- never conflate that with
+        # a scanned-and-clean "0". --rebuild backfills.
         ("src", str(src.get("n_flagged", 0)) if src.get("scanned") else "-"),
         ("spd_max", str(sp.get("max"))),
         ("n_over", str(sp.get("n_over_1_8", 0))),
@@ -423,9 +424,9 @@ def render_run_report(run, offenders, summary=None):
         f" · speed med {sp.get('median')}/p95 {sp.get('p95')}/max {sp.get('max')}"
         f" (n>1.8 {sp.get('n_over_1_8', 0)})")
 
-    # The pronunciation audit, printed only when it has numbers (a pre-schema run.json and route A
-    # before the artifact existed both carry None — see the pronounce block in runreport). It is
-    # ADVISORY and deliberately not in flags_actionable: every one of these is a token the
+    # The pronunciation audit, printed only when it has numbers (a pre-schema run.json and any
+    # workdir built before the artifact existed both carry None — see the pronounce block in
+    # runreport). It is ADVISORY and deliberately not in flags_actionable: every one is a token the
     # pipeline had to invent a Russian reading for, most of them fine. The COUNT is the point —
     # 1587 invented readings in a 24-video batch reached no surface at all before 2026-07-25, so
     # nothing could tell a normal video (28 events) from the one that needs dictionary work (203).
@@ -463,7 +464,8 @@ def render_run_report(run, offenders, summary=None):
     # A run.json predating this schema has no "source" key at all → nothing prints, exactly like
     # every other block here (hence the `"source" in run` guard on the not-scanned line: absent
     # is UNKNOWN, not unscanned); --rebuild backfills it. A run.json that HAS the block always
-    # gets one of the two lines, so route A reads "not scanned" rather than silently clean.
+    # gets one of the two lines, so an unscanned translation reads "not scanned" rather than
+    # silently clean.
     s = run.get("source", {}) or {}
     n_sent = (run.get("translate", {}) or {}).get("n_sentences")
     if s.get("n_flagged"):
@@ -474,7 +476,7 @@ def render_run_report(run, offenders, summary=None):
             lines.append(f"  - {it.get('id')} [{it.get('kind')}] {note}")
             lines.append(f"    EN: {en}")
     elif "source" in run and isinstance(n_sent, int) and n_sent and not s.get("scanned"):
-        lines.append("- source anomalies: not scanned (route A, or the src pass did not run)")
+        lines.append("- source anomalies: not scanned (the src pass did not run)")
     if summary:
         lines.append(render_summary_block(summary))
     if offenders:

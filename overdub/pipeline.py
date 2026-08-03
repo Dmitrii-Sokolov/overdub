@@ -49,8 +49,8 @@ class Session:
 
     LIFETIME IS EXACTLY ONE STAGE SWEEP. Peak VRAM stays the MAX over models instead of
     their sum, which is what lets a heavy stage have the whole budget with no parking or
-    eviction policy. For a single video a "sweep" is one video, i.e.
-    exactly the per-stage teardown the stages used to do in their own finally blocks.
+    eviction policy. For a single video a "sweep" is one video, i.e. exactly the per-stage
+    teardown the stages used to do in their own finally blocks.
     """
 
     def __init__(self) -> None:

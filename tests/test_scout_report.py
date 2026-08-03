@@ -1209,11 +1209,11 @@ def _dub_row_cells(page: str, n: int) -> list[str]:
 
 
 def test_dub_table_src_dash_when_unscanned() -> None:
-    # "-" means NOT SCANNED (route A / pre-schema); "0" means scanned AND clean. Conflating the
-    # two would report an unscanned video as source-checked when nothing ever read it.
+    # "-" means NOT SCANNED (no anomaly pass / pre-schema); "0" means scanned AND clean.
+    # Conflating the two would report an unscanned video as source-checked when nothing read it.
     no_src = [{"id": i, "status": "ok", "src_en": f"EN {i}", "text_ru": f"РУ {i}",
                "text_tts": f"т {i}", "start": float(i), "end": float(i) + 1.0}
-              for i in range(2)]                        # route A: no src field at all
+              for i in range(2)]                        # unscanned: no src field at all
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
         _dubbed(root, "vidNOSRC000", translation=no_src)

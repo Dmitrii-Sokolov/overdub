@@ -432,8 +432,8 @@ def _build_run_report(work, cfg):
     #
     # COUNTS, not the tokens: the audit file is already on disk beside run.json and can be long
     # (12 KB on one video here). `n_invented` is the pair's sum, so a consumer has one number to
-    # trend without deciding what "letters" means. Absent file → all None, never 0: route A before
-    # this artifact existed, and a torn workdir, must not report a measured zero.
+    # trend without deciding what "letters" means. Absent file → all None, never 0: a workdir
+    # built before this artifact existed, and a torn workdir, must not report a measured zero.
     pa = _load_json(work.pronounce_audit)
     pa_tokens = pa.get("tokens") if isinstance(pa, dict) else None
     if isinstance(pa_tokens, dict):

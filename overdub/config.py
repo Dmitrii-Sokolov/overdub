@@ -222,10 +222,11 @@ class Config:
 
     # completeness — cheap deterministic loss check (stages/verify.py + completeness.py),
     # non-blocking triage only. len(text_ru)/len(src_en) below this AND len(src_en) >= 30 chars
-    # -> length_short. 0.45 sits under the natural RU-compression floor (~0.46): validated
-    # 0/427 false positives on both 427-sentence samples; 0.50 would false-
-    # flag a legit condensed sentence. Weak signal, redundant with the precise num/neg/entity
-    # detectors — kept conservative to prefer a miss over a false alarm.
+    # -> length_short. 0.45 sits under the natural RU-compression floor (~0.46): validated 0/427
+    # false positives on two 427-sentence samples of different translation quality (the retired
+    # local translator's raw output and a near-clean cloud pass); 0.50 would false-flag a legit
+    # condensed sentence. Weak signal, redundant with the precise num/neg/entity detectors —
+    # kept conservative to prefer a miss over a false alarm.
     completeness_len_ratio_min: float = 0.45
 
     def compute_type_for(self, role: str) -> str:

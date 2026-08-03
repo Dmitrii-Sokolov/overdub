@@ -9,11 +9,10 @@ the translate-seam contract never rides on an LLM's discipline:
                            the verify stage applies, so the ASR round-trip is exact by
                            construction (never let the LLM spell text_tts, DECISIONS)
   - status / flag          overdub.stages.translate._is_bad(...) gate -- the same reasons the
-                           gate flags (empty / no_cyrillic / english_echo /
-                           runaway / refusal)
+                           gate flags (empty / no_cyrillic / english_echo / runaway / refusal)
   - id-contiguity          enforced (exit, never a silent drop) exactly like TranslateStage.run
   - pronounce_audit.json   pronounce.audit_summary(...) -- the audit-only operator-triage
-                           artifact the local route writes; without it route B silently loses
+                           artifact the pipeline expects; without it route B silently loses
                            the only detector for the out-of-dict Latin-name silent-loss class
                            (DECISIONS 2026-07-17 item F)
 
@@ -25,12 +24,12 @@ semantic garble that carries no timing anomaly and no repeated span. This script
 onto translation.json, clamps an unknown kind instead of dropping it, and COUNTS how many
 records carried one at all -- so a skipped anomaly pass reports as "not scanned" rather than as
 a clean-looking empty report. Every src defect is a [warn], NEVER an exit: a report must never
-gate a dub, and a hard failure here would leave translation.json unwritten, sending that video
-into the resume with nothing to dub from.
+gate a dub, and a hard failure here would leave translation.json unwritten -- which stops the
+resume dead at TranslateStage.run, i.e. a report deciding whether a video gets dubbed at all.
 
 Reusing the pipeline's own (partly private) helpers is deliberate: route B replaces only the
-LLM call, so every downstream invariant stays byte-identical to the local route. If _is_bad or
-normalize_for_tts change, this script inherits the change for free.
+LLM call, so every downstream invariant stays byte-identical to what the stage itself enforces.
+If _is_bad or normalize_for_tts change, this script inherits the change for free.
 
 Run with the .venv-asr python from the repo root:
 
