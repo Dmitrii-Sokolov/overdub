@@ -365,8 +365,7 @@ def make_window_asr(ctx: Context):
     def window_asr(t0: float, t1: float, condition_on_previous: bool) -> list[W]:
         if state["span"] != (t0, t1):
             # input-side -ss so the clip's t=0 IS t0. Output-side -t (DURATION), not -to: the
-            # meaning of -to after an input-side -ss has varied between ffmpeg versions, so the
-            # in-repo precedent (scripts/lv_pick_refs.py) is deliberately NOT followed here.
+            # meaning of -to after an input-side -ss has varied between ffmpeg versions.
             # No -ar/-ac/-c:a: source.wav is already 16 kHz mono pcm_s16le and the WAV muxer
             # preserves rate, channels and format.
             subprocess.run(["ffmpeg", "-y", "-v", "error", "-ss", f"{t0:.3f}",

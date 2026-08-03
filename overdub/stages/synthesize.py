@@ -10,7 +10,9 @@ grain everywhere downstream (verify/assemble fan unit facts out per sentence id)
 Slot-fill: an engine advertising supports_target would receive target_sec = the unit's SOURCE
 SPAN and max_sec = its slot [start, next_unit.start) and pick its own native speed. No shipped
 engine does, so the whole fit is done at assembly by atempo; the hook stays because the
-grouping and manifest already carry the per-unit speed field.
+grouping and manifest already carry the per-unit speed field. The hook is NOT wired to the
+engine: the flag below is a local constant, never `engine.supports_target`, so a new engine
+that declares the attribute True changes nothing until this is read off the engine.
 
 Reseed-retry (seed-capable engines): in-stage whisper-small round-trip of the unit wav vs
 the joined text_tts (asr.roundtrip_similarity — the SAME function verify uses); below

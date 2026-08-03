@@ -157,8 +157,10 @@ class Config:
                                      # the three arms are inside the run-to-run noise (two
                                      # identical baseline verify passes read 84.3 and 45.8).
     group_span_max: float = 20.0     # unit source-span cap (s) and joined-text cap. Both were
-    group_chars_max: int = 600       # engine-shaped constants (keep a unit inside the range the
-                                     # engine renders in one chunk) and they —
+    group_chars_max: int = 600       # constants shaped for the RETIRED F5 engine ("~10 s ref + gen
+                                     # inside F5's trained ≤30 s regime"), re-cut by ear to
+                                     # 1.2/20/600 and never re-derived for Silero (DECISIONS
+                                     # 2026-07-25, "Silero becomes the ONLY engine"). They —
                                      # not group_gap_max — are what actually binds grouping:
                                      # measured over 37 videos / 5401 sentences, raising gap
                                      # 0.4→1.2 alone moves 1.40→1.57 sentences per unit because
