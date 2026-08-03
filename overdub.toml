@@ -60,7 +60,7 @@ tts_sample_rate = 48000     # silero-only
 # tts_max_retries = 3       # reseed attempts after the first try (seed-capable engines only)
 
 # --- dead-air / mix ---
-# group_gap_max = 0.4        # join adjacent sentences into one render unit (s); 0.0 disables
+# group_gap_max = 1.2        # join adjacent sentences into one render unit (s); 0.0 disables
 # dub_mix = "bed"            # "replace" | "duck" | "bed" — production default: bed (no-vocals
                               # stem at original level under the dub; ear 2026-07-17)
 # demucs_python = ".venv-demucs/Scripts/python.exe"
