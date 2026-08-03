@@ -20,8 +20,11 @@ DECISIONS = ROOT / ".claude" / "DECISIONS.md"
 LINES = DECISIONS.read_text(encoding="utf-8").splitlines()
 
 HEADING = re.compile(r"^## (\d{4}-\d{2}-\d{2})")
-TOMBSTONE = re.compile(r"^> \*\*(?:PARTLY )?SUPERSEDED")
-DATED_TOMBSTONE = re.compile(r"^> \*\*(?:PARTLY )?SUPERSEDED \d{4}-\d{2}-\d{2}\*\*")
+# The bold markers are optional on purpose: the header at the top of DECISIONS.md documents the
+# tombstone as `> SUPERSEDED <date>`, so a guard that only matched `> **SUPERSEDED` would pass
+# silently on the exact form the file tells the author to write.
+TOMBSTONE = re.compile(r"^> (?:\*\*)?(?:PARTLY )?SUPERSEDED")
+DATED_TOMBSTONE = re.compile(r"^> (?:\*\*)?(?:PARTLY )?SUPERSEDED \d{4}-\d{2}-\d{2}")
 
 
 def _index_end() -> int:
@@ -67,12 +70,16 @@ def test_the_index_precedes_every_entry() -> None:
     assert _headings()[0][0] > _index_end()
 
 
-def test_entries_above_the_archive_run_newest_first() -> None:
+# Both order guards compare DATES, so they bind only where adjacent entries differ in date —
+# most adjacent pairs share one and are unconstrained. That is the whole guarantee on offer: the
+# file has no within-day ordering to check against, so these catch a block moved across a date
+# boundary and nothing finer.
+def test_entry_dates_above_the_archive_never_increase() -> None:
     dates = [date for _, date in _headings(hi=_archive_start())]
     assert dates == sorted(dates, reverse=True), "the main block is not newest-first"
 
 
-def test_the_archive_runs_forward() -> None:
+def test_entry_dates_in_the_archive_never_decrease() -> None:
     dates = [date for _, date in _headings(lo=_archive_start())]
     assert dates == sorted(dates), "the founding archive is not oldest-first"
 
