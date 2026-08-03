@@ -87,7 +87,7 @@ _MISSING = {"label": "не отсканировано", "cls": "v-none",
 # page — the known gap this merge closes.
 _PENDING = {"label": "в работе", "cls": "v-none",
             "why": "скачано полностью, перевод ещё не начат — видео продвинуто в дубляж; "
-                   "прогони пайплайн дальше (маршрут A/B)"}
+                   "прогони пайплайн дальше (маршрут B)"}
 # kind "run" whose rollup degraded to None (torn artifacts) — rendered as a state, never as a
 # fabricated row of zeros.
 _NO_ROLLUP = {"label": "без свода", "cls": "v-none",
