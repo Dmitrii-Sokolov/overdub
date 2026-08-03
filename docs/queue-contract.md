@@ -13,9 +13,14 @@ real run lost videos without it.
 
 The route skills own what differs: the pipeline command, the artifacts, the gates, the report.
 
-**Section numbers are a join key.** The four skills, README and CLAUDE.md cite this file by number,
-and renumbering breaks none of those references visibly — it just points them somewhere else.
-Numbering is therefore APPEND-ONLY: a new section goes at the end. Renaming a heading is free.
+**Section numbers are a join key.** The four skills, README and `.claude/PLAN.md` cite this file by
+number, and renumbering breaks none of those references visibly — it just points them somewhere
+else. Numbering is therefore APPEND-ONLY: a new section goes at the end. Renaming a heading is free.
+
+Do not trust that list to be current — it was wrong in both directions on 2026-08-03, naming
+CLAUDE.md (which cites this file by PATH, never by §) while missing PLAN.md. Before renumbering,
+re-derive it: `git grep -n '§[0-9]'` over the repo, then check each hit resolves to the heading it
+means.
 
 ---
 
@@ -191,7 +196,8 @@ diligence was real; the tie-break was the only thing missing.
 **Hand fan-out is not a slower alternative, it is the failure mode the workflows exist to remove.**
 Two independent measurements, from opposite ends:
 
-Route C, three runs over one 6-video queue — six `Agent` calls in six separate messages every time:
+Route C, three runs over one 6-video queue on 2026-07-21 — six `Agent` calls in six separate
+messages every time:
 
 ```
 run 1  prompt 21,507 chars   spawn gap 103 s   spawn total 514 s   wave 842 s

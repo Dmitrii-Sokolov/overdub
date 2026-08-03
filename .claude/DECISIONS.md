@@ -3,10 +3,13 @@
 Why we chose what we chose. Newest first — **append directly below the `---` that closes the Index,
 never above it.** Entries are not rewritten to match today's code: when the code moves out from
 under one it gets a `> SUPERSEDED <date>` line and stays, because the rejected alternative is the
-part worth keeping. Content is cut in exactly two cases — pure scheduling that already lives in
-`PLAN.md`, and a generalised lesson promoted to `~/.claude/knowledge/`, where the entry keeps what
-it decided HERE and points at the file instead of restating it. Either cut is stamped in place
-(`Trimmed <date>: …`) rather than made silently.
+part worth keeping. Content is cut in exactly three cases — pure scheduling that already lives in
+`PLAN.md`; a generalised lesson promoted to `~/.claude/knowledge/`, where the entry keeps what it
+decided HERE and points at the file instead of restating it; and prose that decides nothing that
+still applies, i.e. a verdict on a retired component or a roadmap ordering both overtaken. The
+third is the narrow one: a REJECTED alternative is never dead — it is the part worth keeping — so
+only the verdict-on-what-shipped half goes. Every cut is stamped in place (`Trimmed <date>: …`)
+rather than made silently.
 
 **An appended entry is two edits: the entry and its line in the Index.** The Index is
 hand-maintained and reads as complete whether or not it is — `tests/test_decisions_index.py`
@@ -630,7 +633,8 @@ path comes back out of git history if the switch fails. This reverses the 2026-0
 that made F5 production and Silero fallback.
 
 **Vocoder hiss → `dub_lowpass_hz = 11000`, applied once to the finished track.** The complaint was
-"шипение". Measured on `bakeoff/silero_v5_eugene/id147_long.wav`: the sibilant band sits 19.9 dB
+"шипение". Measured on `bakeoff/silero_v5_eugene/id147_long.wav` (the bake-off tree, deleted
+2026-08-03 — cf75c07 has it): the sibilant band sits 19.9 dB
 under the body, *quieter* relative to F5's 15.4 dB — so it was never sibilance, and `deesser` did
 nothing. The spectrogram shows the real thing: a broadband noise carpet across 8-20 kHz, present on
 vowels, without harmonic structure, and *absent in the pauses* — i.e. vocoder noise that tracks the
@@ -1136,10 +1140,16 @@ verify control flow against an artifact it did not author; do not try to fix a f
 the instruction harder. That file loads in every session and is not overdub-specific. Do not
 restate it here.
 
+> **PARTLY SUPERSEDED 2026-07-21** — the mechanism fix below lasted hours. Constraining the wording
+> ("~6 `tool_use` blocks in ONE message") is the very thing this entry's own evidence says does not
+> work, and it was replaced the same day by a deterministic `Workflow` fan-out (aae24b1,
+> `.claude/workflows/scout-summarize.js`), which does not depend on a model choosing to emit N
+> blocks. The markers, the disk-side check and the roadmap inversion below all still hold.
+
 **What it changed in this project.** Per-video markers stay and no timing is ever self-reported by
-a model — the marker design is the only reason any of this was visible from outside the run. S2 now
-constrains the MECHANISM (~6 `tool_use` blocks in ONE message) rather than the wave size, and
-prescribes the disk-side marker check. And the roadmap inverted: with the fan-out fixed,
+a model — the marker design is the only reason any of this was visible from outside the run. S2 was
+rewritten to constrain the MECHANISM (~6 `tool_use` blocks in ONE message) rather than the wave
+size, and to prescribe the disk-side marker check. And the roadmap inverted: with the fan-out fixed,
 summarization stops being the scout bottleneck — on this queue 842 s → ~254 s against 723 s of
 transcribe. The next wall is the GPU, not the agents.
 

@@ -134,7 +134,8 @@ under-fills, translate longer") did not survive reading the corpus: on 3 of the 
 19/31, 21/37 units under atempo), on 2 it under-fills (0.791, 0.816), and 0.73 was one video's
 SOURCE pace, not an engine property. What is missing is a duration model in either direction. The
 engine side is a usable constant because Silero's rate is stable (CV 5.5%), but it is **per VOICE,
-not per engine**: eugene 18.8-19.5 ru ch/s against baya 14.4, aidar 14.9, kseniya 15.5, xenia 17.8,
+not per engine**: eugene runs ~1.4× baya, and the shipped per-voice rates live in
+`overdub/tts/__init__.py` `_VOICE_RATE` (with their provenance) rather than being restated here —
 so the knob keys on `tts_voice`.
 
 **Two thirds of this item already shipped** — ru.srt follows the dub and underfill is measurable
@@ -164,7 +165,7 @@ while missing the one that actually reaches the translator:
 
 | where | what it is |
 |---|---|
-| `translate.py` `SYSTEM` | the rules `build_translation.py` imports — the stated source of truth |
+| `translate.py` `SYSTEM` | the stated source of truth — and NOT imported by anything: `build_translation.py` imports `_is_bad` from this module, never `SYSTEM`, so nothing enforces the other four against it |
 | `skills/overdub-sonnet-batch/references/translate-contract.md` rule 2 | what the route-B sub-agent reads off disk |
 | **`.claude/workflows/translate-batch.js`** | the route-B prompt itself — **the copy that decides the output**, and the one the old inventory missed |
 | `README.md` (pipeline description + route B) | prose |
@@ -175,9 +176,11 @@ before 2026-07-28) — which helps: the script can carry a rule change without a
 What it cannot carry is the target itself, since that is per-sentence (slot ÷ voice rate) and has to
 travel with the data. So: compute it in a shared helper that `translate.py` and
 `scripts/build_translation.py` both call, and enforce/report it in the latter or route-B compliance
-is unverifiable; (iv) **the
-route-A resume key ignores timings** (skip is `done[sid]['src_en'] == s['text']`), so after
-`--repair-asr` a translation sized for a slot that no longer exists is silently kept.
+is unverifiable; (iv) ~~the resume key ignores timings, so after `--repair-asr` a translation sized
+for a slot that no longer exists is silently kept~~ **GONE with route A**: the resume key is now
+`translation.json` existing (`stages/translate.py` `done()`), and `invalidate_downstream` deletes
+that file plus `translation.jsonl` and `translation.draft.json` on every repair — a repaired
+transcript has no translation left to be stale against.
 
 ### Input prosody — punctuation and SSML *(promoted from Backlog 2026-07-27)*
 
@@ -190,9 +193,10 @@ pauses and a contour reset.
 **`<break>` is NOT part of this item — it was built, measured and REJECTED by ear (DECISIONS
 2026-07-25), and it stays in the code at `silero_ssml_breaks = False`.** Recorded here because the
 mechanism is still wired and reads as available: it was the right mechanism on the wrong problem,
-the holes being made by ASSEMBLY rather than by swallowed pauses. The forensics that killed it —
-and the one condition that would make it worth revisiting — are the comment at that config key; do
-not re-derive them here. The unpulled half is `<p>`/`<s>`/`<prosody>` and the
+the holes being made by ASSEMBLY rather than by swallowed pauses. The forensics that killed it are
+the comment at that config key; do not re-derive them here. It comes back onto this list only if
+units with genuinely long INTERNAL pauses start appearing — the condition it was the right
+mechanism for and never met. The unpulled half is `<p>`/`<s>`/`<prosody>` and the
 punctuation-quality lever, which is the bigger of the two per the guide and is not a markup
 question at all — it is what the translator writes.
 
@@ -414,10 +418,20 @@ the XPU question never comes up for TTS). Re-time first ("Re-time the batch on S
 The input/SSML pair moved into Open 2026-07-27 ("Input prosody"); what stays here: per-chunk
 silence trimming + crossfade at joins (our "seams"); a versioned stress dictionary (`terms.tsv`)
 for domain terms — the class `pronounce_audit.json` surfaces and nothing consumes. The guide was
-cut down 2026-08-03, so **nothing shipped is left in it**: what remains is either Open (punctuation
-and SSML), this Backlog entry, or the listening checklist. Anything the code already does
-(including the `sample_rate` 48000 recommendation we already follow) was deleted rather than left
-to read as an open item.
+cut down 2026-08-03, so **nothing shipped is left in it as an OPEN item**: what remains is either
+Open (punctuation and SSML), this Backlog entry, or the listening checklist. Anything the code
+already does (including the `sample_rate` 48000 recommendation we already follow) was deleted
+rather than left to read as an open item. The one exception is deliberate: the guide's opening
+divergence block records where our ear ranking overrules its voice advice, which is shipped state
+and belongs there precisely so a reader of the guide meets it before the advice.
+
+**Re-validate `MIN_SENT_CHARS` on Silero.** The ultra-short-sentence merge threshold
+(`stages/transcribe.py`, 15 EN chars) was calibrated on the retired F5 engine, which sized its
+duration canvas by text length and made tiny texts echo the reference tail. Silero has no such
+failure mode, so the threshold is currently an unexamined inheritance: it may be too high (merging
+sentences that needed no merging, and absorbing their pauses) or harmless. Cheap to answer — synth a
+handful of sub-15-char units alone versus merged and listen. Do it before any further merge tuning,
+because every other merge knob is calibrated against this one.
 
 **Narrator's grammatical gender → the translate prompt** (user 2026-07-25). Russian marks gender on
 1st-person PAST verbs, English does not, and the transcript carries no name — so every first-person
@@ -507,8 +521,9 @@ field. What is new:
   `cfg.source_lang`, the transcribe call, both routes' prompts, the `en.srt` label, and the
   Latin-punctuation-shaped resegmentation `TERMINATORS`/`_ABBREV`)
 - tail: translation completeness check (EN↔RU content-word ratio / back-translation on outliers —
-  evidence: Gemma dropped 3 of 4 adverbs in `DmgujoZ1mmk` id1, unflagged, i.e. measured on the
-  retired local translator: the failure CLASS carries to any route, the rate does not); babble
+  evidence: Gemma dropped 1 of 3 adverbs in `DmgujoZ1mmk` id1, unflagged — DECISIONS 2026-07-18,
+  i.e. measured on the retired local translator: the failure CLASS carries to any route, the rate
+  does not); babble
   duration heuristic
   (expected-vs-actual unit duration → flag garbled synth the ASR round-trip misses) — **add it
   BEFORE any narrator-voice or engine change**; whisper anti-repetition decoder params (REJECTED

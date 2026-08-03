@@ -8,8 +8,8 @@ description: "Produce a readable ENGLISH text of each queued video (README route
 Route E answers **"let me read this instead of watching it"**. The deliverable is the video's own
 English text, cleaned enough to read: `work/<id>/clean.md`.
 
-**download (audio only) → transcribe → repair → clean → stop.** No translation, no TTS, no MKV, no
-Ollama, no `source.mkv` on disk.
+**download (audio only) → transcribe → repair → clean → stop.** No translation, no TTS, no MKV,
+no `source.mkv` on disk.
 
 This route is defined by what it does NOT do. It is the only route whose output is roughly as long
 as its input, and that is the point: a reader who wanted the short version would be reading a
@@ -18,7 +18,8 @@ digest. Every instruction below that looks pedantic about length is protecting e
 **When NOT to use this skill.**
 - The user wants to know **what is in** a video, short → `overdub-digest` (route D).
 - The user wants to know **which** videos deserve their time → `overdub-scout` (route C).
-- The user wants the videos **dubbed** → `overdub-sonnet-batch` (route B) or a plain `--batch` run.
+- The user wants the videos **dubbed** → `overdub-sonnet-batch` (route B), the only route that ends
+  in a dub.
 - The user asks about **one** video that already has `work/<id>/clean.md` → read that file and
   answer from it. Do not re-run anything.
 
@@ -42,7 +43,8 @@ cleaned — the drafts are.
 **Read [`docs/queue-contract.md`](../../../docs/queue-contract.md) now, before anything else.**
 Sections 1-3 are this step: who owns `queue.txt`, the `$ids` block and its three load-bearing
 guards, the `# playlist:` freshness diff, and the rule that a queue is never shortened, lengthened
-or interrupted by a model. Run §1 verbatim; §2 whenever a playlist is involved.
+or interrupted by a model. Run §1 verbatim, and apply §2 as §1 directs — the trigger lives there,
+not here.
 
 Route-E specific: a duplicate id races two waves over **one set of chunk files**, which is the
 worst form of that collision in the repo — hence `-Unique`.

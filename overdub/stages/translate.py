@@ -5,9 +5,11 @@ sub-agents write a draft and `scripts/build_translation.py` assembles the artifa
 contract (README "Running", route B). This stage only gates on that artifact existing, so a
 run that reaches it without one stops loudly instead of dubbing nothing.
 
-What still lives here is the CONTRACT the helper imports: `SYSTEM` (the translation rules) and
-`_is_bad` (the per-line gate). They stay in one place so the seam and any future in-process
-translator cannot drift apart.
+What still lives here is the CONTRACT: `SYSTEM` (the translation rules) and `_is_bad` (the
+per-line gate). `scripts/build_translation.py` imports `_is_bad`, so that half is enforced by the
+code. `SYSTEM` is imported by nothing — route B's prompt is a static copy in
+`.claude/workflows/translate-batch.js` — so it is the source of truth by convention only, and the
+inventory of its hand-synced copies is in PLAN, "Slot fit" obstacle (iii).
 """
 
 from __future__ import annotations
