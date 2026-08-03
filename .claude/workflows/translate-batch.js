@@ -145,12 +145,13 @@ to 270k characters, the worst of them 13,547 characters describing nine edited l
 // scout-summarize.js (route C / S2). Change it in one place and change it in the other, or the two
 // routes start producing different artifacts under one name. The route-C copy additionally reads
 // source.info.json and writes scout.draft.json; this one writes only summary.md, which is all the
-// dubbing route's digest and queue page read.
+// dubbing route's digest and queue page read. Third intended delta: route C's truncation paragraph
+// carries an extra clause about grading off a partial read, and sits later in its prompt.
 //
 // Do not maintain that divergence list by reading whichever file you just edited — it ran one-sided
 // for a while (route B had the 2000-line truncation guard, route C did not, so route C graded
-// videos off a partial read). Diff the two prompt bodies and check the delta matches the two
-// additions named above.
+// videos off a partial read). Diff the two prompt bodies; every hunk must be one of the three
+// deltas named above, and anything else is drift.
 function summarizerPrompt(id) {
   const dir = ROOT + '\\work\\' + id
   return `You are a triage summarizer for the overdub pipeline. Read
@@ -158,9 +159,10 @@ ${dir}\\sentences.json (list of {id, text, start, end} — the COMPLETE English 
 and write ${dir}\\summary.md: a summary in RUSSIAN of about 200 words.
 
 Read the transcript COMPLETELY: the Read tool returns at most 2000 lines by default and this file
-is frequently longer (28 of 152 transcripts exceed it, the largest is 5930 lines). If the output
-was truncated, keep reading with offset/limit until you have seen the last record — a summary
-written off the first third of a video is confidently wrong about what the video is.
+is frequently longer (measured 2026-07-28: 28 of 152 transcripts exceed it, the largest is 5930
+lines). If the output was truncated, keep reading with offset/limit until you have seen the last
+record — a summary written off the first third of a video is confidently wrong about what the
+video is.
 
 The reader has NOT watched the video and is deciding whether to. So answer two things, in prose:
 (a) is this worth watching at all, and for whom — say so plainly, including "смотреть не стоит" if
