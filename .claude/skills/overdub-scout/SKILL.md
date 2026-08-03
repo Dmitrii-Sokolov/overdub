@@ -83,12 +83,9 @@ One sub-agent per video, Agent tool (`general-purpose`) + **`model: "sonnet"` �
 explicitly** (a summary written by an inherited session model is not the artifact this route was
 verified with, DECISIONS 2026-07-18/19).
 
-**This step needs a session that has the `Workflow` tool.** It is NOT available to sub-agents
-(verified three ways, 2026-07-21), so a sub-agent, and presumably a headless or scheduled run,
-cannot perform S2. If you do not have the tool: **stop here and say so.** Do not substitute
-anything. There is deliberately no fallback — the only one available is the hand fan-out below,
-which four runs proved does not work, and a slow path that looks like success is worse than an
-honest refusal.
+**This step needs a session that has the `Workflow` tool, and never a hand fan-out** — both rules
+and their measurements are [`docs/queue-contract.md`](../../../docs/queue-contract.md) §6. If you
+do not have the tool: stop here and say so. There is deliberately no fallback for S2.
 
 **Resume filter first**, keyed on its own artifact — a prior interrupted S2 may have finished
 some videos, and the mtime clause catches summaries gone stale via a re-transcribe
