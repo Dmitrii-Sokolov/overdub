@@ -3,8 +3,10 @@
 Why we chose what we chose. Newest first — **append directly below the `---` that closes the Index,
 never above it.** Entries are not rewritten to match today's code: when the code moves out from
 under one it gets a `> SUPERSEDED <date>` line and stays, because the rejected alternative is the
-part worth keeping. Content is cut only when it is pure scheduling that already lives in `PLAN.md`,
-and the cut is stamped in place (`Trimmed <date>: …`) rather than made silently.
+part worth keeping. Content is cut in exactly two cases — pure scheduling that already lives in
+`PLAN.md`, and a generalised lesson promoted to `~/.claude/knowledge/`, where the entry keeps what
+it decided HERE and points at the file instead of restating it. Either cut is stamped in place
+(`Trimmed <date>: …`) rather than made silently.
 
 **An appended entry is two edits: the entry and its line in the Index.** The Index is
 hand-maintained and reads as complete whether or not it is — `tests/test_decisions_index.py`
@@ -503,6 +505,9 @@ it belongs in `asr_key` beside the beam, and it must be measured on the six fixt
 `asr_probe.py --variant` rather than adopted because it sounds right. PLAN carries it.
 
 ## 2026-07-25 — session retrospective: three times the arithmetic was right and the SHAPE was wrong
+
+Trimmed 2026-08-03: the generalised half went to the knowledge file below. The three cases and
+their outcomes stay.
 
 The pattern repeated three times in one session, in three different layers, and only once was it
 caught by the person who made it.
@@ -1115,31 +1120,28 @@ page is cheap to weigh. Weigh it before arguing about it.
 
 ## 2026-07-21 — An agent's report of what it DID is not evidence; the transcript is
 
+Trimmed 2026-08-03: three paragraphs restating the knowledge-file rule below are gone. What stays
+is the one line of evidence and what the incident changed in this project.
+
 The first wave under the `scout.started` marker produced a contradiction worth recording, because
-the wrong resolution of it would have sent the next month of optimization at the wrong target: the
-markers said the six sub-agents' first writes were 102 s apart, while the orchestrator, asked
-directly, described a single fanned-out call in good faith. The transcript agreed with the markers.
+the wrong resolution of it would have sent the next month of optimization at the wrong target. The
+markers said the six sub-agents' first writes were 102 s apart; asked directly, the orchestrator
+described a single fanned-out call, in good faith and in detail. The transcript showed six separate
+assistant messages, one block each.
 
 **The generalised rule has been promoted to
-`~/.claude/knowledge/claude-code/agent-orchestration.md` §4** — what an agent reports it OBSERVED
-is reliable, what it reports it DID is not; verify control flow against an artifact it did not
-author; do not try to fix a fan-out by wording the instruction harder. That file loads in every
-session and is not overdub-specific. Do not restate it here.
+`~/.claude/knowledge/claude-code/agent-orchestration.md`, section "An agent's report of what it DID
+is not evidence"** — what an agent reports it OBSERVED is reliable, what it reports it DID is not;
+verify control flow against an artifact it did not author; do not try to fix a fan-out by wording
+the instruction harder. That file loads in every session and is not overdub-specific. Do not
+restate it here.
 
-**What it changed in this project.** The marker design is what caught it: measured from
-`wave.start`, the run would have read as "14 minutes of summarization" with no way to see that
-588 s of it was one agent waiting for the next to be spawned. Per-video markers stay, and no
-timing is ever self-reported by a model.
-
-**Root cause was documentation, not runtime.** The skill said "Spawn in waves of ~6", which
-specifies the SIZE of a wave and nothing about how one is produced; six sequential calls satisfy
-that reading. S2 now requires ~6 `tool_use` blocks in ONE message, states the measured cost of
-getting it wrong, and prescribes a disk-side check (marker mtimes seconds apart, not ~100 s)
-because the mistake is invisible from inside the run that makes it.
-
-**Consequence for the roadmap, recorded here because it inverts a standing assumption:** with the
-fan-out fixed, summarization stops being the scout bottleneck. On this queue it would fall from
-842 s to ~254 s against 723 s of transcribe. The next wall is the GPU, not the agents.
+**What it changed in this project.** Per-video markers stay and no timing is ever self-reported by
+a model — the marker design is the only reason any of this was visible from outside the run. S2 now
+constrains the MECHANISM (~6 `tool_use` blocks in ONE message) rather than the wave size, and
+prescribes the disk-side marker check. And the roadmap inverted: with the fan-out fixed,
+summarization stops being the scout bottleneck — on this queue 842 s → ~254 s against 723 s of
+transcribe. The next wall is the GPU, not the agents.
 
 ## 2026-07-20 (evening) — Two kinds of timing, kept apart; and the filesystem does the stamping
 
