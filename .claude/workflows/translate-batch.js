@@ -146,6 +146,11 @@ to 270k characters, the worst of them 13,547 characters describing nine edited l
 // routes start producing different artifacts under one name. The route-C copy additionally reads
 // source.info.json and writes scout.draft.json; this one writes only summary.md, which is all the
 // dubbing route's digest and queue page read.
+//
+// Do not maintain that divergence list by reading whichever file you just edited — it ran one-sided
+// for a while (route B had the 2000-line truncation guard, route C did not, so route C graded
+// videos off a partial read). Diff the two prompt bodies and check the delta matches the two
+// additions named above.
 function summarizerPrompt(id) {
   const dir = ROOT + '\\work\\' + id
   return `You are a triage summarizer for the overdub pipeline. Read

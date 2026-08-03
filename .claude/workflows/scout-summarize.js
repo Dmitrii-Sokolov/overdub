@@ -114,7 +114,13 @@ paragraph 2 is (b), and paragraph 2 must OPEN with the interesting thing itself 
 as its «самое интересное» column and takes its first sentence verbatim, so a one-paragraph summary
 leaves that cell empty and a paragraph 2 opening with "Смотреть стоит…" fills it with the wrong
 answer (measured 2026-07-25: 2 of 24 summaries ran the two points together, ~6 opened paragraph 2
-with the verdict). Read the file in one pass; write it in one pass.
+with the verdict).
+
+Read the transcript COMPLETELY: the Read tool returns at most 2000 lines by default and this file
+is frequently longer (measured 2026-07-28: 28 of 152 transcripts exceed it, the largest is 5930
+lines). If the output was truncated, keep reading with offset/limit until you have seen the last
+record — a summary written off the first third of a video is confidently wrong about what the
+video is, and here it also grades the video on that first third.
 
 Also read ${dir}\\source.info.json — the yt-dlp metadata sidecar. Take title, channel,
 upload_date (YYYYMMDD) and description from it. The transcript alone carries none of these, and
