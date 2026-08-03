@@ -285,13 +285,15 @@ compression cost. Do not write digest.json or digest.md: build_digest.py derives
 }
 
 // ---------------------------------------------------------------- run
+// null stays null in both wrappers: a wrapper object is truthy even around a null, and the `!prev`
+// guard on the compress stage below is what keeps a dead read pass from spawning a compressor.
 function digestAgent(id) {
   return agent(digesterPrompt(id), {
     label: `digest:${id}`,
     phase: 'Digest',
     model: 'opus',              // explicit: the route was verified on Opus, and an inherited
     agentType: 'general-purpose',//          session model makes two runs incomparable
-  }).then((text) => ({ id, text: String(text || '').slice(0, 200) }))
+  }).then((text) => (text == null ? null : { id, text: String(text).slice(0, 200) }))
 }
 
 function compressAgent(id) {
@@ -300,7 +302,7 @@ function compressAgent(id) {
     phase: 'Compress',
     model: 'opus',
     agentType: 'general-purpose',
-  }).then((text) => ({ id, text: String(text || '').slice(0, 200) }))
+  }).then((text) => (text == null ? null : { id, text: String(text).slice(0, 200) }))
 }
 
 log(`${IDS.length} video(s) through both passes, ${COMPRESS_ONLY.length} through compression only`)
@@ -336,7 +338,8 @@ all.forEach((r) => {
   else if (/NO-LONG-DIGEST/i.test(r.text)) failedCompress.push(r.id)
   else done.push(r.id)
 })
-// A null slot is an agent the runtime dropped: pipeline() nulls the whole item, parallel() nulls one.
+// A null slot is an agent that produced nothing: pipeline() nulls the whole item, parallel() nulls
+// one, and agent() itself returns null on an operator skip or a terminal API error.
 const seen = new Set(all.filter(Boolean).map((r) => r.id))
 const dropped = [...IDS, ...COMPRESS_ONLY].filter((id) => !seen.has(id))
 

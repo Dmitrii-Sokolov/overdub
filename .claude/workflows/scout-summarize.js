@@ -173,11 +173,13 @@ const results = await parallel(IDS.map((id) => () =>
     phase: 'Summarize',
     model: 'sonnet',            // explicit: the route was verified on Sonnet (DECISIONS 07-18/19)
     agentType: 'general-purpose',
-  }).then((text) => ({ id, text: String(text || '').slice(0, 200) }))
+  })
 ))
 
-// A null is an agent the runtime dropped. Reported by id rather than counted, because the
-// operator's next move is per video: respawn this one.
+// Falsy is an agent that produced nothing — the runtime dropped it, or agent() itself returned
+// null (operator skip, terminal API error after retries). Deliberately NOT wrapped in an object:
+// a wrapper is truthy even around a null, and the drop would count as done. Reported by id rather
+// than counted, because the operator's next move is per video: respawn this one.
 const done = []
 const failed = []
 IDS.forEach((id, i) => {

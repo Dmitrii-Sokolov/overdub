@@ -133,7 +133,7 @@ function cleanAgent(job) {
     phase: 'Clean',
     model: 'sonnet',
     agentType: 'general-purpose',
-  }).then((text) => ({ job, text: String(text || '').slice(0, 200) }))
+  }).then((text) => (text == null ? null : { job, text: String(text).slice(0, 200) }))
 }
 
 const videos = new Set(JOBS.map((j) => j.video))
@@ -151,7 +151,8 @@ results.forEach((r) => {
   if (/NO-TRANSCRIPT/i.test(r.text)) failed.push(id)
   else done.push(id)
 })
-// A null slot is an agent the runtime dropped — indistinguishable from success in the array, so it
+// A null slot is an agent that produced nothing — the runtime dropped it, or agent() returned null
+// on an operator skip or a terminal API error. Indistinguishable from success in the array, so it
 // is recovered by difference rather than counted.
 const seen = new Set(results.filter(Boolean).map((r) => `${r.job.video}:${r.job.from}-${r.job.to}`))
 const dropped = JOBS.map((j) => `${j.video}:${j.from}-${j.to}`).filter((k) => !seen.has(k))
