@@ -7,10 +7,10 @@ and its joined text_tts ≤ _GROUP_MAX_CHARS. Empty-text sentences form singleto
 break chains. The unit wav lives at seg_wav(first_id); translation ids stay the reporting
 grain everywhere downstream (verify/assemble fan unit facts out per sentence id).
 
-Slot-fill: engines with supports_target (F5) receive target_sec = the unit's SOURCE SPAN
-and max_sec = its slot [start, next_unit.start) and pick a native speed (stretch to fill
-the span / neutral when the free gap absorbs the spill / mild compress before atempo tops
-up — see tts.f5.plan_speed). The chosen speed is recorded per unit.
+Slot-fill: an engine advertising supports_target would receive target_sec = the unit's SOURCE
+SPAN and max_sec = its slot [start, next_unit.start) and pick its own native speed. No shipped
+engine does, so the whole fit is done at assembly by atempo; the hook stays because the
+grouping and manifest already carry the per-unit speed field.
 
 Reseed-retry (seed-capable engines): in-stage whisper-small round-trip of the unit wav vs
 the joined text_tts (asr.roundtrip_similarity — the SAME function verify uses); below
@@ -45,8 +45,8 @@ from ..tts.base import TtsFatalError
 from ..workdir import replace_retry
 
 _FLUSH_EVERY = 25          # fresh units between mid-run manifest flushes (crash resume)
-_GROUP_MAX_SPAN = 12.0     # unit source-span cap (s): ~10 s ref + gen stays inside F5's
-                           # trained ≤30 s regime and mostly single-chunk
+_GROUP_MAX_SPAN = 12.0     # unit source-span cap (s): keeps a unit inside the range the
+                           # engine renders in one chunk
 _GROUP_MAX_CHARS = 300     # joined text_tts cap: internal-chunking insurance
 
 
@@ -79,9 +79,12 @@ def unit_sim_threshold(cfg, speed: float | None) -> float:
     """Per-unit similarity gate — ONE function for synthesize's reseed loop AND verify
     (same discipline as roundtrip_similarity: the two sides can never drift). Natively
     compressed units (speed above the base narrator pace) must clear the stricter bar:
-    F5 compression ≥~1.3 DROPS words outright while ASR sim can still scrape past the
-    base threshold (the 17:02 mid-word cutoff shipped at 0.836 vs gate 0.8)."""
-    if speed is not None and speed > cfg.f5_speed + 1e-6:
+    native compression ≥~1.3 DROPS words outright while ASR sim can still scrape past the
+    base threshold (the 17:02 mid-word cutoff shipped at 0.836 vs gate 0.8).
+
+    The shipped engine renders at a fixed pace and never sets `speed`, so this only bites
+    if a target-capable engine is added back."""
+    if speed is not None and speed > 1.0 + 1e-6:
         return max(cfg.similarity_threshold, cfg.similarity_threshold_compressed)
     return cfg.similarity_threshold
 
@@ -195,7 +198,7 @@ class SynthesizeStage:
             except Exception:
                 pass                                       # torn manifest → rebuild from wavs
 
-        supports_target = cfg.tts_engine == "f5"           # engine fact, known without loading
+        supports_target = False        # no shipped engine fits its own slot; atempo does it
 
         def slot_of(i: int) -> float | None:
             return (units[i + 1]["start"] - units[i]["start"]) if i + 1 < len(units) else None
@@ -399,10 +402,10 @@ class SynthesizeStage:
             ensure_ascii=False).encode("utf-8")).hexdigest()[:12]
         doc = {
             "sample_rate": sr, "engine": cfg.tts_engine,
-            "voice": cfg.f5_ref_audio.stem if cfg.tts_engine == "f5" else cfg.tts_voice,
+            "voice": cfg.tts_voice,
             "synth_key": key, "units_key": uk, "complete": complete,
             "group_gap_max": cfg.group_gap_max, "group_span_max": cfg.group_span_max,
-            "group_chars_max": cfg.group_chars_max, "base_speed": cfg.f5_speed,
+            "group_chars_max": cfg.group_chars_max, "base_speed": 1.0,
             "n_units": len(out), "n_flagged": n_flag, "n_retried": n_retried, "units": out,
         }
         tmp = ctx.work.seg_manifest.with_suffix(".json.tmp")

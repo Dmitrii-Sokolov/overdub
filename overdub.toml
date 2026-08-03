@@ -43,35 +43,21 @@
 #                               # range, never a calibrated one.
 #                               # (no max key — a window has no upper bound; see repair.widen)
 
-# --- translation (Gemma-3-12B via Ollama native /api/chat) ---
-# ollama_base_url = "http://localhost:11434"
-# ollama_model = "gemma3:12b"
-# num_ctx = 4096
-# context_window = 4
+# --- translation ---
+# Produced at the seam, not in-process (README "Running", route B). What is configurable here is
+# only the gate applied to a finished draft:
+# translate_max_len_ratio = 3.0   # runaway guard: text_ru chars vs source
+# latin_ratio_max = 0.30          # english-echo detector (Latin fraction of alpha chars)
 
 # --- TTS engine selection ---
-tts_engine = "silero"       # THE engine since 2026-07-25 (DECISIONS); "f5" still works for old runs
+tts_engine = "silero"       # THE engine since 2026-07-25 (DECISIONS)
 tts_voice = "eugene"        # silero-only; ear ranking 2026-07-19 on v5_5_ru: eugene + kseniya
                             # best, xenia good-but-slightly-unpleasant, aidar/baya have an
                             # off-standard accent that is harder to follow. "kseniya" = backup
 # silero_model = "v5_5_ru"  # default; "v4_ru" only to reproduce pre-2026-07-19 runs
-tts_sample_rate = 48000     # silero-only (F5 sr is engine-owned: 24000)
+tts_sample_rate = 48000     # silero-only
 # tts_seed = 42             # base seed for seed-capable engines; retries use seed+attempt
 # tts_max_retries = 3       # reseed attempts after the first try (seed-capable engines only)
-
-# --- TTS F5/ESpeech (worker process in .venv-f5tts) ---
-# f5_python = ".venv-f5tts/Scripts/python.exe"
-# f5_ckpt = "models/espeech-rlv2/espeech_tts_rlv2.pt"
-# f5_vocab = "models/espeech-rlv2/vocab.txt"
-# f5_ref_audio = "models/refs/ref_espeech_demo.wav"    # narrator = reference clip (fetched at setup)
-# f5_ref_text = "models/refs/ref_espeech_demo.txt"     # exact transcript of the reference
-# f5_nfe = 16                # default since 2026-07-19 (was 48). Ear-checked on a full video:
-                              # 2.16x per unit, no audible cost. 16 is EPSS-tuned, 48/32 are not.
-                              # Set 48 only to reproduce pre-2026-07-19 renders.
-# f5_speed = 1.0             # base narrator pace (narrator calibration)
-# f5_speed_floor = 0.75      # max stretch (slot-fill), multiplier of f5_speed; 1.0 disables
-# f5_speed_ceil = 1.1        # max native compression before atempo tops up; native ≥~1.3
-                              # drops words mid-word (ear 2026-07-16) — keep ≲1.15; 1.0 disables
 
 # --- dead-air / mix ---
 # group_gap_max = 0.4        # join adjacent sentences into one render unit (s); 0.0 disables

@@ -14,7 +14,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from overdub.config import Config  # noqa: E402
 from overdub.stages.synthesize import (  # noqa: E402
     _GROUP_MAX_CHARS, _GROUP_MAX_SPAN, build_units, unit_sim_threshold, units_of)
-from overdub.tts.f5 import plan_speed  # noqa: E402
 
 
 def seg(i, start, end, text="Нормальное предложение для теста."):
@@ -75,63 +74,15 @@ def test_units_of_legacy_segments() -> None:
     assert units[0]["samples"] == 10
 
 
-# ---- plan_speed ----------------------------------------------------------------
-REF = dict(ref_sec=10.0, ref_bytes=200, base_speed=1.0, floor=0.75, ceil=1.6)
-
-
-def _speed(gen_bytes, target, mx):
-    return plan_speed(gen_bytes, REF["ref_sec"], REF["ref_bytes"], REF["base_speed"],
-                      REF["floor"], REF["ceil"], target, mx)
-
-
-def test_underfill_stretches_to_span() -> None:
-    # nominal = 10*100/200 = 5.0 s; span 6.0 → speed 5/6 ≈ 0.833 (above floor)
-    assert abs(_speed(100, 6.0, 8.0) - 5.0 / 6.0) < 1e-9
-
-
-def test_stretch_capped_at_floor() -> None:
-    # nominal 5.0 s; span 10.0 → uncapped 0.5 < floor 0.75 → floor
-    assert _speed(100, 10.0, 12.0) == 0.75
-
-
-def test_fits_slot_neutral() -> None:
-    # nominal 5.0 s; span 4.0, slot 6.0 → spill absorbed by gap → base speed
-    assert _speed(100, 4.0, 6.0) == 1.0
-
-
-def test_overflow_compresses_to_slot() -> None:
-    # nominal 5.0 s; span 3.0, slot 4.0 → speed 5/4 = 1.25 (below ceil)
-    assert abs(_speed(100, 3.0, 4.0) - 1.25) < 1e-9
-
-
-def test_compression_capped_at_ceil() -> None:
-    # nominal 10.0 s; slot 4.0 → uncapped 2.5 > ceil 1.6 → ceil (atempo tops up)
-    assert _speed(200, 3.0, 4.0) == 1.6
-
-
-def test_no_target_means_base_speed() -> None:
-    assert _speed(100, None, None) == 1.0
-
-
-def test_last_unit_no_slot_still_stretches() -> None:
-    # nominal 5.0 s; span 6.0, no slot (last unit) → stretch to span
-    assert abs(_speed(100, 6.0, None) - 5.0 / 6.0) < 1e-9
-
-
-def test_base_speed_scales_window() -> None:
-    # narrator recalibrated to 1.2: caps move with it (multipliers)
-    s = plan_speed(100, 10.0, 200, 1.2, 0.75, 1.6, 10.0, None)
-    # nominal at base = 5/1.2 ≈ 4.17 s < 10 → stretch: 100*10/200 * 1.2 / 10 = 0.6 < 0.9 floor → 0.9
-    assert abs(s - 0.75 * 1.2) < 1e-9
-
-
 # ---- unit_sim_threshold ----------------------------------------------------------
+# The shipped engine renders at a fixed pace and never reports a `speed`, so the compressed
+# branch is only reachable if a target-capable engine is added back. 1.0 is the neutral pace.
 def test_sim_threshold_stricter_for_compressed_units() -> None:
-    cfg = Config()                                                   # f5_speed=1.0, 0.8/0.9
-    assert unit_sim_threshold(cfg, None) == cfg.similarity_threshold           # silero/legacy
-    assert unit_sim_threshold(cfg, cfg.f5_speed) == cfg.similarity_threshold   # neutral
-    assert unit_sim_threshold(cfg, cfg.f5_speed * 0.8) == cfg.similarity_threshold  # stretched
-    assert unit_sim_threshold(cfg, cfg.f5_speed * 1.05) == cfg.similarity_threshold_compressed
+    cfg = Config()
+    assert unit_sim_threshold(cfg, None) == cfg.similarity_threshold           # no speed reported
+    assert unit_sim_threshold(cfg, 1.0) == cfg.similarity_threshold            # neutral
+    assert unit_sim_threshold(cfg, 0.8) == cfg.similarity_threshold            # stretched
+    assert unit_sim_threshold(cfg, 1.05) == cfg.similarity_threshold_compressed
 
 
 def test_sim_threshold_never_relaxes() -> None:
@@ -139,7 +90,7 @@ def test_sim_threshold_never_relaxes() -> None:
     cfg = Config()
     cfg.similarity_threshold = 0.95
     cfg.similarity_threshold_compressed = 0.9
-    assert unit_sim_threshold(cfg, cfg.f5_speed * 1.05) == 0.95
+    assert unit_sim_threshold(cfg, 1.05) == 0.95
 
 
 if __name__ == "__main__":

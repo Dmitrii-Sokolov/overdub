@@ -1,34 +1,19 @@
-"""Translate stage (Phase 1): Gemma-3-12B via Ollama, context-aware per sentence.
+"""Translate stage: the SEAM, not a translator.
 
-Design: the translate-stage-design workflow (3-approach panel + lens judges + synthesis),
-see DECISIONS. One LLM call per sentence, in id order — NO batching (batching risks a silent
-sentence merge/drop, the one failure this pipeline forbids). The LLM returns ONLY natural
-spoken Russian (text_ru); text_tts is derived by the deterministic Python normalizer that the
-verify stage also imports, so the round-trip comparison is exact by construction.
+No model runs in-process. `work/<id>/translation.json` is produced outside the pipeline —
+sub-agents write a draft and `scripts/build_translation.py` assembles the artifact under the
+contract (README "Running", route B). This stage only gates on that artifact existing, so a
+run that reaches it without one stops loudly instead of dubbing nothing.
 
-Endpoint: the NATIVE Ollama /api/chat. Gemma 3 has no thinking mode and its chat template
-rejects a system role, so SYSTEM is folded into the single user turn and no "think" key is
-sent (Ollama 400s if "think" reaches a non-thinking model). Gemma replaced Qwen3-14B on
-2026-07-18 after an 8-video A/B — tighter, more natural, fewer flags; ~16% slower. See DECISIONS.
-
-Robustness: validate every output -> reseed-retry with a temperature bump -> flagged English
-fallback, never a dropped or blanked slot. Progress is appended per sentence to translation.jsonl
-(flush+fsync) so an overnight run resumes after a crash; translation.json is written atomically
-once every id is present. Only status=="ok" pairs feed the rolling context (a failed English
-fallback never poisons the next sentence).
+What still lives here is the CONTRACT the helper imports: `SYSTEM` (the translation rules) and
+`_is_bad` (the per-line gate). They stay in one place so the seam and any future in-process
+translator cannot drift apart.
 """
 
 from __future__ import annotations
 
-import json
-import os
 import re
-import sys
-import time
-import urllib.request
-from pathlib import Path
 
-from .. import pronounce
 from ..normalize import normalize_for_tts
 from ..pipeline import Context
 
@@ -146,142 +131,6 @@ def _is_bad(text_ru: str, src_en: str, cfg) -> str | None:
     return None
 
 
-def _build_user(target_en: str, pairs: list[tuple[str, str]], char_cap: int) -> str:
-    """Inlined CONTEXT block (oldest pairs dropped past char_cap) + the target SENTENCE."""
-    def block(ps: list[tuple[str, str]]) -> str:
-        if not ps:
-            return ""
-        lines = ["CONTEXT (do not translate; most recent last):"]
-        for en, ru in ps:
-            lines += [f"[EN] {en}", f"[RU] {ru}"]
-        return "\n".join(lines) + "\n\n"
-
-    ps = list(pairs)
-    while ps and len(block(ps)) > char_cap:
-        ps.pop(0)
-    return block(ps) + f"SENTENCE:\n{target_en}"
-
-
-def _chat(root: str, cfg, user: str, temperature: float, seed: int) -> str:
-    """One native Ollama /api/chat turn. Returns message.content (may raise).
-
-    Gemma 3 has no thinking mode and its chat template rejects a system role, so SYSTEM is
-    folded into the single user turn and no "think" key is sent (Ollama 400s otherwise).
-    """
-    body = json.dumps({
-        "model": cfg.ollama_model,
-        "messages": [{"role": "user", "content": SYSTEM + "\n\n" + user}],
-        "stream": False,
-        "options": {
-            "num_ctx": cfg.num_ctx,          # Ollama preallocates KV for the FULL num_ctx
-            "temperature": temperature,
-            "top_p": cfg.translate_top_p,
-            "seed": seed,
-            "num_predict": cfg.translate_max_tokens,
-        },
-    }).encode("utf-8")
-    req = urllib.request.Request(
-        root + "/api/chat", data=body,
-        headers={"Content-Type": "application/json"}, method="POST",
-    )
-    with urllib.request.urlopen(req, timeout=cfg.ollama_timeout_s) as r:
-        data = json.loads(r.read().decode("utf-8"))
-    return (data.get("message") or {}).get("content", "")
-
-
-def _translate_one(root: str, cfg, user: str, src_en: str) -> tuple[str, str, int, str | None]:
-    """(text_ru, status, attempts, flag). Retries reseed + bump temperature; never raises."""
-    best, flag, attempts = "", None, 0
-    for attempt in range(cfg.translate_max_retries + 1):
-        attempts = attempt + 1
-        try:
-            content = _chat(root, cfg, user,
-                            temperature=min(0.6, cfg.translate_temperature + 0.1 * attempt),
-                            seed=cfg.translate_seed + attempt)
-            text_ru = _parse(content)
-        except Exception as e:                       # timeout / connection drop = a failed attempt
-            flag = "api_error"
-            print(f"       [warn] api error (attempt {attempts}): {e}", file=sys.stderr)
-            continue
-        if text_ru and _CYR.search(text_ru):
-            best = text_ru                           # keep the most recent Russian-ish candidate
-        reason = _is_bad(text_ru, src_en, cfg)
-        if reason is None:
-            return text_ru, "ok", attempts, None
-        flag = reason
-    return (best or src_en), "failed", attempts, (flag or "unknown")
-
-
-def _root(base_url: str) -> str:
-    """Native Ollama root (tolerates a legacy '/v1' suffix in the configured base_url)."""
-    return base_url.rsplit("/v1", 1)[0].rstrip("/")
-
-
-def _preflight(root: str, model: str) -> None:
-    try:
-        with urllib.request.urlopen(root + "/api/tags", timeout=10) as r:
-            data = json.loads(r.read().decode("utf-8"))
-    except Exception as e:
-        raise RuntimeError(
-            f"Ollama not reachable at {root} — start the daemon (ollama serve). ({e})"
-        ) from e
-    names = {m.get("name", "") for m in data.get("models", [])}
-    if not any(n == model or n.startswith(model + ":") or n.split(":")[0] == model for n in names):
-        raise RuntimeError(
-            f"Ollama model '{model}' not found. Available: {sorted(names)}. "
-            f"Pull it first: ollama pull {model}"
-        )
-
-
-def _unload(root: str, model: str) -> None:
-    """Best-effort keep_alive:0 so the translation model frees VRAM before whisper-large stages."""
-    try:
-        body = json.dumps({"model": model, "messages": [], "keep_alive": 0}).encode("utf-8")
-        req = urllib.request.Request(
-            root + "/api/chat", data=body,
-            headers={"Content-Type": "application/json"}, method="POST",
-        )
-        urllib.request.urlopen(req, timeout=15).read()
-    except Exception:
-        pass
-
-
-class _Unloader:
-    """Session entry whose close() sends Ollama keep_alive:0. REGISTERED rather than called
-    in a per-video finally, so the unload happens once at the end of the translate SWEEP —
-    a stage-major batch would otherwise evict and reload Gemma (~8-9 GB) between every pair
-    of videos. Single-video / --video-major: the sweep is one video, i.e. the old behavior
-    exactly."""
-
-    def __init__(self, root: str, model: str) -> None:
-        self._root, self._model = root, model
-
-    def close(self) -> None:
-        _unload(self._root, self._model)
-
-
-def _heal_torn_tail(path: Path) -> bool:
-    """Terminate a torn last line left by a crash mid-append. The tolerant READER already
-    skips a torn fragment — but the APPEND side would concatenate the first new record onto
-    it, merging both into one garbage line the reader then drops: a finished record lost,
-    not just the fragment. One newline makes the fragment its own skippable line — nothing
-    is invented, the sentence it belonged to simply re-translates. Binary mode on purpose:
-    a torn tail can end mid-UTF-8-sequence (text mode would choke) and text-mode append on
-    Windows would write \\r\\n. Missing or empty file: untouched, False — exists() is the
-    resume signal and must never be faked by the guard."""
-    if not path.exists():
-        return False
-    with path.open("rb+") as f:
-        f.seek(0, os.SEEK_END)
-        if f.tell() == 0:
-            return False
-        f.seek(-1, os.SEEK_END)
-        if f.read(1) == b"\n":
-            return False
-        f.write(b"\n")
-        return True
-
-
 class TranslateStage:
     name = "translate"
 
@@ -289,103 +138,15 @@ class TranslateStage:
         return ctx.work.translation.exists()
 
     def run(self, ctx: Context) -> None:
-        from .. import runreport            # local: runreport imports stages lazily too
+        """Reached only when `translation.json` is absent — and nothing here can produce it.
 
-        cfg = ctx.cfg
-        sentences = json.loads(ctx.work.sentences.read_text(encoding="utf-8"))
-        root = _root(cfg.ollama_base_url)
-        _preflight(root, cfg.ollama_model)
-        if cfg.translate_unload:                # registered BEFORE any work, as unconditionally
-            ctx.session.get(("ollama_unload", root, cfg.ollama_model),   # as the old finally
-                            lambda: _Unloader(root, cfg.ollama_model))
+        Raising is the whole point: without this the run would carry on and mux a video with no
+        dub, which is the silent-failure class the project forbids. The fix is always to produce
+        the artifact at the seam (route B), never to restart something here."""
+        raise RuntimeError(
+            f"{ctx.work.translation.name} is missing for {ctx.work.root.name} — translation is "
+            "produced at the seam, not by the pipeline. Run route B step 2 for this video "
+            '(sub-agent draft + scripts/build_translation.py), then resume. See README "Running".'
+        )
 
-        # resume: reload any already-finished sentences from the append-only trail
-        partial = ctx.work.translation_partial
-        done: dict[int, dict] = {}
-        if partial.exists():
-            for line in partial.read_text(encoding="utf-8").splitlines():
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    obj = json.loads(line)
-                    done[obj["id"]] = obj
-                except (json.JSONDecodeError, KeyError):
-                    continue  # tolerate a torn last line from a crash mid-write
 
-        window: list[tuple[str, str]] = []      # rolling context of ok (en, ru) pairs
-        if _heal_torn_tail(partial):            # else the first append glues onto the fragment
-            print("       [warn] healed torn last line in translation.jsonl (crash mid-write); "
-                  "that sentence re-translates", file=sys.stderr)
-        # THE CLOCK STARTS HERE, after _preflight — the same boundary transcribe and synthesize
-        # draw around their model load. What CANNOT be excluded is Ollama's own load: the model
-        # comes up inside the first /api/chat call, so on the local Gemma route (~8-9 GB) the
-        # first sentence carries tens of seconds of it. `first_call_sec` is therefore recorded
-        # separately rather than pretended away — work_sec MINUS it is the load-excluded figure,
-        # and neither number is invented.
-        #
-        # `n_api` is the resume counter, the analogue of synthesize's n_rendered: a resumed
-        # translate replays translation.jsonl and touches the network for nothing, so its wall
-        # clock says the stage was free when in truth it did not run.
-        t0 = time.perf_counter()
-        n_api = 0
-        first_call_s: float | None = None
-        with partial.open("a", encoding="utf-8") as pf:
-            for s in sentences:
-                sid = s["id"]
-                if sid in done and done[sid].get("src_en") == s["text"]:  # done for THIS source
-                    # timings follow the CURRENT sentence: a re-transcribe (e.g. the ultra-short
-                    # merge) can shift start/end at an id whose text happens to match
-                    done[sid] = obj = {**done[sid], "start": s["start"], "end": s["end"]}
-                    if obj.get("status") == "ok":                 # resume: skip, keep context
-                        window = (window + [(s["text"], obj["text_ru"])])[-cfg.context_window:]
-                    continue                                      # source changed -> re-translate
-                user = _build_user(s["text"], window[-cfg.context_window:],
-                                   cfg.translate_context_char_cap)
-                t_call = time.perf_counter()
-                text_ru, status, attempts, flag = _translate_one(root, cfg, user, s["text"])
-                n_api += 1
-                if first_call_s is None:
-                    first_call_s = time.perf_counter() - t_call
-                obj = {
-                    "id": sid, "start": s["start"], "end": s["end"], "src_en": s["text"],
-                    "text_ru": text_ru, "text_tts": normalize_for_tts(text_ru),
-                    "status": status, "attempts": attempts,
-                }
-                if flag:
-                    obj["flag"] = flag
-                pf.write(json.dumps(obj, ensure_ascii=False) + "\n")
-                pf.flush()
-                os.fsync(pf.fileno())
-                done[sid] = obj
-                if status == "ok":
-                    window = (window + [(s["text"], text_ru)])[-cfg.context_window:]
-                else:
-                    print(f"       [flag] id{sid}: {flag}", file=sys.stderr)
-
-        work_s = time.perf_counter() - t0
-        # finalize: enforce the contract (raise, not assert — a never-drop invariant must not be
-        # stripped under `python -O`), then atomic write
-        out = [done[s["id"]] for s in sentences]
-        ids = [o["id"] for o in out]
-        if ids != list(range(len(sentences))):
-            raise RuntimeError(f"translation ids not contiguous (never-drop invariant): {ids}")
-        tmp = ctx.work.translation.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
-        os.replace(tmp, ctx.work.translation)
-
-        # pronounce audit (AUDIT-ONLY artifact — written, never read back: resolution must
-        # stay pure/deterministic or verify's two sides desync): what the pipeline invented
-        # for Latin tokens — operator triage + weekly dictionary-seeding material
-        audit = pronounce.audit_summary(ctx.work.root.name, out)
-        atmp = ctx.work.pronounce_audit.with_suffix(".json.tmp")
-        atmp.write_text(json.dumps(audit, ensure_ascii=False, indent=2), encoding="utf-8")
-        os.replace(atmp, ctx.work.pronounce_audit)
-
-        runreport.record_stage_detail(
-            ctx.work, "translate", work_sec=round(work_s, 3), n_sentences=len(out),
-            n_api=n_api,
-            first_call_sec=(round(first_call_s, 3) if first_call_s is not None else None))
-        n_fail = sum(1 for o in out if o.get("status") != "ok")
-        print(f"       {len(out)} sentences → translation.json ({n_fail} flagged; "
-              f"{work_s:.1f}s excl. preflight, {n_api}/{len(out)} sentences hit the API)")

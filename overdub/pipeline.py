@@ -121,18 +121,10 @@ def _tts_key(cfg: Config):
     """TTS engine cache key. synth_key is the project's canonical "what changes rendered
     audio" fingerprint and carries an explicit INVARIANT (tts/__init__.py) that every new
     audio-affecting knob enters it — reusing it means this key can never silently fall
-    behind. It is deliberately WIDER than worker identity (seed/speed/floor/ceil are
-    per-REQUEST arguments, not worker argv), and that costs nothing: cfg is loaded once
-    per process, so the key is constant across a batch. f5_python is appended because
-    synth_key does NOT cover it and a different venv is a different worker process;
-    resolved so two spellings of one interpreter share an entry. Recomputed per video on
-    purpose (~1 ms): it hashes the ref-audio BYTES, the only thing that would notice a
-    narrator reference rewritten on disk mid-batch."""
+    behind. cfg is loaded once per process, so the key is constant across a batch."""
     from .tts import synth_key
 
-    if cfg.tts_engine != "f5":
-        return ("tts", synth_key(cfg))
-    return ("tts", synth_key(cfg), str(Path(cfg.f5_python).resolve()))
+    return ("tts", synth_key(cfg))
 
 
 @dataclass
@@ -180,11 +172,9 @@ def run_pipeline(
             runreport.record_stage_timing(ctx.work, st.name, elapsed)
         finally:
             # UNCONDITIONAL: teardown used to live in each stage's own `finally`, so it ran on
-            # the raising path too. A stage that raises can leave a LIVE F5 worker — the
-            # ok:false branch (f5.py) does NOT kill the process, and the pump thread pins the
-            # Popen, so nothing collects it: the orphan holds ~0.8 GiB until this process dies.
-            # Same for a loaded Gemma after a translate failure. Timing stays INSIDE the try so
-            # only stages that actually completed are recorded.
+            # the raising path too. A stage that raises can otherwise leave a loaded model
+            # holding VRAM until this process dies. Timing stays INSIDE the try so only stages
+            # that actually completed are recorded.
             if owns_session:
                 # a model's lifetime is ONE stage sweep. An owning caller runs one video per
                 # sweep, so clearing here reproduces the old per-stage teardown exactly; the

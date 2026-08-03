@@ -106,26 +106,15 @@ class Config:
                                           # correct: reaching min_sec is what makes the clip
                                           # transcribable. The actual span is always printed.
 
-    # translation — Gemma-3-12B via Ollama native /api/chat (see stages/translate.py)
-    ollama_base_url: str = "http://localhost:11434"
-    ollama_model: str = "gemma3:12b"
-    num_ctx: int = 4096
-    context_window: int = 4          # previous OK sentence pairs fed as rolling context
-    ollama_timeout_s: float = 120.0
-    translate_temperature: float = 0.2
-    translate_top_p: float = 0.9
-    translate_seed: int = 42
-    translate_max_retries: int = 3
-    translate_max_tokens: int = 512  # ramble/echo guard
+    # translation — the gate applied to a draft written at the seam (stages/translate.py::_is_bad,
+    # imported by scripts/build_translation.py). No model runs in-process.
     translate_max_len_ratio: float = 3.0   # runaway guard: text_ru chars vs source
     latin_ratio_max: float = 0.30    # english-echo detector (Latin fraction of alpha chars)
-    translate_context_char_cap: int = 2400  # drop oldest ctx pairs beyond this (KV knife-edge)
-    translate_unload: bool = True    # POST keep_alive:0 after the stage to free VRAM
 
     # TTS — engine selection + seed policy
     tts_engine: str = "silero"       # THE engine since 2026-07-25 (user decision, DECISIONS):
                                      # speed + hardware cost, quality difference accepted as a
-                                     # trade. "f5" still works and is what pre-switch runs used.
+                                     # trade.
     tts_voice: str = "eugene"        # silero-only
     silero_model: str = "v5_5_ru"    # silero-only release id via torch.hub. v4_ru (~38 MB) was
                                      # the 2026-07-15 bake-off entrant BY MISTAKE — v5_5_ru
@@ -152,30 +141,6 @@ class Config:
                                      # appear. Audio-affecting → part of synth_key.
     tts_seed: int = 42               # base seed (seed-capable engines); retries use seed+attempt
     tts_max_retries: int = 3         # reseed attempts after the first try (seed-capable engines)
-
-    # TTS — F5/ESpeech (worker process in .venv-f5tts; see overdub/tts/f5.py)
-    f5_python: Path = Path(".venv-f5tts/Scripts/python.exe")
-    f5_ckpt: Path = Path("models/espeech-rlv2/espeech_tts_rlv2.pt")
-    f5_vocab: Path = Path("models/espeech-rlv2/vocab.txt")
-    f5_ref_audio: Path = Path("models/refs/ref_espeech_demo.wav")
-    f5_ref_text: Path = Path("models/refs/ref_espeech_demo.txt")
-    f5_nfe: int = 16                 # denoising steps. 16, not 48 (2026-07-19, ear-checked on a
-                                     # full video): cost is EXACTLY linear in nfe (Euler, one DiT
-                                     # forward per step), and 16 is one of the step counts F5's
-                                     # get_epss_timesteps has a TUNED schedule for (5,6,7,10,12,16)
-                                     # — 48 and 32 both fall through to a naive linspace, so the
-                                     # once-planned 48→32 was the one step down that buys no help
-                                     # from the library. Measured 2.16× per unit over 40 real units
-                                     # × 4 step counts; 12 adds only 6% more and leaves the tuned
-                                     # grid's edge. Metrics could NOT sign this off (round-trip sim
-                                     # is saturated: corpus median 0.995, zero units under the 0.9
-                                     # gate) — the ear did. Audio-affecting → part of synth_key.
-    f5_speed: float = 1.0            # base narrator pace (narrator calibration, DECISIONS)
-    f5_speed_floor: float = 0.75     # max stretch: min per-unit speed as a MULTIPLIER of
-                                     # f5_speed (slot-fill; 1.0 disables stretching)
-    f5_speed_ceil: float = 1.1       # max native compression multiplier before atempo tops
-                                     # up. Ear 2026-07-16: native ≥~1.3 DROPS words mid-word
-                                     # (atempo never does) — keep ≲1.15; 1.0 disables
 
     # dead-air / mix (see DECISIONS 2026-07-16 dead-air entry + 2026-07-17 ear verdict)
     group_gap_max: float = 1.2       # join adjacent sentences into one render unit when the

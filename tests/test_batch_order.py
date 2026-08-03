@@ -295,34 +295,18 @@ def test_session_is_cleared_between_stages() -> None:
     assert len(closed) == len(stages)
 
 
-def test_tts_cache_key_covers_synth_key_and_f5_python() -> None:
+def test_tts_cache_key_is_synth_key() -> None:
     from overdub import pipeline, tts
 
     silero = Config()
     silero.tts_engine = "silero"
     assert pipeline._tts_key(silero) == ("tts", tts.synth_key(silero))
 
-    real = tts.synth_key                                 # the f5 branch needs assets on disk;
-    tts.synth_key = lambda cfg: "SAME"                   # stub it out to isolate f5_python
-    try:
-        a, b = Config(), Config()
-        a.tts_engine = b.tts_engine = "f5"
-        b.f5_python = Path("/other/venv/python.exe")
-        assert pipeline._tts_key(a) != pipeline._tts_key(b)   # synth_key does NOT cover it
-    finally:
-        tts.synth_key = real
-
-
-def test_crash_budget_resets_per_video() -> None:
-    """A reused engine must not hand the next video an inherited crash budget — but _rid is
-    the live protocol id and must stay monotone."""
-    from overdub.tts.f5 import F5Engine
-
-    eng = F5Engine.__new__(F5Engine)                     # no worker spawn, no assets
-    eng._crashes, eng._rid = 2, 7
-    eng.begin_video()
-    assert eng._crashes == 0
-    assert eng._rid == 7
+    # the key must MOVE with any audio-affecting knob — that is synth_key's own INVARIANT,
+    # and _tts_key inherits it by delegating rather than re-deriving.
+    other = Config()
+    other.tts_voice = "kseniya"
+    assert pipeline._tts_key(silero) != pipeline._tts_key(other)
 
 
 def test_synthesize_calls_begin_video_on_the_engine_it_got() -> None:

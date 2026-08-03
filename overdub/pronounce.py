@@ -109,7 +109,6 @@ WORDS = {
     "intel": "интел",  # (=)
     "unity": "юнити", "unreal": "анриал", "microsoft": "майкрософт",
     "apple": "эппл", "iphone": "айфон",
-    "qwen": "квен",      # (=)
     # 2026-07-25, from the pronounce_audit series of a 24-video batch (1587 fallback events, 653
     # distinct tokens). ONLY proper nouns and closed-class function words are here — the rule
     # fallback still owns the open-class tail, per the WORDS contract above. Each line names what
