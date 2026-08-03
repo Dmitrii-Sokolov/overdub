@@ -27,97 +27,24 @@ untranslated, and it re-enters the dubbing route with no cleanup (see "Promotion
 
 ## S1 — Resolve the queue, then scout the batch
 
+**Read [`docs/queue-contract.md`](../../../docs/queue-contract.md) now, before anything else.**
+Sections 1-3 are this step: who owns `queue.txt`, the `$ids` block and its three load-bearing
+guards, the `# playlist:` freshness diff, and the rule that a queue is never shortened, lengthened
+or interrupted by a model. Run §1 and §2 verbatim — they are the same for every route, and this
+skill deliberately keeps no second copy of them.
+
 **Resolve the queue BEFORE the run, not after** (moved above the command 2026-07-24). These
 checks used to sit under it, which made them audits of a fetch that had already happened.
 
-**`queue.txt` belongs to the RUN, not to the user's history.** It is gitignored and rewritten
-every session by design (`.gitignore`), so a leftover queue from the previous run is not context
-for this one. **Never stop to ask what to do with it** — resolve the input, then write the file:
+Route-C specifics on top of the contract:
 
-- **The user named a new playlist, or handed over a list of videos** — overwrite `queue.txt` with
-  it, silently, and do not carry a single id over from what was there. Take one backup first, so
-  overwriting costs nothing to be wrong about:
-  ```powershell
-  if (Test-Path queue.txt) { New-Item -ItemType Directory -Force work | Out-Null
-    Copy-Item queue.txt work\queue-prev.txt -Force }
-  ```
-  That backup is a within-run undo, not an artifact — nothing reads it and `work/` cleanup may
-  take it. The freshness diff below does NOT apply here: there is nothing to compare against,
-  only a previous run's decision to discard.
-- **The user named the SAME playlist, or named nothing at all ("прогони разведку")** — keep the
-  file and apply the freshness rule below. This is the only case where its contents mean anything.
-
-**And it is never deleted at the end.** Promotion is the human trimming THIS file to the
-survivors, and both report scripts take it as `--queue queue.txt`; deleting it at S3 would take
-the route-C → route-B handoff with it.
-
-**If the user handed over a PLAYLIST rather than a list of videos**, expand it — the queue is a
-list of videos, always — and record where it came from as the first line of `queue.txt`:
-
-```powershell
-$pl = @(.venv-asr\Scripts\yt-dlp.exe --flat-playlist --print "%(id)s" <playlist-url>)
-```
-
-```
-# playlist: <название плейлиста> | <url плейлиста>
-https://www.youtube.com/watch?v=...
-```
-
-The report names it at the top and links the title. Nothing else depends on the line — it is a
-comment, so the pipeline skips it exactly as it always has — but without it the report is a list
-of videos with no answer to "which playlist was this". Only the first such line is read.
-
-**That header is PROVENANCE, not a live link.** It records the playlist as it was when the queue
-was written. If `queue.txt` already exists and its header matches the playlist the user just
-named, that is NOT evidence the queue is current — re-expand it into `$pl` and diff, right
-after the `$ids` block below has run:
-
-```powershell
-Compare-Object $pl $ids | ForEach-Object {
-  "{0}: {1}" -f $(if ($_.SideIndicator -eq '<=') { 'playlist only' } else { 'queue only' }),
-               $_.InputObject }
-```
-
-The difference goes to the USER, never to your own judgement — **playlist only** is either
-growth or a video a human deliberately dropped (promotion trims the queue to the survivors), and
-those two are indistinguishable from here; **queue only** is normal (removed or private
-upstream), worth one sentence and nothing more. Same rule as the two below, one level up.
-
-**The id list comes from the QUEUE, never from a `work/` listing.** `<id>` is the 11-char
-YouTube id inside each URL (S1 also prints it per video: `work dir: work\<id>`):
-
-```powershell
-$lines = @(Get-Content queue.txt | ForEach-Object { $_.Trim() } |
-  Where-Object { $_ -and -not $_.StartsWith('#') })
-$ids = @($lines | ForEach-Object {
-  if ($_ -match '(?:v=|youtu\.be/|/shorts/|/embed/)([A-Za-z0-9_-]{11})') { $Matches[1] } })
-if ($ids.Count -ne $lines.Count) {
-  throw "queue: $($lines.Count) URLs, $($ids.Count) matched ids - unmatched line(s), see below" }
-$lines | Where-Object { $_ -match '[?&]list=' }    # must print nothing — see below
-$ids = @($ids | Select-Object -Unique)
-```
-
-All three guards are load-bearing. A URL the regex misses (e.g. a `/live/` link) is still
-PROCESSED by the pipeline — `video_id()` hash-fallbacks it into a `work/<sha1>` dir — but
-invisible to every gate below, so it silently never gets summarized. A line carrying `&list=` is
-the worse case, because the regex gate WAVES IT THROUGH — the video id matches — and then
-`yt-dlp` follows the playlist: the download stage passes no `--no-playlist` and `-o` is a fixed
-`source.*` path (`stages/download.py`), so dozens of videos are fetched over one workdir
-(verified 2026-07-24: a `watch?v=…&list=…` URL expands to the whole playlist). Both cases:
-normalize the line in `queue.txt` to a bare `watch?v=<id>` form and restart from S1.
-Duplicate spellings of one video share a workdir and the CLI dedupes them (`cli.py`); without
-`-Unique` two parallel sub-agents would race on the same `summary.md`.
-
-Do NOT enumerate `work/` directories — `work/` persists across batches and holds stale and
-baseline workdirs. Summarizing those wastes tokens on videos nobody queued.
-
-**A video that looks wrong for dubbing is still an ordinary queue entry.** A music video, a live
-set, something with almost no speech, a two-minute clip, a video that turns out not to be in
-English — all of them download, transcribe, summarize and render exactly like the rest. Do not
-ask the user what to do with one, do not drop it from `$ids`, do not skip its sub-agent: the
-GRADE is the answer to "what do we do with this", and the human reads it in the report. Whisper
-on music produces an empty or hallucinated transcript — that is a `low` with the reason named,
-not a failure and not a question.
+- S1 prints the workdir per video (`work dir: work\<id>`), so the ids the contract derived are
+  visible against what actually ran.
+- Without `-Unique` in the `$ids` block, two parallel sub-agents would race on the same
+  `summary.md`.
+- Whisper on music produces an empty or hallucinated transcript. Under contract §3 that video is
+  still scouted: it comes out a `low` with the reason named — a finished row, not a failure and
+  not a question for the user. The GRADE is the answer to "what do we do with this".
 
 Then run:
 
@@ -178,23 +105,11 @@ $sumTodo = @($ids | Where-Object {
 `summary.md` and no draft; keying on the prose alone would skip it here and leave it as a
 `не отсканировано` hole in the report — present, plausible, and silently missing its verdict.
 
-**`summary pending` OUTRANKS a present `scout.json`. Always. Never the reverse.** `scout.json` is
-DERIVED from `scout.draft.json`; if the draft is gone the scout.json is an orphan describing work
-whose inputs no longer exist, and it is not evidence that anything is done. It is also not
-covered by `invalidate_downstream`, so nothing upstream will clear it for you.
-
-If S1 prints `summary pending` for a video that has a complete-looking `scout.json`, **the video
-is NOT done — summarize it.** Do not resolve the conflict by inspecting the scout.json and
-finding it well-formed: it will always be well-formed, that is what `build_scout` guarantees.
-
-MEASURED 2026-07-21, and this is why the rule is written this hard: a scout run was set up for a
-controlled re-measurement by deleting `summary.md`, `scout.draft.json` and `scout.started` while
-leaving `scout.json` in place. S1 correctly reported `summary pending` ×6. The orchestrator
-noticed the contradiction, investigated `build_scout.py` and the invalidation logic, concluded
-the scout.json files were "консистентны и полны", skipped S2 entirely, rebuilt the report from
-the stale artifacts and **published a flawless-looking six-video report representing zero work**.
-No `не отсканировано` row anywhere — the one signal a reader would have caught. The diligence was
-real; the tie-break was the only thing missing.
+**`summary pending` OUTRANKS a present `scout.json`. Always. Never the reverse** — the
+derived-artifact rule, [`docs/queue-contract.md`](../../../docs/queue-contract.md) §5, whose
+worked case IS this route (2026-07-21, a six-video report representing zero work). If S1 prints
+`summary pending` for a video that has a complete-looking `scout.json`, **the video is NOT
+done — summarize it.**
 
 **Stamp the wave start before spawning anything** — it cannot be recovered afterwards, and it is
 what the report's wall-clock figure for the whole wave is derived from:
@@ -203,44 +118,19 @@ what the report's wall-clock figure for the whole wave is derived from:
 $waveStart = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
 ```
 
-The wave start is NOT the per-video summarize timing. It is shared by every agent in the spawn,
-so for an agent that waited behind the concurrency cap it measures the queue, not the work. The
-per-video number comes from each agent's own `scout.started` marker (the workflow's prompt makes
-touching it the sub-agent's first action); the
-two are different measurements and the report keeps them apart. **Delete stale markers for the
-videos about to be respawned**, or a re-run pairs a fresh draft with the previous attempt's
-marker and reports the gap between runs as summarization:
+**Delete stale markers for the videos about to be respawned** (contract §7 — what the marker
+measures and why a missing one is not a reason to re-run):
 
 ```powershell
 $sumTodo | ForEach-Object { Remove-Item "work\$_\scout.started" -ErrorAction SilentlyContinue }
 ```
 
-**DO NOT spawn the sub-agents yourself. Run the workflow.** Fan-out by hand does not work here,
-and that is measured, not suspected:
-
-```
-run 1  prompt 21,507 chars   spawn gap 103 s   spawn total 514 s   wave 842 s
-run 2  prompt 19,329 chars   spawn gap  86 s   spawn total 428 s   wave 647 s
-run 3  prompt 23,689 chars   spawn gap 123 s   spawn total 614 s   wave 774 s
-```
-
-Three runs, same queue, six Agent calls in six separate messages every time. Run 3 settles it:
-the orchestrator explicitly reasoned *"spawning six sub-agents in a single message"*, announced
-it out loud, and then emitted six messages anyway. **Read, understood, acknowledged, not
-executed** — so no wording fixes this.
-
-The table also shows what the cadence actually tracks: **prompt size**, at roughly 8.5 s per
-1000 characters, because the orchestrator generates the whole prompt token by token once per
-video. And the wave came to `spawn total + the last agent's own window` — every other agent
-finished inside the shadow of the next spawn, which is why making the agents faster bought
-nothing.
-
-`Workflow` removes both costs: `parallel()` is deterministic fan-out that does not depend on a
-model emitting N blocks, and the script assembles the prompt instead of generating it — against
-the 23.7k chars the orchestrator used to re-type per video, nothing large is generated at all.
+**DO NOT spawn the sub-agents yourself. Run the workflow** — contract §6 carries the measurement
+that closes this, including the three route-C runs where the orchestrator announced a single
+message and emitted six anyway:
 
 ```powershell
-# args.ids is the RESUME-FILTERED list from below — never the whole queue
+# args.ids is the RESUME-FILTERED list from above — never the whole queue
 ```
 ```
 Workflow: {name: "scout-summarize", args: {ids: [...$sumTodo], root: "D:\\code\\overdub"}}
@@ -249,8 +139,7 @@ Workflow: {name: "scout-summarize", args: {ids: [...$sumTodo], root: "D:\\code\\
 It returns `{done, failed, total}`. **`failed` is per video and actionable** — an agent the
 runtime dropped. Re-run the workflow with just those ids.
 
-**Verify from disk, not from the run's account.** Two things, and the first is the one that goes
-missing quietly:
+**Verify from disk, not from the run's account** (contract §7). The marker is `scout.started`:
 
 ```powershell
 # 1. every video got a marker — a missing one is a lost measurement, not a lost summary
@@ -259,18 +148,6 @@ $sumTodo | Where-Object { -not (Test-Path "work\$_\scout.started") }     # must 
 $sumTodo | Where-Object { Test-Path "work\$_\scout.started" } |
   ForEach-Object { (Get-Item "work\$_\scout.started").LastWriteTime } | Sort-Object
 ```
-
-**A missing marker is not a failure to re-run.** The agent wrote both real artifacts and skipped
-its first instruction; the summary is good and only that video's timing is gone. Measured
-2026-07-21: 1 of 6 agents did this. `build_scout` warns per video, and the report marks the wave
-with a `+` to say it is a floor — but nothing re-summarizes for a timing, and doing so by hand
-would discard a valid summary to recover a number.
-
-Gaps near 100 s mean the fan-out did not happen, whatever the run felt like. This check is here
-because on 2026-07-20 the orchestrator's own account of a wave was wrong in both specifics it
-offered — it reported one call with six blocks (there were six) and a blocked Write the
-transcript did not contain, while the completion times it gave were accurate. **An agent's
-report of what it OBSERVED is worth more than its report of what it DID.**
 
 Each sub-agent writes TWO files: `summary.md` (the ~200-word prose, unchanged — route B reuses
 it on promotion) and `scout.draft.json` (the machine-consumed judgement the report renders).
@@ -345,43 +222,23 @@ queue is the failure this whole mode exists to prevent.
 
 ## Promotion — handing the survivors to the dubbing route
 
-The user trims `queue.txt` to the survivors. That queue then enters the `overdub-sonnet-batch`
-skill at its **Step 1** (route B), or a plain `--batch` run (route A), with no further ceremony
-and no cleanup of the scout artifacts:
-
-- `transcribe` **fast-skips** on the scout's `sentences.json` — the large-v3 pass is not
-  repeated, which is the whole economic point of scouting first.
-- `translate` has nothing yet, so route B's Step 2 runs normally.
-- `summary.md` survives and is reused — the transcript it describes did not change.
-- `download` **does re-run**: the full contract needs `source.mkv` and scout never wrote one, so
-  the audio bytes are re-fetched inside the merged container. ~5% extra traffic, accepted
-  deliberately (DECISIONS 2026-07-20). Do NOT try to save it by hand-assembling an MKV from
-  `source.wav`.
+The user trims `queue.txt` to the survivors; that queue then enters the `overdub-sonnet-batch`
+skill at its **Step 1** (route B), or a plain `--batch` run (route A). Mechanics — what fast-skips,
+what re-runs, the ~5% traffic — are [`docs/queue-contract.md`](../../../docs/queue-contract.md) §4.
 
 Videos the user dropped keep their scout artifacts in `work/<id>/` — a few MB each, and they
 make a re-scout free. Deleting them is the user's call, not yours.
 
 ## Rules that are not negotiable
 
-- **A scout pass never shortens the queue by itself.** S3 recommends; the human drops videos. A
-  model silently deciding a video is not worth dubbing is indistinguishable, downstream, from
-  the pipeline losing it — and unlike a lost video, nothing reports it.
-- **A scout pass never lengthens it by itself either, and never assumes it is still current.**
-  A `# playlist:` header matching the URL the user just named is provenance, not freshness — it
-  was written once and never updated. Concluding from it that the queue already covers the
-  playlist drops every video added since, with no FAIL row and no missing artifact to catch it:
-  those videos were never in `$ids`. Re-expand, diff, hand the diff over (S1). Measured on the
-  real queue 2026-07-24: 6 ids in `queue.txt`, 23 in the playlist.
-- **Never stop the run to ask about ONE video.** "This looks like a music video / has no speech /
-  is not in English — should I dub it?" is the same failure as shortening the queue, one video
-  wide: it hands the model's discomfort back to the human as a decision, before the report that
-  would have answered it exists. Every queued video is scouted and graded; the grade is the
-  recommendation, and S3 is where the human acts on it.
-- **A leftover `queue.txt` is not a question either.** It is gitignored, run-owned and rewritten
-  whenever the user names a new source (S1). Asking what to do with a previous run's queue stops
-  the pass on a file that is, by construction, disposable.
-- **Never hand-write a `summary.md`** to clear a `summary pending` line. That line is the pass's
-  only completion signal, and forging it is the same silent failure in miniature.
+The queue rules — never shorten it, never lengthen it, never stop the run to ask about ONE video,
+never treat a leftover `queue.txt` as a question, never forge a completion artifact — are
+[`docs/queue-contract.md`](../../../docs/queue-contract.md) §3, and they bind here unchanged.
+Route C adds three of its own:
+
+- **S3 recommends; the human drops videos.** The grades gate nothing, exactly as the summary gates
+  nothing on the dubbing route. This is the specific shape §3 takes on a route whose whole output
+  is a recommendation.
 - **Never ground the rundown in anything but the summaries.** If a summary is missing, say so
   and respawn its sub-agent; do not read the transcript yourself and improvise one — the
   artifact on disk and the story you tell the user must be the same story.

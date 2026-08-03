@@ -53,84 +53,25 @@ queue you have already digested costs seconds**, not an Opus wave:
 3. **The page** — not cached and does not need to be: `digest_report.py` is pure string assembly
    over the artifacts, so rebuilding it is free and always reflects disk.
 
-**The cache keys are the two AGENT artifacts, never the built `digest.json`.** That file is derived:
-if the draft is gone, a `digest.json` beside it is an orphan describing work whose input no longer
-exists, and it is not evidence that anything is done. Nothing clears it for you either — it is not in
-`invalidate_downstream`'s target list, exactly like route C's `scout.json`. The sibling route
-measured what happens when this is inverted (2026-07-21): an orchestrator found six complete-looking
-`scout.json` files with their drafts deleted, investigated the build script, concluded the artifacts
-were consistent, skipped the summarizer step entirely and **published a flawless-looking six-video
-report representing zero work**. The build script guarantees a well-formed artifact; that is exactly
-why a well-formed artifact proves nothing about whether the agent ran.
+**The cache keys are the two AGENT artifacts, never the built `digest.json`** — the derived-artifact
+rule, [`docs/queue-contract.md`](../../../docs/queue-contract.md) §5, with the sibling route's
+measured case of a six-video report representing zero work. The build script guarantees a
+well-formed artifact; that is exactly why a well-formed artifact proves nothing about whether the
+agent ran.
 
 ## D1 — Resolve the queue, then make sure every video has a transcript
 
-**Resolve the queue BEFORE the run, not after.** `queue.txt` belongs to the RUN, not to the user's
-history: it is gitignored and rewritten every session by design. **Never stop to ask what to do with
-a leftover queue** — resolve the input, then write the file:
+**Read [`docs/queue-contract.md`](../../../docs/queue-contract.md) now, before anything else.**
+Sections 1-3 are this step: who owns `queue.txt`, the `$ids` block and its three load-bearing
+guards, the `# playlist:` freshness diff, and the rule that a queue is never shortened, lengthened
+or interrupted by a model. Run §1 and §2 verbatim.
 
-- **The user named a new playlist, or handed over a list of videos** — overwrite `queue.txt`,
-  silently, carrying no id over. Take one backup first, so overwriting costs nothing to be wrong
-  about:
-  ```powershell
-  if (Test-Path queue.txt) { New-Item -ItemType Directory -Force work | Out-Null
-    Copy-Item queue.txt work\queue-prev.txt -Force }
-  ```
-- **The user named the SAME playlist, or named nothing at all** — keep the file and apply the
-  freshness rule below.
+Route-D specifics on top of the contract:
 
-**If the user handed over a PLAYLIST rather than a list of videos**, expand it — the queue is a list
-of videos, always — and record where it came from as the first line of `queue.txt`:
-
-```powershell
-$pl = @(.venv-asr\Scripts\yt-dlp.exe --flat-playlist --print "%(id)s" <playlist-url>)
-```
-
-```
-# playlist: <название плейлиста> | <url плейлиста>
-https://www.youtube.com/watch?v=...
-```
-
-The page names it at the top and links the title. Only the first such line is read; the pipeline
-skips it as a comment.
-
-**That header is PROVENANCE, not a live link.** A header matching the playlist the user just named
-is NOT evidence the queue is current — re-expand and diff, right after the `$ids` block below:
-
-```powershell
-Compare-Object $pl $ids | ForEach-Object {
-  "{0}: {1}" -f $(if ($_.SideIndicator -eq '<=') { 'playlist only' } else { 'queue only' }),
-               $_.InputObject }
-```
-
-The difference goes to the USER, never to your own judgement. Measured on the real queue
-2026-07-24: 6 ids in `queue.txt`, 23 in the playlist.
-
-**The id list comes from the QUEUE, never from a `work/` listing:**
-
-```powershell
-$lines = @(Get-Content queue.txt | ForEach-Object { $_.Trim() } |
-  Where-Object { $_ -and -not $_.StartsWith('#') })
-$ids = @($lines | ForEach-Object {
-  if ($_ -match '(?:v=|youtu\.be/|/shorts/|/embed/)([A-Za-z0-9_-]{11})') { $Matches[1] } })
-if ($ids.Count -ne $lines.Count) {
-  throw "queue: $($lines.Count) URLs, $($ids.Count) matched ids - unmatched line(s), see below" }
-$lines | Where-Object { $_ -match '[?&]list=' }    # must print nothing
-$ids = @($ids | Select-Object -Unique)
-```
-
-All three guards are load-bearing, and the full reasoning is in the `overdub-scout` skill's S1 —
-in short: a URL the regex misses is still PROCESSED (into a `work/<sha1>` dir) and therefore
-invisible to every gate below; a line carrying `&list=` passes the regex and then makes `yt-dlp`
-fetch the whole playlist over one workdir; duplicate spellings of one video race two sub-agents on
-one draft. Normalize the offending line to a bare `watch?v=<id>` and restart from D1. Do NOT
-enumerate `work/` — it persists across batches and holds stale and baseline workdirs.
-
-**A video that looks wrong for a digest is still an ordinary queue entry.** A music video, a live
-set, something with almost no speech, a two-minute clip — all of them download, transcribe, digest
-and render like the rest. Do not ask the user what to do with one and do not drop it from `$ids`:
-an honest "there is nothing here to retell", written into the digest, is a finished row, while a
-skipped video is a hole. The digester prompt says this too.
+- Duplicate spellings of one video would race two sub-agents on one draft — hence `-Unique`.
+- Under §3, a video with almost nothing to retell is still digested: an honest "there is nothing
+  here to retell", written INTO the digest, is a finished row, while a skipped video is a hole.
+  The digester prompt says this too.
 
 Then run:
 
@@ -186,13 +127,10 @@ Opus for both, and set it explicitly: an inherited session model makes two runs 
 incomparable, and compression is not the easy half — deciding which point to drop is the judgement
 that decides what the page says.
 
-**This step needs a session that has the `Workflow` tool.** It is NOT available to sub-agents
-(verified three ways, 2026-07-21), so a sub-agent — and presumably a headless or scheduled run —
-cannot perform D2. If you do not have the tool: **stop here and say so.** Do not substitute
-anything. The only fallback available is hand fan-out, which four runs on the sibling route proved
-does not work (~8.5 s of spawn latency per 1000 prompt characters, per video, and the orchestrator
-emits one message per agent no matter how the instruction is worded), and a slow path that looks
-like success is worse than an honest refusal.
+**This step needs a session that has the `Workflow` tool** — and never a hand fan-out. Both rules,
+and the measurements behind them, are
+[`docs/queue-contract.md`](../../../docs/queue-contract.md) §6. If you do not have the tool: stop
+here and say so.
 
 **Resume filter first — this is cache layer 2, and it produces TWO lists:**
 
@@ -217,12 +155,11 @@ A video appears in **at most one** list: the read pass always runs its own compr
   Remove-Item "work\$_\digest.started" -ErrorAction SilentlyContinue }
 ```
 
-For `$digTodo` this is the ordinary reason: a fresh draft paired with the previous attempt's marker
-reports the gap between runs as work. For `$compressTodo` it matters MORE, and the reason is worth
-knowing — the marker belongs to a read pass that ran in an earlier session, so keeping it would make
-`digest_sec` span from that session's start to this compression's end and bill hours of idle time as
-digest work. Deleting it costs the timing (`build_digest` warns, and the page marks the wave a floor)
-and buys an honest unknown instead of a wrong measurement.
+For `$digTodo` this is the ordinary reason (contract §7). For `$compressTodo` it matters MORE, and
+the reason is worth knowing — the marker belongs to a read pass that ran in an earlier session, so
+keeping it would make `digest_sec` span from that session's start to this compression's end and
+bill hours of idle time as digest work. Deleting it costs the timing (`build_digest` warns, and the
+page marks the wave a floor) and buys an honest unknown instead of a wrong measurement.
 
 **Stamp the wave start before spawning anything** — it cannot be recovered afterwards, and the
 page's wall-clock figure for the wave is derived from it:
@@ -230,11 +167,6 @@ page's wall-clock figure for the wave is derived from it:
 ```powershell
 $waveStart = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
 ```
-
-The wave start is NOT the per-video time. It is shared by every agent in the spawn, so for an agent
-that waited behind the concurrency cap it measures the queue, not the work. The per-video number
-comes from each agent's own `digest.started` marker (the workflow's prompt makes touching it the
-sub-agent's first action). The two are different measurements and the page keeps them apart.
 
 **DO NOT spawn the sub-agents yourself. Run the workflow:**
 
@@ -250,7 +182,8 @@ It returns `{done, failed, failedDigest, failedCompress, dropped, total}`. **The
 a `failedDigest` id goes back into `ids` (both passes), a `failedCompress` id into `compressOnly`
 (the cheap half only). Re-running the wrong one pays for the transcript read twice.
 
-**Verify from disk, not from the run's account.** Three things, and the first two go missing quietly:
+**Verify from disk, not from the run's account** (contract §7). Three things, and the first two go
+missing quietly:
 
 ```powershell
 # 1. the read pass landed for everything that needed it
@@ -266,12 +199,6 @@ $digTodo | Where-Object { -not (Test-Path "work\$_\digest.long.json") }    # mus
 A video with a `digest.long.json` and no `digest.draft.json` is the one state to read carefully: the
 expensive half is DONE and only compression is missing. Put it in `compressOnly` — never in `ids`.
 `build_digest` says so too rather than leaving you to notice.
-
-**A missing marker is not a failure to re-run.** The agent wrote the real artifact and skipped its
-first instruction; the digest is good and only that video's timing is gone. `build_digest` warns
-per video and the page marks the wave with a `+` to say it is a floor — but nothing re-digests for a
-timing, and doing so by hand would discard a valid digest to recover a number. (Measured on the
-sibling route 2026-07-21: 1 of 6 agents did exactly this.)
 
 An agent that could not write and handed its fields back as text: write the file yourself from its
 answer, verbatim — `digest.long.json` for a read pass, `digest.draft.json` for a compression. That is
@@ -305,8 +232,8 @@ Read its warnings — three are about the CONTENT, and each names a different pa
   digest's only mention of «plan A / plan B». A handful of these across a batch is the signal that
   the compressor's budget needs revisiting, not that one video is unusual.
 
-**The sub-agent prompt lives in `.claude/workflows/digest-videos.js`, not here.** Two copies of one
-prompt drift, and re-typing it per video is exactly the cost the workflow removes. Edit the script.
+**The sub-agent prompt lives in `.claude/workflows/digest-videos.js`, not here** (contract §6).
+Edit the script.
 
 ## D3 — Build the page, publish it, hand it over
 
@@ -349,17 +276,16 @@ file on disk. If the user asks about one video, quote from its `digest.md`.
 ## Promotion — a digested queue entering the dubbing route
 
 Nothing to clean up. That queue enters `overdub-sonnet-batch` at its **Step 1** (route B), or a
-plain `--batch` run (route A):
-
-- `transcribe` **fast-skips** on the existing `sentences.json` — the large-v3 pass is not repeated.
-- `translate` has nothing yet, so route B's Step 2 runs normally.
-- `download` **does re-run**: the full contract needs `source.mkv` and route D never wrote one, so
-  the audio bytes are re-fetched inside the merged container. ~5% extra traffic, accepted
-  deliberately (DECISIONS 2026-07-20). Do NOT hand-assemble an MKV from `source.wav`.
-- The digest artifacts survive and are not touched by the dub. They are also **not** refreshed by a
-  `--repair-asr` pass, which is what cache layer 2's mtime check is for.
+plain `--batch` run (route A); the mechanics are
+[`docs/queue-contract.md`](../../../docs/queue-contract.md) §4. The digest artifacts survive the
+dub untouched, and are **not** refreshed by a `--repair-asr` pass either — which is what cache
+layer 2's mtime check is for.
 
 ## Rules that are not negotiable
+
+The queue rules — never shorten or lengthen it, never forge a draft to fill a gap, a
+`# playlist:` header is provenance and not freshness, a derived artifact is not evidence — are
+[`docs/queue-contract.md`](../../../docs/queue-contract.md) §2-3 and §5. Route D adds four:
 
 - **A digest never grades and never recommends.** No `quality`, no watch/skip, no ranking, and the
   page never sorts. "Стоит смотреть, если" is an inventory of what stayed in the video, not a
@@ -368,21 +294,10 @@ plain `--batch` run (route A):
   transcript is itself imperfect, so an obviously garbled term is written as what was evidently
   meant and never silently upgraded into a fact; a transcript too thin to digest is reported as
   such, in the digest, not skipped.
-- **Never hand-write a `digest.draft.json` from your own reading of the transcript** to fill a gap.
-  Writing one down from a sub-agent's returned text is fine — that content came from the agent that
-  read the whole file. Inventing one is not: the page and the artifacts on disk must be the same
-  story, and a forged draft makes the pass's only completion signal a lie.
 - **Never publish the long digest as the digest, and never edit either file by hand to fit.**
   `digest.long.json` is the read pass's record; the page renders the compressed draft. Copying the
   long one over the draft ships a document 3× the intended length with no signal anywhere, and
   trimming a field by hand destroys the only evidence of what compression cost.
-- **A present `digest.json` is never proof the digest was written.** It is derived, it is always
-  well-formed, and the sibling route has a measured case of an orchestrator publishing a page built
-  entirely from stale ones. The draft is the evidence.
-- **Never shorten or lengthen the queue by yourself.** A model silently dropping a video is
-  indistinguishable, downstream, from the pipeline losing it — and unlike a lost video, nothing
-  reports it. A `# playlist:` header is provenance, not freshness: re-expand, diff, hand the diff
-  to the user.
 - **Never widen the scope to dubbing or grading.** Route D stops at D3. If the user wants the queue
   dubbed, hand off to `overdub-sonnet-batch` explicitly; if they want to know what is worth dubbing,
   hand off to `overdub-scout`.

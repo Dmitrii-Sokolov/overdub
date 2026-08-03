@@ -20,10 +20,8 @@ do not skip the helper, do not let a sub-agent hand-write `text_tts`.
   itself — no separate TTS venv. `.venv-demucs` is needed from synthesize onward (step 3, not
   step 1/2) for the default `dub_mix = "bed"`.
 - A queue: `queue.txt` (one URL per line, `#` comments and blanks skipped) **or** a single URL.
-  A PLAYLIST url is neither — expand and diff it in step 1, and never read the `# playlist:`
-  header as proof that the queue still matches it. The file is gitignored and run-owned: if the
-  user names a NEW source, overwrite it silently (back it up to `work/queue-prev.txt` first) —
-  a previous run's queue is never a question to put to the user, only a file to replace.
+  A PLAYLIST url is neither. Everything about resolving it is
+  [`docs/queue-contract.md`](../../../docs/queue-contract.md) §1-2, a MANDATORY READ before step 1.
 - Run everything from the repo root `D:\code\overdub`. Never merge venvs.
 
 ## Scouting first? That is a different skill (README route C)
@@ -33,85 +31,31 @@ If the user has NOT decided what to dub — "что тут стоит дубли
 `--scout` (download audio only → transcribe → stop), writes one summary per video and hands
 back a recommend-only rundown. Load it instead of improvising a scout pass here.
 
-A scouted queue re-enters THIS skill at **Step 1** with no cleanup: `transcribe` fast-skips on
-the scout's `sentences.json` (the large-v3 pass is not repeated), `summary.md` is reused, and
-`translate` has nothing yet so Step 2 runs normally. `download` DOES re-run — the full contract
-needs `source.mkv` and scout never wrote one — re-fetching the audio bytes inside the merged
-container: ~5% extra traffic, accepted (DECISIONS 2026-07-20). Do not try to save it by
-hand-assembling an MKV from `source.wav`.
+A scouted queue re-enters THIS skill at **Step 1** with no cleanup; the mechanics are
+[`docs/queue-contract.md`](../../../docs/queue-contract.md) §4.
 
 **The summarizer prompt in Step 2 below is shared with that skill.** Change it in one place and
 change it in the other, or the two routes start producing different artifacts under one name.
 
 ## Step 1 — Resolve the queue, then transcribe the batch (no translation yet)
 
+**Read [`docs/queue-contract.md`](../../../docs/queue-contract.md) now, before anything else.**
+Sections 1-3 are this step: who owns `queue.txt`, the `$ids` block and its three load-bearing
+guards, the `# playlist:` freshness diff, and the rule that a queue is never shortened, lengthened
+or interrupted by a model. Run §1 and §2 verbatim.
+
 **Resolve the queue BEFORE the command, not after** (moved above it 2026-07-24). These checks
 used to sit under the run, which made them audits of a download that had already happened: a
 malformed line was caught only once its bytes were spent.
 
-**The id list comes from the QUEUE, never from a `work/` listing.** `<id>` is the 11-char
-YouTube id inside each URL (step 1 also prints it per video: `work dir: work\<id>`):
+Route-B specifics on top of the contract:
 
-```powershell
-$lines = @(Get-Content queue.txt | ForEach-Object { $_.Trim() } |
-  Where-Object { $_ -and -not $_.StartsWith('#') })
-$ids = @($lines | ForEach-Object {
-  if ($_ -match '(?:v=|youtu\.be/|/shorts/|/embed/)([A-Za-z0-9_-]{11})') { $Matches[1] } })
-if ($ids.Count -ne $lines.Count) {
-  throw "queue: $($lines.Count) URLs, $($ids.Count) matched ids - unmatched line(s), see below" }
-$lines | Where-Object { $_ -match '[?&]list=' }    # must print nothing — see below
-$ids = @($ids | Select-Object -Unique)
-```
-
-All three guards are load-bearing. A URL the regex misses (e.g. a `/live/` link) is still
-PROCESSED by the pipeline — `video_id()` hash-fallbacks it into a `work/<sha1>` dir — but
-invisible to every gate below, which at step 3 means that video reaches the resume with no
-translation of its own. A line carrying `&list=` is the worse case, because the regex gate WAVES IT THROUGH —
-the video id matches — and then `yt-dlp` follows the playlist: the download stage passes no
-`--no-playlist` and `-o` is a fixed `source.*` path (`stages/download.py`), so dozens of videos
-are fetched over one workdir (verified 2026-07-24: a `watch?v=…&list=…` URL expands to the whole
-playlist). Both cases: normalize the line in queue.txt to a bare `watch?v=<id>` form and restart
-from step 1.
-Duplicate spellings of one video share a workdir and the CLI dedupes them (`cli.py`); without
-`-Unique` two parallel sub-agents would race on the same draft file.
-
-**The queue is not the playlist, and `# playlist:` is not a live link to one.** That header is
-PROVENANCE for the report (`queueview.queue_playlist`) — a snapshot of the moment the queue was
-written. A header URL matching the playlist the user just named proves NOTHING about what is in
-`queue.txt` now; the playlist may have grown since. Whenever the user points at a playlist — by
-URL, or by "тот же плейлист" — expand it again and diff, before trusting the file:
-
-```powershell
-$pl = @(.venv-asr\Scripts\yt-dlp.exe --flat-playlist --print "%(id)s" <playlist-url>)
-Compare-Object $pl $ids | ForEach-Object {
-  "{0}: {1}" -f $(if ($_.SideIndicator -eq '<=') { 'playlist only' } else { 'queue only' }),
-               $_.InputObject }
-```
-
-Hand the difference to the USER; never resolve it yourself:
-
-- **playlist only** — either the playlist grew, or a human deliberately dropped that video
-  (route C promotion trims the queue to the survivors, `overdub-scout`). Those two are
-  indistinguishable from here. Name the ids, ask, wait for an answer.
-- **queue only** — normal (removed or made private upstream). Say it once and carry on; never
-  drop the line by yourself.
-
-Same rule as ids-from-the-queue-never-from-`work/`, one level up: a model concluding on its own
-that a queue is still current is indistinguishable, downstream, from the pipeline losing videos.
-
-Do NOT enumerate `work/` directories — `work/` persists across batches and holds
-stale/baseline workdirs; translating those wastes tokens and overwrites their
-`translation.json` (experiment baselines are unrecoverable).
-
-**A video that looks wrong for dubbing is still an ordinary queue entry — do not stop to ask
-about one.** A music video, an instrumental cut, a talk with almost no speech, a two-minute clip:
-dub it like the rest. Measured 2026-07-26 on `VHRhSDawKVA` ("… (Instrumental)"): whisper returned
-a single hallucinated "Thank you." over the music, the translator sub-agent flagged it
-`src=garbled` with exactly that reason, and the video muxed clean in 11 s with
-`needs_triage: false` — the pipeline's own report already said everything the question to the user
-would have asked, and it said it in an artifact instead of in chat. What goes IN the queue is the
-human's decision and route C is where it is made; a video quietly held back here is the same
-silent loss the `$ids` gates exist to prevent.
+- Step 1 prints the workdir per video (`work dir: work\<id>`).
+- A URL the `$ids` regex misses is invisible to every gate below, which **at step 3 means that
+  video reaches the resume with no translation of its own** — it cannot be dubbed at all.
+- Without `-Unique`, two parallel sub-agents race on the same draft file.
+- Translating a stale `work/` dir also OVERWRITES its `translation.json`, and experiment baselines
+  are unrecoverable — one more reason ids come from the queue.
 
 Then run — **stamped**. Step 4 has to divide the queue's audio by the time the machine actually
 spent, and no artifact records that (see step 4, "Capacity"). The stamp is three lines, costs
@@ -181,17 +125,13 @@ $sumTodo = @($ids | Where-Object {
     (Get-Item "work\$_\sentences.json").LastWriteTime -gt (Get-Item $s).LastWriteTime })
 ```
 
-**A missing `translation.draft.json` OUTRANKS a present `translation.json`. Always.** The
-`translation.json` is DERIVED from the draft; with the draft gone it describes work whose input no
-longer exists, and it is not evidence that anything is done. Do not resolve the contradiction by
-opening the `translation.json` and finding it well-formed — it will always be well-formed, that is
-what `build_translation.py` guarantees. Add the video to `$todo` and re-translate it. (Route C
-learned this the expensive way on 2026-07-21: an orchestrator investigated the same contradiction,
-concluded the derived artifacts were "консистентны и полны", skipped the whole step and published a
-flawless-looking report representing zero work.)
+**A missing `translation.draft.json` OUTRANKS a present `translation.json`. Always** — the
+derived-artifact rule, [`docs/queue-contract.md`](../../../docs/queue-contract.md) §5. Add the
+video to `$todo` and re-translate it; do not reason your way out of the contradiction by opening
+the derived file.
 
-**Delete stale markers for the videos about to be respawned**, or the fan-out check below pairs a
-fresh run with the previous attempt's timestamps:
+**Delete stale markers for the videos about to be respawned** (contract §7), or the fan-out check
+below pairs a fresh run with the previous attempt's timestamps:
 
 ```powershell
 @($todo + $sumTodo) | Select-Object -Unique |
@@ -204,12 +144,10 @@ fresh run with the previous attempt's timestamps:
 Workflow: {name: "translate-batch", args: {ids: [...$todo], sumIds: [...$sumTodo], root: "D:\\code\\overdub"}}
 ```
 
-Pass `ids`/`sumIds` as **real JSON arrays, not a stringified list** — this is the easy mistake and
-it was made on the very first call (2026-07-28, `args: "{\"ids\": [...]}"`), matching route C's 8
-out of 8. The script parses a string anyway, so it costs nothing; do it right regardless, because
-the guard is a net and not a contract. Both lists are the RESUME-FILTERED ones — never the whole
-queue. The workflow refuses an empty fan-out rather than reporting success having translated
-nothing.
+Why never by hand, why the arrays must be real JSON, why the whole queue goes in ONE call, and what
+to do when the `Workflow` tool is absent (stop and say so): **[`docs/queue-contract.md`](../../../docs/queue-contract.md)
+§6**, which carries the 117-video measurement this step was rebuilt from. The workflow refuses an
+empty fan-out rather than reporting success having translated nothing.
 
 **First run, 2026-07-28 (5 videos):** markers 3.5 s apart, a 4694-line / 782-sentence transcript
 returned 782/782, `src` on 100% of records in all four drafts, zero `_is_bad` flags, 5/5 muxed —
@@ -217,49 +155,20 @@ and step 2 cost the orchestrator 1428 chars against 62% of a window for the hand
 replaced. Nothing failed, so the `failed` / `incomplete` / second-wave branches below are still
 unexercised code: read their output, do not assume it.
 
-**Hand fan-out is not a slower alternative here, it is the failure mode this step was rebuilt to
-remove** (2026-07-28). Measured on the 117-video batch of 2026-07-27, transcript `c9a89f27`:
-
-```
-translator prompts   87 spawns   403,364 chars   (median 4.5k, generated token by token)
-inbound reports     123 msgs     270,832 chars   (mean 2.4k, worst 13,547 for a 9-line fix)
-SendMessage out      40 calls     92,460 chars
-idle_notification   133 blocks    15,794 chars
-orchestrator context  60k -> 893k tokens, ~350k of it the traffic above
-```
-
-That run died at 89% of a 1M window. Step 4 never ran, and **84 of 117 summaries were silently
-never written** — no FAIL row, no flag, nothing in chat: the orchestrator simply ran out of room
-and dropped half of its own step. A sub-agent isolates its OWN context, but its prompt and its
-final report stay in the orchestrator's history forever, so hand fan-out makes the orchestrator pay
-TWICE per video (~9.6k tokens) instead of not at all. Route C measured the same thing from the
-other side — prompts generate at ~8.5 s per 1000 chars, so 403k chars is ~57 min of pure typing —
-and proved wording cannot fix it: an orchestrator explicitly reasoned "spawning six sub-agents in a
-single message", announced it, and emitted six messages anyway.
-
 **The prompts live in `.claude/workflows/translate-batch.js`, not here.** Edit the script. The
-contract is no longer pasted into anything: the sub-agent reads
+translation contract is no longer pasted into anything either: the sub-agent reads
 [`references/translate-contract.md`](references/translate-contract.md) off disk itself (9.1k chars
 per spawn) under a MANDATORY-READ rule, and an agent that cannot read it returns `CONTRACT-MISSING`
 and stops instead of translating to its own taste.
-
-**This step needs a session that has the `Workflow` tool.** It is NOT available to sub-agents
-(verified three ways on route C, 2026-07-21), so a sub-agent — and presumably a headless or
-scheduled run — cannot perform Step 2. If you do not have the tool: **stop here and say so.** Do
-not substitute anything. The only fallback available is the hand fan-out above, which is precisely
-what the measurements condemn, and a slow path that looks like success is worse than an honest
-refusal.
-
-The whole queue goes in ONE call — the runtime caps concurrency (~16 agents) and queues the rest,
-so the old "waves of ~3 videos" advice is obsolete and its per-wave barrier only added idle time.
-A queue past ~450 videos would approach the 1000-agent-per-workflow backstop (two agents each);
-split it there, not before.
 
 It returns `{done, failed, incomplete, unclear, total}`, all by id. `failed` is a dropped agent or
 a `CONTRACT-MISSING`; `incomplete` is an agent that could not cover every id; `unclear` is a status
 line that did not parse — **not a failure**, and the disk decides.
 
 ### Verify from disk, not from the run's account
+
+Contract §7 — the rule and what a missing marker does and does not mean. The marker here is
+`translate.started`:
 
 ```powershell
 # 1. every spawned video got a marker — its absence means that agent never started
@@ -271,10 +180,7 @@ line that did not parse — **not a failure**, and the disk decides.
   Select-Object -First 5
 ```
 
-This check exists because on 2026-07-20 an orchestrator's own account of a wave was wrong in both
-specifics it offered, while the completion times it reported were accurate: **an agent's report of
-what it OBSERVED is worth more than its report of what it DID.** The same rule settles `unclear` —
-run the helper and let the artifact answer.
+The same rule settles `unclear` — run the helper and let the artifact answer.
 
 ### Assemble and validate the real artifact
 
@@ -465,6 +371,11 @@ re-sorts the queue). Mention the path in your summary. Skip it for a fully clean
 
 ## Guardrails (the failure modes this skill exists to prevent)
 
+The queue-wide ones live in [`docs/queue-contract.md`](../../../docs/queue-contract.md) and bind
+here unchanged: never shorten the queue or forge a completion artifact (§3), a stale
+`# playlist:` header is not freshness (§2), a derived artifact is not evidence (§5), never
+hand-spawn a fan-out (§6). Route-B's own:
+
 - **Never let a sub-agent write `text_tts`.** It MUST come from
   `normalize_for_tts` (the helper does this). Verify compares the ASR round-trip against
   `text_tts` through the same normalizer — a hand-spelled value silently breaks verification.
@@ -473,28 +384,11 @@ re-sorts the queue). Mention the path in your summary. Skip it for a fully clean
 - **The helper is not optional.** It is the only thing validating the contract on the resume
   path (`TranslateStage.done()` only checks that the file exists — a malformed hand-written
   `translation.json` would sail straight into synthesize and produce garbage or crash there).
-- **Never hand-spawn step 2's sub-agents.** It is not a slower path, it is a losing one: measured
-  2026-07-27, 117 videos cost the orchestrator ~9.6k tokens per spawn (prompt + report, both of
-  which stay in its history forever), filled 89% of a 1M window, and cost the run its step 4 and
-  84 of its 117 summaries — dropped silently, because a context ceiling produces no FAIL row.
-  Run `translate-batch`; if the `Workflow` tool is absent, stop and say so.
 - **A truncated transcript read is silent on the agent's side.** `Read` returns 2000 lines by
   default and 28 of 152 `sentences.json` files exceed that (largest 5930 lines / 988 sentences),
   so a naive read hands the translator the first third of the video with no warning. Only
   `build_translation.py`'s missing-id exit catches it, one full respawn later. The workflow's
   prompt requires reading on to the last id; keep that requirement if you edit it.
-- **A derived artifact whose draft is gone is not evidence of work.** `translation.json` without
-  `translation.draft.json` describes inputs that no longer exist, and it will always look
-  well-formed — that is what the helper guarantees. Re-translate; never reason your way out of the
-  contradiction by inspecting the derived file (route C, 2026-07-21: that reasoning published a
-  flawless-looking report representing zero work).
-- **A matching `# playlist:` header is not evidence that the queue is current.** It is a
-  snapshot written when the queue was built (`queueview.queue_playlist`, for the report header).
-  Concluding "the URL is the same, so everything is already downloaded" skips every video added
-  to the playlist since — a silent loss with no FAIL row, no flag and no missing artifact to
-  detect it, because those videos were never in `$ids` to begin with. Re-expand and diff
-  (step 1); the diff goes to the human. Measured on the real queue 2026-07-24: `queue.txt` held
-  6 ids while the playlist held 23.
 - **A missing `translation.json` at step 3 means that video cannot be dubbed at all.** The seam is
   its only producer — hence the mandatory every-id check before resuming, and hence ids from the
   queue, never from `work/`.
@@ -516,12 +410,6 @@ re-sorts the queue). Mention the path in your summary. Skip it for a fully clean
   observability regression this route itself introduced, not a bonus detector. `src` is required
   on every record precisely so a skipped anomaly pass shows up as `not scanned` instead of as a
   clean-looking empty report.
-- **A scout pass never shortens the queue by itself.** S3 recommends; the human drops videos.
-  Same reasoning as the two bullets above and the same rule the summary was built under
-  (2026-07-20): a model silently deciding a video is not worth dubbing is
-  indistinguishable, downstream, from the pipeline losing it. Also never hand-write a
-  `summary.md` to clear a `summary pending` line — that line is the pass's only completion
-  signal, and forging it is the silent failure in miniature.
 - **Source anomalies gate nothing.** Do not add a `src` clause to the step-3 gate, do not let
   them delay a resume, and do not treat a `[warn]` from the helper as a failure — same reasoning
   as the summary bullet above (DECISIONS 2026-07-20, D2). They are advisory in v1 and do not move

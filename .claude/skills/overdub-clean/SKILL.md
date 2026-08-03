@@ -39,34 +39,13 @@ cleaned — the drafts are.
 
 ## E1 — Resolve the queue, then make sure every video has a transcript
 
-`queue.txt` belongs to the RUN, not to the user's history. **Never stop to ask what to do with a
-leftover queue** — resolve the input, then write the file. A new playlist or an explicit list of
-videos overwrites it (back it up first: `Copy-Item queue.txt work\queue-prev.txt -Force`); the same
-playlist, or nothing named at all, keeps it.
+**Read [`docs/queue-contract.md`](../../../docs/queue-contract.md) now, before anything else.**
+Sections 1-3 are this step: who owns `queue.txt`, the `$ids` block and its three load-bearing
+guards, the `# playlist:` freshness diff, and the rule that a queue is never shortened, lengthened
+or interrupted by a model. Run §1 and §2 verbatim.
 
-If the user handed over a PLAYLIST, expand it — the queue is a list of videos, always — and record
-the provenance as the first line (`# playlist: <название> | <url>`); the pipeline skips it as a
-comment. **That header is provenance, not freshness**: re-expand and `Compare-Object` against the
-queue, and hand the difference to the USER rather than acting on it yourself.
-
-**The id list comes from the QUEUE, never from a `work/` listing:**
-
-```powershell
-$lines = @(Get-Content queue.txt | ForEach-Object { $_.Trim() } |
-  Where-Object { $_ -and -not $_.StartsWith('#') })
-$ids = @($lines | ForEach-Object {
-  if ($_ -match '(?:v=|youtu\.be/|/shorts/|/embed/)([A-Za-z0-9_-]{11})') { $Matches[1] } })
-if ($ids.Count -ne $lines.Count) {
-  throw "queue: $($lines.Count) URLs, $($ids.Count) matched ids - unmatched line(s), see below" }
-$lines | Where-Object { $_ -match '[?&]list=' }    # must print nothing
-$ids = @($ids | Select-Object -Unique)
-```
-
-All three guards are load-bearing; the full reasoning is in the `overdub-scout` skill's S1. In
-short: an unmatched URL is still PROCESSED into a `work/<sha1>` dir and is therefore invisible to
-every gate below; a line carrying `&list=` makes `yt-dlp` pull a whole playlist into one workdir;
-a duplicate id races two waves over one set of chunk files. Do NOT enumerate `work/` — it persists
-across batches and holds stale and baseline workdirs.
+Route-E specific: a duplicate id races two waves over **one set of chunk files**, which is the
+worst form of that collision in the repo — hence `-Unique`.
 
 Then run:
 
@@ -127,10 +106,9 @@ foreach ($id in $ids) {
 at join time, so a hand-written range would fail the join with ids belonging to no chunk. Use
 `--chunk N` on both calls or on neither.
 
-**This step needs a session that has the `Workflow` tool.** It is NOT available to sub-agents, so a
-sub-agent (or a headless run) cannot perform E3. If you do not have it: **stop here and say so.** Do
-not substitute hand fan-out — it costs ~8.5 s of spawn latency per 1000 prompt characters per agent
-and the orchestrator emits one message per agent regardless of wording (measured, route C).
+**This step needs a session that has the `Workflow` tool, and never a hand fan-out** — both rules
+and their measurements are [`docs/queue-contract.md`](../../../docs/queue-contract.md) §6. If you
+do not have the tool: stop here and say so.
 
 **DO NOT spawn the sub-agents yourself. Run the workflow:**
 
@@ -190,15 +168,18 @@ chunk you re-ran, a video whose transcript was too thin to be worth reading. Off
 ## Promotion — a cleaned queue entering another route
 
 Nothing to clean up, and nothing here writes `translation.json`, so a cleaned video is untranslated
-rather than half-translated. It enters route B at its Step 1 or route D at D2, and `transcribe`
-fast-skips on the existing `sentences.json`. `download` DOES re-run for the dubbing routes: the full
-contract needs `source.mkv` and this route never wrote one. Do NOT hand-assemble an MKV from
-`source.wav`.
+rather than half-translated. It enters route B at its Step 1 or route D at D2; the mechanics are
+[`docs/queue-contract.md`](../../../docs/queue-contract.md) §4.
 
 Going the other way, a queue that was scouted or digested arrives here with its transcript already
 on disk, so E1 costs seconds.
 
 ## Rules that are not negotiable
+
+The queue rules — never shorten or lengthen it, never hand-write a draft from your own reading of
+the transcript, a derived artifact is not evidence — are
+[`docs/queue-contract.md`](../../../docs/queue-contract.md) §3 and §5; under §5 the evidence here
+is the per-chunk drafts under `clean/`, never `clean.json` or `clean.md`. Route E adds five:
 
 - **Minimal processing is the contract, not a preference.** Filler and false starts out; wording,
   register, sentence order and sentence boundaries untouched. The moment this route starts
@@ -209,9 +190,5 @@ on disk, so E1 costs seconds.
 - **An emptied line is written `""`; a missing id is a failure.** The two are indistinguishable in a
   text file after the fact, which is why the build refuses the second.
 - **Repair before clean, always.** Reversing it deletes the clean pass, by design.
-- **Never hand-write a chunk draft from your own reading of the transcript.** Writing one down from
-  an agent's returned array is fine — that content came from the agent that read the range.
-- **A present `clean.md` is never proof the chunks were cleaned.** It is derived and always
-  well-formed. The drafts under `clean/` are the evidence.
-- **Never shorten or lengthen the queue by yourself.** A silently dropped video is indistinguishable
-  downstream from one the pipeline lost, and nothing reports it.
+- **Writing down an agent's returned array is not hand-writing a draft.** That content came from
+  the agent that read the range; inventing one from the transcript yourself is the §5 violation.
