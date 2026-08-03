@@ -342,7 +342,7 @@ def test_synthesize_calls_begin_video_on_the_engine_it_got() -> None:
         tmp = Path(d)
         (tmp / "segments").mkdir(parents=True)
         cfg = Config()
-        cfg.tts_engine = "silero"                        # synth_key without F5 assets on disk
+        cfg.tts_engine = "silero"                        # synth_key needs no assets on disk
         cfg.tts_sample_rate = FakeEngine.sample_rate
         work = WorkDir(root=tmp)
         work.translation.write_text(json.dumps(

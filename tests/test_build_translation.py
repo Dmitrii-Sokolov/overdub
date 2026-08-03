@@ -123,7 +123,7 @@ def test_a_kept_command_is_not_an_english_echo() -> None:
 def test_a_real_echo_still_fails_when_it_ends_a_sentence() -> None:
     # The exemption is punctuation-driven, so the trap is the trailing period: treating a sentence
     # terminator as path evidence would exempt the last word of EVERY sentence and quietly blind
-    # the detector. These are route-A Gemma's actual failure — the source, handed back.
+    # the detector. These are the real failure mode — the source, handed back untranslated.
     for echo in ("this was left untranslated",
                  "she is free to play.",
                  "it just maps up your whole project."):
@@ -185,7 +185,7 @@ def test_pronounce_audit_written() -> None:
 # The whole point of `src`: a good translator LAUNDERS source damage, so the draft must carry a
 # positive "ok" claim per record and every src defect must degrade to a [warn] — never an exit.
 # A hard failure here would leave translation.json unwritten and hand the video to the silent
-# local-Gemma path at resume, i.e. a report gating a dub.
+# resume with nothing to dub from, i.e. a report gating a dub.
 def test_src_ok_copied_without_note() -> None:
     out, _, _, (n_anom, n_scanned), rows = _build_full(
         [_sent(0, "Hello there."), _sent(1, "How are you?")],

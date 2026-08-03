@@ -229,7 +229,7 @@ def _extract_wav(src: Path, dst: Path) -> None:
             # BOTH branches down (_fetch_video and _fetch_audio land here), i.e. the whole
             # pipeline, not just scout. Verified against ffmpeg 7.1.1: exit 127 without it.
             # Same hazard the repo already paid for once with soundfile on .../NNNNN.wav.tmp
-            # (tts/silero.py, tts/f5_worker.py pass format="WAV") and already guards at
+            # (tts/silero.py passes format="WAV") and already guards at
             # mux.py's "-f matroska" for .mkv.tmp. Do NOT "simplify" by renaming the tmp to
             # source.tmp.wav: that makes correctness depend on a filename this module also
             # globs over (source.audio.*).

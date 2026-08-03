@@ -42,7 +42,7 @@ MAX_CHARS = 240         # char cap before clause-split
 HALLUC_RUN = 4          # >=N identical consecutive tokens => whisper hallucination
 MIN_WORD_DUR = 0.02     # floor for a synthesized pseudo-word duration
 MIN_SENT_CHARS = 15     # EN chars below which a sentence is "ultra-short" and merged into a
-                        # neighbor: F5 sizes its duration canvas by text byte count, so tiny
+                        # neighbor: a TTS engine sizing its canvas by text length garbles tiny
                         # texts garble/echo the reference tail (the id43 "Решениям." class)
 MERGE_GAP_MAX = 0.6     # never merge across a pause longer than this (seconds) — the gap
                         # becomes continuous synthesized speech, i.e. deliberate sync drift
@@ -280,7 +280,7 @@ def _split_overlong(flat: list[W], lo: int, hi: int) -> list[tuple[int, int]]:
     return _split_overlong(flat, lo, cut) + _split_overlong(flat, cut + 1, hi)
 
 
-# ---- 3b. ultra-short sentence merge (F5 short-text failure class) --------------
+# ---- 3b. ultra-short sentence merge (short-text failure class) -----------------
 def _chars(flat: list[W], a: int, b: int) -> int:
     return sum(len(flat[k].text) + 1 for k in range(a, b + 1)) - 1
 
@@ -484,9 +484,9 @@ class TranscribeStage:
         Whisper's repetition loop is fed by condition_on_previous_text, and it takes the word
         alignment down with it: the run comes back with a chain of floor-stamped words that
         flatten had to manufacture (see floor_run_ratio). Those fake timings are not cosmetic —
-        synthesize hands each unit's span to F5 as a native-speed target, so a collapsed stretch
-        makes the engine compress until it drops words outright, and assemble tops the rest up
-        with atempo. Observed on 4szRHy_CT7s: one slot at 294 char/s, atempo x8.79.
+        a collapsed stretch leaves a slot far too short for its text, and assemble then has to
+        make it fit with extreme atempo. Observed on 4szRHy_CT7s: one slot at 294 char/s,
+        atempo x8.79.
 
         Cause-based on purpose. The HARM cannot be predicted here (it depends on the Russian
         text, which does not exist until translate, and on unit grouping absorbing free gaps —

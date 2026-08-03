@@ -2,8 +2,8 @@
 
 Produces the no-vocals ambience/music bed the "bed" dub_mix mode lays under the RU dub.
 Runs htdemucs (hardcoded — no model knob) in its own venv (.venv-demucs) as a CLI
-subprocess: demucs's torch pins must not gamble either the ASR or the F5 stack (the same
-isolation argument as the F5 worker, but one call per video needs no persistent protocol).
+subprocess: demucs's torch pins must not gamble the ASR stack (one call per video needs no
+persistent protocol, so a plain CLI call is enough).
 
 Extracts a 44.1 kHz STEREO wav from source.mkv first — the 16 kHz mono source.wav used for
 STT is unusable for separation. ~3 GB VRAM, standalone between assemble and mux (nothing

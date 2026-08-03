@@ -124,7 +124,7 @@ class Config:
                                      # best by ear = kseniya, eugene. v5 is Cyrillic-only — safe
                                      # because text_tts is Cyrillic by contract (see tts/silero.py).
                                      # Audio-affecting → it is part of synth_key.
-    tts_sample_rate: int = 48000     # silero-only (F5 sr is engine-owned: 24000)
+    tts_sample_rate: int = 48000     # silero-only
     silero_ssml_breaks: bool = False  # silero v5 only: put the ORIGINAL inter-sentence pauses
                                      # back inside a grouped unit as SSML <break>. OFF by ear
                                      # (2026-07-25): indistinguishable from no markup, because
@@ -155,8 +155,8 @@ class Config:
                                      # the three arms are inside the run-to-run noise (two
                                      # identical baseline verify passes read 84.3 and 45.8).
     group_span_max: float = 20.0     # unit source-span cap (s) and joined-text cap. Both were
-    group_chars_max: int = 600       # F5-shaped constants ("~10 s ref + gen inside F5's trained
-                                     # ≤30 s regime", "internal-chunking insurance") and they —
+    group_chars_max: int = 600       # engine-shaped constants (keep a unit inside the range the
+                                     # engine renders in one chunk) and they —
                                      # not group_gap_max — are what actually binds grouping:
                                      # measured over 37 videos / 5401 sentences, raising gap
                                      # 0.4→1.2 alone moves 1.40→1.57 sentences per unit because
@@ -194,7 +194,7 @@ class Config:
                                      # cost. NOT audio-affecting in the synth sense: it lands
                                      # after verify, so it stays OUT of synth_key and never
                                      # forces a resynthesis. Auto-skipped when the cutoff is
-                                     # not comfortably below Nyquist — F5's 24 kHz track has
+                                     # not comfortably below Nyquist — a 24 kHz track has
                                      # nothing up there to cut (see assemble.effective_lowpass).
     demucs_python: Path = Path(".venv-demucs/Scripts/python.exe")  # bed mode only
 
@@ -223,7 +223,7 @@ class Config:
     # completeness — cheap deterministic loss check (stages/verify.py + completeness.py),
     # non-blocking triage only. len(text_ru)/len(src_en) below this AND len(src_en) >= 30 chars
     # -> length_short. 0.45 sits under the natural RU-compression floor (~0.46): validated
-    # 0/427 false positives on both the Gemma and near-clean Sonnet samples; 0.50 would false-
+    # 0/427 false positives on both 427-sentence samples; 0.50 would false-
     # flag a legit condensed sentence. Weak signal, redundant with the precise num/neg/entity
     # detectors — kept conservative to prefer a miss over a false alarm.
     completeness_len_ratio_min: float = 0.45

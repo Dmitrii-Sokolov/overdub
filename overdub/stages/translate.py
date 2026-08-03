@@ -46,7 +46,7 @@ _ALPHA = re.compile(r"[A-Za-zА-Яа-яЁё]")
 _LATIN_RUN = re.compile(r"[A-Za-z]+")
 # A latin run that is NOT prose: part of a command, path, filename, flag or identifier. The
 # evidence is the character NEXT TO the run, not the letters themselves — `task-master`, `prd.txt`,
-# `scripts/prd`, `--with-subtasks`, `/update-doc`, `contact-session-1`, `qwen3`. Measured on the
+# `scripts/prd`, `--with-subtasks`, `/update-doc`, `contact-session-1`, `mp3`. Measured on the
 # 2026-07-25 batch: 13 of 28 english_echo fires were this shape (the rest are set phrases the
 # translator kept on purpose — advisory in runreport, not silenced here). Deliberately NOT a
 # command whitelist: `npm`/`cd`/`tmux` change with the material, punctuation does not.

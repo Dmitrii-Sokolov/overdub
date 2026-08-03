@@ -9,7 +9,7 @@ the translate-seam contract never rides on an LLM's discipline:
                            the verify stage applies, so the ASR round-trip is exact by
                            construction (never let the LLM spell text_tts, DECISIONS)
   - status / flag          overdub.stages.translate._is_bad(...) gate -- the same reasons the
-                           in-pipeline Gemma path flags (empty / no_cyrillic / english_echo /
+                           gate flags (empty / no_cyrillic / english_echo /
                            runaway / refusal)
   - id-contiguity          enforced (exit, never a silent drop) exactly like TranslateStage.run
   - pronounce_audit.json   pronounce.audit_summary(...) -- the audit-only operator-triage
@@ -25,8 +25,8 @@ semantic garble that carries no timing anomaly and no repeated span. This script
 onto translation.json, clamps an unknown kind instead of dropping it, and COUNTS how many
 records carried one at all -- so a skipped anomaly pass reports as "not scanned" rather than as
 a clean-looking empty report. Every src defect is a [warn], NEVER an exit: a report must never
-gate a dub, and a hard failure here would leave translation.json unwritten and hand that video
-to the silent local-Gemma path at resume.
+gate a dub, and a hard failure here would leave translation.json unwritten, sending that video
+into the resume with nothing to dub from.
 
 Reusing the pipeline's own (partly private) helpers is deliberate: route B replaces only the
 LLM call, so every downstream invariant stays byte-identical to the local route. If _is_bad or
@@ -125,7 +125,7 @@ def build(work: WorkDir, draft_path: Path, cfg: Config
         src_en = s["text"]
         text_ru, src, note = draft[sid]
         text_ru = text_ru.strip()
-        reason = _is_bad(text_ru, src_en, cfg)           # same gate as the Gemma path
+        reason = _is_bad(text_ru, src_en, cfg)           # the pipeline's own gate
         rec = {
             "id": sid, "start": s["start"], "end": s["end"], "src_en": src_en,
             "text_ru": text_ru, "text_tts": normalize_for_tts(text_ru),

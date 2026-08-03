@@ -3,7 +3,7 @@
 Run: .venv-asr/Scripts/python.exe tests/test_completeness.py   (or via pytest)
 Pure, no I/O, no GPU. Guards each detector's fire/no-fire contract plus its documented
 false-positive guards (RU bound-prefix negation incl. the без/бес voicing pair, double-negative,
-sentence-initial entity, personal-name Russification, Gemma spelled-out numbers), and the "clean
+sentence-initial entity, personal-name Russification, spelled-out numbers), and the "clean
 sentence -> no flags" invariant that keeps 400+ good sentences unflagged.
 
 duplicate_adjacent (the one CROSS-SENTENCE detector) is tested separately from check(): its
@@ -43,7 +43,7 @@ def test_number_lost() -> None:
 
 
 def test_number_spelled_out_not_flagged() -> None:
-    # Gemma spells digits against the keep-digits rule; the _n2w suppressor must absorb it.
+    # a translator spelling digits against the keep-digits rule; _n2w must absorb it.
     r = _check("It costs 100 dollars.", "Это стоит сто долларов.")
     assert r["missing_numbers"] == []
     assert "num_loss" not in r["flags"]

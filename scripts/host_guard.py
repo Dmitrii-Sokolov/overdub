@@ -1,7 +1,7 @@
 """Is this host quiet enough to measure on? Call it FIRST, before any timed work.
 
 Written after a grouping A/B produced verify times of 347 s and 597 s against a 45 s baseline
-and a whole conclusion was drawn from them ("grouping makes Silero slower than F5"). Every
+and a whole conclusion was drawn from them ("grouping makes synthesis slower"). Every
 number was an artifact: a game was holding the GPU at 98% and 86 C. The probe methodology was
 otherwise sound — mirrored order, repeated blocks — but a mirrored pair only cancels drift that
 is SLOW compared to the run. A process that owns the card for the whole session is not drift,

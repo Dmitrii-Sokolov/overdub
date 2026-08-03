@@ -204,7 +204,7 @@ def normalize_for_tts(text: str) -> str:
     t = re.sub(r"(\d+)\s?°",
                lambda m: f"{_n2w(int(m.group(1)))} {_plural(int(m.group(1)), 'градус', 'градуса', 'градусов')}", t)
 
-    # 1b. split letter<->digit seams so PS5 / qwen3 / 4K resolve as letters + number.
+    # 1b. split letter<->digit seams so PS5 / mp3 / 4K resolve as letters + number.
     #     AFTER pass 1 on purpose: glued NxM (1920x1080, 8x8) must stay glued there so the
     #     multiplier's own digit guards reject it — splitting first would assert "в N раз"
     #     semantics on resolutions/grids. Units unaffected: _UNIT_RE tolerates the space.

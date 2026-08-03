@@ -38,7 +38,7 @@ length_short  (signal A, WEAK) — len(text_ru)/len(src_en) below cfg.completene
     compression is NOT loss. The min-length guard removes the noisy short-fragment tail; below
     that the threshold (0.45) sits under the natural RU-compression floor (~0.46), so it fires
     only on a genuinely dropped clause / empty / truncated output. Validated 0/427 false
-    positives on both the Gemma and the near-clean Sonnet 427-sentence samples.
+    positives on both 427-sentence samples.
     FALSE POSITIVE: a legitimately condensed sentence just above the floor; kept rare by the
     conservative threshold. This signal is coarse and intentionally redundant with the precise
     B-signals below — it only catches the catastrophic drop that carries no number/neg/entity.

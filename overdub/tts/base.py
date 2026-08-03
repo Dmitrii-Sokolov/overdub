@@ -30,7 +30,7 @@ class TtsEngine(Protocol):
         `seed=None` means the engine's configured base seed; deterministic engines ignore it.
         `target_sec`/`max_sec` (engines with supports_target only): the source span to fill
         and the slot cap — the engine picks a native speed to land near target_sec without
-        exceeding max_sec (slot-fill; see f5.plan_speed). Returns the speed actually used,
+        exceeding max_sec (slot-fill). Returns the speed actually used,
         or None for engines without native speed.
 
         `gaps` (engines with supports_breaks only): the ORIGINAL inter-sentence silences a

@@ -28,7 +28,7 @@ from overdub.workdir import WorkDir  # noqa: E402
 
 def _ctx(tmp: Path, segs: list[dict], units: list[dict] | None, *, complete: bool = True):
     """Workdir with a translation.json and (optionally) a manifest; silero synth_key so
-    done() needs no F5 assets on disk for its best-effort warning block."""
+    done() needs no engine assets on disk for its best-effort warning block."""
     work = WorkDir(root=tmp)
     (tmp / "segments").mkdir(parents=True, exist_ok=True)
     work.translation.write_text(json.dumps(segs, ensure_ascii=False), encoding="utf-8")
@@ -40,7 +40,7 @@ def _ctx(tmp: Path, segs: list[dict], units: list[dict] | None, *, complete: boo
                "group_gap_max": cfg.group_gap_max, "base_speed": 1.0, "units": units}
         work.seg_manifest.write_text(json.dumps(doc, ensure_ascii=False), encoding="utf-8")
     cfg = Config()
-    cfg.tts_engine = "silero"           # synth_key must not require F5 assets in a test env
+    cfg.tts_engine = "silero"           # synth_key must not require engine assets in a test env
     return SimpleNamespace(cfg=cfg, work=work)
 
 

@@ -43,9 +43,11 @@ def test_unknown_voice_disables_the_model_instead_of_guessing() -> None:
     assert target_chars(10.0, _cfg(tts_engine="silero", tts_voice="no_such_voice")) is None
 
 
-def test_f5_has_no_rate_it_fits_slots_itself() -> None:
-    assert voice_rate(_cfg(tts_engine="f5")) is None
-    assert target_chars(10.0, _cfg(tts_engine="f5")) is None
+def test_unknown_engine_has_no_rate() -> None:
+    # the duration model is keyed on a MEASURED voice; anything else must return None rather
+    # than borrow another engine's rate — a wrong rate mis-sizes every translation silently.
+    assert voice_rate(_cfg(tts_engine="other")) is None
+    assert target_chars(10.0, _cfg(tts_engine="other")) is None
 
 
 def test_target_subtracts_the_fixed_per_unit_overhead() -> None:

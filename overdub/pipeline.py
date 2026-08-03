@@ -45,12 +45,11 @@ class Session:
     Two invariants make it safe:
 
     GET-OR-CREATE AT THE USE SITE, never eagerly at stage start — synthesize must still
-    spawn no F5 worker at all for a batch whose wavs are all reusable (its `if need:`
-    gate).
+    load no engine at all for a batch whose wavs are all reusable (its `if need:` gate).
 
     LIFETIME IS EXACTLY ONE STAGE SWEEP. Peak VRAM stays the MAX over models instead of
-    their sum, which is what lets the local translate route hand Gemma the whole budget
-    with no parking or eviction policy. For a single video a "sweep" is one video, i.e.
+    their sum, which is what lets a heavy stage have the whole budget with no parking or
+    eviction policy. For a single video a "sweep" is one video, i.e.
     exactly the per-stage teardown the stages used to do in their own finally blocks.
     """
 

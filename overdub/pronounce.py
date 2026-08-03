@@ -148,7 +148,7 @@ _LETTER_NAMES = {
 }
 
 # pass-6 token shape (possessives stay ONE token: Man's) and the letter<->digit seam
-# splitter (PS5 / qwen3 / 4K); normalize.py imports both — the import direction is
+# splitter (PS5 / mp3 / 4K); normalize.py imports both — the import direction is
 # strictly normalize -> pronounce
 TOKEN_RE = re.compile(r"[A-Za-z]+(?:['’][A-Za-z]+)*")
 ALNUM_BOUNDARY = re.compile(r"(?<=[0-9])(?=[A-Za-z])|(?<=[A-Za-z])(?=[0-9])")

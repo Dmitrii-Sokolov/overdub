@@ -147,7 +147,7 @@ def _run_repair(urls: list[str], cfg: Config, *, ids: list[int] | None,
     """Isolated-window ASR repair over one or more videos (DECISIONS 2026-07-19).
 
     ONE Session for the whole sweep so large-v3 loads once for the batch, cleared in a
-    finally — an F5-style orphan would otherwise hold ~3.1 GB. `window_asr` is injectable so
+    finally — an orphaned model would otherwise hold ~3.1 GB. `window_asr` is injectable so
     the mode is testable without a GPU, ffmpeg or media.
 
     Exit codes: 0 normal, INCLUDING a run where every window was rejected — a rejection is a

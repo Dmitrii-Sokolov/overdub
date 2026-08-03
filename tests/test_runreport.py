@@ -428,7 +428,7 @@ def test_the_pronounce_audit_reaches_the_rollup_and_the_digest() -> None:
 
 def test_english_echo_counts_but_does_not_order_a_listen() -> None:
     # 28 fires, 28 false, on one batch (see _ADVISORY_TRANSLATE). n_failed and by_type must keep
-    # reporting it — a route-A Gemma echo is real and the digest line is how it surfaces — while
+    # reporting it — a genuine echo is real and the digest line is how it surfaces — while
     # flags_actionable and needs_triage stop reacting to it.
     rep = {
         "segments": [_unit(0, 0, verify_flag=None, combined=1.0, speed=1.0,
@@ -805,7 +805,7 @@ def test_source_scanned_clean_carries_full_vocab() -> None:
 
 
 def test_source_not_scanned_route_a() -> None:
-    # Route A (local Gemma) writes no `src` at all. A consumer must be able to tell "not scanned"
+    # A translation written without the anomaly pass carries no `src`. A consumer must tell "not scanned"
     # from "scanned and clean" — that is the whole reason `scanned` is a field and not inferred.
     with tempfile.TemporaryDirectory() as d:
         work = _mkwork(d, report=_two_unit_report(),

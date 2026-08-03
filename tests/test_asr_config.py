@@ -198,7 +198,7 @@ def test_asr_key_ignores_knobs_that_cannot_change_source_text() -> None:
     # after an unrelated TTS experiment, and operators would learn to delete the stamp.
     base = asr_key(Config())
     for field, value in (("tts_seed", 7), ("verify_compute_type", "int8_float16"),
-                         ("f5_nfe", 32), ("repair_window_min_sec", 12.0)):
+                         ("tts_voice", "kseniya"), ("repair_window_min_sec", 12.0)):
         cfg = Config()
         setattr(cfg, field, value)
         assert asr_key(cfg) == base, field
@@ -541,7 +541,7 @@ def test_the_reseed_verifier_asks_for_the_verify_role_too() -> None:
               "text_ru": "привет", "text_tts": "привет", "status": "ok"}],
             ensure_ascii=False), encoding="utf-8")
         cfg = Config()
-        cfg.tts_engine = "silero"                       # synth_key must not need F5 assets here
+        cfg.tts_engine = "silero"                       # synth_key must need no assets here
         cfg.whisper_compute_type = "int8_float16"
         cfg.tts_max_retries = 1
         ctx = _ctx(work, cfg)

@@ -60,8 +60,8 @@ def effective_lowpass(hz: int | None, sr: int | None) -> int | None:
     """The cutoff actually applied to the dub track, or None when the filter is a no-op.
 
     Skipped unless the cutoff sits comfortably below Nyquist: the hiss it targets is a
-    48 kHz Silero artifact living above 12 kHz, while on a 24 kHz track (the opt-in F5
-    engine) an 11 kHz biquad would ride the band edge and recolour the voice for nothing.
+    48 kHz Silero artifact living above 12 kHz, while on a 24 kHz track an 11 kHz biquad
+    would ride the band edge and recolour the voice for nothing.
     run() and done() both call THIS, so the gate can never disagree with what was written."""
     return hz if hz and sr and hz < sr * 0.4 else None
 
@@ -335,7 +335,7 @@ class AssembleStage:
             # lowpass joins the gate because it is the one audio knob that lands HERE, not in
             # synth: without it a cutoff change would leave the old dub in place under a
             # matching synth_key. Absent from a legacy stamp reads as None, which equals the
-            # effective cutoff on every 24 kHz (F5) run — those do not churn.
+            # effective cutoff on every 24 kHz run — those do not churn.
             # atempo_floor / slot_fill_target join for exactly the reason lowpass_hz did: they
             # change the finished track while leaving synth_key untouched, so without them here
             # a floor change would leave the OLD dub in place and read as "applied". A legacy

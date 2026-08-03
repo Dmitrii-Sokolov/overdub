@@ -52,7 +52,7 @@ def test_real_pause_is_a_cut() -> None:
 
 def test_no_cut_before_determiner_that() -> None:
     # 18 s, no terminator. The old code cut BEFORE "that" (it was in _CONJ), severing
-    # "feel | that satisfaction" and handing Qwen a standalone "that ..." fragment — the
+    # "feel | that satisfaction" and handing the translator a standalone "that ..." fragment — the
     # id150 cascade. The clause branch must now prefer the coordinating "but" and never open
     # a fragment with a bare "that".
     flat = words(("then yeah you're gonna you're gonna feel", 0.0, 9.0),
@@ -92,7 +92,7 @@ def test_clause_cut_never_strands_a_stop_word() -> None:
 
 def test_no_cut_inside_a_hyphenated_compound() -> None:
     # whisper splits "shake-up" into "shake" + "-up"; a midpoint cut must not land between
-    # them and hand Qwen a fragment opening with a bare "-up".
+    # them and hand the translator a fragment opening with a bare "-up".
     flat = words(("i really do think that gamers are a lot like water when a big meta shake", 0.0, 10.0),
                  ("-up hits some game overnight the whole player base just adapts to it fast", 10.0, 20.0))
     sents = resegment(flat)

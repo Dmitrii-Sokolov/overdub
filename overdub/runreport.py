@@ -28,7 +28,7 @@ Two facts the aggregation leans on, both verified against report.py / verify.py 
     a render unit and share one group_id (= the unit leader's id). To count/aggregate UNITS
     (not sentences) we dedup by group_id, first-seen wins (segments are id-sorted, so the
     first-seen member of a group is its leader).
-  - the speed distribution metric is `combined_factor` (native F5 compression × atempo top-up),
+  - the speed distribution metric is `combined_factor` (native compression × atempo top-up),
     NOT raw tts_speed — it is the real compression a listener hears and matches assemble's own
     `n_over_1_8_combined` triage bar (DECISIONS 2026-07-17: native ≥~1.3 drops words, atempo
     tops up the rest; the combined figure is the one that means "candidate broken").
@@ -76,7 +76,7 @@ _ADVISORY_COMPLETENESS = frozenset({"length_short", "entity_loss",
 # set phrases in Latin, and pronounce.py voices them. Measured on the 2026-07-25 batch: 28 fires,
 # 28 of them correct Sonnet behaviour (`task-master init`, `npm run dev`, `/update-doc initialize`,
 # `contact-session-1.md`, `free-to-play`) — one video reported 15 actionable flags of which 11 were
-# this. The count stays (a route-A Gemma echo is real, and `translate.n_failed` still prints it);
+# this. The count stays (a genuine echo is real, and `translate.n_failed` still prints it);
 # it just stops sending a human to listen to a unit that was translated correctly.
 _ADVISORY_TRANSLATE = frozenset({"english_echo"})
 
@@ -249,7 +249,7 @@ def record_stage_detail(work, stage, **fields) -> None:
 def _stage_overhead(stages, detail):
     """({stage: overhead_s}, total) — what each stage spent OUTSIDE the work it measured itself.
 
-    overhead = stages[x] - detail[x].work_sec: a model load, a worker spawn, an Ollama preflight.
+    overhead = stages[x] - detail[x].work_sec: a model load, a worker spawn, a preflight check.
     Both numbers describe the SAME stage, so subtracting them is legitimate — the thing DECISIONS
     2026-07-20 forbids is summing a wall clock WITH a work figure and calling the result a cost.
 
@@ -588,8 +588,8 @@ def _build_run_report(work, cfg):
         # transcribe+translate-only workdir, where report.json does not exist. Discovering the
         # anomaly hours before synthesize is the entire point of the signal, so it must not
         # depend on a post-synthesis artifact. `scanned` is first-class rather than inferred
-        # from n_flagged == 0 because route A (local Gemma) writes no `src` at all -- a consumer
-        # must render "not scanned" there, NEVER "clean".
+        # from n_flagged == 0 because a translation written without the anomaly pass carries no
+        # `src` at all -- a consumer must render "not scanned" there, NEVER "clean".
         "source": {
             "scanned": bool(n_sentences) and n_scanned == n_sentences,
             "n_scanned": n_scanned,
