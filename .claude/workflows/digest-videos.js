@@ -285,8 +285,10 @@ compression cost. Do not write digest.json or digest.md: build_digest.py derives
 }
 
 // ---------------------------------------------------------------- run
-// null stays null in both wrappers: a wrapper object is truthy even around a null, and the `!prev`
-// guard on the compress stage below is what keeps a dead read pass from spawning a compressor.
+// null stays null at EVERY wrap site — the two below and the two `pass:` tags in the pipeline: a
+// wrapper object is truthy even around a null, so one unguarded spread puts `{id: undefined}` into
+// `done` and the same video into `dropped`. The `!prev` guard on the compress stage additionally
+// keeps a dead read pass from spawning a compressor.
 function digestAgent(id) {
   return agent(digesterPrompt(id), {
     label: `digest:${id}`,
@@ -320,10 +322,11 @@ const [chained, only] = await Promise.all([
       if (!prev || /NO-TRANSCRIPT/i.test(prev.text)) {
         return { id, text: prev ? prev.text : 'DIGEST-DROPPED', pass: 'digest' }
       }
-      return compressAgent(id).then((r) => ({ ...r, pass: 'compress' }))
+      return compressAgent(id).then((r) => (r == null ? null : { ...r, pass: 'compress' }))
     },
   ),
-  parallel(COMPRESS_ONLY.map((id) => () => compressAgent(id).then((r) => ({ ...r, pass: 'compress' })))),
+  parallel(COMPRESS_ONLY.map((id) => () =>
+    compressAgent(id).then((r) => (r == null ? null : { ...r, pass: 'compress' })))),
 ])
 
 // Reported by id rather than counted, because the operator's next move is per video — and the pass
