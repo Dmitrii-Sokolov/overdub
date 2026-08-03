@@ -123,14 +123,19 @@ validates a draft is `overdub/stages/translate._is_bad`.
   the 12-video batch, no filter needed).
 - Voices (same five in v4/v5): **eugene = primary, kseniya = backup**; xenia slightly unpleasant;
   aidar/baya off-standard accent, avoid. No cloning — every video gets the same chosen narrator voice.
-  Speaking rate is a VOICE fact and the duration model keys on it (`overdub/tts/voice_rate`).
+  Speaking rate is a VOICE fact and the duration model keys on it (`overdub.tts.voice_rate`).
 - **VRAM effectively zero** (runs on CPU; ~0.1–0.5 GB even on GPU) → whisper-small verify (~1 GB) has
   the whole Stage-3 budget. Measured RTF ~0.02–0.3 on CPU — TTS is no longer a throughput factor.
 - **Deterministic** (no seed) → good for a reproducible verify gate, BUT a failed segment can't be
   reseeded, only flagged. **No `supports_target`** — fitting speech to its slot is the pipeline's job
   (`atempo_floor` at assembly + the open "Slot fit" item in PLAN).
 - Takes SSML (`<speak> <p> <s> <prosody> <break>`) while the adapter sends plain `text=` — an open
-  PLAN item ("Input prosody"), not a settled decision. Per-call text bounded ~1000 chars.
+  PLAN item ("Input prosody"), not a settled decision. **Except `<break>`, which is NOT open:
+  `silero.build_ssml` is built and wired (`supports_breaks`, gaps from `synthesize.build_units`)
+  but ships OFF — `silero_ssml_breaks = False`, rejected by ear 2026-07-25 as the right mechanism
+  on the wrong problem.** Read that config comment before re-proposing pause markup; the engine
+  constructor's own `breaks=True` default is not what ships, `build_engine` passes the config key.
+  Per-call text bounded ~1000 chars.
   Normalization (GPU→джи-пи-ю, x2→в два раза) still mandatory before synth. Runs at 48000 (24000 is
   audibly "plastic"). Guide: `docs/russian-tts-guide.md`.
 

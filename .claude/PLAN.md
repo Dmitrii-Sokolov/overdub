@@ -81,12 +81,13 @@ again). Retired aliases are noted once per item so an old reference resolves; do
 ### Name list at ASR — the proper-noun class
 
 `model.transcribe` passes neither `initial_prompt` nor `hotwords` today
-(`stages/transcribe.py:385`). Measured 2026-07-26: `vLIDHi-1PVU` ("Designing Claude Code") came
+(the one call site is `stages/transcribe.transcribe_words`). Measured 2026-07-26: `vLIDHi-1PVU` ("Designing Claude Code") came
 back with **16 × "Cloud" and 0 × "Claude"** at large-v3/fp16/beam 5 — so DECISIONS 2026-07-20's
 proper-noun class is not a beam-1-only artifact. Fixing it at the translate seam is possible but
 partial and expensive: it needs a `src` flag on every normalised record, it makes 27 of 28
-`entity_loss` offenders false, and it cannot reach `en.srt` at all (not re-timed by design,
-`assemble.py:199` — one MKV shipped with 15 × "Cloud" in EN subs against 35 × "Claude" in RU). A
+`entity_loss` offenders false, and it cannot reach `en.srt` at all (not re-timed by design — the
+rule and its reason are in `assemble._ru_cue_rows`'s docstring, beside the RU path that IS
+re-timed — one MKV shipped with 15 × "Cloud" in EN subs against 35 × "Claude" in RU). A
 name list closes all three surfaces at once. **First here because it is the only known defect that
 survives into a finished MKV and cannot be reached from any later stage.**
 
@@ -155,24 +156,48 @@ Obstacles, all confirmed in code: (i) ~~`atempo` <1 does not exist~~ **BUILT**
 at `translate_max_len_ratio=3.0 × len(src_en)`, so for any source slower than ~6.3 en ch/s the
 CORRECT length is flagged, costing up to 4 reseeds and in the limit shipping `src_en`, i.e. English
 into the dub; re-anchor it on the target, not on the source length; (iii) **the length rule lives
-in 4 hand-synced copies** (`translate.py:SYSTEM`,
-`skills/overdub-sonnet-batch/references/translate-contract.md`, that skill's `SKILL.md`,
-`README.md`) and route B's prompt is assembled by an agent at runtime — a target has to reach BOTH
-routes, so compute it in a shared helper that `translate.py` and `scripts/build_translation.py`
-both call, and enforce/report it in the latter or route-B compliance is unverifiable; (iv) **the
+in 5 hand-synced copies, and the inventory is worth re-deriving before touching any of them** —
+this list was wrong in both directions until 2026-08-03, naming a file that no longer had a copy
+while missing the one that actually reaches the translator:
+
+| where | what it is |
+|---|---|
+| `translate.py` `SYSTEM` | route A's in-process prompt — the stated source of truth |
+| `skills/overdub-sonnet-batch/references/translate-contract.md` rule 2 | what the route-B sub-agent reads off disk |
+| **`.claude/workflows/translate-batch.js`** | the route-B prompt itself — **the copy that decides the output**, and the one the old inventory missed |
+| `README.md` (pipeline description + route B) | prose |
+| `CLAUDE.md` (Design rules) | prose |
+
+Route B's prompt is a STATIC template in that script, not assembled by an agent at runtime (it was,
+before 2026-07-28) — which helps: the script can carry a rule change without a model in the loop.
+What it cannot carry is the target itself, since that is per-sentence (slot ÷ voice rate) and has to
+travel with the data. So: compute it in a shared helper that `translate.py` and
+`scripts/build_translation.py` both call, and enforce/report it in the latter or route-B compliance
+is unverifiable; (iv) **the
 route-A resume key ignores timings** (skip is `done[sid]['src_en'] == s['text']`), so after
 `--repair-asr` a translation sized for a slot that no longer exists is silently kept.
 
 ### Input prosody — punctuation and SSML *(promoted from Backlog 2026-07-27)*
 
 The cheapest unpulled lever in the file, and the one that answers "the dub is fine but it reads
-flat". `docs/russian-tts-guide.md` attributes ~70% of prosody quality to the INPUT and names flat
-ASR+MT punctuation as the main cause of monotony — exactly our input shape. Silero accepts SSML
+flat". The guide attributes ~70% of prosody quality to the INPUT and names flat ASR+MT punctuation
+as the main cause of monotony — exactly our input shape. Silero accepts SSML
 (`<speak> <p> <s> <prosody> <break>`) while the adapter sends plain `text=`; `<p>`/`<s>` alone give
-pauses and a contour reset. Two cautions before any code: `text_tts` is Cyrillic-by-contract
-because Silero DELETES Latin script, so markup has to be proven not to trip that; and verify
-compares against `text_tts`, so tags must be stripped on the comparison side exactly as stress
-marks already are. Judged by ear, like everything else in this half of the list.
+pauses and a contour reset.
+
+**`<break>` is NOT part of this item — it was built, measured and REJECTED by ear (DECISIONS
+2026-07-25), and it stays in the code at `silero_ssml_breaks = False`.** Recorded here because the
+mechanism is still wired and reads as available: it was the right mechanism on the wrong problem —
+at the 5:15 hole the SOURCE speech is continuous and the hole is made by ASSEMBLY, so `<break>`
+returned 0.44 s of a 5.10 s hole while ADDING pauses the speaker never took, and the A/B was
+indistinguishable. Do not re-derive that. The unpulled half is `<p>`/`<s>`/`<prosody>` and the
+punctuation-quality lever, which is the bigger of the two per the guide and is not a markup
+question at all — it is what the translator writes.
+
+Two cautions before any code: `text_tts` is Cyrillic-by-contract because Silero DELETES Latin
+script, so markup has to be proven not to trip that; and verify compares against `text_tts`, so
+tags must be stripped on the comparison side exactly as stress marks already are. Judged by ear,
+like everything else in this half of the list.
 
 ### Phoneme transliteration from CMUdict *(was item 2)* — blocks the stress audit
 
@@ -381,12 +406,14 @@ remaining GPU load is whisper-large (transcribe) + whisper-small (verify) — a 
 host becomes plausible, and the Arc B390 path gets a realistic TTS story (Silero runs on the CPU, so
 the XPU question never comes up for TTS). Re-time first ("Re-time the batch on Silero").
 
-**From [`docs/russian-tts-guide.md`](../docs/russian-tts-guide.md)** (user-supplied, July 2026) —
-levers we have not pulled. The input/SSML pair moved into Open 2026-07-27 ("Input prosody"); what
-stays here: per-chunk silence trimming + crossfade at joins (our "seams"); a versioned stress
-dictionary
-(`terms.tsv`) for domain terms — the class `pronounce_audit.json` surfaces and nothing consumes.
-`sample_rate` 24000 is called "plastic" and 48000 recommended: we already run 48000.
+**From [`docs/russian-tts-guide.md`](../docs/russian-tts-guide.md)** — levers we have not pulled.
+The input/SSML pair moved into Open 2026-07-27 ("Input prosody"); what stays here: per-chunk
+silence trimming + crossfade at joins (our "seams"); a versioned stress dictionary (`terms.tsv`)
+for domain terms — the class `pronounce_audit.json` surfaces and nothing consumes. The guide was
+cut down 2026-08-03 to exactly these unpulled levers plus the listening checklist, so **its
+remaining contents and this entry are now the same list** — anything it said that the code already
+does (including the `sample_rate` 48000 recommendation we already follow) was deleted rather than
+left to read as an open item.
 
 **Narrator's grammatical gender → the translate prompt** (user 2026-07-25). Russian marks gender on
 1st-person PAST verbs, English does not, and the transcript carries no name — so every first-person
@@ -414,8 +441,8 @@ went to the existing items instead: letter-by-letter anglicisms → "Phoneme tra
 CMUdict" (Open, `алигнмент` 91× recorded there); chars/sec over the slot → "Slot fit" (Open, sized
 there, and it does not survive as a defect); a detector that fires while nothing acts → the
 `src != ok` seed item (Also open, which also carries the ordering constraint the audit missed:
-seeds are read BEFORE translation); numeral case → the accepted PoC loss at `normalize.py:29-32`,
-whose proposed fix ("delegate numeral spelling to the LLM") is design B, **rejected by DECISIONS
+seeds are read BEFORE translation); numeral case → the accepted PoC loss recorded in
+`normalize.py`'s module docstring ("Known PoC loss"), whose proposed fix ("delegate numeral spelling to the LLM") is design B, **rejected by DECISIONS
 2026-07-17 F1/F2** — an LLM-spelled `text_tts` diverges from the Python normalizer verify applies to
 the ASR hypothesis and silently depresses similarity on correct numeric dubs. If case-aware numerals
 are wanted, they are a `num2words` + syntactic-context pass inside `normalize.py`, never an LLM
@@ -432,9 +459,11 @@ field. What is new:
   below: the fix is a file-scoped glossary carried across segments instead of re-derived per
   sentence, i.e. a route-B prompt/`build_translation` change, not a `terms.tsv`.
 - **`english_echo` marks deliberately preserved terms as `failed`** — 7 segments, all on "alignment
-  faking", translations correct. Not a new class: `translate.py:65` records that 15 of 28 fires on
-  the 2026-07-25 batch were set phrases the translator kept on purpose, and the call then was
-  advisory-in-runreport rather than silenced. But the STATUS written into `translation.json` is
+  faking", translations correct. Not a new class: the comment above
+  `translate._latin_prose_chars` records that 13 of 28 fires on the 2026-07-25 batch were the
+  technical-token shape and the remaining 15 were set phrases the translator kept on purpose
+  (`runreport`'s `_ADVISORY_TRANSLATE` comment scores all 28 as correct Sonnet behaviour), and the
+  call then was advisory-in-runreport rather than silenced. But the STATUS written into `translation.json` is
   still `failed`, which is what the audit read — so decide whether the term-preservation exemption
   belongs in `_is_bad` beside the three that are there, or whether the status is simply the wrong
   field for an advisory.
@@ -522,10 +551,11 @@ field. What is new:
   **NC accepted for personal use (user, 2026-07-27)**,
   so this is not a gate on the current use — it is a gate on publication and on "other users".
   Unverified against the current model card; verify before any distribution.
-  **Known escape hatch if NC ever binds:** `docs/russian-tts-guide.md` puts Silero's `v5_cis_base`
-  with the ~30 `ru_*` voices under **MIT**, at the cost of setting stresses yourself — which this
-  pipeline is already building toward (CMUdict + the stress audit). Same engine family, so the
-  adapter would not change; the voice and the stress preprocessor would.
+  **Known escape hatch if NC ever binds:** Silero's `v5_cis_base` with the ~30 `ru_*` voices under
+  **MIT**, at the cost of setting stresses yourself — which this pipeline is already building
+  toward (CMUdict + the stress audit). Same engine family, so the adapter would not change; the
+  voice and the stress preprocessor would. Both licences are recorded in README, "Voices, cloning
+  and the law" (moved there 2026-08-03 — they used to live only in the TTS guide).
 
 ## Open questions
 

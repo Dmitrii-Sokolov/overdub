@@ -415,8 +415,10 @@ def _run_batch_video_major(urls: list[str], cfg: Config, *, force: bool,
                            only: set[str] | None, scout: bool = False) -> int:
     """Videos outer, stages inner — the pre-2026-07-19 order, kept behind --video-major.
 
-    Every video reloads every model (~72 s of pure model loading per video), which is why
-    it is no longer the default; it stays reachable as the escape hatch that shares
+    Every video reloads every model, which is why it is no longer the default. (The ~72 s/video
+    that justified the switch came off pre-2026-07-22 stage walls and is retired — PLAN "Numbers
+    to re-measure" (C). The ORDERING decision stands; only the figure is gone.)
+    It stays reachable as the escape hatch that shares
     run_pipeline, _export_output and _summarize with the stage-major driver, so a bug in
     the stage contract shows up in BOTH orders and only an ordering bug shows up in one.
     """

@@ -23,11 +23,13 @@ themselves. Rationale: DECISIONS 2026-07-25.
 - Windows 11, PowerShell-first tooling.
 - Primary GPU: NVIDIA RTX 4080 Mobile, 12 GB VRAM (CUDA). Secondary target:
   Intel Arc B390 iGPU.
-- External binaries expected but not guaranteed: `ffmpeg`, `yt-dlp`, Ollama
-  serving on localhost. Verify availability before assuming; fail with a clear
-  message, don't auto-install. The download stage implements this: `yt-dlp` /
-  `ffmpeg` resolve venv-`Scripts`-first, then PATH (`stages/download.py`,
-  `_tool_exe`), and a missing tool raises a clear RuntimeError.
+- External binaries expected but not guaranteed: `ffmpeg` and `yt-dlp`, and
+  nothing else — translation left the host at the seam, so no local LLM service
+  is part of the stack (STACK Stage 2). Verify availability before assuming;
+  fail with a clear message, don't auto-install. The download stage implements
+  this: `yt-dlp` / `ffmpeg` resolve venv-`Scripts`-first, then PATH
+  (`stages/download.py`, `_tool_exe`), and a missing tool raises a clear
+  RuntimeError.
 
 ## Hard constraints
 
@@ -63,7 +65,8 @@ the same sentence without the word), which is why `text_tts` is Cyrillic-by-cont
 `pronounce` chain; and **it has no `supports_target`**, so slot fitting is the pipeline's job now.
 That job is half done (2026-07-25): `atempo_floor` stretches under-filled units and closed 70% of
 the measured silence, while sizing the TRANSLATION to the slot is still open (PLAN, "Slot fit"). The
-duration model those two share lives in `overdub/tts/voice_rate` and is keyed on `tts_voice` —
+duration model those two share is `overdub.tts.voice_rate` / `target_chars` (both in
+`overdub/tts/__init__.py`) and is keyed on `tts_voice` —
 speaking rate is a VOICE fact (eugene 19.85 ru ch/s vs baya 14.41) and an unmeasured voice
 disables the model rather than borrowing a rate. Adapter default is v5_5_ru; v4_ru only to reproduce old runs
 (DECISIONS 2026-07-19). No voice cloning — fixed narrator voice. Don't
@@ -79,12 +82,20 @@ One command, from the repo root:
 .venv-asr\Scripts\python.exe -m pytest
 ```
 
-~580 tests, ~6 s, no GPU / network / media. `pytest` lives in `.venv-asr` only
+Seconds, no GPU / network / media. `pytest` lives in `.venv-asr` only
 (`pip install -e ".[dev]"`); config is `[tool.pytest.ini_options]` in
 `pyproject.toml`. **Do not hand-roll a loop over `tests/*.py`** — that was the
 state before 2026-07-20 and it produced invented result lines. Run it from the
 repo root specifically: `testpaths` only applies there (pytest 8+), so from a
 subdirectory you get "no tests ran", not the suite.
+
+**Never write the suite SIZE into a document.** It moves with every commit, and a
+count in prose rots silently while reading as a fact — three files carried three
+different numbers on 2026-08-03, and the only correct one was in a dated
+DECISIONS entry, i.e. in a journal that is allowed to be historical. If a count
+is needed, take it from the run: `-m pytest --collect-only -q` prints it without
+executing anything. A DECISIONS entry recording a before/after ("641 → 639") is
+the one legitimate use — it is timestamped and never re-read as current.
 
 A single file still runs standalone — `python -X utf8 tests/test_x.py` — and
 prints its own summary. Keep that footer when adding a test file, and keep the
@@ -126,6 +137,12 @@ diverge from it.
 
 ## Reference
 
+`docs/queue-contract.md` — what routes B/C/D/E do IDENTICALLY: `queue.txt` ownership, the `$ids`
+block and its three guards, the `# playlist:` freshness diff, promotion between routes, the
+derived-artifact-is-not-evidence rule, `Workflow` fan-out and marker verification. A MANDATORY READ
+before driving any route, and the place to EDIT any of those rules — it exists because each of them
+used to live in four skills at once, and a rule copied four times drifts three ways.
+
 `docs/repair-fixture.md` — the `--repair-asr` golden fixture: a reproducible real-media regression
 test built from the 6 preserved `_pre-repair-sentences.json` / `sentences.json` pairs in `work/`.
 Read it before changing anything in `overdub/repair.py`, before quoting a recall number for
@@ -162,13 +179,19 @@ invented video — the first draft used this document's own headline and two bul
 agent two of the six answers on exactly the video used to judge it. Read it before changing anything
 in `.claude/workflows/digest-videos.js` or quoting a recall number for route D.
 
-`docs/russian-tts-guide.md` — Russian-TTS working reference (user-supplied, July 2026): model
-comparison, input preparation (punctuation, normalization, stress dictionary, chunking), Silero
-SSML surface, a listening checklist, and a symptom → first-thing-to-check table. Read it before
-tuning TTS quality, changing engines, or chasing an intonation/pronunciation complaint. Two
-things in it we do not yet use: Silero accepts SSML (`<speak> <p> <s> <prosody> <break>`) while
-our adapter sends plain `text=`, and it attributes most prosody quality to the INPUT — flat
-ASR+MT punctuation being the main cause of monotone output.
+`docs/russian-tts-guide.md` — Russian-TTS reference (user-supplied July 2026, **cut down
+2026-08-03 to what is neither shipped nor refuted**): the punctuation lever, `terms.tsv`, the SSML
+tag surface, a listening checklist and a symptom → first-thing-to-check table. Read it before
+tuning TTS quality or chasing an intonation/pronunciation complaint — and note that its two halves
+are read differently. §1-3 are unpulled LEVERS, of which the biggest is not markup at all: it
+attributes ~70% of prosody quality to the INPUT, flat ASR+MT punctuation being the main cause of
+monotone output. §4-5 are an INSTRUMENT — the ear is what adjudicates quality in this project, and
+that checklist is the only one in the repo. What is NOT in it any more, deliberately: anything the
+code already does (normalization, `apply_tts` params, round-trip ASR), the CosyVoice column (no
+cloning here, engine closed 2026-07-25), and the licences (now README, "Voices, cloning and the
+law"). Two traps it carries: it praises `aidar`, which our own ear ranking rejects — the file says
+so inline, ours wins; and `<break>` is NOT an unpulled lever, it was built and REJECTED by ear
+(DECISIONS 2026-07-25) and ships off at `silero_ssml_breaks = False`.
 
 ## Artifacts
 

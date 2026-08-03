@@ -28,8 +28,6 @@ hundreds of hours of single-speaker content.
    Adjacent sentences group into render units for natural prosody. Silero is
    DETERMINISTIC and has no native slot fitting, which shapes the two stages
    below: there is nothing to reseed, and timing fit is the pipeline's job.
-   One fixed narrator voice for every video, no per-speaker cloning and no voice
-   sample needed.
 5. **Verify** — the independent judge: every render unit is transcribed back
    with whisper-small and compared against the normalized TTS text (the same
    normalizer on both sides); failures are flagged in the run report — never
@@ -59,6 +57,12 @@ Prereqs (SETUP.md): `.venv-asr` + `.venv-demucs` (for the default bed mix),
 `models/`. `yt-dlp` is resolved from `.venv-asr\Scripts` first, PATH
 second; both tools are preflighted with a clear error instead of a raw WinError 2.
 
+Everything the routes do IDENTICALLY — resolving `queue.txt` into an id list,
+deciding whether that queue is still current, promoting it from one route to
+another, fanning sub-agents out — is [`docs/queue-contract.md`](docs/queue-contract.md),
+and it is a mandatory read for whoever drives a route. The sections below describe
+what each route does DIFFERENTLY.
+
 ### A. Batch mechanics (shared by every route below)
 
 The pipeline command itself. Translation is not produced in-process — it has to
@@ -78,8 +82,10 @@ that seam. Everything in this section applies to every route that ends in an MKV
   3 stop-halt.
 - **Batch order.** A batch runs **stage-major**: every video through `download`,
   then every video through `transcribe`, and so on. Each model therefore loads
-  once per BATCH instead of once per video (~72 s/video of pure model loading —
-  see STACK "Measured cost model"). The trade is that no MKV is finished until
+  once per BATCH instead of once per video. The saving was measured at ~72 s/video
+  in 2026-07, but that figure came off pre-2026-07-22 stage walls and is retired —
+  see PLAN "Numbers to re-measure" (C); quote a fresh one off `rtf_work` or none at
+  all. The trade is that no MKV is finished until
   late in the run; a failed video drops out of the remaining stages without
   affecting the others, and the summary says which stage it died on. Pass
   `--video-major` to restore the old order (each video through every stage before
@@ -273,11 +279,9 @@ figure. `scripts/run_report.py` prints the same numbers and summaries in the
 text digest.
 
 **Promotion** — trim `queue.txt` to the survivors and run the ordinary route A
-or B command, without `--scout`. `transcribe` fast-skips on the scout's
-`sentences.json`, so the large-v3 pass is not repeated; `download` re-runs
-because the full contract needs `source.mkv`, which re-fetches the audio bytes
-inside the merged container. That is ~5% extra traffic for zero new machinery,
-accepted deliberately (DECISIONS 2026-07-20).
+or B command, without `--scout`. Mechanics (what fast-skips, what re-runs, the
+~5% extra traffic): [`docs/queue-contract.md`](docs/queue-contract.md) §4 —
+the same block for every route, kept in one place.
 
 ### D. Digest a queue — retell it, no grade and no dub
 
@@ -400,9 +404,9 @@ AGENT artifacts, never the built `digest.json` — that file is derived and alwa
 well-formed, which is exactly why its presence proves nothing about whether an
 agent ran.
 
-**Promotion** — a digested queue enters route A or B with no cleanup:
-`transcribe` fast-skips, `download` re-runs for `source.mkv` (~5% extra
-traffic), and the digest artifacts survive untouched.
+**Promotion** — a digested queue enters route A or B with no cleanup
+([`docs/queue-contract.md`](docs/queue-contract.md) §4); the digest artifacts
+survive untouched.
 
 ### E. Clean a queue into readable English text — no grade, no retelling, no dub
 
@@ -461,8 +465,8 @@ are never cache keys: a present `clean.md` proves nothing about whether an agent
 ran.
 
 **Promotion** — nothing to clean up; a cleaned video is untranslated, not
-half-translated. It enters route A/B at the top (`download` re-runs for
-`source.mkv`) or route D at D2.
+half-translated. It enters route A/B at the top or route D at D2
+([`docs/queue-contract.md`](docs/queue-contract.md) §4).
 
 ### Repairing an ASR defect
 
@@ -504,14 +508,23 @@ repair renumbers ids — re-derive them before a second explicit pass.
 .venv-asr\Scripts\python.exe -m pytest
 ```
 
-~400 tests in ~5 s. No GPU, no network, no media, no model downloads — everything
+Seconds, not minutes. No GPU, no network, no media, no model downloads — everything
 is pure logic over temp dirs and injected stages, which is what makes a bare
 `pytest` a safe thing to run at any time, including while a batch is on the GPU.
 
-`pytest` is installed in `.venv-asr` only (`pip install -e ".[dev]"`); the other
-two venvs run worker processes, not tests. Configuration is
+**The suite size is not written down anywhere on purpose** — it moves with every
+commit and a number in prose goes stale silently. The run itself is the only
+answer, and it costs seconds; `--collect-only -q` gives it without executing
+anything:
+
+```powershell
+.venv-asr\Scripts\python.exe -m pytest --collect-only -q
+```
+
+`pytest` is installed in `.venv-asr` only (`pip install -e ".[dev]"`);
+`.venv-demucs` runs a worker process, not tests. Configuration is
 `[tool.pytest.ini_options]` in `pyproject.toml`, and two settings there are
-load-bearing rather than cosmetic: `testpaths` keeps collection out of the three
+load-bearing rather than cosmetic: `testpaths` keeps collection out of the
 in-repo venvs (site-packages ships hundreds of its own suites), and
 `python_files` is narrowed to `test_*.py` so pytest's default `*_test.py` does
 not drag in the one-off audition scripts in `scripts/`.
@@ -592,12 +605,21 @@ not arise.** Silero's narrator is baked into the model — no reference clip, no
 voice sample on disk, no third party's voice involved. This section is not legal
 advice.
 
-**What does apply: the model's own licence is non-commercial** (CC BY-NC;
-unverified against the current model card). That is fine for personal listening
-and is a hard gate on anything published. If NC ever binds, the documented escape
-hatch is Silero's `v5_cis_base` with the ~30 `ru_*` voices under MIT, at the cost
-of setting stresses yourself — same engine family, so the adapter would not
-change (see PLAN).
+**What does apply: the model's own licence is non-commercial.** This is the
+project's record of it — the fact used to live only in `docs/russian-tts-guide.md`
+and would have died with that file.
+
+| release | licence | cost of using it |
+|---|---|---|
+| `v5_5_ru` — **what ships** (`eugene`) | **CC BY-NC** | automatic stress, correct Russian out of the box |
+| `v5_cis_base` + the ~30 `ru_*` voices | **MIT** | you set the stresses yourself |
+
+NC is fine for personal listening and is a hard gate on anything published; it was
+accepted for personal use (user, 2026-07-27). **Both rows are unverified against the
+current model card — re-check before any distribution.** If NC ever binds,
+`v5_cis_base` is the escape hatch: same engine family, so the adapter would not
+change — only the voice and the stress preprocessor, which this pipeline is already
+building toward (CMUdict + the stress audit). See PLAN, "Publication rights".
 
 - **If you ever add a voice that is not the model's own, study the law of your
   jurisdiction first.** EU member states and Canada protect a person's voice from
