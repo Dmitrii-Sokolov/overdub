@@ -42,7 +42,6 @@ SYSTEM = (
     "no labels, no notes, no explanations."
 )
 
-_LABEL = re.compile(r"^\s*(\[RU\]|RU:|Russian:|Перевод:)\s*", re.IGNORECASE)
 _CYR = re.compile(r"[А-Яа-яЁё]")
 _ALPHA = re.compile(r"[A-Za-zА-Яа-яЁё]")
 _LATIN_RUN = re.compile(r"[A-Za-z]+")
@@ -89,13 +88,6 @@ _REFUSAL = re.compile(
     r"не могу перевести|"
     r"как (?:ии|модель ии|языковая модель)\s*,?\s+я\b)"
 )
-
-
-def _parse(raw: str | None) -> str:
-    """Response content -> single clean Russian line (defensive: strip quotes, labels)."""
-    text = (raw or "").strip().strip('"“”«»`').strip()
-    text = _LABEL.sub("", text)
-    return text.splitlines()[0].strip() if text.strip() else ""
 
 
 def _is_bad(text_ru: str, src_en: str, cfg) -> str | None:
