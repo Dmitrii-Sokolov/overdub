@@ -89,13 +89,12 @@ state before 2026-07-20 and it produced invented result lines. Run it from the
 repo root specifically: `testpaths` only applies there (pytest 8+), so from a
 subdirectory you get "no tests ran", not the suite.
 
-**Never write the suite SIZE into a document.** It moves with every commit, and a
-count in prose rots silently while reading as a fact — three files carried three
-different numbers on 2026-08-03, and the only correct one was in a dated
-DECISIONS entry, i.e. in a journal that is allowed to be historical. If a count
-is needed, take it from the run: `-m pytest --collect-only -q` prints it without
-executing anything. A DECISIONS entry recording a before/after ("641 → 639") is
-the one legitimate use — it is timestamped and never re-read as current.
+**Never write the suite SIZE into a document.** It moves with every commit, so
+even a DATED copy is wrong within the day — three files carried three different
+numbers on 2026-08-03. If a count is needed, take it from the run:
+`-m pytest --collect-only -q` prints it without executing anything. A DECISIONS
+entry recording a before/after ("641 → 639") is the one legitimate use. This is
+the strict end of the general rule under "Artifacts".
 
 A single file still runs standalone — `python -X utf8 tests/test_x.py` — and
 prints its own summary. Keep that footer when adding a test file, and keep the
@@ -199,3 +198,13 @@ so inline, ours wins; and `<break>` is NOT an unpulled lever, it was built and R
 Planning lives in `.claude/PLAN.md`, rationale in `.claude/DECISIONS.md`,
 raw ideas in `.claude/INBOX.md`. Shipped work is recoverable from git history —
 there is no CHANGELOG file.
+
+**A measured number in prose carries its date, or it is not written.** Figures
+rot silently while still reading as current: the ~72 s/video model-loading
+saving outlived the stage walls it came off and was quoted in two files after
+that, and the suite size was wrong in three. DECISIONS is the one place a bare
+number is safe — an entry there is dated by construction and never re-read as
+current. Everywhere else: date it inline, or point at the entry that does. It
+follows that retiring a figure means grepping for the NUMBER, not for the
+component it described — the component keeps its name across the change that
+invalidated the measurement.
