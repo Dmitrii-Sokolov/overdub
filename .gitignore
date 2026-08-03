@@ -28,8 +28,6 @@ work-exp/
 work-silero-v5/
 cfg-silero-v5/
 output/
-# personal-use voice audition page (repo policy: person-agnostic docs, PD samples only)
-bakeoff/narrators_personal.html
 *.mp4
 *.mkv
 *.webm

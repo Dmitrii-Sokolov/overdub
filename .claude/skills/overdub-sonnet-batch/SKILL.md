@@ -42,7 +42,8 @@ change it in the other, or the two routes start producing different artifacts un
 **Read [`docs/queue-contract.md`](../../../docs/queue-contract.md) now, before anything else.**
 Sections 1-3 are this step: who owns `queue.txt`, the `$ids` block and its three load-bearing
 guards, the `# playlist:` freshness diff, and the rule that a queue is never shortened, lengthened
-or interrupted by a model. Run §1 verbatim; §2 whenever a playlist is involved.
+or interrupted by a model. Run §1 verbatim, and apply §2 as §1 directs — the trigger lives there,
+not here.
 
 **Resolve the queue BEFORE the command, not after** (moved above it 2026-07-24). These checks
 used to sit under the run, which made them audits of a download that had already happened: a

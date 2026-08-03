@@ -1,7 +1,7 @@
 [project]
 name = "overdub"
 version = "0.0.1"
-description = "Local-first YouTube→Russian dubbing pipeline"
+description = "Local-first YouTube→Russian dubbing pipeline (translation excepted — see README)"
 requires-python = ">=3.12"
 # torch / torchaudio are installed separately from the CUDA wheel index (see SETUP.md),
 # so they are intentionally NOT listed here — pip must not pull a CPU build over them.
@@ -34,6 +34,8 @@ norecursedirs = [".venv-*", "work", "work-exp", "out", "scratchpad", ".git"]
 # Import each test file as a top-level module by basename. Every file already does its own
 # sys.path.insert for `overdub` and `scripts`, and there is no tests/__init__.py — prepend mode
 # is what makes that keep working under pytest exactly as it does under `python tests/foo.py`.
+# Basename, not path: two test files with the SAME name in different directories abort collection
+# with "import file mismatch" (loud, both paths named — not a silent shadow). Keep tests/ flat.
 addopts = "--import-mode=prepend -q"
 
 [tool.setuptools.packages.find]

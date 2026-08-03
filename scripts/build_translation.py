@@ -23,9 +23,10 @@ from everything downstream, and rate_implausible / dup_adjacent are blind BY CON
 semantic garble that carries no timing anomaly and no repeated span. This script copies `src`
 onto translation.json, clamps an unknown kind instead of dropping it, and COUNTS how many
 records carried one at all -- so a skipped anomaly pass reports as "not scanned" rather than as
-a clean-looking empty report. Every src defect is a [warn], NEVER an exit: a report must never
-gate a dub, and a hard failure here would leave translation.json unwritten -- which stops the
-resume dead at TranslateStage.run, i.e. a report deciding whether a video gets dubbed at all.
+a clean-looking empty report. Every src defect is a [warn], NEVER an exit: a hard failure here
+would leave translation.json unwritten, which stops the resume dead at TranslateStage.run -- i.e.
+the report would have decided whether the video gets dubbed at all, and a report must never do
+that.
 
 Reusing the pipeline's own (partly private) helpers is deliberate: route B replaces only the
 LLM call, so every downstream invariant stays byte-identical to what the stage itself enforces.

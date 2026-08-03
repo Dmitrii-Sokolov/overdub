@@ -1,6 +1,6 @@
 """Unit tests for overdub.normalize — no live LLM, pure functions.
 
-Run: .venv-asr/Scripts/python.exe tests/test_normalize.py   (or via pytest if installed)
+Run: .venv-asr/Scripts/python.exe tests/test_normalize.py   (or via pytest)
 Invariants: EN->RU snapshots, idempotency, Cyrillic-only output, verify-coupling no-op.
 """
 

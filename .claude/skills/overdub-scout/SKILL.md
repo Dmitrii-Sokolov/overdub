@@ -7,7 +7,7 @@ description: "Scout an overdub queue (README route C) — the --scout pre-pass t
 
 Scout answers **"is this worth dubbing"** before anything expensive runs:
 **download (audio only) → transcribe → stop**, then one Sonnet sub-agent per video writes the
-summary. No translation, no TTS, no MKV, no Ollama, no `source.mkv` on disk.
+summary. No translation, no TTS, no MKV, no `source.mkv` on disk.
 
 Three steps, in order. Do not reorder them and do not skip the gates — each
 step's gate is what keeps a half-scouted queue from reading as a finished one.
@@ -30,8 +30,8 @@ untranslated, and it re-enters the dubbing route with no cleanup (see "Promotion
 **Read [`docs/queue-contract.md`](../../../docs/queue-contract.md) now, before anything else.**
 Sections 1-3 are this step: who owns `queue.txt`, the `$ids` block and its three load-bearing
 guards, the `# playlist:` freshness diff, and the rule that a queue is never shortened, lengthened
-or interrupted by a model. Run §1 verbatim; §2 whenever a playlist is involved — they are the
-same for every route, and this skill deliberately keeps no second copy of them.
+or interrupted by a model. Run §1 verbatim, and apply §2 as §1 directs — the trigger lives there,
+not here. They are the same for every route, and this skill deliberately keeps no second copy.
 
 **Resolve the queue BEFORE the run, not after** (moved above the command 2026-07-24). These
 checks used to sit under it, which made them audits of a fetch that had already happened.

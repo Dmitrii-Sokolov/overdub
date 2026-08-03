@@ -1,6 +1,6 @@
 """Unit tests for overdub.pronounce — direct goldens for every expansion class.
 
-Run: .venv-asr/Scripts/python.exe tests/test_pronounce.py   (or via pytest if installed)
+Run: .venv-asr/Scripts/python.exe tests/test_pronounce.py   (or via pytest)
 
 DIRECT-TEST RULE: every PHRASES/WORDS entry and every fallback rule is tested here
 directly; the verify round-trip can NOT catch them — both sides share this code, so a

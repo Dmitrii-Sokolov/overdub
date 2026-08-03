@@ -37,11 +37,11 @@ length_short  (signal A, WEAK) — len(text_ru)/len(src_en) below cfg.completene
     (median ratio ~0.95 on real data — RU drops articles/auxiliaries), so normal dubbing
     compression is NOT loss. The min-length guard removes the noisy short-fragment tail; below
     that the threshold (0.45) sits under the natural RU-compression floor (~0.46), so it fires
-    only on a genuinely dropped clause / empty / truncated output. Validated 0/427 false
-    positives on two 427-sentence samples of DIFFERENT translation quality — the retired local
-    translator's raw output and a near-clean cloud pass. Both labels matter: agreement across
-    the quality range is the whole evidence for the threshold, and an anonymised "two samples"
-    would not carry it.
+    only on a genuinely dropped clause / empty / truncated output. Validated 0/854 false
+    positives across two 427-sentence samples of DIFFERENT translation quality — the retired
+    local translator's raw output and a near-clean cloud pass (DECISIONS 2026-07-19, the
+    completeness A+B entry). Naming both samples matters: agreement across the quality range is
+    the whole evidence for the threshold.
     FALSE POSITIVE: a legitimately condensed sentence just above the floor; kept rare by the
     conservative threshold. This signal is coarse and intentionally redundant with the precise
     B-signals below — it only catches the catastrophic drop that carries no number/neg/entity.
