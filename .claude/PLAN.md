@@ -189,10 +189,10 @@ pauses and a contour reset.
 
 **`<break>` is NOT part of this item — it was built, measured and REJECTED by ear (DECISIONS
 2026-07-25), and it stays in the code at `silero_ssml_breaks = False`.** Recorded here because the
-mechanism is still wired and reads as available: it was the right mechanism on the wrong problem —
-at the 5:15 hole the SOURCE speech is continuous and the hole is made by ASSEMBLY, so `<break>`
-returned 0.44 s of a 5.10 s hole while ADDING pauses the speaker never took, and the A/B was
-indistinguishable. Do not re-derive that. The unpulled half is `<p>`/`<s>`/`<prosody>` and the
+mechanism is still wired and reads as available: it was the right mechanism on the wrong problem,
+the holes being made by ASSEMBLY rather than by swallowed pauses. The forensics that killed it —
+and the one condition that would make it worth revisiting — are the comment at that config key; do
+not re-derive them here. The unpulled half is `<p>`/`<s>`/`<prosody>` and the
 punctuation-quality lever, which is the bigger of the two per the guide and is not a markup
 question at all — it is what the translator writes.
 
