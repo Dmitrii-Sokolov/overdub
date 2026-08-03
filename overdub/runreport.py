@@ -81,7 +81,7 @@ _ADVISORY_COMPLETENESS = frozenset({"length_short", "entity_loss",
 _ADVISORY_TRANSLATE = frozenset({"english_echo"})
 
 # Source anomalies the route-B translate sub-agent REPORTS on the English source
-# (the source-anomaly pass, CHANGELOG 2026-07-20).
+# (the source-anomaly pass, 2026-07-20).
 # Same fixed-vocab discipline as above; "unknown" is the clamp bucket build_translation.py writes
 # for a kind outside its own _SRC_KINDS, so a new/mistyped kind is counted, never dropped.
 # Deliberately NOT named dup_adjacent: dup_neighbour is a different detector with different

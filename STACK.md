@@ -77,7 +77,7 @@ so keep batching conservative. No official RTF/VRAM benchmark on the 4080 Mobile
   near-identical text — here int8 executes AND the text differs, the answer is just negative). int8
   pays off on CPU, pre-Ada GPUs, or when VRAM is the bound — none hold here (~3.1 GB in a 12 GB
   budget). **Both ASR roles ship `float16`; do not "optimize" either to int8.** Record: DECISIONS +
-  CHANGELOG 2026-07-24, cells `work-exp/asr-probe-int8/`.
+  cells `work-exp/asr-probe-int8/`.
 - **verify compute_type is a SEPARATE config key** (`verify_compute_type`, deliberately NOT inherited
   from `whisper_compute_type`): the round-trip verifier is the pipeline's measuring instrument — it
   decides which units are flagged — so it must not move with the transcriber under test. Today both

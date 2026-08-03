@@ -1,6 +1,6 @@
 # PLAN
 
-Forward-looking only. Measurements retire to CHANGELOG, rationale to DECISIONS; if an item here
+Forward-looking only. Measurements and rationale retire to DECISIONS; if an item here
 carries more than the evidence needed to decide it, cut it.
 
 **Admission rule: an item must change the TOOL.** Repairing one video is never an item — the
@@ -135,7 +135,7 @@ not per engine**: eugene 18.8-19.5 ru ch/s against baya 14.4, aidar 14.9, kseniy
 so the knob keys on `tts_voice`.
 
 **Two thirds of this item already shipped** — ru.srt follows the dub and underfill is measurable
-(2026-07-25, CHANGELOG; the numbers live in "Numbers to re-measure" (A)), and `atempo_floor` = 0.75
+(2026-07-25; the numbers live in "Numbers to re-measure" (A)), and `atempo_floor` = 0.75
 cut slot silence 283 → 84 s on `8zJlKmgMT44` in assembly alone. What is left is the polish that
 removes the 84 s residue and the audible stretch on the 42-of-69 units pinned at the floor. Ranked
 below the three above because the ear has now passed twice without it.
@@ -243,7 +243,7 @@ about to change.
   the four step seconds, and a config fingerprint. The fingerprint is load-bearing: the point is
   comparing nights, and a series that silently spans an engine or grouping change is exactly the
   trap `run.json` is already in (no engine field in any of them — 193 checked 2026-08-02 — so its
-  own provenance is only recoverable from CHANGELOG dates). Do NOT fold it into `run.json` — that file is
+  own provenance is only recoverable from git history). Do NOT fold it into `run.json` — that file is
   per-video and this quantity is per-batch.
 - **Clean `work/<id>/` after a successful mux — hygiene, NOT a queue-size lever.** Delete BINARIES
   only (`source.mkv`, `source.wav`, `source_bed.wav`, `dub_ru.wav`, `segments/`); json/md are
@@ -268,7 +268,7 @@ about to change.
   782-sentence transcript came back **782/782**, `src` on 100% of records in all four drafts with
   zero forbidden fields and zero `_is_bad` flags. Step 2 cost the orchestrator **1428 chars** (0.7%
   of the session, against 62% for hand fan-out). Two defects found and fixed the same day
-  (CHANGELOG 2026-07-28): a narrated status line, and the args-as-string call that the ported guard
+  (2026-07-28): a narrated status line, and the args-as-string call that the ported guard
   caught on the first try. **What this run did NOT test:** (i) the projected ~5.6k tokens/video — at
   4 videos steps 1/3/4 and manual debugging dominate the session, so the figure stays a projection
   and must not be quoted as measured; (ii) the `failed` / `incomplete` / second-wave branches —
@@ -539,7 +539,7 @@ field. What is new:
 
 ## Closed
 
-Phases and shipped work: **CHANGELOG**. Rationale: **DECISIONS**. Three axes are closed with a
+Phases and shipped work: **git history**. Rationale: **DECISIONS**. Three axes are closed with a
 standing "do not reopen" — transcribe speed (2026-07-24: four levers measured, none adopted; reopen
 only on different hardware or distil cleared by ear, not another probe on this host), summarize
 throughput (at its 4.5× parallel ceiling, 2026-07-21), and the `condition_on_previous` claim

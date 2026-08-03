@@ -7,7 +7,7 @@ Tags: `[bug] [feature] [chore] [?]` — one line per entry, processed weekly.
      one item; they were one root cause) + PLAN roadmap 5 (repair destroys the anomaly worklist) +
      PLAN deferred (measure n_src precision first) / fixed in place (repair_window_min_sec docs) /
      DECISIONS 2026-07-20 (exit 0 on all-rejected) -->
-<!-- processed 2026-07-22: both queue-page entries BUILT the same day (CHANGELOG 2026-07-22) —
+<!-- processed 2026-07-22: both queue-page entries BUILT the same day —
      neither needed a roadmap slot: the thumb was a missing yt-dlp flag plus a glob one character
      too narrow, and the «о чём» was a fallback over prose already on disk. -->
 <!-- processed 2026-07-24: the STACK.md drift entry FIXED IN PLACE, no roadmap slot — it was pure
@@ -21,7 +21,7 @@ Tags: `[bug] [feature] [chore] [?]` — one line per entry, processed weekly.
      when written and deleted as echo (voice post-processing = item 3, stress audit = item 4,
      open-class rules = item 2, 166 truncated = the rebuild item); 2 merged into existing PLAN items
      (the aVwxzDHniEw#67 broken slot is the same root as 166 truncated; neg_loss keeps its own entry
-     as a decision the user owes DECISIONS); 4 were already recorded in CHANGELOG 2026-07-25 the
+     as a decision the user owes DECISIONS); 4 were already shipped on 2026-07-25 the
      same day and needed no slot (Silero 8.1×, Step 1b dry-run — since APPLIED to both videos, the
      silero-breaks verify gap, git LF on cmudict — FIXED IN PLACE via .gitattributes); 3 deleted as
      dead with the transcribe axis (beam-probe cell naming, asr_probe git-HEAD mode, asr_key

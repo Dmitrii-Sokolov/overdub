@@ -518,7 +518,7 @@ re-sorts the queue). Mention the path in your summary. Skip it for a fully clean
   clean-looking empty report.
 - **A scout pass never shortens the queue by itself.** S3 recommends; the human drops videos.
   Same reasoning as the two bullets above and the same rule the summary was built under
-  (CHANGELOG 2026-07-20): a model silently deciding a video is not worth dubbing is
+  (2026-07-20): a model silently deciding a video is not worth dubbing is
   indistinguishable, downstream, from the pipeline losing it. Also never hand-write a
   `summary.md` to clear a `summary pending` line — that line is the pass's only completion
   signal, and forging it is the silent failure in miniature.

@@ -173,5 +173,5 @@ ASR+MT punctuation being the main cause of monotone output.
 ## Artifacts
 
 Planning lives in `.claude/PLAN.md`, rationale in `.claude/DECISIONS.md`,
-history in `.claude/CHANGELOG.md`, raw ideas in `.claude/INBOX.md`
-(global 4-file framework).
+raw ideas in `.claude/INBOX.md`. Shipped work is recoverable from git history —
+there is no CHANGELOG file.
