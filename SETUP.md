@@ -25,7 +25,9 @@ The pipeline needs only `demucs_python = ".venv-demucs/Scripts/python.exe"` (con
 
 > Verified on host: Silero loads and synthesizes fine on torch 2.11 (cu128). The one catch is that
 > torchaudio 2.11 routes `torchaudio.save` through TorchCodec — so the SileroEngine writes wavs with
-> `soundfile` instead. `.venv-tts` has been retired.
+> `soundfile` instead. `.venv-tts` has been retired, and `.venv-f5tts` (8.7 GB) was deleted
+> 2026-08-03 with the F5 engine it served — **two venvs is the whole layout**, and any document
+> saying "three" is stale.
 
 ## Python
 Use **Python 3.12** on Windows (mid-2026 sweet spot — torch, faster-whisper, ctranslate2 and

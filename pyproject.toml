@@ -17,7 +17,7 @@ dependencies = [
 overdub = "overdub.cli:main"
 
 [project.optional-dependencies]
-# Installed into .venv-asr only — the f5tts and demucs venvs run worker processes, not tests.
+# Installed into .venv-asr only — .venv-demucs runs a worker process, not tests.
 #   .venv-asr\Scripts\python.exe -m pip install -e ".[dev]"
 dev = ["pytest"]
 
@@ -26,7 +26,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.pytest.ini_options]
-# testpaths is LOAD-BEARING, not tidiness: the three venvs live inside the repo and site-packages
+# testpaths is LOAD-BEARING, not tidiness: the venvs live inside the repo and site-packages
 # ships hundreds of its own test suites and conftest.py files (numpy, pandas, sklearn, sympy…).
 # A bare `pytest` without this collects them and takes minutes to fail in someone else's code.
 testpaths = ["tests"]
@@ -40,7 +40,8 @@ python_files = ["test_*.py"]
 # Import each test file as a top-level module by basename. Every file already does its own
 # sys.path.insert for `overdub` and `scripts`, and there is no tests/__init__.py — prepend mode
 # is what makes that keep working under pytest exactly as it does under `python tests/foo.py`.
-# (All 17 basenames are unique, which is what prepend mode requires.)
+# Prepend mode REQUIRES every test basename to be unique — a second `test_repair.py` in a
+# subdirectory would shadow the first with no error, so keep the directory flat.
 addopts = "--import-mode=prepend -q"
 
 [tool.setuptools.packages.find]
