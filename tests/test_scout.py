@@ -1,7 +1,6 @@
 """Unit tests for scout mode — `--scout` = download (AUDIO ONLY) → transcribe → stop.
 
-Run: .venv-asr/Scripts/python.exe -X utf8 tests/test_scout.py   (pytest is not installed in
-any of the three venvs; every test file in this repo is a self-driving script.)
+Run: .venv-asr/Scripts/python.exe -X utf8 tests/test_scout.py   (or via pytest)
 
 Filesystem only — no GPU, no network, no ffmpeg, no yt-dlp, no media. subprocess.run is
 monkeypatched inside overdub.stages.download and writes plausible files, so what is under test

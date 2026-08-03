@@ -34,8 +34,6 @@ norecursedirs = [".venv-*", "work", "work-exp", "out", "scratchpad", ".git"]
 # Import each test file as a top-level module by basename. Every file already does its own
 # sys.path.insert for `overdub` and `scripts`, and there is no tests/__init__.py — prepend mode
 # is what makes that keep working under pytest exactly as it does under `python tests/foo.py`.
-# Prepend mode REQUIRES every test basename to be unique — a second `test_repair.py` in a
-# subdirectory would shadow the first with no error, so keep the directory flat.
 addopts = "--import-mode=prepend -q"
 
 [tool.setuptools.packages.find]

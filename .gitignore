@@ -1,8 +1,6 @@
 # Python
 __pycache__/
 *.py[cod]
-# One glob, not a list: the list outlived two of its entries (.venv-tts, .venv-f5tts) and kept
-# them looking current. Live venvs are named in SETUP.md, which is the place to look.
 .venv*/
 venv/
 hf_home/
