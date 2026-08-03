@@ -523,11 +523,10 @@ anything:
 
 `pytest` is installed in `.venv-asr` only (`pip install -e ".[dev]"`);
 `.venv-demucs` runs a worker process, not tests. Configuration is
-`[tool.pytest.ini_options]` in `pyproject.toml`, and two settings there are
-load-bearing rather than cosmetic: `testpaths` keeps collection out of the
-in-repo venvs (site-packages ships hundreds of its own suites), and
-`python_files` is narrowed to `test_*.py` so pytest's default `*_test.py` does
-not drag in the one-off audition scripts in `scripts/`.
+`[tool.pytest.ini_options]` in `pyproject.toml`, and what is load-bearing there
+rather than cosmetic is collection scope: `testpaths` and `norecursedirs` keep
+the in-repo venvs out, since site-packages ships hundreds of its own suites and
+a bare `pytest` without them takes minutes to fail inside someone else's code.
 
 **Run it from the repo root.** `testpaths` only applies when the invocation
 directory is the rootdir (pytest 8+), so elsewhere you get "no tests ran".

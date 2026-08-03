@@ -80,10 +80,12 @@ again). Retired aliases are noted once per item so an old reference resolves; do
 
 ### Name list at ASR — the proper-noun class
 
-`model.transcribe` passes neither `initial_prompt` nor `hotwords` today
-(the one call site is `stages/transcribe.transcribe_words`). Measured 2026-07-26: `vLIDHi-1PVU` ("Designing Claude Code") came
-back with **16 × "Cloud" and 0 × "Claude"** at large-v3/fp16/beam 5 — so DECISIONS 2026-07-20's
-proper-noun class is not a beam-1-only artifact. Fixing it at the translate seam is possible but
+`model.transcribe` passes neither `initial_prompt` nor `hotwords` today. The SOURCE pass is
+`stages/transcribe.transcribe_words`; `asr.py` calls the same API for the verify round-trip, and a
+name list must NOT reach that one — a judge handed the answer stops being one, and the similarity
+score would rise on exactly the words it is there to check. Measured 2026-07-26: `vLIDHi-1PVU`
+("Designing Claude Code") came back with **16 × "Cloud" and 0 × "Claude"** at large-v3/fp16/beam 5
+— so DECISIONS 2026-07-20's proper-noun class is not a beam-1-only artifact. Fixing it at the translate seam is possible but
 partial and expensive: it needs a `src` flag on every normalised record, it makes 27 of 28
 `entity_loss` offenders false, and it cannot reach `en.srt` at all (not re-timed by design — the
 rule and its reason are in `assemble._ru_cue_rows`'s docstring, beside the RU path that IS
@@ -412,10 +414,10 @@ the XPU question never comes up for TTS). Re-time first ("Re-time the batch on S
 The input/SSML pair moved into Open 2026-07-27 ("Input prosody"); what stays here: per-chunk
 silence trimming + crossfade at joins (our "seams"); a versioned stress dictionary (`terms.tsv`)
 for domain terms — the class `pronounce_audit.json` surfaces and nothing consumes. The guide was
-cut down 2026-08-03 to exactly these unpulled levers plus the listening checklist, so **its
-remaining contents and this entry are now the same list** — anything it said that the code already
-does (including the `sample_rate` 48000 recommendation we already follow) was deleted rather than
-left to read as an open item.
+cut down 2026-08-03, so **nothing shipped is left in it**: what remains is either Open (punctuation
+and SSML), this Backlog entry, or the listening checklist. Anything the code already does
+(including the `sample_rate` 48000 recommendation we already follow) was deleted rather than left
+to read as an open item.
 
 **Narrator's grammatical gender → the translate prompt** (user 2026-07-25). Russian marks gender on
 1st-person PAST verbs, English does not, and the transcript carries no name — so every first-person
