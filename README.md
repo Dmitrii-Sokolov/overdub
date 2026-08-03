@@ -3,8 +3,9 @@
 Local-first, semi-automated pipeline for dubbing YouTube videos into Russian.
 
 Download → transcribe → translate → synthesize → verify → assemble → mux.
-Every stage runs on local
-hardware — no cloud APIs, no per-minute billing. Built for batch processing of
+Every stage but one runs on local hardware, with no per-minute billing; the
+exception is translation, which left the host at the seam and is written by
+Claude Sonnet sub-agents (step 3 below). Built for batch processing of
 hundreds of hours of single-speaker content.
 
 ## Pipeline
@@ -512,10 +513,10 @@ Seconds, not minutes. No GPU, no network, no media, no model downloads — every
 is pure logic over temp dirs and injected stages, which is what makes a bare
 `pytest` a safe thing to run at any time, including while a batch is on the GPU.
 
-**The suite size is not written down anywhere on purpose** — it moves with every
-commit and a number in prose goes stale silently. The run itself is the only
-answer, and it costs seconds; `--collect-only -q` gives it without executing
-anything:
+**The suite size is not written down anywhere on purpose** (the rule and its
+rationale live in CLAUDE.md, "Tests" — this is the command half). The run itself
+is the only answer, and it costs seconds; `--collect-only -q` gives it without
+executing anything:
 
 ```powershell
 .venv-asr\Scripts\python.exe -m pytest --collect-only -q

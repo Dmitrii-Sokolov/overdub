@@ -67,7 +67,8 @@ That job is half done (2026-07-25): `atempo_floor` stretches under-filled units 
 the measured silence, while sizing the TRANSLATION to the slot is still open (PLAN, "Slot fit"). The
 duration model those two share is `overdub.tts.voice_rate` / `target_chars` (both in
 `overdub/tts/__init__.py`) and is keyed on `tts_voice` —
-speaking rate is a VOICE fact (eugene 19.85 ru ch/s vs baya 14.41) and an unmeasured voice
+speaking rate is a VOICE fact (eugene 19.85 ru ch/s vs baya 14.41, measured 2026-07-25 over every
+Silero manifest on disk — provenance at the constant) and an unmeasured voice
 disables the model rather than borrowing a rate. Adapter default is v5_5_ru; v4_ru only to reproduce old runs
 (DECISIONS 2026-07-19). No voice cloning — fixed narrator voice. Don't
 hardcode engine specifics outside the engine adapter. Two venvs, never merge them:
@@ -204,7 +205,12 @@ rot silently while still reading as current: the ~72 s/video model-loading
 saving outlived the stage walls it came off and was quoted in two files after
 that, and the suite size was wrong in three. DECISIONS is the one place a bare
 number is safe — an entry there is dated by construction and never re-read as
-current. Everywhere else: date it inline, or point at the entry that does. It
-follows that retiring a figure means grepping for the NUMBER, not for the
+current. Everywhere else: date it inline, or point at the entry that does. This
+covers code comments too — `scripts/asr_probe.py --help` is a runbook, and a
+number in it rots exactly like one in a `.md`. One figure a date does NOT
+rescue: the test-suite size, which is stale within the day, so it is not
+written at all (see "Tests"). A number quoted in order to RETIRE it is not a
+measurement in prose and needs no date of its own — mark it retired instead.
+It follows that retiring a figure means grepping for the NUMBER, not for the
 component it described — the component keeps its name across the change that
 invalidated the measurement.
