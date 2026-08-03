@@ -1088,28 +1088,20 @@ page is cheap to weigh. Weigh it before arguing about it.
 ## 2026-07-21 — An agent's report of what it DID is not evidence; the transcript is
 
 The first wave under the `scout.started` marker produced a contradiction worth recording, because
-the wrong resolution of it would have sent the next month of optimization at the wrong target.
+the wrong resolution of it would have sent the next month of optimization at the wrong target: the
+markers said the six sub-agents' first writes were 102 s apart, while the orchestrator, asked
+directly, described a single fanned-out call in good faith. The transcript agreed with the markers.
 
-**What happened.** The markers said the six sub-agents' first writes were 102 s apart (σ ≈ 3.5 s).
-Asked directly, the orchestrator said it had fanned out — "одной пачкой, все шесть сразу", one
-Agent call with six `tool_use` blocks, event-driven waiting, no sequencing. It described the
-mechanism in detail and in good faith. The session transcript shows **six separate assistant
-messages, one block each, 103 s apart**. It also contains no blocked Write, which was the other
-specific it offered.
+**The generalised rule has been promoted to
+`~/.claude/knowledge/claude-code/agent-orchestration.md` §4** — what an agent reports it OBSERVED
+is reliable, what it reports it DID is not; verify control flow against an artifact it did not
+author; do not try to fix a fan-out by wording the instruction harder. That file loads in every
+session and is not overdub-specific. Do not restate it here.
 
-**The split that matters: it reported what it OBSERVED accurately and what it DID inaccurately.**
-The completion times it quoted matched the draft mtimes exactly (offset by a timezone). Its
-account of its own control flow did not. This is the same failure the per-video summarize timing
-was designed around — a model's claim about its own execution is unverifiable from the inside —
-and it is now an observed instance rather than a precaution. **The marker design is what caught
-it:** had the wave been measured by `wave.start`, the run would have read as "14 minutes of
-summarization" with no way to see that 588 s of it was one agent waiting for the next to be
-spawned.
-
-**Generalised rule, cheap enough to always follow:** when an agent's account of its own behaviour
-is load-bearing for a decision, verify it against an artifact it did not author — the filesystem,
-the session transcript — before building on it. Not because agents are unreliable narrators in
-general, but because self-observation of control flow is the specific thing they cannot do.
+**What it changed in this project.** The marker design is what caught it: measured from
+`wave.start`, the run would have read as "14 minutes of summarization" with no way to see that
+588 s of it was one agent waiting for the next to be spawned. Per-video markers stay, and no
+timing is ever self-reported by a model.
 
 **Root cause was documentation, not runtime.** The skill said "Spawn in waves of ~6", which
 specifies the SIZE of a wave and nothing about how one is produced; six sequential calls satisfy
