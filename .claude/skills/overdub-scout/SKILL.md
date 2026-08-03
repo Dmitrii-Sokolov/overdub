@@ -1,6 +1,6 @@
 ---
 name: overdub-scout
-description: "Scout an overdub queue (README route C) — the --scout pre-pass that downloads audio only, transcribes and grades each video WITHOUT dubbing it, so the user can decide what earns their time and a full dub. Fixed order: scout the batch, grade the MATERIAL (substance/currency/delivery) and summarize each video with Sonnet sub-agents, build work/scout-report.html (grade · preview · title · what it is · what is most interesting, in queue order, plus a write-up per video), publish it as an Artifact, then hand the user a recommend-only Russian rundown. Trigger when the user has a queue they have not watched: 'разведка по очереди', 'что тут стоит дублировать', 'прогони разведку', 'scout the queue', '--scout', 'summaries only, no dub', 'о чём эти видео'. NOT for dubbing — once the queue is chosen, hand off to the overdub-sonnet-batch skill (route B) or a plain --batch run (route A)."
+description: "Scout an overdub queue (README route C) — the --scout pre-pass that downloads audio only, transcribes and grades each video WITHOUT dubbing it, so the user can decide what earns their time and a full dub. Fixed order: scout the batch, grade the MATERIAL (substance/currency/delivery) and summarize each video with Sonnet sub-agents, build work/scout-report.html (grade · preview · title · what it is · what is most interesting, in queue order, plus a write-up per video), publish it as an Artifact, then hand the user a recommend-only Russian rundown. Trigger when the user has a queue they have not watched: 'разведка по очереди', 'что тут стоит дублировать', 'прогони разведку', 'scout the queue', '--scout', 'summaries only, no dub', 'о чём эти видео'. NOT for dubbing — once the queue is chosen, hand off to the overdub-sonnet-batch skill (route B), the only route that ends in a dub."
 ---
 
 # overdub — scout a queue (route C)
@@ -14,7 +14,7 @@ step's gate is what keeps a half-scouted queue from reading as a finished one.
 
 **When NOT to use this skill.** If the queue is already chosen, scouting buys nothing and still
 costs the audio fetch and a sub-agent per video — go straight to the `overdub-sonnet-batch`
-skill (route B) or a plain `--batch` run (route A). Scout is for a queue nobody has watched.
+skill (route B), the only route that ends in a dub. Scout is for a queue nobody has watched.
 
 And if the question is **what is IN the video** rather than whether it earns an evening — a
 retelling, "did I miss anything", "what should I expect" — that is the `overdub-digest` skill
@@ -223,8 +223,8 @@ queue is the failure this whole mode exists to prevent.
 ## Promotion — handing the survivors to the dubbing route
 
 The user trims `queue.txt` to the survivors; that queue then enters the `overdub-sonnet-batch`
-skill at its **Step 1** (route B), or a plain `--batch` run (route A). Mechanics — what fast-skips,
-what re-runs, the ~5% traffic — are [`docs/queue-contract.md`](../../../docs/queue-contract.md) §4.
+skill at its **Step 1** (route B). Mechanics — what fast-skips, what re-runs, the ~5% traffic —
+are [`docs/queue-contract.md`](../../../docs/queue-contract.md) §4.
 
 Videos the user dropped keep their scout artifacts in `work/<id>/` — a few MB each, and they
 make a re-scout free. Deleting them is the user's call, not yours.

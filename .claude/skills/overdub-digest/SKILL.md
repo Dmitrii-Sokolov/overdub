@@ -24,8 +24,8 @@ examples describe an invented video and must stay that way.
 **When NOT to use this skill.**
 - The user wants to know **which** videos deserve a dub → `overdub-scout` (route C). A digest is
   longer, costs an Opus agent per video, and deliberately carries no verdict to sort on.
-- The user wants the videos **dubbed** → `overdub-sonnet-batch` (route B) or a plain `--batch` run
-  (route A).
+- The user wants the videos **dubbed** → `overdub-sonnet-batch` (route B), the only route that
+  ends in a dub.
 - The user asks about **one** video that already has `work/<id>/digest.md` → just read that file
   and answer. Do not re-run anything; the digest on disk is the answer, and a second retelling
   from the transcript would be a second, unverifiable version of it.
@@ -275,9 +275,8 @@ file on disk. If the user asks about one video, quote from its `digest.md`.
 
 ## Promotion — a digested queue entering the dubbing route
 
-Nothing to clean up. That queue enters `overdub-sonnet-batch` at its **Step 1** (route B), or a
-plain `--batch` run (route A); the mechanics are
-[`docs/queue-contract.md`](../../../docs/queue-contract.md) §4. The digest artifacts survive the
+Nothing to clean up. That queue enters `overdub-sonnet-batch` at its **Step 1** (route B); the
+mechanics are [`docs/queue-contract.md`](../../../docs/queue-contract.md) §4. The digest artifacts survive the
 dub untouched, and are **not** refreshed by a `--repair-asr` pass either — which is what cache
 layer 2's mtime check is for.
 

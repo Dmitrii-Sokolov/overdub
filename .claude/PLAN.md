@@ -162,7 +162,7 @@ while missing the one that actually reaches the translator:
 
 | where | what it is |
 |---|---|
-| `translate.py` `SYSTEM` | route A's in-process prompt — the stated source of truth |
+| `translate.py` `SYSTEM` | the rules `build_translation.py` imports — the stated source of truth |
 | `skills/overdub-sonnet-batch/references/translate-contract.md` rule 2 | what the route-B sub-agent reads off disk |
 | **`.claude/workflows/translate-batch.js`** | the route-B prompt itself — **the copy that decides the output**, and the one the old inventory missed |
 | `README.md` (pipeline description + route B) | prose |
@@ -335,10 +335,11 @@ comparison arm.**
 2026-07-25: **7 units of 3575, worst 2.63** (12 SENTENCE rows — the two counts were being mixed,
 and the ×12.5 was one sentence's pre-repair `speed_factor`).
 
-**(D) Everything measured on `work/` BEFORE 2026-07-26 used the old engine at grouping 0.4.** Those
-36 manifests report `group_gap_max=0.4` — so every compression, slot and unit-count figure derived
-from that corpus describes a configuration this pipeline no longer runs, and the boundary is now a
-DATE, not the directory. **The gap is closed on the corpus side:** the 7-video batch of 2026-07-26
+**(D) Everything measured on `work/` BEFORE 2026-07-26 is F5 at grouping 0.4.** Those 36 manifests
+report `engine=f5`, `group_gap_max=0.4` — that pair is how you IDENTIFY them on disk, and the engine
+left the code, not the manifests. So every compression, slot and unit-count figure derived from that
+corpus describes a configuration this pipeline no longer runs, and the boundary is now a DATE, not
+the directory. **The gap is closed on the corpus side:** the 7-video batch of 2026-07-26
 (`sHImlfVM9r4`, `Yiy0cU6ChSw`, `NfoFdsc2ODQ`, `VHRhSDawKVA`, `CeotyuztIkg`, `FpOAn6Dh44k`,
 `kSl2mxseXkM`) is Silero at the shipped 1.2/20/600 with the floor active — first reading: max
 combined factor 1.22, per-video fill medians 0.79-0.95 (6 videos; the instrumental has none),
@@ -357,7 +358,7 @@ PER VIDEO and cannot
 be averaged across videos (a 5 s instrumental and a 35 min talk carry one slot each in that list
 and are not comparable), and none of it is quotable beside a pre-2026-07-26 number.
 
-**(B) Batch stage-shares from before the engine change are void.** synthesize 47.6% · transcribe
+**(B) F5-era batch stage-shares are void.** synthesize 47.6% · transcribe
 21.3% · download 9.8% · verify 8.3% · mux 7.9% · separate 4.9%; batch RTF 0.451 (7.26 h → 3.27 h);
 the 2026-07-24 36-run split (synthesize 52.6 + verify 7.6 + mux 7.4 + separate 4.8 = 72.7%); and the
 "3.3 h → ~1.9 h, RTF → ~0.26" projection, which extrapolates one video to a batch. Closed by
@@ -365,7 +366,8 @@ the 2026-07-24 36-run split (synthesize 52.6 + verify 7.6 + mux 7.4 + separate 4
 
 **(C) Wall-clock contaminated — anything derived from `timings.json` stage walls before
 2026-07-22.** The ~72 s/video fixed cost, the whole-pipeline RTF pair from the 2026-07-19 audition
-(0.14-0.17 vs 0.70-0.92), and every `breakdown_pct`. Re-derive from `rtf_work` on the next pass.
+(Silero 0.14-0.17 vs F5 0.70-0.92 — unlabelled, that pair is two unquotable numbers), and every
+`breakdown_pct`. Re-derive from `rtf_work` on the next pass.
 
 ## Backlog
 
@@ -503,7 +505,9 @@ field. What is new:
   `cfg.source_lang`, the transcribe call, both routes' prompts, the `en.srt` label, and the
   Latin-punctuation-shaped resegmentation `TERMINATORS`/`_ABBREV`)
 - tail: translation completeness check (EN↔RU content-word ratio / back-translation on outliers —
-  evidence: a translator dropped 3 of 4 adverbs in `DmgujoZ1mmk` id1, unflagged); babble duration heuristic
+  evidence: Gemma dropped 3 of 4 adverbs in `DmgujoZ1mmk` id1, unflagged, i.e. measured on the
+  retired local translator: the failure CLASS carries to any route, the rate does not); babble
+  duration heuristic
   (expected-vs-actual unit duration → flag garbled synth the ASR round-trip misses) — **add it
   BEFORE any narrator-voice or engine change**; whisper anti-repetition decoder params (REJECTED
   2026-07-19 on a 60-run sweep — retry ONLY with a content comparison against a reference

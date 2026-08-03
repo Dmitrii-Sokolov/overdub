@@ -161,10 +161,10 @@ cleanly at the translate seam and resumes from it.
    the queue page (`scout_report`); it is informational and gates nothing, and there is no helper
    script for it.
 
-3. **Resume the batch** with the exact command from route A — download/
+3. **Resume the batch** with the exact command from section A — download/
    transcribe/translate skip (artifacts exist), synthesize → verify → assemble
    → separate → mux run as usual.
-   - Morning triage: same as route A — `work/<id>/run.json` (the per-run rollup)
+   - Morning triage: same as section A — `work/<id>/run.json` (the per-run rollup)
      and `scripts/run_report.py --queue queue.txt` for the text digest,
      `scripts/scout_report.py --queue queue.txt` for the clickable page (flagged
      units + inline audio, a triage nav instead of a re-sort); raw flags in
@@ -178,7 +178,7 @@ seam, and the pipeline runs everything either side of it.
 
 A cheap pass over an unread queue — **download → transcribe → stop**. No
 translation, no TTS, no MKV. It answers one question per video: is this worth
-the dub? Run it before route A or B on any queue you have not read.
+the dub? Run it before route B on any queue you have not read.
 
 ```powershell
 .venv-asr\Scripts\python.exe -X utf8 -m overdub --batch queue.txt --scout
@@ -229,7 +229,7 @@ same stage measured from inside with the load and warmup excluded — what THAT
 video cost, and the only one of the pair that compares across builds, because the
 load lands on whichever video the sweep happened to start with (measured: 23.0 s
 wall vs 17.3 s of work on a 2:22 video). Since 2026-07-22 `translate` and
-`synthesize` report the same pair (see route A's triage bullet), so `run.json`
+`synthesize` report the same pair (see section A's triage bullet), so `run.json`
 carries `rtf_work` beside `rtf`. `summarize_sec` is one agent's own
 window from its marker, not the wave's — the wave start is shared by the whole
 spawn, so it would bill an agent for time it spent queued. Per-video figures
@@ -278,9 +278,9 @@ counted apart from scouted ones, never folded into one total or the throughput
 figure. `scripts/run_report.py` prints the same numbers and summaries in the
 text digest.
 
-**Promotion** — trim `queue.txt` to the survivors and run the ordinary route A
-or B command, without `--scout`. Mechanics (what fast-skips, what re-runs, the
-~5% extra traffic): [`docs/queue-contract.md`](docs/queue-contract.md) §4 —
+**Promotion** — trim `queue.txt` to the survivors and run route B, without
+`--scout`. Mechanics (what fast-skips, what re-runs, the ~5% extra traffic):
+[`docs/queue-contract.md`](docs/queue-contract.md) §4 —
 the same block for every route, kept in one place.
 
 ### D. Digest a queue — retell it, no grade and no dub
@@ -404,7 +404,7 @@ AGENT artifacts, never the built `digest.json` — that file is derived and alwa
 well-formed, which is exactly why its presence proves nothing about whether an
 agent ran.
 
-**Promotion** — a digested queue enters route A or B with no cleanup
+**Promotion** — a digested queue enters route B with no cleanup
 ([`docs/queue-contract.md`](docs/queue-contract.md) §4); the digest artifacts
 survive untouched.
 
@@ -465,7 +465,7 @@ are never cache keys: a present `clean.md` proves nothing about whether an agent
 ran.
 
 **Promotion** — nothing to clean up; a cleaned video is untranslated, not
-half-translated. It enters route A/B at the top or route D at D2
+half-translated. It enters route B at the top or route D at D2
 ([`docs/queue-contract.md`](docs/queue-contract.md) §4).
 
 ### Repairing an ASR defect
@@ -593,7 +593,7 @@ until that lands.
 - No tempo cap upward, a floor downward (`atempo_floor`, 0.75 since
   2026-07-25): a segment is sped up as much as its slot requires and an
   under-filled one is stretched toward its slot, both strictly inside that
-  slot. Occasional broken segments are acceptable losses (PoC).
+  slot. Occasional broken segments are tolerated; silent ones are not.
 - Fixed narrator voice — Silero `eugene`, baked into the model, no reference
   clip. "Same voice as the speaker" (cloning the source speaker
   cross-lingually) was dropped after the day-1 engine bake-off.
@@ -633,7 +633,7 @@ building toward (CMUdict + the stress audit). See PLAN, "Publication rights".
 
 ## Status
 
-Research / proof of concept — the pipeline runs on real videos, batch mode
+Polishing — the pipeline runs on real videos, batch mode
 included, with translation supplied at the seam. Closed: Phase 1 MVP, dead-air
 elimination, batch queue + stop switch, proper-noun pronunciation, and the
 segmentation root fix. Current roadmap: `.claude/PLAN.md`; rationale history:

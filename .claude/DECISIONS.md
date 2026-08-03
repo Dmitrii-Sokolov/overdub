@@ -2077,7 +2077,9 @@ the file extension, so any caller passing a temp/suffixless path must pass `form
 author's demo reference is the unambiguous leader over Silero v4 (current), Silero v5, Misha
 F5-RU v2 and every cloning variant. Objective metrics agree: mean sim 0.992, 0 verify flags,
 mean atempo ×1.03, 0 segments over ×1.8 — timing at Silero-v4 level with far better voice.
-Research trail: bakeoff/tts-research-2026-07.md (multi-agent sweep of ~20 engines + adversarial
+Research trail: bakeoff/tts-research-2026-07.md — **deleted 2026-08-03 with the rest of
+`bakeoff/`; what survived it is the licence table in README, "Voices, cloning and the law"**
+(multi-agent sweep of ~20 engines + adversarial
 verification; only Silero/ESpeech/Misha credibly speak Russian — "supports Russian" in a language
 list is marketing, the Chatterbox lesson generalizes). Engine switch is finalized by the F5Engine
 adapter integration + a full-length control run (PLAN Phase 3).
