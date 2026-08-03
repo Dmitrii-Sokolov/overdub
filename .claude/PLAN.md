@@ -50,10 +50,9 @@ back-to-back — an offline resume of 12 videos can sit ~6 min in one block at t
 caveat.)
 
 **`work-exp/` is not an archive and has already lost data once.** `context-earcheck/`,
-`stats-batch/` and `gemma-ab/` NO LONGER EXIST (only `nfe-sweep/`, `nfe16/`, and the 2026-07-2x
-cells remain): the Qwen-vs-Gemma A/B set and the 8/23 stats-batch workdirs are gone, the published
-A/B report artifact (508 sentences) is the only surviving record of that comparison, and the
-stats-batch URL list is unrecoverable. The route-C baselines under `work-exp/wave-*-2026-07-21/`
+`stats-batch/` and the translator A/B cells NO LONGER EXIST (only the 2026-07-2x cells remain):
+those workdirs are gone, the published A/B report artifact (508 sentences) is the only surviving
+record of that comparison, and the stats-batch URL list is unrecoverable. The route-C baselines under `work-exp/wave-*-2026-07-21/`
 are live — **a re-run of that 6-video queue overwrites the artifacts, so copy the six `scout.json`
 before repeating it.** Decide what in `work-exp/` is a consumable and what is an archive before the
 next disk cleanup makes that call for you.
@@ -214,8 +213,9 @@ puts the input first, and an EQ chain applied to flat delivery is polish on the 
 
 ### Re-time the batch on Silero *(was item 5)*
 
-"Synthesize dominates" is F5's shape, not Silero's — see "Numbers to re-measure" (B). Do it after
-the slot-fit item lands, or the numbers describe a pipeline that is about to change.
+"Synthesize dominates" describes a configuration this pipeline no longer runs — see "Numbers to
+re-measure" (B). Do it after the slot-fit item lands, or the numbers describe a pipeline that is
+about to change.
 
 ## Also open — independent, none of them ordered against the list above
 
@@ -301,24 +301,19 @@ the slot-fit item lands, or the numbers describe a pipeline that is about to cha
 
 Three groups, three different reasons. **Do not quote across a group boundary.**
 
-**(A) `8zJlKmgMT44` — re-measured on Silero; the F5 half is RETIRED, not owed.** Silero at the
-shipped 1.2/20/600, measured 2026-07-25 with the new metric: **fill median 0.7104, slot silence
-283.1 s** of a 1058.8 s dub (`in_span_silence` reads 241.8 s on the same run and understates by
-41 s — it excludes the inter-unit gap). **Quote these, not the old pair.** The F5 side (0.90 /
-124 s at grouping 0.4/12/300, and the older cross-engine 136 units / 224 s vs 47 s) is **dead
-weight, dropped 2026-07-26 (user call)**: this file used to carry "needs an F5 arm at 1.2/20/600
-or it stays uncited" as an open debt, but the only question that comparison could answer — which
-engine ships — was decided on 2026-07-25, so nobody will ever run that arm. F5-era figures are
-HISTORY: cite them as F5's if a revival ever needs them (see "Deferred — the F5 path"), never
-beside a Silero number, and never as something still to be measured.
+**(A) `8zJlKmgMT44` — the current reading.** Shipped grouping 1.2/20/600, measured 2026-07-25 with
+the new metric: **fill median 0.7104, slot silence 283.1 s** of a 1058.8 s dub (`in_span_silence`
+reads 241.8 s on the same run and understates by 41 s — it excludes the inter-unit gap). **Quote
+these; every earlier pair on this video was measured at grouping 0.4/12/300 and is history, not a
+comparison arm.**
 **Retired, do not re-quote: "17 units at cf ≥ 1.8, up to ×12.5".** Recomputed over all of `work/`
 2026-07-25: **7 units of 3575, worst 2.63** (12 SENTENCE rows — the two counts were being mixed,
 and the ×12.5 was one sentence's pre-repair `speed_factor`).
 
-**(D) Everything measured on `work/` BEFORE 2026-07-26 is F5 at grouping 0.4.** Those 36 manifests
-report `engine=f5`, `group_gap_max=0.4` — so every compression, slot and unit-count figure derived
-from that corpus describes the OLD engine at the OLD grouping, and the boundary is now a DATE, not
-the directory. **The gap is closed on the corpus side:** the 7-video batch of 2026-07-26
+**(D) Everything measured on `work/` BEFORE 2026-07-26 used the old engine at grouping 0.4.** Those
+36 manifests report `group_gap_max=0.4` — so every compression, slot and unit-count figure derived
+from that corpus describes a configuration this pipeline no longer runs, and the boundary is now a
+DATE, not the directory. **The gap is closed on the corpus side:** the 7-video batch of 2026-07-26
 (`sHImlfVM9r4`, `Yiy0cU6ChSw`, `NfoFdsc2ODQ`, `VHRhSDawKVA`, `CeotyuztIkg`, `FpOAn6Dh44k`,
 `kSl2mxseXkM`) is Silero at the shipped 1.2/20/600 with the floor active — first reading: max
 combined factor 1.22, per-video fill medians 0.79-0.95 (6 videos; the instrumental has none),
@@ -335,20 +330,17 @@ either as a rate — a 12-video sample cannot carry one.
 do not derive a threshold, a population share or a "typical" value from it. The fill medians are
 PER VIDEO and cannot
 be averaged across videos (a 5 s instrumental and a 35 min talk carry one slot each in that list
-and are not comparable), and none of it is quotable beside an F5-era number.
+and are not comparable), and none of it is quotable beside a pre-2026-07-26 number.
 
-**(B) F5-era batch shares are void on the Silero path.** synthesize 47.6% · transcribe 21.3% ·
-download 9.8% · verify 8.3% · mux 7.9% · separate 4.9%; batch RTF 0.451 (7.26 h → 3.27 h); the
-2026-07-24 36-run split (synthesize 52.6 + verify 7.6 + mux 7.4 + separate 4.8 = 72.7%); and the
+**(B) Batch stage-shares from before the engine change are void.** synthesize 47.6% · transcribe
+21.3% · download 9.8% · verify 8.3% · mux 7.9% · separate 4.9%; batch RTF 0.451 (7.26 h → 3.27 h);
+the 2026-07-24 36-run split (synthesize 52.6 + verify 7.6 + mux 7.4 + separate 4.8 = 72.7%); and the
 "3.3 h → ~1.9 h, RTF → ~0.26" projection, which extrapolates one video to a batch. Closed by
 "Re-time the batch on Silero".
 
 **(C) Wall-clock contaminated — anything derived from `timings.json` stage walls before
-2026-07-22.** The ~72 s/video fixed cost, the Silero-vs-F5 whole-pipeline RTF pair (0.14-0.17 vs
-0.70-0.92 from the 2026-07-19 audition), and every `breakdown_pct`. Re-derive from `rtf_work` on the
-next pass. **NOT contaminated, contrary to an earlier claim in this file:** `nfe` 48→16 = 2.16× —
-`scripts/exp_nfe_sweep.py` times each cell around `engine.synthesize` alone and records worker spawn
-separately as `startup_s`.
+2026-07-22.** The ~72 s/video fixed cost, the whole-pipeline RTF pair from the 2026-07-19 audition
+(0.14-0.17 vs 0.70-0.92), and every `breakdown_pct`. Re-derive from `rtf_work` on the next pass.
 
 ## Backlog
 
@@ -386,8 +378,8 @@ Markdown file, which is an assumption about how the artifact gets used, not a me
 
 **Throughput / weaker hardware.** With TTS fast on CPU and the GPU idle during synthesis, the
 remaining GPU load is whisper-large (transcribe) + whisper-small (verify) — a low-VRAM or GPU-less
-host becomes plausible, and the Arc B390 path gets a realistic TTS story (Silero-on-CPU sidesteps
-the unproven F5-on-XPU spike). Re-time first ("Re-time the batch on Silero").
+host becomes plausible, and the Arc B390 path gets a realistic TTS story (Silero runs on the CPU, so
+the XPU question never comes up for TTS). Re-time first ("Re-time the batch on Silero").
 
 **From [`docs/russian-tts-guide.md`](../docs/russian-tts-guide.md)** (user-supplied, July 2026) —
 levers we have not pulled. The input/SSML pair moved into Open 2026-07-27 ("Input prosody"); what
@@ -416,7 +408,7 @@ translation quality and ASR-repair metadata came back clean; every finding is in
 normalization layer or in cross-segment consistency. **Provenance caveat: the audit read files named
 `translation__N_.json` and no video ids, so not one of its counts is traceable to a workdir — get the
 id mapping before quoting any number from it, and note that a `translation.json` is engine-neutral
-EXCEPT where a figure is measured against the slot (there the shipped-vs-F5 boundary of (D) applies).**
+EXCEPT where a figure is measured against the slot (there the date boundary of (D) applies).**
 Four of its seven findings were already open and are deliberately NOT duplicated here — the numbers
 went to the existing items instead: letter-by-letter anglicisms → "Phoneme transliteration from
 CMUdict" (Open, `алигнмент` 91× recorded there); chars/sec over the slot → "Slot fit" (Open, sized
@@ -458,8 +450,6 @@ field. What is new:
   queue line carrying `&list=` passes the id regex and yt-dlp then FOLLOWS the playlist into the
   fixed `-o source.*` path — dozens of videos over one workdir, verified 2026-07-24. Today's only
   guard is a check in both skills, i.e. instruction, not code
-- Ollama circuit-breaker (abort translate after ~3 consecutive api_error instead of burning
-  4×timeout per sentence overnight; failed records are not retried on resume)
 - enumeration-head detector (in a run of ≥3 adjacent sentences matching `^(and )?X to …` the
   captured head must be unique — 1 fire / 1101 sentences, the true positive, 0 FP, ~15 LOC)
 - `--repair id,id --seed N` (point re-synth + remux; grain = the GROUP after units)
@@ -484,35 +474,12 @@ field. What is new:
   `cfg.source_lang`, the transcribe call, both routes' prompts, the `en.srt` label, and the
   Latin-punctuation-shaped resegmentation `TERMINATORS`/`_ABBREV`)
 - tail: translation completeness check (EN↔RU content-word ratio / back-translation on outliers —
-  evidence: Gemma dropped 3 of 4 adverbs in `DmgujoZ1mmk` id1, unflagged); babble duration heuristic
+  evidence: a translator dropped 3 of 4 adverbs in `DmgujoZ1mmk` id1, unflagged); babble duration heuristic
   (expected-vs-actual unit duration → flag garbled synth the ASR round-trip misses) — **add it
   BEFORE any narrator-voice or engine change**; whisper anti-repetition decoder params (REJECTED
   2026-07-19 on a 60-run sweep — retry ONLY with a content comparison against a reference
   transcript, since the word-count axis cannot tell "removed a duplicate" from "ate real speech";
   extend `scratchpad/floor_variance.py` rather than starting over)
-
-## Deferred — the F5 path (only if the Silero switch fails)
-
-F5/ESpeech is out of the pipeline (DECISIONS 2026-07-25) and comes back out of git history if
-Silero does not work out. **That condition keeps failing to trigger:** the ear passed the shipped
-Silero config on both 2026-07-26 batches, and its CC BY-NC licence was accepted for personal use
-(user, 2026-07-27). Treat this section as an archive with a trigger, not as work in waiting —
-everything below was live roadmap work for F5 and is parked WITH its measurements so a revival does
-not re-derive them. None of it is a reason to keep per-engine knobs around.
-
-- **Parallel F5 workers — occupancy gate PASSED 2026-07-24, build never started.** `nvidia-smi dmon`
-  at nfe=16 over 40 real units: median SM 5%, mean 26.6%, 60% of the active window below 10%
-  occupancy — F5 is confirmed launch-bound, so the lever is real. Three things the number does NOT
-  promise: the 60% idle includes the verify round-trip and the one-off 66 s worker spawn (only the
-  F5-synth slice is fillable); Windows has no MPS, so N processes get WDDM time-slicing and
-  threading already showed N=3 DEGRADES; VRAM is tight (~2×1.3 GB + whisper-small + desktop ≈ 9+ GB
-  of 12). Raw: `work-exp/f5-occupancy/` + `scratchpad/dmon_f5.txt`.
-- **Shorter reference clip — measured, unexercised, and it moves the voice.** F5 denoises
-  `ref + gen` and throws the ref away (`utils_infer.py:508`); the reference is 9.164 s against a
-  ~7 s mean unit, so over half of every unit's compute is discarded. Worth ~158 s/batch after
-  nfe=16 — larger than the workers item. The cost is not compute but quality: shortening the
-  reference changes speaker conditioning. It owes the same ear session as the rights-clear narrator
-  replacement; do them together or pay it twice.
 
 ## Deferred — not near-term
 
@@ -528,10 +495,9 @@ not re-derive them. None of it is a reason to keep per-engine knobs around.
 - In-pipeline Anthropic API translate flag (approved in principle, DECISIONS 2026-07-18; build ONLY
   if the manual sub-agent seam becomes the bottleneck — it is not, and that seam is where translate,
   summary and scout sub-agents all hang).
-- Gender-matched narrator — **the old blocker died with the engine switch (2026-07-27).** It read
-  "blocked on a female PD reference; search the ESpeech HF Space, fall back to re-scanning LibriVox
-  readers", which was F5's problem: on Silero the female voices ship with the model (kseniya =
-  backup, xenia, baya), so matching is `tts_voice` per video, not a hunt for a clip. What is left is
+- Gender-matched narrator — **no longer blocked on sourcing a voice (2026-07-27).** The female
+  voices ship with the model (kseniya = backup, xenia, baya), so matching is `tts_voice` per video,
+  not a hunt for a clip. What is left is
   a design question and an ear pass: whether the narrator's voice should follow the speaker's median
   F0 at all, and whether kseniya holds up over a full video. Shares the F0 pass with the
   grammatical-gender item above — measure once, use twice.
@@ -551,14 +517,11 @@ not re-derive them. None of it is a reason to keep per-engine knobs around.
   never-drop invariants, merging self-heals (units keyed by id-tuple), and `done()` compares the
   manifest's own units rather than a fresh partition, so a regroup returns True and never applies
   without a partition check. Trigger to reopen: a batch that actually produces units over the bar.
-- **Publication rights — HARD gate before ANY publication of dubs, and the engine switch CHANGED
-  its shape (not re-checked since 2026-07-25).** The old wording covered F5's demo-clip narrator
-  (personal-use only) and ESpeech's Apache provenance caveat; on the Silero path there is no
-  reference clip at all, so what governs is the MODEL's own licence. Our own bakeoff
-  (`bakeoff/tts-research-2026-07.md`) records Silero v5 as **CC BY-NC** and explicitly weighed
-  "Apache vs hard NC" as an argument for the engine that is no longer in the pipeline — i.e. the
-  2026-07-25 switch moved the project ONTO the non-commercial side of that comparison, and nothing
-  in the docs re-examined the gate afterwards. **NC accepted for personal use (user, 2026-07-27)**,
+- **Publication rights — HARD gate before ANY publication of dubs (not re-checked since
+  2026-07-25).** There is no reference clip anywhere in the pipeline, so what governs is the
+  MODEL's own licence: Silero v5 is recorded as **CC BY-NC**, i.e. the project sits on the
+  non-commercial side, and nothing in the docs re-examined the gate afterwards.
+  **NC accepted for personal use (user, 2026-07-27)**,
   so this is not a gate on the current use — it is a gate on publication and on "other users".
   Unverified against the current model card; verify before any distribution.
   **Known escape hatch if NC ever binds:** `docs/russian-tts-guide.md` puts Silero's `v5_cis_base`
@@ -569,10 +532,9 @@ not re-derive them. None of it is a reason to keep per-engine knobs around.
 ## Open questions
 
 - **"Keep length" is being replaced, not tuned.** The SYSTEM prompt asks the LLM to keep RU close in
-  length to the EN; "Slot fit" replaces that with an explicit target character count, and F5's
-  slot-fill stretch — the other half of the old trade — no longer exists on the Silero path. The
-  measured Gemma-vs-Qwen tightness comparison (508 segs: Gemma ~2% shorter, stretched on 46% of
-  segments vs 39%, leftover silence 1.2% vs 0.8%) is F5-era evidence about a knob that is going
+  length to the EN; "Slot fit" replaces that with an explicit target character count, and the
+  engine-side slot-fill stretch — the other half of the old trade — no longer exists. The measured
+  translator-tightness comparison from that era (508 segs) is evidence about a knob that is going
   away. Do not tune the old prompt; land "Slot fit".
 
 ## Closed
@@ -585,6 +547,5 @@ throughput (at its 4.5× parallel ceiling, 2026-07-21), and the `condition_on_pr
 change). `word_timestamps=True` stays load-bearing — sentence resegmentation, timing sync and
 `--repair-asr` are all built on it.
 
-Stack pins, host findings and setup: STACK.md + SETUP.md. Translation: Gemma-3-12B (Ollama,
-`gemma3:12b`) is the local in-pipeline default; PRIMARY route = Sonnet semi-automatic (DECISIONS
-2026-07-18, runbook README "Running"). TTS: Silero v5_5_ru (`eugene`) since 2026-07-25.
+Stack pins, host findings and setup: STACK.md + SETUP.md. Translation: Sonnet semi-automatic at the
+seam (runbook README "Running"). TTS: Silero v5_5_ru (`eugene`) since 2026-07-25.

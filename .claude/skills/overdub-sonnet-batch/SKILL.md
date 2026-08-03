@@ -1,6 +1,6 @@
 ---
 name: overdub-sonnet-batch
-description: "Run the overdub pipeline with Claude Sonnet as the translator (README route B, the primary translate route). Fixed order: transcribe the batch, translate and summarize each video with Sonnet sub-agents at the translate seam (writes translation.json via scripts/build_translation.py), resume the full pipeline, then produce a human-readable Russian triage report from scripts/run_report.py. Trigger when the user wants to dub a batch/video with Sonnet translation, 'прогони батч через Sonnet', 'переведи Sonnet-ом', 'route B', 'semi-auto translate', or asks how to run overdub with the cloud translator. NOT for the local Gemma route (that is fully turn-key: one --batch command). NOT for deciding WHAT to dub — that is the overdub-scout skill (route C)."
+description: "Run the overdub pipeline with Claude Sonnet as the translator (README route B, the primary translate route). Fixed order: transcribe the batch, translate and summarize each video with Sonnet sub-agents at the translate seam (writes translation.json via scripts/build_translation.py), resume the full pipeline, then produce a human-readable Russian triage report from scripts/run_report.py. Trigger when the user wants to dub a batch/video with Sonnet translation, 'прогони батч через Sonnet', 'переведи Sonnet-ом', 'route B', 'semi-auto translate', or asks how to run overdub with the cloud translator. NOT for deciding WHAT to dub — that is the overdub-scout skill (route C)."
 ---
 
 # overdub — Sonnet translation batch (route B)
@@ -8,7 +8,7 @@ description: "Run the overdub pipeline with Claude Sonnet as the translator (REA
 The primary translate route (DECISIONS 2026-07-16 + 2026-07-18). Translation is just an
 artifact (`work/<id>/translation.json`), so the pipeline stops cleanly at the translate seam
 and resumes from it. Sonnet replaces only the LLM call; every downstream invariant stays
-identical to the local Gemma route. **No Ollama needed.**
+identical either side of the seam.
 
 This skill is the orchestrator. Follow the four steps in order — do not improvise the order,
 do not skip the helper, do not let a sub-agent hand-write `text_tts`.
@@ -18,8 +18,7 @@ do not skip the helper, do not let a sub-agent hand-write `text_tts`.
 - `.venv-asr` exists; `ffmpeg` on PATH; `yt-dlp` in `.venv-asr` (venv-first resolution, PATH
   fallback, missing → clear error). Silero (the engine since 2026-07-25) runs from `.venv-asr`
   itself — no separate TTS venv. `.venv-demucs` is needed from synthesize onward (step 3, not
-  step 1/2) for the default `dub_mix = "bed"`. `.venv-f5tts` matters ONLY if `tts_engine = "f5"`
-  is set explicitly in `overdub.toml`.
+  step 1/2) for the default `dub_mix = "bed"`.
 - A queue: `queue.txt` (one URL per line, `#` comments and blanks skipped) **or** a single URL.
   A PLAYLIST url is neither — expand and diff it in step 1, and never read the `# playlist:`
   header as proof that the queue still matches it. The file is gitignored and run-owned: if the
@@ -66,8 +65,8 @@ $ids = @($ids | Select-Object -Unique)
 
 All three guards are load-bearing. A URL the regex misses (e.g. a `/live/` link) is still
 PROCESSED by the pipeline — `video_id()` hash-fallbacks it into a `work/<sha1>` dir — but
-invisible to every gate below, which at step 3 means silent Gemma substitution for that
-video. A line carrying `&list=` is the worse case, because the regex gate WAVES IT THROUGH —
+invisible to every gate below, which at step 3 means that video reaches the resume with no
+translation of its own. A line carrying `&list=` is the worse case, because the regex gate WAVES IT THROUGH —
 the video id matches — and then `yt-dlp` follows the playlist: the download stage passes no
 `--no-playlist` and `-o` is a fixed `source.*` path (`stages/download.py`), so dozens of videos
 are fetched over one workdir (verified 2026-07-24: a `watch?v=…&list=…` URL expands to the whole
@@ -159,7 +158,7 @@ sweep is worth running even though it usually does nothing.
 *(The counts once quoted here — "17 units at ×1.8..×12.5, 10 of them seeded" — were recomputed
 2026-07-25 and were wrong: 17 mixed a SENTENCE-row count with units, and ×12.5 was one sentence's
 pre-repair figure, since repaired to 2.04. Over all of `work/` the real population is 7 units of
-3575, worst 2.63 — and all of it measured on F5 at the old grouping. PLAN "Numbers to re-measure"
+3575, worst 2.63 — and all of it measured at the old grouping. PLAN "Numbers to re-measure"
 carries the correction; do not restate a population number here until a Silero batch exists.)*
 
 Skip it only for a queue you have already repaired (`sentences.json` newer than the repair stamp).
@@ -291,8 +290,8 @@ The helper **exits non-zero and loud** on any missing id, extra id, or non-conti
 the safety net, and it is why a truncated transcript read costs a respawn rather than half a dub.
 It also clamps the `src` vocabulary, prints each anomaly with its EN source at the seam, and
 reports how many records carried a `src` at all — all as `[warn]`s: a source-anomaly problem is
-never a helper failure (a hard exit would leave `translation.json` unwritten and hand that video to
-the silent Gemma path).
+never a helper failure (a hard exit would leave `translation.json` unwritten and send that video
+into the resume with nothing to dub from).
 
 **Second wave for whatever did not land.** Re-run the workflow with just those ids — the failure is
 per video, so the re-run is too:
@@ -328,10 +327,8 @@ in `$ids`:
 $ids | Where-Object { -not (Test-Path "work\$_\translation.json") }   # must print nothing
 ```
 
-A video missing it does NOT fail loudly at resume — its translate stage runs the LOCAL Gemma
-path: with Ollama up it is silently translated by Gemma (a silent route substitution; the
-batch still reports ok), without Ollama it fails with a misleading "Ollama not reachable —
-start the daemon" (the real fix is step 2 for that video, not starting Ollama).
+A video missing it has nothing for the resume to dub from — the translate seam is the only
+producer of `translation.json`, so the fix is always step 2 for that video.
 
 Also preflight the synthesis prerequisites now, before an overnight run — the point is that a
 missing piece fails the first synthesize HOURS into the night, so check it while a human is
@@ -357,17 +354,7 @@ arithmetic is keyed on `tts_voice` and disables itself on a voice it has not mea
 there costs the fit silently rather than loudly. The shipped voice is `eugene` — the only one
 whose rate is well measured; aidar, baya, kseniya and xenia carry one-video figures.
 
-**F5, only if `tts_engine = "f5"` is set explicitly.** The ref clip is deliberately not in the
-repo (fetched at setup, SETUP.md):
-
-```powershell
-@('.venv-f5tts\Scripts\python.exe', 'models\espeech-rlv2\espeech_tts_rlv2.pt',
-  'models\espeech-rlv2\vocab.txt', 'models\refs\ref_espeech_demo.wav',
-  'models\refs\ref_espeech_demo.txt') |
-  Where-Object { -not (Test-Path $_) }   # must print nothing
-```
-
-Then the exact command from the local route (no `--only`). `TranslateStage.done()` is
+Then the full pipeline command (no `--only`). `TranslateStage.done()` is
 `translation.json exists`, so download/transcribe/translate fast-skip; synthesize → verify →
 assemble → separate → mux run as usual:
 
@@ -508,15 +495,15 @@ re-sorts the queue). Mention the path in your summary. Skip it for a fully clean
   detect it, because those videos were never in `$ids` to begin with. Re-expand and diff
   (step 1); the diff goes to the human. Measured on the real queue 2026-07-24: `queue.txt` held
   6 ids while the playlist held 23.
-- **A missing `translation.json` at step 3 is a silent route substitution, not an error.**
-  The resume runs the local Gemma path for that video (silently, if Ollama is up) — hence the
-  mandatory every-id check before resuming, and hence ids from the queue, never from `work/`.
+- **A missing `translation.json` at step 3 means that video cannot be dubbed at all.** The seam is
+  its only producer — hence the mandatory every-id check before resuming, and hence ids from the
+  queue, never from `work/`.
 - If `sentences.json` is re-transcribed (e.g. `--force transcribe`), the drafts are stale —
   re-run step 2 for that video (the `$todo` mtime clause catches this automatically).
 - **A missing `summary.md` is never a reason not to resume.** Do NOT add a `summary.md` clause to
   the step-3 gate: the summary is informational in v1 (decided 2026-07-19) — it gates
   nothing and skips nothing, and a gate here would be exactly the model-decides-what-to-drop
-  behaviour that decision rejected. That gate exists to catch a silent Gemma substitution; widening
+  behaviour that decision rejected. That gate exists to catch a missing translation; widening
   it would let a failed summarizer block a dub that has everything it needs. Both report surfaces
   treat an absent summary as normal and render nothing.
 - **Never let a sub-agent silently repair a garbled source.** DECISIONS 2026-07-19: on

@@ -7,7 +7,7 @@ measured / debugged here: VRAM budgets, host-specific findings, and non-obvious 
 external tools that cost real effort to discover and would be re-derived from scratch without a note.
 If a fact is derivable by reading the code, it does not belong here.
 
-Pipeline: `yt-dlp → faster-whisper large-v3 → Gemma-3-12B (Ollama) → Silero v5_5_ru → whisper-small verify → htdemucs bed → ffmpeg (MKV)`
+Pipeline: `yt-dlp → faster-whisper large-v3 → Claude Sonnet (translate seam) → Silero v5_5_ru → whisper-small verify → htdemucs bed → ffmpeg (MKV)`
 
 - **Install:** SETUP.md · **Rationale + history:** `.claude/DECISIONS.md` · **Config defaults:** `overdub/config.py`
 
@@ -100,107 +100,50 @@ so keep batching conservative. No official RTF/VRAM benchmark on the 4080 Mobile
 
 ---
 
-## Stage 2 — Translation: Gemma-3-12B via Ollama
+## Stage 2 — Translation (at the seam, not in-process)
 
-**Code:** `overdub/stages/translate.py` (`_chat` = native `/api/chat` call over stdlib urllib,
-`_unload` = keep_alive:0). Default since 2026-07-18: **Gemma-3-12B**, no thinking mode, no system role
-(the system prompt is folded into the user turn). Qwen3-14B history retained in DECISIONS.
-
-**VRAM (knife-edge — the tightest stage):** Q4_K_M weights 9.3 GB; KV cache ≈ 0.156 MB/token. 4K ctx
-→ ~10 GB (fits), 8K → ~10.6 GB (fits), **32K → ~14.4 GB (OVERFLOWS).** On 12 GB with WDDM + display
-reserve, usable is ~10–10.5 GB → **keep `num_ctx` ≤ ~8K (4K for per-segment).** Ollama preallocates KV
-for the FULL num_ctx, so a large "safety" num_ctx is the danger, not the tiny prompts. Windows CUDA
-sysmem fallback is ON by default → overflow = **silent 5–30× slowdown**, not a clean OOM; consider
-disabling it so spills fail loudly. When Gemma is resident, free the other models around it
-(co-residency budget: project CLAUDE.md).
-
-**Gotchas:**
-- **HOST FINDING (2026-07-15): use native `POST /api/chat` with `{"think": false}`, NOT `/v1` +
-  `/no_think`.** Over `/v1`, an in-prompt `/no_think` is ignored on many samples, reasoning goes to a
-  separate field, and `num_predict` truncates it BEFORE any answer → `message.content` is EMPTY.
-  `extra_body={"think": false}` and `enable_thinking=false` on `/v1` did NOT help. Native `/api/chat`
-  reliably disables thinking: ~5 s/sentence vs ~16 s, clean content. The stage uses this and dropped
-  the `openai` dep. Keep a `<think>` regex strip as a defensive fallback anyway.
-- **`seed` is NOT ignored**, but seed ≠ bit-exact determinism — pin `num_ctx`, expect
-  "reproducible-ish". Do not assume determinism for the verify gate.
-- **`keep_alive` via the request body is flaky** — prefer server-side `OLLAMA_KEEP_ALIVE`. Verify the
-  daemon is serving before a run: `curl http://localhost:11434/api/tags`.
+Translation happens at the translate seam: sub-agents write `work/<id>/translation.json` and the
+pipeline resumes from it (`scripts/build_translation.py` owns the contract; runbook in README
+"Running", route B). **No model runs on this host for it, so there is nothing to record here** — no
+VRAM budget, no loader gotcha, no local service to keep alive. The prompt rules and the artifact
+schema live in `.claude/skills/overdub-sonnet-batch/references/translate-contract.md`; the gate that
+validates a draft is `overdub/stages/translate._is_bad`.
 
 ---
 
-## Stage 3 — TTS: Silero v5_5_ru (THE engine since 2026-07-25) + ESpeech/F5 (opt-in) + whisper-small verify
+## Stage 3 — TTS: Silero v5_5_ru + whisper-small verify
 
 **Code:** Silero `overdub/tts/silero.py` · synthesize stage + reseed-retry
-`overdub/stages/synthesize.py` · opt-in F5 adapter `overdub/tts/f5.py` (spawns `f5_worker.py` in
-`.venv-f5tts`, line-JSON over stdio, reader-thread timeouts, respawn-once, 3-strike
-`TtsFatalError`). Assets: SETUP.md. Engine history
-(Chatterbox rejected day-1, Silero v4 → F5 bake-off 2026-07-16): DECISIONS + `bakeoff/tts-research-2026-07.md`.
+`overdub/stages/synthesize.py`. Engine history and the audition that picked it: DECISIONS.
 
-**Silero — THE engine since 2026-07-25 (fixed voice, CPU, no reference clip):**
-- Adapter default **v5_5_ru** (audition 2026-07-19: audibly better, 12–19× faster synth than F5 on CPU
-  alone); **v4_ru** kept only to reproduce pre-2026-07-19 runs. v5 REJECTS Latin script — safe because
-  `text_tts` is Cyrillic-only by the normalize contract (0 Latin chars measured across the 12-video
-  batch, no filter needed).
+**Silero — THE engine (fixed voice, CPU, no reference clip):**
+- Adapter default **v5_5_ru** (audition 2026-07-19: audibly better, and synthesis stopped being a
+  throughput factor); **v4_ru** kept only to reproduce pre-2026-07-19 runs. v5 REJECTS Latin script —
+  safe because `text_tts` is Cyrillic-only by the normalize contract (0 Latin chars measured across
+  the 12-video batch, no filter needed).
 - Voices (same five in v4/v5): **eugene = primary, kseniya = backup**; xenia slightly unpleasant;
   aidar/baya off-standard accent, avoid. No cloning — every video gets the same chosen narrator voice.
   Speaking rate is a VOICE fact and the duration model keys on it (`overdub/tts/voice_rate`).
 - **VRAM effectively zero** (runs on CPU; ~0.1–0.5 GB even on GPU) → whisper-small verify (~1 GB) has
   the whole Stage-3 budget. Measured RTF ~0.02–0.3 on CPU — TTS is no longer a throughput factor.
 - **Deterministic** (no seed) → good for a reproducible verify gate, BUT a failed segment can't be
-  reseeded, only flagged (the opt-in F5 path reseeds). **No `supports_target`** — fitting speech to
-  its slot is the pipeline's job (`atempo_floor` at assembly + the open "Slot fit" item in PLAN).
+  reseeded, only flagged. **No `supports_target`** — fitting speech to its slot is the pipeline's job
+  (`atempo_floor` at assembly + the open "Slot fit" item in PLAN).
 - Takes SSML (`<speak> <p> <s> <prosody> <break>`) while the adapter sends plain `text=` — an open
   PLAN item ("Input prosody"), not a settled decision. Per-call text bounded ~1000 chars.
   Normalization (GPU→джи-пи-ю, x2→в два раза) still mandatory before synth. Runs at 48000 (24000 is
   audibly "plastic"). Guide: `docs/russian-tts-guide.md`.
-
-**F5 / ESpeech — opt-in via `tts_engine = "f5"`, and what pre-2026-07-25 artifacts used.** Nothing
-here describes a default run; it is kept because a revival should not re-derive it (PLAN "Deferred
-— the F5 path"):
-- Startup ~30 s; ~0.7–0.8 GiB VRAM; output 24 kHz mono (vocos-mel-24khz — a checkpoint fact, not a
-  knob); RUAccent turbo3.1 puts stresses in-worker.
-- **`nfe` is the speed knob and cost is EXACTLY linear in it** (Euler solver, one DiT forward/step).
-  Do NOT pick arbitrary values: `get_epss_timesteps` (f5_tts `model/utils.py`) has tuned schedules
-  only for n ∈ {5,6,7,10,12,16}; 48/32 fall through to a naive linspace. Default is **16** since
-  2026-07-19 (2.16× faster per unit than 48).
-- **Already fp16 and NOT compilable** (f5_tts self-casts for vocos on sm≥7; the vocoder stays fp32; no
-  Triton in `.venv-f5tts`); cross-unit batching is a dead end too. Full lever ledger: DECISIONS
-  2026-07-19 — read it before ANY further F5 speed work.
-- **Over half of each call denoises audio that is thrown away**: F5 builds the canvas as `ref + gen`
-  and slices the ref part off after (`utils_infer.py:508`). The reference is **9.164 s** against a
-  ~7 s mean unit (~57% of the trajectory). Shortening it is a real lever, multiplicative with nfe —
-  deferred WITH the narrator swap because it changes speaker conditioning.
-- **Cost model (12 workdirs, at nfe=48):** `stage_s ≈ 34.8 + 2.295·units + 0.2176·audio_sec`; scale
-  the nfe terms by `nfe/48`. Per-call floor = 0.295 s ASR round-trip + 2.00 s F5, and that 2.00 s IS
-  the discarded ref canvas (`0.2176·9.164`). Fixed per-stage-SWEEP costs (stage-major amortises them
-  to once per BATCH): transcribe 22.2 s load, synth 34.8 s spawn, separate 13.2 s (pure load,
-  R²=0.000 vs length), verify 1.5 s. **These are measured OFF STAGE WALLS so they INCLUDE the loads**
-  — use `run.json.timings.rtf_work` to compare one build against another; `rtf` is the honest total.
-  (`scripts/exp_nfe_sweep.py` times synth alone with the spawn recorded separately, which is why its
-  nfe 48→16 = 2.16× needs no re-check.) **All of it is F5-shaped and none of it transfers to the
-  Silero path** — PLAN "Numbers to re-measure" (B).
-- **Short-text class:** gen texts <10 UTF-8 bytes force local speed 0.3 and garble — mitigated
-  upstream (ultra-short merge in transcribe). Duration canvas is deterministic; `plan_speed()`
-  stretches to the unit's source span (floor 0.75×base) or mildly compresses (ceil 1.1×base — native
-  ≥~1.3 DROPS words, atempo does the top-up). Seed-capable: reseed-retry keeps best by round-trip
-  similarity.
 
 ---
 
 ## Cross-stage VRAM discipline (single 12 GB GPU)
 
 **Code:** `overdub/pipeline.py` (session load + `unload` — MUST drop refs before `empty_cache()`, else
-it is a no-op) + `overdub/stages/translate.py:_unload` (Ollama `keep_alive:0`, then VERIFY release via
-`ollama ps` / nvidia-smi before loading Stage-3 models). Order: whisper → unload → Ollama →
-unload + verify free → whisper-small (~1 GB) for verify; **on the shipped engine Stage 3 adds no
-VRAM at all** (Silero is CPU), so the only real juggling is whisper-large ↔ Gemma. The 12 GB budget
-is a budget, not a one-model-at-a-time rule (project CLAUDE.md): co-residency is allowed when the
-arithmetic works — the one model that makes it tight is Gemma (~8–9 GB), so free the others around
-it. With `tts_engine = "f5"` add the worker's ~0.7 GiB to that step. `separate` (htdemucs, ~3 GB)
-runs standalone between assemble and mux.
+it is a no-op). Order: whisper-large → unload → whisper-small (~1 GB) for verify; **Stage 3 adds no
+VRAM at all** (Silero is CPU), so a pass never holds two heavy models at once and the 12 GB budget is
+never tight. `separate` (htdemucs, ~3 GB) runs standalone between assemble and mux.
 
 ---
 
 **Sources (verification trail):** faster-whisper SYSTRAN #1257/#1230/#1086 + transcribe.py; ffmpeg
-libavfilter `af_amix.c`/`af_atempo.c`; Ollama `openai.go` + #12917/#11032/#14798/#5321,
-docs.ollama.com/api/openai-compatibility; snakers4/silero-models; f5_tts `utils_infer.py`/`model/utils.py`.
+libavfilter `af_amix.c`/`af_atempo.c`; snakers4/silero-models.

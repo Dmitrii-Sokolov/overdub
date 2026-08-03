@@ -1,11 +1,10 @@
 # overdub — project instructions
 
-Local-first YouTube→Russian dubbing pipeline. Python. Every processing stage
-must run on local hardware.
+YouTube→Russian dubbing pipeline.
 
-Current stage: research / proof of concept. The pipeline must run turn-key
+Current stage: polishing. The pipeline must run turn-key
 (URL in → final MKV out) with acceptable speed and quality; occasional broken
-segments are tolerated, silent failures are not.
+segments are tolerated.
 
 **The deliverable is the TOOL, never a particular video.** Every MKV in `work/`
 and `out/` is a test fixture that happens to be watchable. So a defect in a
@@ -23,39 +22,21 @@ themselves. Rationale: DECISIONS 2026-07-25.
 
 - Windows 11, PowerShell-first tooling.
 - Primary GPU: NVIDIA RTX 4080 Mobile, 12 GB VRAM (CUDA). Secondary target:
-  Intel Arc B390 iGPU — SYCL/OpenVINO paths (whisper.cpp, llama.cpp), unproven
-  for PyTorch TTS.
+  Intel Arc B390 iGPU.
 - External binaries expected but not guaranteed: `ffmpeg`, `yt-dlp`, Ollama
   serving on localhost. Verify availability before assuming; fail with a clear
   message, don't auto-install. The download stage implements this: `yt-dlp` /
   `ffmpeg` resolve venv-`Scripts`-first, then PATH (`stages/download.py`,
   `_tool_exe`), and a missing tool raises a clear RuntimeError.
-- Laptop thermals: hundred-hour batches run overnight at sustained load —
-  batch mode must survive interruption (resume) and should support a reduced
-  power limit / cooldown pauses.
 
 ## Hard constraints
 
-- **Local by default.** No cloud STT or TTS, ever. The Ollama endpoint is
-  localhost, not a hosted API. One approved exception — cloud translation
-  (DECISIONS 2026-07-16 + 2026-07-18): the PRIMARY translate route is Sonnet in
+- the PRIMARY translate route is Sonnet in
   semi-automatic mode (sub-agents write translation.json at the translate seam;
-  runbook: README "Running"); the local Gemma path remains the in-pipeline
-  default and must keep working; cloud is always explicit, never a silent
-  fallback.
+  runbook: README "Running").
 - **EN→RU only.** Source audio is always English, the dub is always Russian.
   No language detection, no multi-language handling.
 - **Single-speaker assumption.** No diarization in v1.
-- **12 GB VRAM budget — a budget, not a prohibition** (revised 2026-07-19, see
-  DECISIONS). Keep the resident total under it and account for what is loaded;
-  co-residency is allowed when the arithmetic works. Measured: whisper large-v3
-  ~3.1 GB, htdemucs ~3.0, whisper-small ~0.5 — and TTS costs nothing on the
-  shipped engine (Silero is CPU; the opt-in F5 worker would add ~0.8). The
-  default resident set is ~6.6 GB and fits. The one model that makes it tight is
-  Gemma-3-12B (~8-9 GB), so on the local translate route free the others around
-  it (`translate_unload` POSTs keep_alive:0); the Sonnet route never loads it at
-  all. The old blanket "never load two heavy models at once" was an artifact of
-  Gemma's size and blocked model reuse across a batch for no VRAM reason.
 - **No tempo cap upward; a floor downward.** `atempo` speeds a segment up as
   much as its slot requires — uncapped, by design. Since 2026-07-25 it also
   SLOWS an under-filled unit toward its slot, bounded by `atempo_floor` (0.75,
@@ -70,16 +51,13 @@ themselves. Rationale: DECISIONS 2026-07-25.
 
 ## Stack (v1)
 
-yt-dlp → faster-whisper large-v3 → Gemma-3-12B (Ollama) → Silero v5_5_ru →
-htdemucs no-vocals bed (dub_mix="bed" default) → ffmpeg.
+yt-dlp → faster-whisper large-v3 → Claude Sonnet (semi-automatic, at the translate seam) →
+Silero v5_5_ru → htdemucs no-vocals bed (dub_mix="bed" default) → ffmpeg.
 
-TTS engines are pluggable behind an adapter, but **as of 2026-07-25 Silero v5_5_ru (voice `eugene`)
-is THE engine, not the fallback** — user decision on speed and hardware cost, quality difference
-accepted as a deliberate trade (DECISIONS 2026-07-25; reverses the 2026-07-16 verdict that made F5
-production). The switch is deliberately NOT a parallel-engine setup: per-engine knobs were declined,
-shipped defaults are tuned for Silero, and the F5 path comes back out of git history if it fails.
-ESpeech-TTS-1_RL-V2 (F5-TTS, worker in `.venv-f5tts`) still works and is still what old runs used;
-Chatterbox was rejected in the day-1 ear test. Two things Silero forces on the pipeline:
+TTS engines are pluggable behind an adapter, and **Silero v5_5_ru (voice `eugene`) is THE engine** —
+user decision on speed and hardware cost, quality difference accepted as a deliberate trade
+(DECISIONS 2026-07-25). The switch is deliberately NOT a parallel-engine setup: per-engine knobs were
+declined and shipped defaults are tuned for Silero. Two things Silero forces on the pipeline:
 **it silently DELETES Latin script** (verified — a sentence with `Reddit` renders byte-identical to
 the same sentence without the word), which is why `text_tts` is Cyrillic-by-contract via the
 `pronounce` chain; and **it has no `supports_target`**, so slot fitting is the pipeline's job now.
@@ -89,8 +67,8 @@ duration model those two share lives in `overdub/tts/voice_rate` and is keyed on
 speaking rate is a VOICE fact (eugene 19.85 ru ch/s vs baya 14.41) and an unmeasured voice
 disables the model rather than borrowing a rate. Adapter default is v5_5_ru; v4_ru only to reproduce old runs
 (DECISIONS 2026-07-19). No voice cloning — fixed narrator voice. Don't
-hardcode engine specifics outside the engine adapter. Three venvs, never merge them:
-`.venv-asr` (pipeline), `.venv-f5tts` (F5 worker), `.venv-demucs` (separate stage);
+hardcode engine specifics outside the engine adapter. Two venvs, never merge them:
+`.venv-asr` (pipeline) and `.venv-demucs` (separate stage);
 run the pipeline with `.venv-asr` python via `python -X utf8 -m overdub`.
 
 ## Tests

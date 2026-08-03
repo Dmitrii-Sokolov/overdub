@@ -17,11 +17,9 @@ hundreds of hours of single-speaker content.
    (previous EN sentences + their RU translations), prompted to keep length
    close to the original (it's dubbing, not prose). Output per sentence: raw RU
    for subtitles + normalized RU (numbers, acronyms, Latin terms spelled out)
-   for TTS. Two good routes (DECISIONS 2026-07-18): **local** — Gemma-3-12B via
-   Ollama, the in-pipeline default (good quality, free, offline, slow);
-   **primary** — Claude Sonnet in semi-automatic mode (sub-agent workflow;
-   subscription, better quality, much faster — it replaces the pipeline's
-   heaviest stage). See "Running" below.
+   for TTS. Translation runs at the seam: Claude Sonnet in semi-automatic mode
+   (sub-agent workflow — it replaces the pipeline's heaviest stage). See
+   "Running" below.
 4. **Synthesize (TTS)** — Silero v5_5_ru (`eugene`, CPU) renders Russian audio;
    it has been THE engine since 2026-07-25, chosen on speed and hardware cost
    with the quality difference accepted as a deliberate trade and later
@@ -30,9 +28,8 @@ hundreds of hours of single-speaker content.
    Adjacent sentences group into render units for natural prosody. Silero is
    DETERMINISTIC and has no native slot fitting, which shapes the two stages
    below: there is nothing to reseed, and timing fit is the pipeline's job.
-   ESpeech-TTS-1_RL-V2 (F5-TTS, worker in `.venv-f5tts`) still runs behind
-   `tts_engine = "f5"` and is what pre-2026-07-25 artifacts used; it brings back
-   reference-clip narration and its own slot filling.
+   One fixed narrator voice for every video, no per-speaker cloning and no voice
+   sample needed.
 5. **Verify** — the independent judge: every render unit is transcribed back
    with whisper-small and compared against the normalized TTS text (the same
    normalizer on both sides); failures are flagged in the run report — never
@@ -59,13 +56,14 @@ hundreds of hours of single-speaker content.
 
 Prereqs (SETUP.md): `.venv-asr` + `.venv-demucs` (for the default bed mix),
 `ffmpeg` on PATH. Silero runs inside `.venv-asr` and needs no assets under
-`models/`; `.venv-f5tts` and the F5 checkpoints matter only if you set
-`tts_engine = "f5"`. `yt-dlp` is resolved from `.venv-asr\Scripts` first, PATH
+`models/`. `yt-dlp` is resolved from `.venv-asr\Scripts` first, PATH
 second; both tools are preflighted with a clear error instead of a raw WinError 2.
 
-### A. Batch with local translation (Gemma) — fully turn-key
+### A. Batch mechanics (shared by every route below)
 
-Needs Ollama serving `gemma3:12b` on localhost. Agent or human:
+The pipeline command itself. Translation is not produced in-process — it has to
+exist as `work/<id>/translation.json` first (route B), and the run resumes from
+that seam. Everything in this section applies to every route that ends in an MKV.
 
 ```powershell
 # queue.txt: one URL per line; '#' comments and blank lines are skipped
@@ -119,10 +117,10 @@ Needs Ollama serving `gemma3:12b` on localhost. Agent or human:
   `detail` entry make `rtf_work` an upper bound today, and the digest marks it `RTF~` when so.
   Compare builds on `rtf_work`; report cost as `rtf`.
 
-### B. Batch with Sonnet translation (semi-automatic — the primary route)
+### B. Batch with Sonnet translation (semi-automatic — the dubbing route)
 
 Translation is just an artifact (`translation.json`), so the pipeline stops
-cleanly at the translate seam and resumes from it. No Ollama needed.
+cleanly at the translate seam and resumes from it.
 
 1. **Transcribe the batch:**
 
@@ -167,8 +165,8 @@ cleanly at the translate seam and resumes from it. No Ollama needed.
      `work/<id>/report.json`. The `overdub-sonnet-batch` skill's Step 4 runs the
      digest and writes the Russian triage summary for you.
 
-Both routes are good: Gemma gives good quality locally and slowly; Sonnet needs
-a subscription and gives better quality in the cloud, much faster.
+This is the only dubbing route: translation is produced by sub-agents at the
+seam, and the pipeline runs everything either side of it.
 
 ### C. Scout a queue before dubbing it (audio only)
 
@@ -203,7 +201,7 @@ the dub? Run it before route A or B on any queue you have not read.
   fast-skip, so it takes seconds and just re-reads what is on disk.
 
 **The summary is written at the seam, not by the pipeline.** There is no
-summarize stage and no Ollama involvement: after the scout pass one Sonnet
+summarize stage: after the scout pass one Sonnet
 sub-agent per video reads `sentences.json` and writes two files —
 `work/<id>/summary.md` (prose, shared with route B) and
 `work/<id>/scout.draft.json` (`{quality, one_liner, highlight, paragraph}`, plus
@@ -559,8 +557,8 @@ embedded as subtitle tracks for free.
 |---|---|---|
 | Download | yt-dlp | |
 | STT | faster-whisper large-v3 | CUDA |
-| Translation | Gemma-3-12B via Ollama · Claude Sonnet (semi-auto) | local default · primary cloud route (DECISIONS 2026-07-18) |
-| TTS | Silero v5_5_ru (`eugene`) | THE engine since 2026-07-25 — CPU, in `.venv-asr`, no voice sample, deterministic. Opt-in alternative: ESpeech-TTS-1_RL-V2 (F5-TTS) as a GPU worker in `.venv-f5tts`; v4_ru only to reproduce pre-2026-07-19 runs |
+| Translation | Claude Sonnet (semi-auto, at the seam) | sub-agents write `translation.json`; the pipeline resumes from it |
+| TTS | Silero v5_5_ru (`eugene`) | THE engine — CPU, in `.venv-asr`, no voice sample, deterministic; v4_ru only to reproduce pre-2026-07-19 runs |
 | Verification | faster-whisper small | ASR round-trip check |
 | Separation | htdemucs (Demucs) | no-vocals bed for the mix, `.venv-demucs` |
 | Mux | ffmpeg | atempo fitting, bed mix, MKV output |
@@ -568,30 +566,25 @@ embedded as subtitle tracks for free.
 ## Hardware targets
 
 - **Primary:** NVIDIA RTX 4080 Mobile, 12 GB VRAM. A model's lifetime is one
-  stage sweep, so peak VRAM is the largest single model rather than the sum —
-  which is what makes one model load per BATCH safe even on the Gemma route
-  (~8-9 GB, the only model that makes 12 GB tight). Measured: whisper large-v3
-  ~3.1 GB, htdemucs ~3.0, whisper-small ~0.5. **TTS costs no VRAM at all on the
-  shipped engine** — Silero runs on CPU (the opt-in F5 worker holds ~0.8 GiB).
+  stage sweep, so peak VRAM is the largest single model rather than the sum,
+  which is what makes one model load per BATCH safe. Measured: whisper large-v3
+  ~3.1 GB, htdemucs ~3.0, whisper-small ~0.5. **TTS costs no VRAM at all** —
+  Silero runs on CPU.
 - **Secondary (deferred):** Intel Arc B390 iGPU. whisper.cpp (SYCL/OpenVINO) and
   llama.cpp (SYCL) are proven there for STT/translation; Silero-on-CPU makes the
   TTS side a non-question there. See PLAN deferred.
 
 Throughput budget: ≤ x5 video duration — comfortably cleared. Batch wall-clock
-is dominated by transcribe on the Sonnet route and by translation on the local
-Gemma route (~45%); synthesis stopped being a factor when the engine moved to
-Silero (RTF ~0.02-0.3 on CPU). **Stage-share numbers older than 2026-07-26
-describe F5 and are void** — see PLAN "Numbers to re-measure" (B); the re-time
-on Silero is an open item, so treat any percentage split here as unmeasured
-until it lands.
+is dominated by transcribe; synthesis is not a factor (RTF ~0.02-0.3 on CPU).
+Stage-share percentages have not been re-measured on the current configuration —
+see PLAN "Numbers to re-measure", and treat any split quoted here as unmeasured
+until that lands.
 
 ## Constraints / assumptions
 
 - Single speaker per video (covers ~95% of target content). No diarization.
-- Local STT and TTS, always. Translation has two good routes (DECISIONS
-  2026-07-18): local Gemma (in-pipeline default) and Claude Sonnet in
-  semi-automatic mode — the primary route (subscription, better quality, much
-  faster). Cloud is always explicit, never a silent fallback.
+- Local STT and TTS, always. Translation is Claude Sonnet in semi-automatic
+  mode, at the seam — always explicit, never a silent fallback.
 - Source is always English, output is always Russian.
 - No tempo cap upward, a floor downward (`atempo_floor`, 0.75 since
   2026-07-25): a segment is sped up as much as its slot requires and an
@@ -603,53 +596,32 @@ until it lands.
 
 ## Voices, cloning and the law
 
-**On the shipped engine this section is mostly moot.** Silero's narrator is
-baked into the model — there is no reference clip, no voice sample on disk and
-no third party's voice involved, so nothing below about cloning applies to a
-default run. What DOES apply to it: the model's own licence is
-non-commercial (CC BY-NC, per `bakeoff/tts-research-2026-07.md`; unverified
-against the current model card), which is fine for personal listening and is a
-gate for anything published.
+**There is no voice cloning in this pipeline, so most of the usual questions do
+not arise.** Silero's narrator is baked into the model — no reference clip, no
+voice sample on disk, no third party's voice involved. This section is not legal
+advice.
 
-Everything below concerns the **opt-in F5/ESpeech path** (`tts_engine = "f5"`),
-which IS a zero-shot voice cloner: its narrator voice is defined by a short
-reference clip (5–12 s + its exact transcript), not baked into the model. That
-flexibility comes with rules. This section is not legal advice.
+**What does apply: the model's own licence is non-commercial** (CC BY-NC;
+unverified against the current model card). That is fine for personal listening
+and is a hard gate on anything published. If NC ever binds, the documented escape
+hatch is Silero's `v5_cis_base` with the ~30 `ru_*` voices under MIT, at the cost
+of setting stresses yourself — same engine family, so the adapter would not
+change (see PLAN).
 
-- **Every voice sample shipped in or referenced by this repository is public
-  domain** — cut from [LibriVox](https://librivox.org) recordings, which their
-  volunteer readers explicitly dedicate to the public domain. The same voices
-  have powered open TTS research datasets (LibriTTS, M-AILABS) for a decade.
-- **If you want to use anyone else's voice, study the law of your jurisdiction
-  first.** EU member states and Canada protect a person's voice from
-  unauthorized *public* use (personality rights in the EU, the appropriation
-  of personality tort and Quebec Civil Code art. 36 in Canada). From August
-  2026 the EU AI Act additionally requires published synthetic media that
-  resembles a real person to be labeled as AI-generated. Russia has a pending
-  bill (draft art. 152.3 of the Civil Code) to the same effect.
-- **Purely personal, private use is generally outside these regimes** (GDPR
-  household exemption, private-copying exceptions, publication-based torts) —
-  synthesizing a voice for your own local listening is broadly tolerated,
-  provided the reference clip comes from a lawful source. Publishing the
-  result is a different matter entirely: don't, unless the voice is yours,
-  licensed, or public domain.
-- **That path's narrator reference:** the demo clip from the ESpeech author's HF
-  Space ([Den4ikAI/ESpeech-TTS](https://huggingface.co/spaces/Den4ikAI/ESpeech-TTS),
-  `ref/example.mp3`) — the best-sounding voice across our narrator auditions.
-  Its rights are **not clarified** (a real person's voice, unknown provenance),
-  so the clip is not committed to this repository: it is fetched from the Space
-  at setup time, and anything synthesized with it stays personal-use only.
-  Public-domain alternatives (LibriVox readers) are recorded in
-  `.claude/DECISIONS.md` and re-creatable with `scripts/lv_pick_refs.py`.
-- **Repository policy:** only public-domain reference samples are committed
-  here, and the documentation stays person-agnostic — no instructions for
-  cloning any specific individual's voice.
+- **If you ever add a voice that is not the model's own, study the law of your
+  jurisdiction first.** EU member states and Canada protect a person's voice from
+  unauthorized *public* use (personality rights in the EU, the appropriation of
+  personality tort and Quebec Civil Code art. 36 in Canada). From August 2026 the
+  EU AI Act additionally requires published synthetic media that resembles a real
+  person to be labeled as AI-generated. Russia has a pending bill (draft art.
+  152.3 of the Civil Code) to the same effect.
+- **Repository policy:** the documentation stays person-agnostic — no
+  instructions for cloning any specific individual's voice.
 
 ## Status
 
-Research / proof of concept — the pipeline runs turn-key (URL in → MKV out) on
-real videos, batch mode included. Closed: Phase 1 MVP, the F5/ESpeech engine
-migration, dead-air elimination, batch queue + stop switch, proper-noun
-pronunciation, the segmentation root fix, and the Gemma-3-12B translator swap
-(2026-07-18). Current roadmap: `.claude/PLAN.md`; rationale history:
+Research / proof of concept — the pipeline runs on real videos, batch mode
+included, with translation supplied at the seam. Closed: Phase 1 MVP, dead-air
+elimination, batch queue + stop switch, proper-noun pronunciation, and the
+segmentation root fix. Current roadmap: `.claude/PLAN.md`; rationale history:
 `.claude/DECISIONS.md`. Setup: `SETUP.md`; verified stack facts: `STACK.md`.

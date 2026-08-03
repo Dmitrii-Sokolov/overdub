@@ -45,7 +45,7 @@ are filled deterministically by the helper. One `text_ru` = one natural spoken-R
 
 ## Translation rules (paste verbatim into the sub-agent prompt)
 
-> These mirror the `SYSTEM` prompt of the local Gemma route so both routes translate identically.
+> These mirror the `SYSTEM` prompt the pipeline keeps, so every translation lands the same shape.
 > **Source of truth is `SYSTEM` in `overdub/stages/translate.py`** — if that changes, sync here.
 
 1. Translate each English sentence into **natural, spoken Russian** for a single-narrator
@@ -130,7 +130,7 @@ the out-of-dict-name silent-loss class.
 ## Gate — why a line comes back `status:"failed"`
 
 `scripts/build_translation.py` runs each `text_ru` through
-`overdub.stages.translate._is_bad(text_ru, src_en, cfg)` — the same gate as the Gemma path.
+`overdub.stages.translate._is_bad(text_ru, src_en, cfg)` — the pipeline's own gate.
 Reasons (`flag` value), so you know what to fix in the draft:
 
 | flag | meaning | fix |
@@ -149,5 +149,5 @@ The helper's `src` handling is deliberately **non-blocking**: a missing `src`, a
 or an anomaly with no note each produce a `[warn]` and are reported (unknown kinds bucket as
 `unknown`; a record with no `src` counts as unscanned and shows as `-` rather than `0` in the
 digest). It never exits non-zero on them. A report must never gate a dub — a hard failure here
-would leave `translation.json` unwritten, and a resume would then silently run the local Gemma
-path for that video.
+would leave `translation.json` unwritten, and that video would reach the resume with nothing to
+dub from.
