@@ -1,10 +1,15 @@
-"""Render the queue report: work/scout-report.html — scout grades AND dub triage on ONE page,
+"""Render the queue report: work/scout-report.html — scout summaries AND dub triage on ONE page,
 ready to publish as a Claude Artifact.
+
+The scout side ASSESSES NOTHING (2026-08-03, see DECISIONS): it says what each video is about and
+what is most interesting in it, and the reader decides. So no grade chip, no colour ladder and no
+sortable verdict field — the only chips left are dub states and unfinished-pipeline states, both
+of which are facts about the run rather than judgements of the material.
 
 One page per queue (the separate morning-triage page was retired into this one on 2026-07-21,
 the queue-page merge): entries come from
 queueview.collect_entries — queue ids first, argv workdirs appended — and every workdir renders
-exactly what it has earned. A scouted video keeps its grade and write-up; a dubbed one adds the
+exactly what it has earned. A scouted video keeps its write-up; a dubbed one adds the
 batch-table row, the flagged units with inline audio and the source-anomaly block; a
 promoted-but-untranslated one gets an honest "в работе" state; a hole in the queue gets an
 explicit state row, never a gap.
@@ -60,16 +65,15 @@ from overdub.workdir import jpeg_size, replace_retry       # noqa: E402
 queue_ids = queueview.queue_ids
 queue_playlist = queueview.queue_playlist
 
-# The closed verdict vocabulary of build_scout.py, mapped to presentation. Labels live HERE and
-# not in scout.json on purpose: relabelling is a rendering change and must not invalidate every
-# artifact on disk. Each dict is (label, cls) and nothing more: the tally and the unfinished
-# counters iterate these in DECLARATION ORDER, so no ordering field rides along.
-_VERDICT = {
-    "high":   {"label": "высокое", "cls": "v-watch"},
-    "medium": {"label": "среднее", "cls": "v-maybe"},
-    "low":    {"label": "слабое", "cls": "v-skip"},
-}
-# A queued video with no grade is not one state but several, told apart by classify_workdir.
+# A video whose scout.json parsed. Labels live HERE and not in scout.json on purpose:
+# relabelling is a rendering change and must not invalidate every artifact on disk.
+#
+# It is a COUNTED state and never a CHIP: the page assesses nothing since 2026-08-03, so a badge
+# on every finished row would be a column carrying one value. Hence `chip: False` — the tally
+# needs a name for this state, the row does not. The three grades that used to live here (высокое
+# /среднее/слабое) went with the verdict; see DECISIONS 2026-08-03.
+_SCOUTED = {"label": "отсканировано", "cls": "v-done", "chip": False}
+# A queued video with no summary is not one state but several, told apart by classify_workdir.
 # They need different actions from the operator, and collapsing them into one row hides which
 # one applies: a failed download is re-run, a failed transcribe is investigated, a missing
 # summary is a sub-agent to respawn, a promoted video is a pipeline to resume.
@@ -80,7 +84,7 @@ _NOT_TRANSCRIBED = {"label": "не расшифровано", "cls": "v-none",
                     "why": "аудио есть, транскрипта нет — transcribe для этого видео не "
                            "отработал; смотри вывод S1"}
 _MISSING = {"label": "не отсканировано", "cls": "v-none",
-            "why": "транскрипт есть, оценки нет — суммаризатор (S2) для этого видео не "
+            "why": "транскрипт есть, сводки нет — суммаризатор (S2) для этого видео не "
                    "отработал; перезапусти его и пересобери отчёт"}
 # kind "pending": a promoted video parked between download and translate (route B step 1 parks
 # the WHOLE batch like this). Until this state existed the video was invisible on the triage
@@ -93,8 +97,8 @@ _PENDING = {"label": "в работе", "cls": "v-none",
 _NO_ROLLUP = {"label": "без свода", "cls": "v-none",
               "why": "артефакты дубляжа на месте, но run.json не собрался — битые "
                      "report.json/translation.json; смотри вывод пайплайна"}
-# Dub states for a run that was never scouted: the row chip IS the dub verdict then, because
-# it is the only assessment this video has. Deliberately NO "why": the unfinished states carry
+# Dub states: the row chip IS the dub verdict, and since the scout side stopped chipping it is
+# the only chip a finished row can wear. Deliberately NO "why": the unfinished states carry
 # guidance text because they demand an ACTION, but a dub verdict is status — spelling it out in
 # the «самое интересное» cell put pipeline state where content belongs (operator report
 # 2026-07-22). The chip says it all; details live in the dub table and on the card.
@@ -238,14 +242,14 @@ body{margin:0;background:#f7f8fa;}
 /* the queue's source, above the counts */
 .sr .src{margin:0;font-size:1.02rem;font-weight:560;}
 
-/* The grade USED to also stripe the whole row. Dropped 2026-07-20: with a chip already naming
-   it in words, the stripe was a second encoding of one fact, and it tinted the row so the eye
+/* The row USED to be striped by its verdict. Dropped 2026-07-20: with a chip already naming the
+   state in words, the stripe was a second encoding of one fact, and it tinted the row so the eye
    read "this row is different" before reading what the row said. The chip is the marker now. */
 .sr td.pic{width:1%;padding-right:0;}
 /* runtime is its own column, right after the title: it is the number the reader budgets
    against, and buried at the end of a prose cell it was found only by hunting */
 .sr td.dur{white-space:nowrap;}
-/* the grade opens the highlight cell — the chip and the reason it earned read as one thought */
+/* a state chip, when there is one, opens the highlight cell rather than taking a column */
 .sr td.why .chip{margin-right:8px;}
 /* the description carries the jump, so it must read as text, not as a link */
 .sr td.line a.jump{color:inherit;font-family:inherit;}
@@ -281,15 +285,12 @@ body{margin:0;background:#f7f8fa;}
 .sr .line{color:var(--dim);}
 .sr p.line{margin:0 0 10px;font-size:.92rem;max-width:66ch;}
 
-/* verdict chip: colour AND text, never colour alone */
+/* state chip: colour AND text, never colour alone */
 .sr .chip{display:inline-block;white-space:nowrap;font-size:.76rem;font-weight:640;
   letter-spacing:.02em;padding:3px 9px;border-radius:999px;}
-.sr .v-watch{background:var(--watch-bg);color:var(--watch);}
-.sr .v-maybe{background:var(--maybe-bg);color:var(--maybe);}
-.sr .v-skip{background:var(--skip-bg);color:var(--skip);}
 .sr .v-none{background:var(--none-bg);color:var(--dim);}
-/* dub verdict chips: triage borrows the skip palette, clean the watch one — same two colours
-   the reader already decoded for the grades, no third meaning of red/green on one page */
+/* dub verdict chips, and the only coloured chips left on the page: triage borrows the skip
+   palette, clean the watch one, so red/green carries exactly one meaning here */
 .sr .t-triage{background:var(--skip-bg);color:var(--skip);}
 .sr .t-clean{background:var(--watch-bg);color:var(--watch);}
 
@@ -307,9 +308,10 @@ body{margin:0;background:#f7f8fa;}
    measure, so the border sits just past where the prose actually ends. */
 .sr .card{background:var(--card);border:1px solid var(--line);border-radius:8px;
   border-left:3px solid var(--line);padding:16px 18px;max-width:62rem;}
-.sr .card.v-watch{border-left-color:var(--watch);}
-.sr .card.v-maybe{border-left-color:var(--maybe);}
-.sr .card.v-skip{border-left-color:var(--skip);}
+/* A finished scout card keeps the neutral border the .card rule already gives it: the left edge
+   used to encode a grade, and colouring every completed card the same colour would just be the
+   default drawn twice. Only the dub states below still claim it, because they still mean
+   something. */
 .sr .card.t-triage{border-left-color:var(--skip);}
 .sr .card.t-clean{border-left-color:var(--watch);}
 /* the card's header line: bigger type against a smaller preview, so number, title and runtime
@@ -372,11 +374,13 @@ body{margin:0;background:#f7f8fa;}
 def _row(e: dict) -> str:
     """One scan-table row. Everything that came from an LLM or a video title is escaped -- raw
     prose into HTML is the one place a report can break itself."""
-    # The grade is a CHIP opening the highlight cell, not a column of its own and no longer a
+    # A pipeline STATE opens the highlight cell as a chip — never a column of its own and never a
     # tint on the row: it is one short word, and giving it a column cost width the prose columns
-    # needed. It leads the highlight because the grade and the reason it earned are one thought —
-    # under the title it sat between the title and the description and split them.
+    # needed. A FINISHED row has no chip at all (_SCOUTED sets chip:False): the page assesses
+    # nothing, so a badge every finished row wears is a column of one value.
     v = e["v"]
+    chip = (f'<span class="chip {v["cls"]}">{html.escape(v["label"])}</span>'
+            if v.get("chip", True) else "")
     return (
         f'<tr id="r{e["n"]}">'
         f'<td class="idx">{e["n"]}</td>'
@@ -389,8 +393,7 @@ def _row(e: dict) -> str:
         # they decide they want more, and a wider target than the number it replaced
         f'<td class="line"><a class="jump" href="#v{e["n"]}" title="подробнее">'
         f'{html.escape(e["one_liner"])}</a></td>'
-        f'<td class="why"><span class="chip {v["cls"]}">{html.escape(v["label"])}</span>'
-        f'{html.escape(e["highlight"])}</td>'
+        f'<td class="why">{chip}{html.escape(e["highlight"])}</td>'
         "</tr>"
     )
 
@@ -462,7 +465,7 @@ def _title_link(e: dict) -> str:
 # `_audio_src`, `_badges`, `_fmt_span`, `_unit_html`, `_srcanom_html` and `_dub_table` now live
 # in `scripts/dub_blocks.py`, re-bound below. They came in as a GROUP when the triage page was
 # merged here and they still are one: everything that renders what a DUBBED video earned. What
-# stayed is grades, previews, cards and page assembly. dub_blocks must never import back — the
+# stayed is states, previews, cards and page assembly. dub_blocks must never import back — the
 # temptation is `_title_link`, and the batch table deliberately links by video id instead.
 _unit_html = dub_blocks.unit_html
 _srcanom_html = dub_blocks.srcanom_html
@@ -476,21 +479,16 @@ def _chip(d: dict) -> str:
 def _card(e: dict, out_dir: Path, *, embed: bool) -> str:
     """One card, whatever the workdir has earned. The invariant inherited from both parents: a
     card NEVER fabricates dub metrics for a non-run kind — no RTF, no audio, no triage/clean
-    chip. A scouted video keeps its grade next to its dub chips (scout.json survives promotion;
-    it is not in invalidate_downstream's target list)."""
+    chip."""
     v = e["v"]
     chips = []
-    if e.get("grade"):
-        chips.append(_chip(e["grade"]))
     if e.get("dub"):
         chips.append(_chip(e["dub"]))
-    if not chips:
-        chips.append(_chip(v))          # pipeline state — the only assessment this video has
-    elif v is _NO_ROLLUP:
-        # ...but a torn rollup rides ALONGSIDE a surviving grade chip: run.json failed to build
-        # though the dub artifacts are on disk, and that «без свода» state is news the grade
-        # cannot carry. Everywhere else v already equals the grade/dub chip, so this only fires
-        # for a scouted-then-torn video.
+    if not chips and v.get("chip", True):
+        # A pipeline STATE is news and wears a chip; a finished scout is not, and _SCOUTED opts
+        # out via chip:False so a completed row carries no badge at all. A torn rollup lands here
+        # too and keeps its «без свода» chip — v is _NO_ROLLUP only when run.json failed to build,
+        # which is exactly when there is no dub verdict to sit beside it.
         chips.append(_chip(v))
 
     out = [
@@ -543,7 +541,7 @@ def _card(e: dict, out_dir: Path, *, embed: bool) -> str:
     elif e["kind"] == "scout":
         out.append(f'<p class="why">{html.escape(e["highlight"])}</p>')
         out.append(_meta_line(e))
-        if e.get("grade"):
+        if e.get("scouted"):
             out.append(_paragraphs(e["paragraph"]))
         elif e["summary"]:
             out.append(_paragraphs(e["summary"]))
@@ -581,16 +579,20 @@ def _paragraphs(text: str) -> str:
 def render(entries: list[dict], totals: dict, queue_name: str | None, stamp: str,
            playlist: dict | None = None, *, out_dir: Path | None = None,
            embed: bool = True) -> str:
-    counts = {k: sum(1 for e in entries if e["v"] is _VERDICT[k]) for k in _VERDICT}
-    tally = " · ".join(f'{_VERDICT[k]["label"]}: {counts[k]}' for k in _VERDICT)
+    # The counts are PIPELINE STATES, not verdicts — the page stopped assessing videos on
+    # 2026-08-03 and the tally went with it. A count of "отсканировано" still earns its place:
+    # it is the one number that says how much of the queue the page actually speaks for, and it
+    # is printed even at zero, because a header that silently omits it reads as a full report.
+    n_scouted = sum(1 for e in entries if e["v"] is _SCOUTED)
+    tally = f'{_SCOUTED["label"]}: {n_scouted}'
     # each unfinished state counted under its OWN name: "не отсканировано: 3" hiding a failed
     # download would send the operator to respawn a summarizer that has nothing to read
     for state in (_NOT_DOWNLOADED, _NOT_TRANSCRIBED, _MISSING, _NO_ROLLUP):
         n = sum(1 for e in entries if e["v"] is state)
         if n:
             tally += f' · {state["label"]}: {n}'
-    # pending is counted by KIND, not by chip identity: a graded pending wears its grade chip
-    # but is still a video parked mid-promotion, and hiding that count hides the resume work
+    # pending is counted by KIND, not by state identity: a scouted pending claims the scouted
+    # state but is still a video parked mid-promotion, and hiding that count hides the resume work
     n_pending = sum(1 for e in entries if e["kind"] == "pending")
     if n_pending:
         tally += f' · {_PENDING["label"]}: {n_pending}'
@@ -700,8 +702,8 @@ def render(entries: list[dict], totals: dict, queue_name: str | None, stamp: str
     out.extend(_card(e, out_dir or Path("."), embed=embed) for e in entries)
     out.append("</section>")
 
-    out.append('<p class="foot">overdub · scout · оценка материала '
-               '(содержание · актуальность · подача); она рекомендация, а не решение.</p>')
+    out.append('<p class="foot">overdub · scout · о чём каждое видео и что в нём самое '
+               'интересное; оценок и рекомендаций страница не даёт.</p>')
     out.append("</div>")
     return "\n".join(out)
 
@@ -752,8 +754,8 @@ def _highlight_from_summary(summary: str | None, cap: int = 240) -> str | None:
     exactly this content as its second point.
 
     THE SECOND PARAGRAPH IS THE CONTRACT, not a guess: the shared summarizer prompt (both skills)
-    requires paragraph 1 = what it is / worth watching, paragraph 2 = the most interesting thing
-    and roughly where. A one-paragraph summary therefore yields None and the cell keeps its dash —
+    requires paragraph 1 = what the video covers, paragraph 2 = the most interesting thing and
+    roughly where. A one-paragraph summary therefore yields None and the cell keeps its dash —
     the honest answer, and the same rule as the one-liner: never put pipeline state or a
     watch-verdict where the reader scans for substance. Two of that batch's 24 answered in one
     paragraph, which is what the prompt change is for; this side must not paper over it by
@@ -776,27 +778,29 @@ def _highlight_from_summary(summary: str | None, cap: int = 240) -> str | None:
 
 def _views(entries: list[dict]) -> list[dict]:
     """collect_entries rows → render-ready view dicts. The shared layer answers WHAT each
-    workdir is; this resolves how it LOOKS: which chip leads the row (grade > dub state >
+    workdir is; this resolves how it LOOKS: which state leads the row (scouted > dub state >
     pipeline state), which title/duration ladder applies, and which scout presentation fields
     ride along."""
     views = []
     for e in entries:
         work, kind, run = e["work"], e["kind"], e["run"]
         doc = e["scout"] if isinstance(e.get("scout"), dict) else None
-        grade = _VERDICT.get(doc.get("quality")) if doc else None
+        # THE completion signal for the scout side: a scout.json that parsed. It replaced the
+        # grade on 2026-08-03 and had to replace something — the grade was doing double duty as
+        # "this video has a summary", and the content cells below still key on it.
+        scouted = _SCOUTED if doc else None
         dub = None
         if kind == "run" and run is not None:
             dub = _DUB_TRIAGE if run.get("needs_triage") else _DUB_CLEAN
         # A TORN dub layer is the news and must win the v-slot even when a surviving scout.json
-        # could otherwise colour the row a grade: report.json / translation.json are on disk but
-        # run.json did not build. The tally and main()'s unfinished list both key on
-        # `e["v"] is _NO_ROLLUP`, so letting a grade win here would silently drop the video from
-        # the «без свода» count — a torn dub reported as a healthy graded scout. The grade CHIP
-        # still renders beside the state on the card (e["grade"] is kept below); only v is claimed.
+        # could otherwise claim the row: report.json / translation.json are on disk but run.json
+        # did not build. The tally and main()'s unfinished list both key on
+        # `e["v"] is _NO_ROLLUP`, so letting the scouted state win here would silently drop the
+        # video from the «без свода» count — a torn dub reported as a healthy scout.
         if kind == "run" and run is None:
             v = _NO_ROLLUP
-        elif grade:
-            v = grade
+        elif scouted:
+            v = scouted
         elif dub:
             v = dub
         elif kind == "pending":
@@ -824,7 +828,7 @@ def _views(entries: list[dict]) -> list[dict]:
         # reuse the state's why text as their body; run/pending/scout cards have their own
         # prose logic (summary → scout paragraph → state phrase) and echoing the why here
         # would print the pipeline state as if it were a write-up about the video.
-        if grade:
+        if scouted:
             paragraph = (doc or {}).get("paragraph") or ""
         elif kind in ("missing", "fetched") or (kind == "run" and run is None):
             paragraph = v["why"]
@@ -832,7 +836,7 @@ def _views(entries: list[dict]) -> list[dict]:
             paragraph = ""
         views.append({
             "n": e["n"], "vid": e["vid"], "work": work, "kind": kind, "v": v,
-            "grade": grade, "dub": dub, "run": run, "units": e["units"],
+            "scouted": scouted, "dub": dub, "run": run, "units": e["units"],
             "summary": e["summary"], "scout_doc": doc,
             "thumb_b64": _thumb_b64(work.root / "thumb.jpg"),
             "thumb_wh": jpeg_size(work.root / "thumb.jpg"),
@@ -842,14 +846,14 @@ def _views(entries: list[dict]) -> list[dict]:
             # at all; without it the scan table showed a dash beside a full write-up on disk.
             # Still a dash when neither exists: a state sentence in the content column is the
             # defect fixed on 2026-07-22, and this must not reintroduce it by another route.
-            "one_liner": (((doc or {}).get("one_liner") if grade else None)
+            "one_liner": (((doc or {}).get("one_liner") if scouted else None)
                           or _one_liner_from_summary(e["summary"]) or "—"),
             # Same ladder as one_liner, one column over: the scout field first, then summary.md's
             # SECOND paragraph (what gives a dubbed-but-never-scouted row a «самое интересное» at
             # all — 18 of 24 rows were dashes on 2026-07-25), then the state's own why. The dub
             # verdicts have no "why" on purpose, so a dubbed row with no summary still renders a
             # dash rather than pipeline status in a content column.
-            "highlight": (((doc or {}).get("highlight") if grade else None)
+            "highlight": (((doc or {}).get("highlight") if scouted else None)
                           or _highlight_from_summary(e["summary"])
                           or v.get("why") or "—"),
             "paragraph": paragraph,
@@ -862,18 +866,16 @@ def _views(entries: list[dict]) -> list[dict]:
     return views
 
 
-def totals_of(entries: list[dict], *, wave_key: str = "summarize_sec") -> dict:
+def totals_of(entries: list[dict]) -> dict:
     """Pipeline stages are SUMS — they ran one after another, so their sum is the work done.
     Summarization is a WALL CLOCK: the sub-agents run concurrently, so summing their windows
     would exceed the elapsed time and mean nothing (2026-07-21: 1053 s of agent windows inside a
     311 s wave). It spans the first agent's own start to the last draft — see the comment on the
     grouping below for why the operator's `wave.start` stamp is NOT that start.
 
-    `wave_key` names the per-video field the agent wave is measured from — `summarize_sec` on this
-    page, `digest_sec` on the digest page (scripts/digest_report.py). PARAMETERIZED rather than
-    copied because the math below is subtle in three separately-measured ways and a second copy
-    would be a copy of those bugs; the returned keys stay `summarize*` for every caller, since what
-    they name is "the sub-agent wave", not any one route's word for it.
+    The wave is measured from `summarize_sec`. This used to be a `wave_key` parameter so the digest
+    page could pass `digest_sec`; that page was deleted on 2026-08-03 and the parameter went with
+    it rather than staying as configurability with one caller.
 
     THERE IS DELIBERATELY NO GRAND TOTAL. The previous version added the two sums to the wall
     clock and called it "итого обработка"; that number is neither the work done nor the elapsed
@@ -914,7 +916,7 @@ def totals_of(entries: list[dict], *, wave_key: str = "summarize_sec") -> dict:
             continue
         if dr < st:                       # carry-over from an earlier wave, not part of this one
             continue
-        sec = (e.get("timings") or {}).get(wave_key)
+        sec = (e.get("timings") or {}).get("summarize_sec")
         ok = isinstance(sec, (int, float)) and not isinstance(sec, bool) and sec >= 0
         groups.setdefault(st, []).append((dr, sec if ok else None))
 
@@ -943,7 +945,7 @@ def totals_of(entries: list[dict], *, wave_key: str = "summarize_sec") -> dict:
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(
         prog="scout_report",
-        description="Render the queue report (scout grades + dub triage, queue order) as "
+        description="Render the queue report (scout summaries + dub triage, queue order) as "
                     "publishable HTML.")
     p.add_argument("workdirs", nargs="*", type=Path, metavar="work/<id>",
                    help="per-video work dirs (appended after the queue)")

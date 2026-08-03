@@ -1054,16 +1054,16 @@ def test_collect_entries_argv_dedup_and_numbering_continue() -> None:
 
 
 def test_collect_entries_scout_json_rides_on_a_run_entry() -> None:
-    # A dubbed video that was scouted first keeps its grade: scout.json is attached for ANY
+    # A dubbed video that was scouted first keeps its write-up: scout.json is attached for ANY
     # kind, not only for scout cards.
     with tempfile.TemporaryDirectory() as d:
         root = Path(d)
         _mkkind(root, "vidAAAAAAAAA", report=_two_unit_report(),
                 translation=[{"id": i, "status": "ok"} for i in range(4)],
-                scout={"quality": "high", "one_liner": "x"})
+                scout={"one_liner": "x"})
         entries, _ = queueview.collect_entries(None, [root / "vidAAAAAAAAA"], root, cfg=_CFG)
     assert entries[0]["kind"] == "run"
-    assert entries[0]["scout"]["quality"] == "high"
+    assert entries[0]["scout"]["one_liner"] == "x"
 
 
 def test_collect_entries_argv_typo_and_fetched_go_to_skipped() -> None:

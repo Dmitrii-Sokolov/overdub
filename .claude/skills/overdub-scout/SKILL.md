@@ -1,26 +1,29 @@
 ---
 name: overdub-scout
-description: "Scout an overdub queue (README route C) — the --scout pre-pass that downloads audio only, transcribes and grades each video WITHOUT dubbing it, so the user can decide what earns their time and a full dub. Fixed order: scout the batch, grade the MATERIAL (substance/currency/delivery) and summarize each video with Sonnet sub-agents, build work/scout-report.html (grade · preview · title · what it is · what is most interesting, in queue order, plus a write-up per video), publish it as an Artifact, then hand the user a recommend-only Russian rundown. Trigger when the user has a queue they have not watched: 'разведка по очереди', 'что тут стоит дублировать', 'прогони разведку', 'scout the queue', '--scout', 'summaries only, no dub', 'о чём эти видео'. NOT for dubbing — once the queue is chosen, hand off to the overdub-sonnet-batch skill (route B), the only route that ends in a dub."
+description: "Scout an overdub queue (README route C) — the --scout pre-pass that downloads audio only, transcribes and summarizes each video WITHOUT dubbing it, so the user learns what is in a queue they have not watched. Fixed order: scout the batch, summarize each video with Sonnet sub-agents (~200 words: what it covers, what is most interesting in it), build work/scout-report.html (preview · title · what it is · what is most interesting, in queue order, plus a write-up per video), publish it as an Artifact and hand over the link. Trigger when the user wants to know what a queue CONTAINS: 'о чём эти видео', 'разведка по очереди', 'прогони разведку', 'что тут в очереди', 'scout the queue', '--scout', 'summaries only, no dub'. The route GRADES NOTHING and recommends nothing — it reports content and the user decides. NOT for dubbing: once the queue is chosen, hand off to the overdub-sonnet-batch skill (route B), the only route that ends in a dub."
 ---
 
 # overdub — scout a queue (route C)
 
-Scout answers **"is this worth dubbing"** before anything expensive runs:
+Scout answers **"what is in this, briefly"** before anything expensive runs:
 **download (audio only) → transcribe → stop**, then one Sonnet sub-agent per video writes the
 summary. No translation, no TTS, no MKV, no `source.mkv` on disk.
+
+**The route assesses nothing** (2026-08-03, see DECISIONS). No grade, no watch/skip, no ranking,
+no "стоит посмотреть" anywhere — in the artifacts, on the page, or in chat. It reports what each
+video covers and what is most interesting in it; the reader decides. The moment a verdict appears,
+this route is doing a job nobody asked it for and the user cannot argue with.
 
 Three steps, in order. Do not reorder them and do not skip the gates — each
 step's gate is what keeps a half-scouted queue from reading as a finished one.
 
-**When NOT to use this skill.** If the queue is already chosen, scouting buys nothing and still
-costs the audio fetch and a sub-agent per video — go straight to the `overdub-sonnet-batch`
-skill (route B), the only route that ends in a dub. Scout is for a queue nobody has watched.
+**When NOT to use this skill.** If the queue is already chosen and the user wants it dubbed, go
+straight to the `overdub-sonnet-batch` skill (route B), the only route that ends in a dub —
+scouting then buys nothing and still costs the audio fetch and a sub-agent per video.
 
-And if the question is **what is IN the video** rather than whether it earns an evening — a
-retelling, "did I miss anything", "what should I expect" — that is the `overdub-digest` skill
-(route D). A scout summary is ~200 words with a grade attached; a digest is a document with no
-verdict in it. Answering a digest request with a scout pass produces a grade nobody asked for and
-a summary too short to check anything against.
+And if the user wants to READ the video rather than know what is in it — the full English text,
+not a summary — that is the `overdub-clean` skill (route E). Route C compresses an hour into ~200
+words; route E keeps the source's own length.
 
 Nothing here writes `translation.json`, so a scouted video is not half-translated — it is
 untranslated, and it re-enters the dubbing route with no cleanup (see "Promotion" below).
@@ -43,8 +46,9 @@ Route-C specifics on top of the contract:
 - Without `-Unique` in the `$ids` block, two parallel sub-agents would race on the same
   `summary.md`.
 - Whisper on music produces an empty or hallucinated transcript. Under contract §3 that video is
-  still scouted: it comes out a `low` with the reason named — a finished row, not a failure and
-  not a question for the user. The GRADE is the answer to "what do we do with this".
+  still scouted: the summary says plainly that there is no speech and what the transcript does
+  contain — a finished row, not a failure and not a question for the user. An honest "тут нечего
+  пересказывать", written INTO the summary, is the answer; a skipped video is a hole.
 
 Then run:
 
@@ -100,7 +104,7 @@ $sumTodo = @($ids | Where-Object {
 
 **Both files are in the filter on purpose.** A video summarized by the DUBBING route has
 `summary.md` and no draft; keying on the prose alone would skip it here and leave it as a
-`не отсканировано` hole in the report — present, plausible, and silently missing its verdict.
+`не отсканировано` hole in the report — present, plausible, and silently missing its write-up.
 
 **`summary pending` OUTRANKS a present `scout.json`. Always. Never the reverse** — the
 derived-artifact rule, [`docs/queue-contract.md`](../../../docs/queue-contract.md) §5, whose
@@ -147,11 +151,12 @@ $sumTodo | Where-Object { Test-Path "work\$_\scout.started" } |
 ```
 
 Each sub-agent writes TWO files: `summary.md` (the ~200-word prose, unchanged — route B reuses
-it on promotion) and `scout.draft.json` (the machine-consumed judgement the report renders).
-Then **`scripts/build_scout.py` assembles `work/<id>/scout.json`** — same division of labour as
-`build_translation.py` on the dubbing route: the sub-agent writes only judgement, the helper
-owns everything deterministic (title, duration, sentence count, stage timings, and the
-verdict-vocabulary check). A malformed draft fails loud there and never reaches the report.
+it on promotion) and `scout.draft.json` (`{one_liner, highlight, paragraph}` — the machine-consumed
+fields the report renders). Then **`scripts/build_scout.py` assembles `work/<id>/scout.json`** —
+same division of labour as `build_translation.py` on the dubbing route: the sub-agent writes only
+prose, the helper owns everything deterministic (title, duration, sentence count, stage timings)
+and rejects a draft with an empty or missing field. A malformed draft fails loud there and never
+reaches the report.
 
 ```powershell
 $sumTodo | ForEach-Object {
@@ -169,19 +174,21 @@ skill's Step 2** — if you change that half, change it there too.
 every line flips to `summary ok`. A line still reading `summary pending` is a video whose
 sub-agent did not finish — respawn it. Never hand-write `summary.md` or a `scout.draft.json` to
 clear the line: that turns the pass's only completion signal into a lie, and a hand-written
-verdict is one you invented rather than derived from the transcript.
+write-up is one you invented rather than derived from the transcript.
 
-## S3 — Build the report, publish it, hand the decision to the human
+## S3 — Build the report, publish it, hand over the link
 
 ```powershell
 .venv-asr\Scripts\python.exe -X utf8 scripts\scout_report.py --queue queue.txt
 ```
 
-Writes `work/scout-report.html`: a header with the grade tally and the timing strip, then the
-**scan table** (№ · превью · название · длительность · о чём · самое интересное — оценка это чип,
-открывающий последнюю колонку, а не подпись к названию) and
-the **read cards** (same videos, same order, the full write-up). The grade carries both colour
-and text, so the page survives being read in grayscale or by someone colour-blind.
+Writes `work/scout-report.html`: a header with the state tally (`отсканировано: N`, plus any
+unfinished states) and the timing strip, then the **scan table** (№ · превью · название ·
+длительность · о чём · самое интересное) and the **read cards** (same videos, same order, the full
+write-up). A finished row carries **no chip** — the page assesses nothing, so a badge every
+completed row wears would be a column of one value. Chips are reserved for states that demand an
+action, and they carry both colour and text, so the page survives grayscale or a colour-blind
+reader.
 
 **Row order is the queue's order, never sorted.** The report is read next to the playlist it
 came from, so position is information; a re-sorted row is a wrong row even when its fields are
@@ -194,9 +201,8 @@ report with holes in it and hope they go unnoticed.
 
 **A dubbed-but-never-scouted row is NOT that case, and must not be treated as one.** It has no
 `scout.json` by design — it came off the dubbing route, which never runs S2 — so it keeps its dub
-chip, borrows «о чём» from the first sentence of its `summary.md` (2026-07-22) and leaves «самое
-интересное» a dash, since that one is the scout's own judgement. Running S2 over it would produce
-a grade nobody asked for; the row is complete as it stands.
+chip and borrows «о чём» and «самое интересное» from its `summary.md`, whose two paragraphs answer
+exactly those two questions (2026-07-22). The row is complete as it stands.
 
 **Then publish it as an Artifact** so it is readable from anywhere, not just this machine. The
 file is deliberately a BODY FRAGMENT (inline `<style>`, no doctype/`<html>`/`<head>`/`<body>`)
@@ -207,21 +213,24 @@ because the publisher supplies that skeleton:
 - **Re-publishing the same queue: pass the previous artifact's `url`** so it updates in place
   and the link the user already has keeps working. Only a genuinely new queue gets a new URL.
 
-Finally, write the user a short **Russian** rundown in chat, grounded ONLY in `scout.json` —
-never re-derived from the transcript. Lead with the link, then the tally (сколько high/medium/
-low), then name the videos you would drop and why, and flag anything the report cannot say for
-itself (a suspiciously uniform set of grades usually means the prompt is drifting, not that the
-queue is uniform — check a few against the transcripts before trusting the shape).
+**Then hand over the link and stop.** No rundown, no tally read out, no retelling of the videos
+in chat — the page is the deliverable and it is the only version of it (2026-08-03). A chat
+summary of the summaries is a second, unverifiable copy that diverges from what is on disk, and
+naming videos you would drop is the recommendation this route exists not to make.
 
-**Recommend; never decide.** Trimming the queue is the human's call — the grades gate nothing,
-exactly as the summary gates nothing on the dubbing route, and a model quietly shortening a
-queue is the failure this whole mode exists to prevent.
+Two things do belong in chat, because the page cannot say them about itself: **holes** the script
+named on stdout (which videos, and that they are unfinished S2, not weak videos), and a queue
+whose summaries all came out suspiciously alike — that usually means the prompt is drifting, not
+that the queue is uniform, so check two against their transcripts before publishing.
 
-## Promotion — handing the survivors to the dubbing route
+If the user then asks about ONE video, quote from its `summary.md` rather than re-deriving
+anything from the transcript: the artifact on disk and the story you tell must be the same story.
 
-The user trims `queue.txt` to the survivors; that queue then enters the `overdub-sonnet-batch`
-skill at its **Step 1** (route B). Mechanics — what fast-skips, what re-runs, the ~5% traffic —
-are [`docs/queue-contract.md`](../../../docs/queue-contract.md) §4.
+## Promotion — handing a chosen queue to the dubbing route
+
+The user trims `queue.txt` to what they want dubbed; that queue then enters the
+`overdub-sonnet-batch` skill at its **Step 1** (route B). Mechanics — what fast-skips, what
+re-runs, the ~5% traffic — are [`docs/queue-contract.md`](../../../docs/queue-contract.md) §4.
 
 Videos the user dropped keep their scout artifacts in `work/<id>/` — a few MB each, and they
 make a re-scout free. Deleting them is the user's call, not yours.
@@ -231,14 +240,18 @@ make a re-scout free. Deleting them is the user's call, not yours.
 The queue rules — never shorten it, never lengthen it, never stop the run to ask about ONE video,
 never treat a leftover `queue.txt` as a question, never forge a completion artifact — are
 [`docs/queue-contract.md`](../../../docs/queue-contract.md) §3, and they bind here unchanged.
-Route C adds three of its own:
+Route C adds four of its own:
 
-- **S3 recommends; the human drops videos.** The grades gate nothing, exactly as the summary gates
-  nothing on the dubbing route. This is the specific shape §3 takes on a route whose whole output
-  is a recommendation.
-- **Never ground the rundown in anything but the summaries.** If a summary is missing, say so
-  and respawn its sub-agent; do not read the transcript yourself and improvise one — the
-  artifact on disk and the story you tell the user must be the same story.
-- **Never widen the scope to dubbing.** Scout stops at S3. If the user wants the survivors
-  dubbed in the same breath, hand off to the `overdub-sonnet-batch` skill explicitly rather
-  than running synthesis from here.
+- **The route assesses nothing.** No grade, no watch/skip, no ranking, no "стоит посмотреть" — in
+  `scout.draft.json`, in `summary.md`, on the page or in chat. This is the specific shape §3 takes
+  on a route whose whole output is a description: the user trims the queue, and they can only do
+  that from what the videos ARE.
+- **The page is the deliverable; chat gets the link.** Never re-tell the queue in the reply. The
+  exceptions are holes and a drifting-prompt suspicion — facts about the RUN, not about the
+  videos.
+- **Never ground an answer in anything but the summaries.** If a summary is missing, say so and
+  respawn its sub-agent; do not read the transcript yourself and improvise one — the artifact on
+  disk and the story you tell the user must be the same story.
+- **Never widen the scope to dubbing.** Scout stops at S3. If the user wants the queue dubbed in
+  the same breath, hand off to the `overdub-sonnet-batch` skill explicitly rather than running
+  synthesis from here.

@@ -77,7 +77,7 @@ breaks it:
     [System.IO.File]::WriteAllText("${dir}\\summary.md", $summary,
       (New-Object System.Text.UTF8Encoding($false)))
 
-    $obj = @{ quality = "low"; one_liner = $oneLiner; highlight = $highlight; paragraph = $paragraph }
+    $obj = @{ one_liner = $oneLiner; highlight = $highlight; paragraph = $paragraph }
     [System.IO.File]::WriteAllText("${dir}\\scout.draft.json",
       ($obj | ConvertTo-Json -Depth 5), (New-Object System.Text.UTF8Encoding($false)))
 
@@ -98,73 +98,67 @@ Specifically, a temp file plus a rename/move is NOT an alternative route — it 
 the same block, it makes two agents on one batch behave differently for no reason a reader can
 see, and it was measured happening on 2026-07-25. Hand the content back instead.
 
-You are a triage summarizer for the overdub pipeline. Read
+You are a summarizer for the overdub pipeline. Read
 ${dir}\\sentences.json (list of {id, text, start, end} — the COMPLETE English transcript, in
 order) and write ${dir}\\summary.md: a summary in RUSSIAN of about 200 words. The reader has NOT
-watched the video and is deciding whether to. So answer two things, in prose: (a) is this worth
-watching at all, and for whom — say so plainly, including "смотреть не стоит" if that is the
-honest read; (b) what is the single most interesting thing in it / what to look out for, and
-roughly where (use the start timestamps, M:SS). Ground every claim in the transcript — do not
-invent facts, names, or numbers that are not there, and if the transcript is too garbled or thin
-to judge, say that instead of guessing. Plain paragraphs only: no markdown headings, no bullet
-lists, no title, no preamble like "Вот краткое содержание" — the file's whole content is the
-summary text. Write EXACTLY TWO paragraphs separated by a BLANK LINE: paragraph 1 is (a),
-paragraph 2 is (b), and paragraph 2 must OPEN with the interesting thing itself (e.g. "Самое
-интересное — …"), never with a verdict about whether to watch. The queue report reads paragraph 2
-as its «самое интересное» column and takes its first sentence verbatim, so a one-paragraph summary
-leaves that cell empty and a paragraph 2 opening with "Смотреть стоит…" fills it with the wrong
-answer (measured 2026-07-25: 2 of 24 summaries ran the two points together, ~6 opened paragraph 2
-with the verdict).
+watched the video and wants to know what is IN it. So answer two things, in prose: (a) what the
+video covers — its subject, the position it argues, the ground it walks through; (b) what the
+single most interesting thing in it is / what to look out for, and roughly where (use the start
+timestamps, M:SS). Ground every claim in the transcript — do not invent facts, names, or numbers
+that are not there, and if the transcript is too garbled or thin to summarize, say that instead of
+guessing. Plain paragraphs only: no markdown headings, no bullet lists, no title, no preamble like
+"Вот краткое содержание" — the file's whole content is the summary text. Write EXACTLY TWO
+paragraphs separated by a BLANK LINE: paragraph 1 is (a), paragraph 2 is (b), and paragraph 2 must
+OPEN with the interesting thing itself (e.g. "Самое интересное — …"). The queue report reads
+paragraph 2 as its «самое интересное» column and takes its first sentence verbatim, so a
+one-paragraph summary leaves that cell empty and a paragraph 2 that opens with something else
+fills it with the wrong answer (measured 2026-07-25: 2 of 24 summaries ran the two points
+together, ~6 opened paragraph 2 with a verdict instead).
+
+NO VERDICT, ANYWHERE, IN EITHER FILE. Not "стоит посмотреть", not "смотреть не стоит", not
+"рекомендую", no rating, no audience call, no ranking against other videos. This route reports
+what is in the material and leaves the decision entirely with the reader — a recommendation is the
+one thing it must never produce.
 
 Read the transcript COMPLETELY: the Read tool returns at most 2000 lines by default and this file
 is frequently longer (measured 2026-07-28: 28 of 152 transcripts exceed it, the largest is 5930
 lines). If the output was truncated, keep reading with offset/limit until you have seen the last
 record — a summary written off the first third of a video is confidently wrong about what the
-video is, and here it also grades the video on that first third.
+video is, and nothing on the page reveals that it only read the opening.
 
 Also read ${dir}\\source.info.json — the yt-dlp metadata sidecar. Take title, channel,
 upload_date (YYYYMMDD) and description from it. The transcript alone carries none of these, and
-without upload_date the currency axis has nothing to judge from. Treat description
-as the author's own framing, i.e. promotional: useful for what the video CLAIMS to be, never as
-evidence that it delivers. If the file is absent or carries only a title, say so in the paragraph
-and do not infer an age — an invented upload date is worse than an acknowledged gap.
+the upload date is what lets the write-up say how old the material is — a fact ABOUT the video,
+never a judgement of it. Treat description as the author's own framing, i.e. promotional: useful
+for what the video CLAIMS to be, never as evidence that it delivers. If the file is absent or
+carries only a title, say so in the paragraph and do not infer an age — an invented upload date is
+worse than an acknowledged gap.
+
+A video with little or no spoken content — a music video, a live set, an instrumental, a wordless
+demo — is an ORDINARY input here, never a problem to flag and never a reason to ask for
+instructions. Say plainly in one_liner that there is no speech, and name in paragraph what the
+transcript does contain. The same goes for a transcript that is empty, or that is obviously
+whisper hallucinating over music (a handful of repeated lines, lyrics, "thank you for watching"):
+name that in paragraph and still write BOTH files — a scouted video with no row of its own is a
+hole in the report.
 
 Then write ${dir}\\scout.draft.json, a JSON OBJECT (not a list) with these keys:
-
-- quality — one of exactly "high" / "medium" / "low". Judge the MATERIAL, not the reader. Three
-  things and only these three: substance (is there real information, with mechanism, numbers,
-  method — or is it one tip padded out), currency (is what it shows still true, judged from
-  upload_date and from what it demonstrates), and delivery (density, structure, whether the
-  presenter knows the subject). high = strong on all three. medium = solid but undercut by one of
-  them. low = fails on substance, or is superseded, or the delivery makes it not worth extracting
-  from. Do NOT factor in whether this particular person should watch it — a well-made video on a
-  topic they do not need is still well made. When torn, choose the lower grade and name the
-  reason in highlight.
-
-  A video with little or no spoken content — a music video, a live set, an instrumental, a
-  wordless demo — is an ORDINARY input here, never a problem to flag and never a reason to ask
-  for instructions. Grade it on the same three axes (it lands on "low" for lack of substance),
-  and say plainly in one_liner that there is no speech to dub. The same goes for a transcript
-  that is empty, or that is obviously whisper hallucinating over music (a handful of repeated
-  lines, lyrics, "thank you for watching"): name that in paragraph, grade it low, and still
-  write both files — a scouted video with no verdict is a hole in the report.
 
 - one_liner — ONE sentence in Russian, what the video is about. It goes in a table cell; keep it
   under ~140 characters and do not restate the title.
 
-- highlight — ONE sentence in Russian: the most interesting or useful thing IN the video, plus
-  what decided the grade. A different question from one_liner and it must not repeat it:
-  "разбор оркестрации агентов" says what the video is, "замеры с описанной методологией и разбор
-  случаев, где схема ломается" says what you would actually get out of it. For a low, name the
-  concrete defect rather than a mood. Under ~200 characters. Add "требует концентрации" here when
-  the video needs undivided attention (a deep dive you have to follow with practice, rather than
-  something that survives being background listening).
+- highlight — ONE sentence in Russian: the most interesting or useful thing IN the video. A
+  different question from one_liner and it must not repeat it: "разбор оркестрации агентов" says
+  what the video is, "замеры с описанной методологией и разбор случаев, где схема ломается" says
+  what you would actually get out of it. Under ~200 characters. Add "требует концентрации" here
+  when the video needs undivided attention (a deep dive you have to follow with practice, rather
+  than something that survives being background listening).
 
-- paragraph — the full write-up in Russian, what is actually covered and why it earned that
-  grade. Name the concrete thing that decided it (what specifically is dated, thin or strong).
-  This is what the person reads when the one-liner interests them. Split it into 2-3 paragraphs
-  separated by a BLANK LINE, where the meaning turns — the renderer honours blank lines and never
-  invents its own, so an unsplit block simply renders as one paragraph.
+- paragraph — the full write-up in Russian: what is actually covered, in what order, and the
+  mechanism / number / example that carries each part. This is what the person reads when the
+  one-liner interests them. Split it into 2-3 paragraphs separated by a BLANK LINE, where the
+  meaning turns — the renderer honours blank lines and never invents its own, so an unsplit block
+  simply renders as one paragraph.
 
 When both files are on disk, verify they exist and return the single line OK — your final text is
 a status, not the summary. The summary's home is the file.`

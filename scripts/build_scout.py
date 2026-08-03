@@ -4,7 +4,7 @@ Same division of labour as build_translation.py, for the same reason: the sub-ag
 the judgement part and this script owns the deterministic rest, so the report contract never
 rides on an LLM's discipline.
 
-  sub-agent writes work/<id>/scout.draft.json  = {quality, one_liner, highlight, paragraph}
+  sub-agent writes work/<id>/scout.draft.json  = {one_liner, highlight, paragraph}
   THIS script adds, from artifacts already on disk:
     video_id          the workdir name
     title             source.info.json (the scout download persists it)
@@ -19,10 +19,10 @@ rides on an LLM's discipline.
                         summarize_sec  the sub-agent's own window, mtime(scout.started) ->
                                      mtime(scout.draft.json). Absent when it wrote no marker.
 
-`quality` is a CLOSED vocabulary (_QUALITY). An unknown value is FATAL rather than clamped --
-unlike build_translation's `src`, which clamps because a bad anomaly label must never block a
-dub. Here the grade IS the artifact: the report colours and counts on it, so a
-clamped-to-"maybe" typo would silently downgrade a video the summarizer actually rated "watch".
+Every field is prose and every one is REQUIRED: the report renders all three for every video, so
+an empty one is a hole in the deliverable rather than a style problem. There is no verdict field
+and no closed vocabulary -- route C answers what is IN a video, never whether it is worth one
+(2026-08-03, see DECISIONS).
 
 WHY THE SUMMARIZE TIMINGS COME FROM THE FILESYSTEM. Sub-agents run outside this process and in
 parallel, so timings.json cannot see them. The obvious alternative -- the agent stamping its own
@@ -63,18 +63,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from overdub.workdir import (                                       # noqa: E402
     THUMB_W, WorkDir, ensure_thumb_local, replace_retry, scale_thumb)
 
-# Closed verdict vocabulary. Mirrored by scout_report.py's colour map and by the prompt in the
-# overdub-scout skill -- three copies of one list, so changing it means changing all three. Kept
-# as bare ASCII keys rather than Russian labels: the label is a PRESENTATION concern and belongs
-# in the renderer, where it can be changed without invalidating every scout.json on disk.
-# Quality of the MATERIAL -- substance, currency, delivery -- and deliberately NOT "should this
-# person watch it" (revised 2026-07-20). The previous verdict vocabulary was watch/maybe/skip,
-# judged per-reader, and the first real queue came back 0 watch / 1 maybe / 9 skip: a personal
-# verdict is a decision taken FOR the reader, it collapses toward "no", and it cannot be checked
-# against anything. An assessment of the material can: two people can disagree about whether to
-# watch a well-made video, but not about whether it is well made.
-_QUALITY = ("high", "medium", "low")
-
 _ONE_LINER_MAX = 200        # visible cap, same discipline as runreport._SUMMARY_MAX_CHARS
 _HIGHLIGHT_MAX = 240        # one sentence; the scan table's widest text column
 _PARAGRAPH_MAX = 1500
@@ -96,11 +84,11 @@ def _ensure_thumb(work: WorkDir, info: dict) -> None:
     self-correcting, because the number that defines it lives in a different file from the files
     it governs.
 
-    NEVER RAISES. A missing preview is cosmetic — the row still carries the grade, the highlight
-    and a link — so no failure here may cost the operator a scanned video. A failed re-scale
-    leaves the existing preview untouched rather than destroying a working one: ffmpeg writes to
-    a temp path and the flip is atomic. The network call is skipped entirely for every case but
-    the empty workdir.
+    NEVER RAISES. A missing preview is cosmetic — the row still carries what the video is, the
+    highlight and a link — so no failure here may cost the operator a scanned video. A failed
+    re-scale leaves the existing preview untouched rather than destroying a working one: ffmpeg
+    writes to a temp path and the flip is atomic. The network call is skipped entirely for every
+    case but the empty workdir.
     """
     if ensure_thumb_local(work):
         return
@@ -166,19 +154,13 @@ def build(work: WorkDir, wave_start: float | None) -> dict:
         # A list here means the sub-agent reused the TRANSLATION draft shape. Saying so beats a
         # bare type error: it is the one wrong shape a route-B-trained agent actually produces.
         sys.exit(f"[FAIL] {draft_path} is not a JSON object -- expected "
-                 f"{{quality, one_liner, highlight, paragraph}}, got {type(raw).__name__}")
+                 f"{{one_liner, highlight, paragraph}}, got {type(raw).__name__}")
 
-    quality = raw.get("quality")
-    if quality not in _QUALITY:
-        sys.exit(f"[FAIL] {draft_path}: quality {quality!r} is not one of {_QUALITY} -- "
-                 f"it is what the report colours on, so it is never guessed")
     one_liner = _text_field(raw, "one_liner", _ONE_LINER_MAX, draft_path)
     # The most interesting/useful thing IN the video, kept apart from WHAT it is (one_liner).
-    # Replaced the old `reason` field, which justified a personal verdict: this states what the
-    # material offers and leaves the decision entirely with the reader. It also carries the
-    # "требует концентрации" note when the video needs undivided attention -- that used to be a
-    # separate enum, and on the first real queue 28 of 30 videos took the same value, so a field
-    # that never varies became a sentence that only appears when it is true.
+    # It also carries the "требует концентрации" note when the video needs undivided attention --
+    # that used to be a separate enum, and on the first real queue 28 of 30 videos took the same
+    # value, so a field that never varies became a sentence that only appears when it is true.
     highlight = _text_field(raw, "highlight", _HIGHLIGHT_MAX, draft_path)
     paragraph = _text_field(raw, "paragraph", _PARAGRAPH_MAX, draft_path)
 
@@ -283,7 +265,6 @@ def build(work: WorkDir, wave_start: float | None) -> dict:
         "duration_sec": round(dur, 1) if dur is not None else None,
         "duration_source": dur_src,
         "n_sentences": len(sents),
-        "quality": quality,
         "one_liner": one_liner,
         "highlight": highlight,
         "paragraph": paragraph,
@@ -338,7 +319,7 @@ def main(argv: list[str] | None = None) -> int:
     extra = "".join(
         f" {k}={t[k]}" for k in ("transcribe_work_sec", "transcribe_asr_passes", "summarize_sec")
         if t.get(k) is not None)
-    print(f"[scout] {out}  quality={doc['quality']}  "
+    print(f"[scout] {out}  "
           f"{doc['n_sentences']} sentences  "
           f"dl={t['download_sec']}s tr={t['transcribe_sec']}s{extra}")
     return 0

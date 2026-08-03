@@ -172,14 +172,6 @@ here: counterbalancing cancels slow drift, not a process that holds the card for
 session. `--allow-busy-gpu` opts out; a host without nvidia-smi forfeits the guarantee rather than
 blocking work.
 
-`docs/digest-reference.md` — the route-D scoring fixture (user-supplied, 2026-07-30): a hand-written
-Russian digest of `work/fGKNUvivvnc`, the ONE video whose digest can be measured rather than admired.
-Carries the six findings to count, the rule that a perfect match is a red flag (the reference author
-watched the video; the pipeline reads an ASR transcript), and why the prompt's examples describe an
-invented video — the first draft used this document's own headline and two bullet titles, handing the
-agent two of the six answers on exactly the video used to judge it. Read it before changing anything
-in `.claude/workflows/digest-videos.js` or quoting a recall number for route D.
-
 `docs/russian-tts-guide.md` — Russian-TTS reference (user-supplied July 2026, **cut down
 2026-08-03 to what is neither shipped nor refuted**): the punctuation lever, `terms.tsv`, the SSML
 tag surface, a listening checklist and a symptom → first-thing-to-check table. Read it before

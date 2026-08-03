@@ -1,6 +1,6 @@
 ---
 name: overdub-clean
-description: "Produce a readable ENGLISH text of each queued video (README route E) — transcribe, repair the ASR defects, then clean the transcript chunk by chunk with Sonnet sub-agents and save it as work/<id>/clean.md. Minimal processing by contract: filler and false starts out, wording and sentence order untouched, nothing summarised and nothing translated. Fixed order: transcribe the queue (audio only), run --repair-asr auto, plan the chunk cut with scripts/build_clean.py --plan, fan the chunks out through the clean-transcript workflow, join with build_clean.py, then hand the user a short Russian rundown. Trigger when the user wants to READ a video instead of watching it: 'текстовая версия', 'вычищенный транскрипт', 'сделай текст по видео', 'расшифровка', 'clean transcript', 'readable transcript', 'text of the video'. NOT a retelling (that is overdub-digest, route D), NOT a verdict (overdub-scout, route C), NOT dubbing (overdub-sonnet-batch, route B)."
+description: "Produce a readable ENGLISH text of each queued video (README route E) — transcribe, repair the ASR defects, then clean the transcript chunk by chunk with Sonnet sub-agents and save it as work/<id>/clean.md. Minimal processing by contract: filler and false starts out, wording and sentence order untouched, nothing summarised and nothing translated. Fixed order: transcribe the queue (audio only), run --repair-asr auto, plan the chunk cut with scripts/build_clean.py --plan, fan the chunks out through the clean-transcript workflow, join with build_clean.py, then hand the user a short Russian rundown. Trigger when the user wants to READ a video instead of watching it: 'текстовая версия', 'вычищенный транскрипт', 'сделай текст по видео', 'расшифровка', 'clean transcript', 'readable transcript', 'text of the video'. NOT a short summary (that is overdub-scout, route C), NOT dubbing (overdub-sonnet-batch, route B)."
 ---
 
 # overdub — clean transcript (route E)
@@ -13,11 +13,11 @@ no `source.mkv` on disk.
 
 This route is defined by what it does NOT do. It is the only route whose output is roughly as long
 as its input, and that is the point: a reader who wanted the short version would be reading a
-digest. Every instruction below that looks pedantic about length is protecting exactly that.
+scout summary. Every instruction below that looks pedantic about length is protecting exactly that.
 
 **When NOT to use this skill.**
-- The user wants to know **what is in** a video, short → `overdub-digest` (route D).
-- The user wants to know **which** videos deserve their time → `overdub-scout` (route C).
+- The user wants to know **what is in** a video, briefly → `overdub-scout` (route C), ~200 words
+  per video instead of the whole text.
 - The user wants the videos **dubbed** → `overdub-sonnet-batch` (route B), the only route that ends
   in a dub.
 - The user asks about **one** video that already has `work/<id>/clean.md` → read that file and
@@ -28,7 +28,7 @@ digest. Every instruction below that looks pedantic about length is protecting e
 Two layers, and together they make a re-run over an already-processed queue cost seconds:
 
 1. **The transcript** — the pipeline's own fast-skip. `download` and `transcribe` are done when
-   `source.wav` and `sentences.json` exist, so E1 over a queue that was scouted, digested or dubbed
+   `source.wav` and `sentences.json` exist, so E1 over a queue that was scouted or dubbed
    re-reads what is on disk and stops.
 2. **The chunk drafts** — `work/<id>/clean/<from>-<to>.json`, one file per chunk, keyed on mtime
    against `sentences.json`. A chunk whose file is fresh is not re-spawned, so a failed wave costs
@@ -170,11 +170,11 @@ chunk you re-ran, a video whose transcript was too thin to be worth reading. Off
 ## Promotion — a cleaned queue entering another route
 
 Nothing to clean up, and nothing here writes `translation.json`, so a cleaned video is untranslated
-rather than half-translated. It enters route B at its Step 1 or route D at D2; the mechanics are
+rather than half-translated. It enters route B at its Step 1 or route C at S2; the mechanics are
 [`docs/queue-contract.md`](../../../docs/queue-contract.md) §4.
 
-Going the other way, a queue that was scouted or digested arrives here with its transcript already
-on disk, so E1 costs seconds.
+Going the other way, a queue that was scouted arrives here with its transcript already on disk, so
+E1 costs seconds.
 
 ## Rules that are not negotiable
 
@@ -185,7 +185,7 @@ is the per-chunk drafts under `clean/`, never `clean.json` or `clean.md`. Route 
 
 - **Minimal processing is the contract, not a preference.** Filler and false starts out; wording,
   register, sentence order and sentence boundaries untouched. The moment this route starts
-  rephrasing, it becomes a worse digest with a longer runtime.
+  rephrasing, it becomes a worse summary with a longer runtime.
 - **Never merge, split or move text between ids.** Every id is anchored to a timestamp, paragraphs
   are assembled from the pauses afterwards, and a moved line makes the text disagree with the audio
   it claims to be.

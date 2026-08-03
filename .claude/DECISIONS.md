@@ -21,6 +21,7 @@ divider. Look things up through this index, not by scrolling.
 ## Index
 
 **Scout — route C**
+- `08-03` route D deleted; scout answers "what is in it", and grades nothing
 - `08-03` viewer profile removed; nothing personalizes the grade
 - `07-21` one queue page: scout report is the base, triage merged in
 - `07-21` scout preview: 160px, inlined once, no 2x source
@@ -93,6 +94,49 @@ divider. Look things up through this index, not by scrolling.
 † carries a `SUPERSEDED` header — the code it describes is gone or changed. Read the header first.
 
 ---
+
+## 2026-08-03 — route D is DELETED and route C stops assessing; one route answers "what is in it"
+
+Two routes were converging on one question and neither was allowed to answer it plainly. Route C
+asked "does this earn an evening" and answered with a grade; route D asked "what is actually in
+it" and answered with a document, at ~200k tokens per video across two Opus passes. The user's
+call: keep ONE route, make it route C, and have it answer route D's question briefly.
+
+**Route D is gone, not deprecated.** `overdub-digest/SKILL.md`, `digest-videos.js`,
+`build_digest.py`, `digest_report.py`, `test_digest.py` and `docs/digest-reference.md` are
+deleted. The two 07-30 entries below stay: what they RECORD — that a composing agent cannot be
+given a length, and that the caps deleted the marginal finding first — is a lesson about prompting
+under a length target, not a fact about a route. The measurements in them describe a route that no
+longer exists, so nothing in them is a live number.
+
+**Route C assesses nothing.** No `quality`, no closed vocabulary, no grade chip, no colour ladder,
+no "стоит посмотреть" in the artifacts, on the page or in chat. `scout.draft.json` is
+`{one_liner, highlight, paragraph}`, `build_scout.py` validates prose and nothing else, and the
+page's header counts STATES (`отсканировано: N`) instead of verdicts.
+
+**The precedent this closes.** Route C shipped a verdict twice and retired it twice: the personal
+`watch`/`maybe`/`skip` collapsed toward "no" (0/1/9 on the first real queue, 07-20 below), and the
+material grade that replaced it scored videos nobody asked to have scored. The 07-20 entry stays
+as the record of the first retirement; this one records that the second axis went the same way,
+for a related reason — a route that describes can be argued with, a route that ranks decides for
+the reader.
+
+**A finished row now carries no chip.** That is route D's own design rule (07-30 below: "a badge
+on every row would be a column of one value") inherited by the surviving route. Chips are reserved
+for states that demand an action — dub triage, and the unfinished-pipeline states.
+
+**Two things deliberately NOT done.** Route E was not renumbered into the free letter D: "route E"
+is load-bearing in its skill, the queue contract and `build_clean.py`, and a rename buys a
+tidier alphabet for a real risk of drift. And existing `scout.json` files keep their `quality`
+key — nothing migrates them, nothing reads it, a rebuild drops it, exactly as the `author` key
+was handled earlier today.
+
+Tests: `test_digest.py` deleted (-52). `test_unknown_quality_is_fatal` and
+`test_the_grade_is_about_the_material_not_the_reader` are replaced by
+`test_the_route_assesses_nothing` (which keeps the `_AUTHOR` / `_VERDICTS` tombstones and adds
+`_QUALITY` to them) and `test_an_assessment_field_in_the_draft_is_ignored_not_persisted`. The
+entry below names the older test by its old name; that is the file's normal drift, not an error
+in it.
 
 ## 2026-08-03 — the viewer profile is REMOVED; scout grades the material and nothing else
 

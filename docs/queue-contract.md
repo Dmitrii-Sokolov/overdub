@@ -1,6 +1,6 @@
 # The queue contract — shared by every route
 
-Everything routes B, C, D and E do **identically**: resolving the queue into an id list, deciding
+Everything routes B, C and E do **identically**: resolving the queue into an id list, deciding
 whether that queue is still current, promoting a queue from one route to another, and fanning
 sub-agents out. It lives here once because it used to live in four skills at once, and a rule
 copied four times is a rule that drifts three ways: on 2026-07-28 the translate contract was
@@ -133,8 +133,8 @@ it — and unlike a lost video, nothing reports it.**
   reason, and the video muxed clean in 11 s with `needs_triage: false` — the pipeline's own report
   already said everything the question to the user would have asked, and it said it in an artifact
   instead of in chat.
-- What goes IN the queue is the human's decision; route C is where it is made. The grade, the
-  digest or the report is the recommendation — the routes recommend, the human drops.
+- What goes IN the queue is the human's decision, and no route takes it for them. The reports
+  describe what the videos are; nothing in this repo ranks them or drops one.
 - **Never hand-write a completion artifact** (`summary.md`, a draft, a chunk) to clear a "pending"
   line. That line is the pass's only completion signal, and forging it is the silent failure in
   miniature.
@@ -143,8 +143,8 @@ it — and unlike a lost video, nothing reports it.**
 
 ## 4. Promotion — one route's queue entering another
 
-No cleanup, ever. Nothing outside route B writes `translation.json`, so a scouted / digested /
-cleaned video is **untranslated, not half-translated**.
+No cleanup, ever. Nothing outside route B writes `translation.json`, so a scouted or cleaned
+video is **untranslated, not half-translated**.
 
 - `transcribe` **fast-skips** on the existing `sentences.json` — the large-v3 pass is not repeated,
   which is the whole economic point of a cheap pre-pass.
@@ -154,7 +154,7 @@ cleaned video is **untranslated, not half-translated**.
   audio-only route ever wrote one, so the audio bytes are re-fetched inside the merged container.
   ~5% extra traffic, accepted deliberately (DECISIONS 2026-07-20). **Do NOT try to save it by
   hand-assembling an MKV from `source.wav`.**
-- Artifacts of the route being left behind (scout, digest, clean) survive untouched. They are also
+- Artifacts of the route being left behind (scout, clean) survive untouched. They are also
   not refreshed by a `--repair-asr` pass — that is what each route's mtime cache check is for.
 
 Videos the user dropped keep their artifacts in `work/<id>/` — a few MB each, and they make a
@@ -172,7 +172,6 @@ why a well-formed built file proves nothing about whether the agent ran.
 |---|---|---|
 | B | `translation.draft.json` | `translation.json` |
 | C | `scout.draft.json` | `scout.json` |
-| D | `digest.long.json`, `digest.draft.json` | `digest.json`, `digest.md` |
 | E | `clean/<from>-<to>.json` | `clean.json`, `clean.md` |
 
 **A missing draft OUTRANKS a present built artifact. Always. Never the reverse.** Do not resolve
@@ -242,7 +241,7 @@ regardless, because the guard is a net and not a contract. Always pass the RESUM
 never the whole queue.
 
 The whole queue goes in ONE call — the runtime caps concurrency (~16 agents) and queues the rest,
-so per-wave barriers only add idle time. Routes B and D spawn two agents per VIDEO, so a queue past
+so per-wave barriers only add idle time. Route B spawns two agents per VIDEO, so a queue past
 ~450 videos would approach the 1000-agent-per-workflow backstop; split it there, not before. Route E
 spawns per CHUNK — count chunks, not videos, and the ceiling arrives far sooner.
 
@@ -253,10 +252,10 @@ of one prompt drift, and re-typing a prompt per video is exactly the cost the wo
 
 ## 7. Verify from disk, not from the run's account
 
-On routes B, C and D the fan-out sub-agents touch an empty marker file as their **first action**
-(`translate.started`, `scout.started`, `digest.started`). **Route E has none and needs none** — its
+On routes B and C the fan-out sub-agents touch an empty marker file as their **first action**
+(`translate.started`, `scout.started`). **Route E has none and needs none** — its
 drafts are per-chunk already, so E3 verifies the chunk file itself and collects no per-video
-timing, and everything below is about the other three. Two checks, the first of which goes missing
+timing, and everything below is about the other two. Two checks, the first of which goes missing
 quietly:
 
 ```powershell
