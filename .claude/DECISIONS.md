@@ -334,7 +334,7 @@ for 87 translator spawns over a 117-video queue: `build_translation.py`'s missin
 truncation and each catch cost a full respawn. The workflow prompt now requires reading on to the
 last id and self-verifying coverage before answering.
 
-**Confirmed on the first run, same day** (5-video queue, CHANGELOG 2026-07-28): markers 3.5 s apart,
+**Confirmed on the first run, same day** (5-video queue, 2026-07-28): markers 3.5 s apart,
 782/782 on a 4694-line transcript, `src` on 100% of records, step 2 costing the orchestrator 1428
 chars. **The ~350k / ~5.6k-per-video projection above is NOT yet measured** — at four videos the
 session is dominated by steps 1/3/4 and by manual debugging, so it stays a projection until an
@@ -345,8 +345,8 @@ share of the orchestrator's own traffic spent on step 2 went from 62% to 0.7%.
 STRING — route C's measured 8-of-8 mistake, reproduced on route B's first call — and the ported
 parsing branch absorbed it. Then the one defect the run DID surface was in the part with no route-C
 precedent: a status line parsed from the TRUNCATED answer with an anchored pattern. The general
-lesson is the reason it is written here rather than only in CHANGELOG: **a cap that protects context
-must not also be the parse window.** Truncation is a storage decision; classification has to read
+lesson is why it earns an entry at all: **a cap that protects context must not also be the parse
+window.** Truncation is a storage decision; classification has to read
 what actually arrived.
 
 ## 2026-07-28 — the tail degrades instead of failing: a missing translation or dub costs a TRACK, not the artifact
@@ -477,46 +477,35 @@ it belongs in `asr_key` beside the beam, and it must be measured on the six fixt
 
 ## 2026-07-25 — session retrospective: three times the arithmetic was right and the SHAPE was wrong
 
-Recorded because the pattern repeated three times in one session, in three different layers, and
-only once was it caught by the person who made it.
+The pattern repeated three times in one session, in three different layers, and only once was it
+caught by the person who made it.
 
-**1. Item 1(b), the pre-synthesis bar.** Its premise: "17 units ship at cf ≥ 1.8, up to ×12.5,
-silently". Recomputed before writing code: 7 units of 3575, worst 2.63. The 17 mixed a
-sentence-row count with a unit count, the ×12.5 was one sentence's pre-repair figure, and "silently"
-was false — three surfaces already print it. On top of that, all 36 workdirs are F5 at the old
-grouping, so the corpus described a different engine than the one being fixed. Caught by measuring
-before building. **Outcome: the item was not built.**
+**The generalised lesson has been promoted to `~/.claude/knowledge/measurement-discipline.md`** —
+grain, distribution-vs-total, provenance, "docs go stale by NUMBER not only by name", and the rule
+that a mutation harness must score a collection error as INVALID rather than caught. None of it is
+specific to this project, and that file loads in every session while this one does not. Do not
+restate it here; what stays is what the session decided in overdub.
 
-**2. Item 1(a), the slot fit.** Its premise: "the translation is ~29% too short, so make the
-translator write longer". The hole was actually DISTRIBUTED — many units each missing a little —
-which a uniform multiplier answers far better than per-sentence length work. A floor on `atempo`
-closed 70% of the silence in the assembly layer, with no prompt change and no re-translation.
-**Outcome: (a) demoted from blocker to polish.**
+**1. Item 1(b), the pre-synthesis bar — NOT BUILT.** Premise: "17 units ship at cf ≥ 1.8, up to
+×12.5, silently". Recomputed before writing code: 7 units of 3575, worst 2.63. The 17 mixed a
+sentence-row count with a unit count, the ×12.5 was one sentence's pre-repair figure, "silently"
+was false (three surfaces already print it), and all 36 workdirs were F5 at the old grouping — a
+corpus describing a different engine than the one being fixed.
 
-**3. The listening test for that floor.** Its premise: "assemble at each floor and listen". A floor
-only binds units below it, so the 45 s window offered held two units, one of which never reached
-the floor — the test could not have shown degradation. Caught by the USER, who said it looked wrong
-and proposed the fix: one phrase, four tempos, back to back. **Outcome: the verdict changed from
-0.85 to 0.75 — 79 seconds of silence, twice the effect.**
+**2. Item 1(a), the slot fit — DEMOTED from blocker to polish.** Premise: "the translation is ~29%
+too short, so make the translator write longer". The hole was DISTRIBUTED — many units each missing
+a little — which a uniform multiplier answers far better than per-sentence length work. A floor on
+`atempo` closed 70% of the silence in the assembly layer, with no prompt change and no
+re-translation.
 
-**The common failure is not bad arithmetic. It is measuring a quantity that is not the one under
-discussion.** Sentence rows instead of units; total shortfall instead of its distribution; a dub
-instead of a coefficient. Each number was computed correctly and answered the wrong question.
+**3. The listening test for that floor — REDONE, verdict moved 0.85 → 0.75**, worth 79 seconds of
+silence, twice the effect. A floor only binds units below it, so the 45 s window offered held two
+units, one of which never reached the floor. Caught by the USER, who proposed the fix: one phrase,
+four tempos, back to back. Full entry below, same date.
 
-**The cheap defence, and it is a question, not a process:** before running a measurement, ask
-whether the experiment actually moves the variable being argued about. That single question would
-have caught all three. It is also what the user asked, unprompted, about the tempo clips.
-
-**Corollaries worth keeping:**
-- A green test proves nothing until the implementation is mutated — and the mutation harness must
-  distinguish a failing assertion from a module that does not import. A docstring typo once made
-  all eight mutations report "caught" with zero tests executed.
-- Adversarial review earns its cost on work you believe is finished. It found a shipped regression
-  in the subtitle placement (tail fragments opening 10.6 s after their audio) that the author's own
-  verification missed, because the author measured cue DURATIONS and the defect was in cue DELAY.
-- **Documentation goes stale by NUMBER, not only by name.** Grepping the route-B skill for engine
-  names came back clean twice; the retracted "17 units / ×12.5" figures were sitting in it the whole
-  time. When a number is retired, grep for the number.
+**One project defect worth its own line:** adversarial review found a shipped subtitle regression
+(tail fragments opening 10.6 s after their audio) that the author's own verification missed —
+the author measured cue DURATIONS and the defect was in cue DELAY.
 
 ## 2026-07-25 — `atempo_floor = 0.75`, and the listening test that produced it was the second one
 
@@ -892,8 +881,9 @@ opinion it does not need.
 ## 2026-07-22 — Measuring ASR inverts `exp_nfe_sweep`'s premise; and the host drifts, which is a different problem from noise
 
 **Status note, same day.** The harness this entry was written for (`exp_asr_sweep.py`, its region
-scorer and its runbook) was deleted hours later and replaced by `scripts/asr_probe.py` — see
-CHANGELOG 2026-07-22 for why. The premise below outlived it and is the reason the probe exists in
+scorer and its runbook) was deleted hours later and replaced by `scripts/asr_probe.py`. The reason
+was written up in `CHANGELOG.md`, which has since been retired from this repo — it is in git
+history. The premise below outlived it and is the reason the probe exists in
 the shape it does; the two-corpus machinery described further down did not, because the probe runs
 one corpus and says so. Read this for the premise, not for the file layout.
 
@@ -1023,9 +1013,9 @@ vocabulary to maintain, and it still says nothing about WHAT is referenced); and
 numbers with a "as of <date>" suffix (correct, but every reader still has to reconstruct a dead
 roadmap to use it).
 
-**CHANGELOG and DECISIONS keep their numbers deliberately.** They are dated records of what was
-true when written, and rewriting them to today's vocabulary would destroy exactly the provenance
-that makes them worth keeping. Only PLAN — the forward-looking file — and live code comments were
+**DECISIONS keeps its numbers deliberately** — as did CHANGELOG, before it was retired. They are
+dated records of what was true when written, and rewriting them to today's vocabulary would
+destroy exactly the provenance that makes them worth keeping. Only PLAN — the forward-looking file — and live code comments were
 converted. `.claude-tasks/` session records were left alone for the same reason.
 
 ## 2026-07-21 — One queue page: the scout report is the base, the triage page merged into it
