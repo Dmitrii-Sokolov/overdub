@@ -13,6 +13,10 @@ real run lost videos without it.
 
 The route skills own what differs: the pipeline command, the artifacts, the gates, the report.
 
+**Section numbers are a join key.** The four skills, README and CLAUDE.md cite this file by number,
+and renumbering breaks none of those references visibly — it just points them somewhere else.
+Numbering is therefore APPEND-ONLY: a new section goes at the end. Renaming a heading is free.
+
 ---
 
 ## 1. `queue.txt` belongs to the RUN, and the id list comes from it
@@ -32,7 +36,7 @@ from the previous run is **not context for this one and never a question to put 
 - **The user named the SAME playlist, or named nothing at all** — keep the file and apply §2.
 
 **And it is never deleted at the end.** Promotion (§4) is the human trimming this file to the
-survivors, and both report scripts take it as `--queue queue.txt`.
+survivors, and the report scripts take it as `--queue queue.txt`.
 
 If the user handed over a PLAYLIST rather than a list of videos, expand it — the queue is a list of
 videos, always — and record where it came from as the first line:
@@ -232,8 +236,9 @@ regardless, because the guard is a net and not a contract. Always pass the RESUM
 never the whole queue.
 
 The whole queue goes in ONE call — the runtime caps concurrency (~16 agents) and queues the rest,
-so per-wave barriers only add idle time. A queue past ~450 videos would approach the
-1000-agent-per-workflow backstop at two agents each; split it there, not before.
+so per-wave barriers only add idle time. Routes B and D spawn two agents per VIDEO, so a queue past
+~450 videos would approach the 1000-agent-per-workflow backstop; split it there, not before. Route E
+spawns per CHUNK — count chunks, not videos, and the ceiling arrives far sooner.
 
 **The prompts live in `.claude/workflows/*.js`, not in the skills.** Edit the script — two copies
 of one prompt drift, and re-typing a prompt per video is exactly the cost the workflow removes.
@@ -242,9 +247,11 @@ of one prompt drift, and re-typing a prompt per video is exactly the cost the wo
 
 ## 7. Verify from disk, not from the run's account
 
-Every fan-out step's sub-agents touch an empty marker file as their **first action**
-(`scout.started`, `translate.started`, `digest.started`). Two checks, and the first is the one that
-goes missing quietly:
+On routes B, C and D the fan-out sub-agents touch an empty marker file as their **first action**
+(`translate.started`, `scout.started`, `digest.started`). **Route E has none and needs none** — its
+drafts are per-chunk already, so E3 verifies the chunk file itself and collects no per-video
+timing, and everything below is about the other three. Two checks, the first of which goes missing
+quietly:
 
 ```powershell
 # 1. every spawned video got a marker — its absence means that agent never started

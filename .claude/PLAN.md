@@ -480,7 +480,7 @@ field. What is new:
 - `--no-playlist` on both yt-dlp fetches (`_fetch_video` + `_fetch_audio`, one flag each + test): a
   queue line carrying `&list=` passes the id regex and yt-dlp then FOLLOWS the playlist into the
   fixed `-o source.*` path — dozens of videos over one workdir, verified 2026-07-24. Today's only
-  guard is a check in both skills, i.e. instruction, not code
+  guard is the `$ids` check in `docs/queue-contract.md` §1, i.e. instruction, not code
 - enumeration-head detector (in a run of ≥3 adjacent sentences matching `^(and )?X to …` the
   captured head must be unique — 1 fire / 1101 sentences, the true positive, 0 FP, ~15 LOC)
 - `--repair id,id --seed N` (point re-synth + remux; grain = the GROUP after units)

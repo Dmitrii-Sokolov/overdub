@@ -30,8 +30,8 @@ untranslated, and it re-enters the dubbing route with no cleanup (see "Promotion
 **Read [`docs/queue-contract.md`](../../../docs/queue-contract.md) now, before anything else.**
 Sections 1-3 are this step: who owns `queue.txt`, the `$ids` block and its three load-bearing
 guards, the `# playlist:` freshness diff, and the rule that a queue is never shortened, lengthened
-or interrupted by a model. Run §1 and §2 verbatim — they are the same for every route, and this
-skill deliberately keeps no second copy of them.
+or interrupted by a model. Run §1 verbatim; §2 whenever a playlist is involved — they are the
+same for every route, and this skill deliberately keeps no second copy of them.
 
 **Resolve the queue BEFORE the run, not after** (moved above the command 2026-07-24). These
 checks used to sit under it, which made them audits of a fetch that had already happened.

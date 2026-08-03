@@ -139,9 +139,10 @@ diverge from it.
 
 `docs/queue-contract.md` — what routes B/C/D/E do IDENTICALLY: `queue.txt` ownership, the `$ids`
 block and its three guards, the `# playlist:` freshness diff, promotion between routes, the
-derived-artifact-is-not-evidence rule, `Workflow` fan-out and marker verification. A MANDATORY READ
-before driving any route, and the place to EDIT any of those rules — it exists because each of them
-used to live in four skills at once, and a rule copied four times drifts three ways.
+derived-artifact-is-not-evidence rule, `Workflow` fan-out and marker verification (B/C/D — route E
+has no marker). A MANDATORY READ before driving any route, and the place to EDIT any of those
+rules — it exists because each of them used to live in four skills at once, and a rule copied four
+times drifts three ways.
 
 `docs/repair-fixture.md` — the `--repair-asr` golden fixture: a reproducible real-media regression
 test built from the 6 preserved `_pre-repair-sentences.json` / `sentences.json` pairs in `work/`.

@@ -64,7 +64,7 @@ agent ran.
 **Read [`docs/queue-contract.md`](../../../docs/queue-contract.md) now, before anything else.**
 Sections 1-3 are this step: who owns `queue.txt`, the `$ids` block and its three load-bearing
 guards, the `# playlist:` freshness diff, and the rule that a queue is never shortened, lengthened
-or interrupted by a model. Run §1 and §2 verbatim.
+or interrupted by a model. Run §1 verbatim; §2 whenever a playlist is involved.
 
 Route-D specifics on top of the contract:
 
