@@ -205,6 +205,9 @@ class WorkDir:
     def summary(self) -> Path: return self.root / "summary.md"            # sonnet seam (informational)
 
     @property
+    def translate_dir(self) -> Path: return self.root / "translate"       # route B chunked: per-chunk agent drafts
+
+    @property
     def clean_dir(self) -> Path: return self.root / "clean"               # route E: per-chunk agent drafts
 
     @property
@@ -305,6 +308,10 @@ class WorkDir:
             self.pronounce_audit,
             self.root / "translation.draft.json",        # route-B Sonnet draft: keyed by id, and
                                                          # a repair renumbers every later id
+            *sorted(self.translate_dir.glob("*.json")),  # route B chunked: the per-chunk drafts the
+                                                         # draft above is joined from — keyed by id
+                                                         # too, and a surviving chunk would be
+                                                         # re-joined against renumbered sentences
             self.clean_doc,                              # route E, same reason as the draft above:
             self.clean_md,                               # every route-E artifact is keyed by id,
             *sorted(self.clean_dir.glob("*.json")),      # so a renumber silently re-points each

@@ -268,6 +268,97 @@ def test_id_problem_still_exits_despite_src_leniency() -> None:
     assert _exits([_sent(0, "a")], [{"id": 0, "text_ru": None, "src": "ok"}])
 
 
+# --- chunked path (--plan / --join), for transcripts one agent cannot cover -------------------
+
+
+def _join(sentences: list[dict], chunk_files: dict[str, list[dict]], chunk: int):
+    """Write sentences + the given translate/<name> chunk files, run join_chunks(), return the
+    assembled draft as a list. `chunk_files` is keyed by file name so a test can name a range the
+    planner did NOT ask for (the stale-plan case)."""
+    with tempfile.TemporaryDirectory() as d:
+        tmp = Path(d)
+        work = WorkDir(root=tmp)
+        work.sentences.write_text(json.dumps(sentences, ensure_ascii=False), encoding="utf-8")
+        work.translate_dir.mkdir(parents=True, exist_ok=True)
+        for name, recs in chunk_files.items():
+            (work.translate_dir / name).write_text(json.dumps(recs, ensure_ascii=False),
+                                                   encoding="utf-8")
+        plan = build_translation.plan_chunks(sentences, chunk)
+        build_translation.join_chunks(work, plan)
+        return json.loads((tmp / "translation.draft.json").read_text(encoding="utf-8"))
+
+
+def _join_exits(sentences, chunk_files, chunk) -> bool:
+    try:
+        _join(sentences, chunk_files, chunk)
+        return False
+    except SystemExit:
+        return True
+
+
+def _ru(lo, hi):
+    return [{"id": i, "text_ru": f"строка {i}", "src": "ok"} for i in range(lo, hi + 1)]
+
+
+def test_plan_covers_every_id_exactly_once() -> None:
+    sents = [_sent(i, f"line {i}") for i in range(10)]
+    plan = build_translation.plan_chunks(sents, 4)
+    covered = [i for ch in plan for i in range(ch["from"], ch["to"] + 1)]
+    assert covered == list(range(10))          # contiguous, no overlap, nothing dropped
+
+
+def test_join_concatenates_chunks_in_id_order() -> None:
+    sents = [_sent(i, f"line {i}") for i in range(10)]
+    plan = build_translation.plan_chunks(sents, 4)
+    files = {f"{ch['from']}-{ch['to']}.json": _ru(ch["from"], ch["to"]) for ch in plan}
+    draft = _join(sents, files, 4)
+    assert [r["id"] for r in draft] == list(range(10))
+    assert draft[7]["text_ru"] == "строка 7"
+
+
+def test_join_keeps_src_and_src_note() -> None:
+    # The source-anomaly pass is per sentence and survives the extra hop, or the chunked route
+    # silently loses the only detector for a semantic garble (DECISIONS 2026-07-19).
+    sents = [_sent(i, f"line {i}") for i in range(4)]
+    files = {"0-3.json": [{"id": 0, "text_ru": "а", "src": "ok"},
+                          {"id": 1, "text_ru": "б", "src": "garbled", "src_note": "ASR noise"},
+                          {"id": 2, "text_ru": "в", "src": "ok"},
+                          {"id": 3, "text_ru": "г", "src": "ok"}]}
+    draft = _join(sents, files, 400)
+    assert draft[1]["src"] == "garbled" and draft[1]["src_note"] == "ASR noise"
+
+
+def test_join_exits_on_missing_chunk_file() -> None:
+    sents = [_sent(i, f"line {i}") for i in range(10)]
+    plan = build_translation.plan_chunks(sents, 4)
+    files = {f"{ch['from']}-{ch['to']}.json": _ru(ch["from"], ch["to"]) for ch in plan[:-1]}
+    assert _join_exits(sents, files, 4)        # the last agent never finished
+
+
+def test_join_exits_on_id_missing_inside_a_chunk() -> None:
+    # The failure the single-agent route showed twice: an agent that stopped early. A short chunk
+    # must cost a re-run of THAT chunk, never a dub with silently dropped sentences.
+    sents = [_sent(i, f"line {i}") for i in range(4)]
+    assert _join_exits(sents, {"0-3.json": _ru(0, 2)}, 400)
+
+
+def test_join_exits_on_id_outside_the_chunk_range() -> None:
+    sents = [_sent(i, f"line {i}") for i in range(8)]
+    plan = build_translation.plan_chunks(sents, 4)
+    files = {f"{ch['from']}-{ch['to']}.json": _ru(ch["from"], ch["to"]) for ch in plan}
+    first = f"{plan[0]['from']}-{plan[0]['to']}.json"
+    files[first] = files[first] + [{"id": 7, "text_ru": "чужая", "src": "ok"}]
+    assert _join_exits(sents, files, 4)        # two agents writing one sentence
+
+
+def test_join_exits_when_a_stale_plan_names_chunks_that_are_not_on_disk() -> None:
+    # A --repair-asr pass renumbers every later id, so the cut moves and the files on disk are
+    # named for ranges nobody asks for any more. That surfaces as a MISSING chunk file — which is
+    # the same signal an agent that never finished gives, and the message names both causes.
+    sents = [_sent(i, f"line {i}") for i in range(12)]
+    assert _join_exits(sents, {"0-3.json": _ru(0, 3), "4-7.json": _ru(4, 7)}, 4)
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):

@@ -171,8 +171,14 @@ why a well-formed built file proves nothing about whether the agent ran.
 | route | the agent's draft (the evidence) | derived, proves nothing |
 |---|---|---|
 | B | `translation.draft.json` | `translation.json` |
+| B, chunked | `translate/<from>-<to>.json` | `translation.draft.json`, `translation.json` |
 | C | `scout.draft.json` | `scout.json` |
 | E | `clean/<from>-<to>.json` | `clean.json`, `clean.md` |
+
+**Route B's draft changes sides depending on which translator ran** — it is the evidence when one
+agent translated the whole video, and a DERIVED artifact once `--join` assembled it from chunk
+files. So on a long video a present `translation.draft.json` over an empty `translate/` proves
+nothing at all: it is last run's, and the rule above applies to it unchanged.
 
 **A missing draft OUTRANKS a present built artifact. Always. Never the reverse.** Do not resolve
 the contradiction by opening the built file and finding it consistent — it will always be

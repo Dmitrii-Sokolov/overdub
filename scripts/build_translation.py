@@ -35,6 +35,17 @@ If _is_bad or normalize_for_tts change, this script inherits the change for free
 Run with the .venv-asr python from the repo root:
 
     .venv-asr\\Scripts\\python.exe -X utf8 scripts\\build_translation.py work\\<id>
+
+CHUNKED variant, for a transcript one sub-agent cannot cover in a single window:
+
+    ... build_translation.py work\\<id> --plan          # the cut, as JSON, for the workflow
+    ... build_translation.py work\\<id> --join          # chunk drafts -> draft -> translation.json
+
+Same seam, same contract, one extra hop: each agent writes work/<id>/translate/<from>-<to>.json
+in the ordinary draft record shape, --join concatenates them into translation.draft.json and the
+build below proceeds unchanged. On THIS path the chunk files are the evidence a human checks and
+translation.draft.json is derived from them (queue-contract §5) -- the reverse of the one-agent
+path, where the draft is what the agent itself wrote.
 """
 
 from __future__ import annotations
@@ -54,6 +65,20 @@ from overdub.normalize import normalize_for_tts         # noqa: E402
 from overdub.stages.translate import _is_bad            # noqa: E402
 from overdub.workdir import WorkDir                      # noqa: E402
 
+# Route E's cut, reused rather than re-derived. "Break the range on the longest pause, absorb a
+# stub tail" is the same problem here as there, and the one thing worse than a cross-route import
+# between two sibling helpers is two copies of a boundary rule that must agree with itself: the
+# planner and the join BOTH compute the cut, so a drift would name chunk files nobody wrote.
+from build_clean import plan_chunks                      # noqa: E402
+
+# Sentences per chunk. A HYPOTHESIS off one measurement, not a measured constant, and labelled as
+# such deliberately: on 2026-08-05 a 2259-sentence transcript (Karpathy, 3.5 h) defeated the
+# single-agent route twice, at 1200 and at 1500 records written -- both while ALSO reading the
+# whole 411 KB transcript. A chunk agent reads only its own slice, so 400 sits ~4x under the
+# observed ceiling with the read cost removed too. Re-site it once a wave of long videos exists;
+# smaller is always safe and costs one more spawn.
+DEFAULT_CHUNK = 400
+
 # Closed source-anomaly vocabulary. Mirrored in runreport._SOURCE_KINDS, which adds
 # the "unknown" bucket this file clamps into -- keep the two in sync, one is the writer and the
 # other the reader. See references/translate-contract.md for what each kind means.
@@ -66,22 +91,25 @@ def _load_draft(path: Path) -> dict[int, tuple[str, str | None, str]]:
     """Draft the sub-agent wrote: JSON list [{id, text_ru, src, src_note?}, ...]
     -> {id: (text_ru, src|None, src_note)}. src is None when the record carried none
     (an UNSCANNED record -- counted, warned, never fatal: see build())."""
+    # Named per message because the chunked path loads SIX of these per video: "record 12" with no
+    # file in front of it addresses nothing an operator can re-run.
+    who = f"draft {path.name}"
     raw = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(raw, list):
-        sys.exit(f"[FAIL] draft {path} is not a JSON list")
+        sys.exit(f"[FAIL] {who} is not a JSON list")
     out: dict[int, tuple[str, str | None, str]] = {}
     for i, rec in enumerate(raw):
         try:
             sid = int(rec["id"])
             text_ru = rec["text_ru"]
         except (TypeError, KeyError, ValueError) as e:
-            sys.exit(f"[FAIL] draft record {i} missing id/text_ru ({e}): {rec!r}")
+            sys.exit(f"[FAIL] {who} record {i} missing id/text_ru ({e}): {rec!r}")
         if not isinstance(text_ru, str):
             # str() coercion would voice a JSON null literally ("None" -> "нон") and it
             # passes every _is_bad gate -- reject the type, don't launder it
-            sys.exit(f"[FAIL] draft record {i}: text_ru is not a string: {rec!r}")
+            sys.exit(f"[FAIL] {who} record {i}: text_ru is not a string: {rec!r}")
         if sid in out:
-            sys.exit(f"[FAIL] draft has duplicate id {sid}")
+            sys.exit(f"[FAIL] {who} has duplicate id {sid}")
         # src / src_note are REPORT fields -- a wrong id set produces a wrong DUB (hence the
         # exits above), a mislabeled report row produces a slightly-wrong report. Warn, degrade.
         src = rec.get("src") if isinstance(rec, dict) else None
@@ -95,6 +123,67 @@ def _load_draft(path: Path) -> dict[int, tuple[str, str | None, str]]:
             note = ""
         out[sid] = (text_ru, src, note.strip())
     return out
+
+
+def join_chunks(work: WorkDir, chunks: list[dict]) -> tuple[Path, list[tuple[str, int]]]:
+    """Concatenate work/<id>/translate/<from>-<to>.json into translation.draft.json.
+
+    Verifies coverage the same way route E's join does, and for the same reason: a planner bug and
+    an agent that stopped early are indistinguishable once the records are in one list. Each chunk
+    must carry EXACTLY its own declared range -- a missing id costs a dub, an id outside the range
+    means two agents wrote one sentence and the later one silently wins.
+
+    Returns (draft_path, rows) where rows are (chunk name, record count) for the operator print.
+    """
+    sentences = json.loads(work.sentences.read_text(encoding="utf-8"))
+    if not isinstance(sentences, list) or not sentences:
+        sys.exit(f"[FAIL] {work.sentences} is not a non-empty sentence list")
+    sent_ids = {s["id"] for s in sentences}
+
+    merged: dict[int, tuple[str, str | None, str]] = {}
+    rows: list[tuple[str, int]] = []
+    for ch in chunks:
+        name = f"{ch['from']}-{ch['to']}.json"
+        path = work.translate_dir / name
+        if not path.exists():
+            # Also the shape a STALE plan takes: a --repair-asr pass renumbers every later id, so
+            # the cut moves and the chunk files on disk are named for ranges nobody now asks for.
+            sys.exit(f"[FAIL] chunk {name} is missing -- either its sub-agent did not finish (re-run "
+                     f"that chunk alone; the others are on disk), or the plan is stale because a "
+                     f"--repair-asr pass renumbered the ids (re-run --plan and translate the new cut)")
+        part = _load_draft(path)
+        expected = [i for i in sent_ids if ch["from"] <= i <= ch["to"]]
+        missing = sorted(i for i in expected if i not in part)
+        if missing:
+            sys.exit(f"[FAIL] chunk {name} is missing {len(missing)} sentence(s): ids "
+                     f"{missing[:20]}{' ...' if len(missing) > 20 else ''} -- re-run this chunk")
+        extra = sorted(i for i in part if i not in set(expected))
+        if extra:
+            sys.exit(f"[FAIL] chunk {name} carries {len(extra)} id(s) outside its own range "
+                     f"{ch['from']}..{ch['to']}: {extra[:20]} -- two agents would be writing one "
+                     f"sentence; re-run this chunk")
+        merged.update(part)
+        rows.append((name, len(expected)))
+
+    # No "is every sentence in some chunk" check here, deliberately: plan_chunks covers 0..n-1 by
+    # construction (tests/test_build_translation.py asserts it), each chunk is verified against its
+    # own declared range just above, and build() below re-checks the assembled draft against
+    # sentences.json anyway. A fourth net over the same hole is code that cannot run.
+    draft = []
+    for sid in sorted(merged):
+        text_ru, src, note = merged[sid]
+        rec: dict = {"id": sid, "text_ru": text_ru}
+        if src is not None:
+            rec["src"] = src
+        if note:
+            rec["src_note"] = note
+        draft.append(rec)
+
+    path = work.root / "translation.draft.json"
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(draft, ensure_ascii=False, indent=2), encoding="utf-8")
+    os.replace(tmp, path)                                # atomic: never a torn draft
+    return path, rows
 
 
 def build(work: WorkDir, draft_path: Path, cfg: Config
@@ -183,12 +272,35 @@ def main(argv: list[str] | None = None) -> None:
                    help="draft JSON [{id,text_ru}] (default: <workdir>/translation.draft.json)")
     p.add_argument("--config", type=Path, default=Path("overdub.toml"),
                    help="TOML config for _is_bad thresholds; built-in defaults if absent")
+    p.add_argument("--plan", action="store_true",
+                   help="print the chunk cut as JSON and stop (chunked path, long transcripts)")
+    p.add_argument("--join", action="store_true",
+                   help="assemble the draft from <workdir>/translate/*.json first, then build")
+    p.add_argument("--chunk", type=int, default=DEFAULT_CHUNK, metavar="N",
+                   help=f"sentences per chunk (default {DEFAULT_CHUNK}). The SAME value must be "
+                        f"used for --plan and for --join, or the chunk file names will not match.")
     args = p.parse_args(argv)
 
     work = WorkDir(args.workdir)
     if not work.sentences.exists():
         sys.exit(f"[FAIL] {work.sentences} not found -- run transcribe first")
-    draft_path = args.draft or (work.root / "translation.draft.json")
+
+    sentences = json.loads(work.sentences.read_text(encoding="utf-8"))
+    if args.plan:
+        # Printed as one JSON line so the orchestrator can hand it to the workflow verbatim
+        # instead of retyping ranges -- the same handoff route E's --plan uses.
+        print(json.dumps(plan_chunks(sentences, args.chunk), ensure_ascii=False))
+        return
+
+    if args.join:
+        if args.draft:
+            sys.exit("[FAIL] --join builds the draft from the chunk files; --draft contradicts it")
+        draft_path, rows = join_chunks(work, plan_chunks(sentences, args.chunk))
+        print(f"[ok] joined {len(rows)} chunk(s) -> {draft_path}")
+        for name, n in rows:
+            print(f"  chunk {name}  {n} sentences")
+    else:
+        draft_path = args.draft or (work.root / "translation.draft.json")
     if not draft_path.exists():
         sys.exit(f"[FAIL] draft not found: {draft_path}")
 

@@ -33,6 +33,7 @@ divider. Look things up through this index, not by scrolling.
 - `07-30` separate route, separate page, grades nothing
 
 **Translate**
+- `08-05` route B gets a chunked translator, as an escape hatch (chained chunks, not parallel)
 - `07-28` route B step 2 fans out through a Workflow
 - `07-18` Sonnet semi-automatic is the PRIMARY route
 - `07-19` 4-way bake-off † · `07-18` Gemma replaces Qwen3 † · `07-15` translate stage BUILD †
@@ -94,6 +95,53 @@ divider. Look things up through this index, not by scrolling.
 † carries a `SUPERSEDED` header — the code it describes is gone or changed. Read the header first.
 
 ---
+
+## 2026-08-05 — route B gets a CHUNKED translator, as an escape hatch and not as the default
+
+`7xTGNNLPyMI` (Karpathy, "Deep Dive into LLMs", 3.5 h, 2259 sentences) defeated the per-video
+translator twice: 1200/2258 on 08-04 and 1500/2259 on 08-05, the second through the workflow with
+the shipped prompt. Both stopped around two thirds in — an agent reading a 411 KB transcript and
+then emitting ~250 KB of JSON. The skill already said not to respawn a third time; it had nothing
+to offer instead, so a long video simply could not be dubbed.
+
+**The MECHANISM is deliberately not decided here.** Context window and a turn/tool-use budget both
+fit; INBOX (2026-08-04) argued the second from a stronger observation — a second wave that produced
+ZERO new records and left drafts byte-identical to wave 1 — while the 08-05 retry did progress
+(1200 → 1500). Chunking cuts transcript size, output volume and turn count simultaneously, so it is
+the fix under either reading, and choosing between them was not on this change's critical path.
+It IS on the path of anything narrower (a predicted safe size, a resume-from-partial), so that work
+confirms the mechanism first.
+
+Now it can: `--plan` cuts the transcript, one sub-agent takes each chunk into
+`work/<id>/translate/<from>-<to>.json` in the ORDINARY draft record shape, and `--join`
+concatenates them into `translation.draft.json` before the existing build runs untouched. Nothing
+downstream of the seam moved a byte, which is the whole point — this is a different way to fill the
+same draft, not a different contract.
+
+**Rejected: making it the default.** The per-video agent sees the entire video at once and the
+route's own prompt calls that its advantage. Chunking trades that for coverage, so it stays the
+exception a measured `INCOMPLETE` earns.
+
+**Rejected: parallel chunks.** The user's call, and the right one: chunk N reads the tail of chunk
+N-1 and is told the file wins over its own instinct on any recurring term. A video that renames a
+concept halfway through is worse than one that names it slightly awkwardly throughout. The price is
+a serial chain per video — videos still run concurrently, so a queue does not pay it, a single long
+video does.
+
+**Rejected: a second chunking rule.** `plan_chunks` is imported from `build_clean.py` (route E)
+rather than re-derived. Two copies of a boundary rule that must agree with itself is how the
+planner and the join come to name files nobody wrote.
+
+`DEFAULT_CHUNK = 400` is labelled in code as a HYPOTHESIS off one measurement, not a constant: it
+sits ~4× under the observed ceiling with the whole-transcript read removed as well. Re-site it once
+a wave of long videos exists.
+
+One thing this cost, worth recording because it nearly shipped: the join was written with a fourth
+coverage check (`is every sentence in some chunk`), it went green, and a mutation showed the test
+covering it was passing for another reason entirely — the guard was unreachable, since `plan_chunks`
+covers `0..n-1` by construction and `build()` re-validates the assembled draft anyway. Deleted, and
+its one useful sentence (a repair renumbers ids, so the cut moves) folded into the missing-file
+message, which is where that failure actually surfaces.
 
 ## 2026-08-03 — route D is DELETED and route C stops assessing; one route answers "what is in it"
 

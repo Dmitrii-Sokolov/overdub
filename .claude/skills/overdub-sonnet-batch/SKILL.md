@@ -208,8 +208,90 @@ $again = @($ids | Where-Object { -not (Test-Path "work\$_\translation.json") -or
   (Get-Item "work\$_\sentences.json").LastWriteTime -gt (Get-Item "work\$_\translation.json").LastWriteTime })
 ```
 
-Two rounds that both leave the same video short is a video to look at by hand, not to respawn a
-third time — read its `sentences.json` size first (a 5930-line transcript is the known hard case).
+**A second wave is for a DROPPED or `CONTRACT-MISSING` agent, not for an `INCOMPLETE` one.** An
+`INCOMPLETE` video goes straight to the chunked path below — see the trigger there.
+
+### When one agent cannot cover the video (added 2026-08-05)
+
+**ONE `INCOMPLETE` on a video is the trigger. Do not re-run the per-video translator for it.**
+Measured on `7xTGNNLPyMI` (Karpathy, 3.5 h, 2259 sentences): 1200/2258, then 1500/2259 on the
+retry — an agent reading a 411 KB transcript and then emitting ~250 KB of JSON, stopping about two
+thirds through. That retry cost 29 minutes for information the first attempt had already given
+(2026-08-05); the rule used to ask for two rounds and it was wrong.
+
+**Why it stops is NOT established, and chunking does not depend on knowing.** Context window and a
+turn/tool-use budget both predict this shape, and INBOX raised the second on 2026-08-04 with the
+sharper evidence for it: on that batch the SECOND wave wrote its marker and then produced ZERO new
+records, leaving drafts byte-identical to wave 1. The 2026-08-05 retry did make progress
+(1200 → 1500), so the two runs do not even agree on the shape. Chunking cuts transcript size, output
+volume and turn count at once, which is why it works either way — but do not repeat the window
+explanation as fact, and do not design anything narrower on it without confirming the mechanism.
+
+**Above ~2000 sentences, skip the per-video attempt entirely and start here.** Corpus of 227
+route-B drafts, counted 2026-08-05: exactly one partial (`477qF6QNSvc`, 1550/2514). At or below
+2004 sentences — 223 drafts, zero partial. Above it, four videos, two of which failed:
+
+| sentences | video | outcome on the per-video translator |
+|---|---|---|
+| 2259 | `7xTGNNLPyMI` | INCOMPLETE twice (1200, then 1500) |
+| 2379 | `cc5l66FwpQ4` | complete |
+| 2514 | `477qF6QNSvc` | INCOMPLETE (1550) |
+| 2829 | `kfM-yu0iQBk` | returned `OK` one id SHORT (2828/2829); completed after a re-run |
+
+**So this is not a failure threshold and must not be quoted as one** — the outcomes do not order by
+size: 2379 sailed through while both 2259 and 2514 stalled. 2000 is where the odds stop paying for
+the attempt, resting on the clean lower half (0 of 223), not on any claim that a bigger video will
+fail. INBOX said "do NOT site a size threshold on this sample" on 2026-08-04 and that warning is
+about a FAILURE threshold; this is not one, and the disclaimer above is the whole reason it may be
+written down at all.
+
+Note what the 2829 row actually shows, because it is the more useful lesson: **an agent's own
+completeness status is uncorrelated with completeness.** It said `OK` and was short, and
+`build_translation.py`'s hard exit was the only thing between that and a dub missing a sentence.
+That is the guardrail earning its keep, and the argument against ever relaxing it.
+
+Two things make the rate above 2004 a FLOOR, both worth knowing before the number is trusted
+further: a video that failed once and passed on a retry is indistinguishable from a clean success
+afterwards (the draft is overwritten), and **sentence count is a proxy for what actually binds,
+which is output VOLUME in characters** — PLAN carries the re-measurement.
+
+Switch that video to one agent per CHUNK. The seam does not move: each agent writes the ordinary
+draft record shape into `work/<id>/translate/<from>-<to>.json`, and `--join` concatenates them into
+`translation.draft.json` before building `translation.json` exactly as before.
+
+```powershell
+.venv-asr\Scripts\python.exe -X utf8 scripts\build_translation.py "work\<id>" --plan
+```
+
+Feed that cut to the workflow, adding `prev` (the previous chunk's file name) to every job but the
+first — that is what carries terminology across a boundary:
+
+```
+Workflow: {name: "translate-chunks", args: {root: "D:\\code\\overdub", jobs: [
+  {video: "<id>", from: 0, to: 371},
+  {video: "<id>", from: 372, to: 810, prev: "0-371.json"}, ...]}}
+```
+
+Chunks of one video are CHAINED (chunk N reads N-1's tail for terminology); different videos run in
+parallel. Then join and build in one command — same helper, same contract, same `[warn]`s:
+
+```powershell
+.venv-asr\Scripts\python.exe -X utf8 scripts\build_translation.py "work\<id>" --join
+```
+
+Three things that bite:
+
+- **`--chunk N` must match between `--plan` and `--join`**, or the join looks for file names nobody
+  wrote. Pass it to neither and both use the same default.
+- **A `--repair-asr` pass renumbers every id, so the cut moves and the chunk files on disk go
+  stale.** `invalidate_downstream` deletes them for you; the join's missing-file message names this
+  as one of its two causes.
+- **A present `translation.draft.json` is not evidence on this path** — it is derived from the chunk
+  files ([`docs/queue-contract.md`](../../../docs/queue-contract.md) §5, which spells out that route
+  B's draft changes sides depending on which translator ran).
+
+This is the escape hatch, not the default: the per-video agent sees the whole video at once, which
+is this route's stated advantage, and chunking trades some of it for coverage.
 
 ### The summary half
 

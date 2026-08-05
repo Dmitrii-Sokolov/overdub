@@ -368,6 +368,25 @@ the 2026-07-24 36-run split (synthesize 52.6 + verify 7.6 + mux 7.4 + separate 4
 (Silero 0.14-0.17 vs F5 0.70-0.92 — unlabelled, that pair is two unquotable numbers), and every
 `breakdown_pct`. Re-derive from `rtf_work` on the next pass.
 
+**(E) The chunked-translate threshold is measured on the WRONG GRAIN (2026-08-05).** The route-B
+skill sends a video straight to the chunked translator above ~2000 SENTENCES, off a count over 227
+drafts: one partial in the corpus (`477qF6QNSvc`, 1550/2514), zero partial at or below 2004, two
+failures among the four videos above it. What binds the per-video agent is not the sentence count
+but the OUTPUT VOLUME it has to emit — so a transcript of long sentences hits the wall sooner than
+one of clipped speech at the same count, and the threshold as written cannot see the difference.
+
+Re-site it on characters: sum `len(text)` over `sentences.json` per video, split by the same
+outcome, and quote whichever separates the two classes better. What must NOT be carried over is the
+2-in-4 rate — it is a FLOOR, because a video that failed once and passed on a retry leaves a
+complete draft behind and reads as a clean success. Recovering the real rate needs a record the
+pipeline does not keep today (the draft is overwritten), so either accept the floor and say so, or
+persist the `INCOMPLETE` fraction somewhere first.
+
+**And 2000 is not a failure threshold** — the outcomes interleave (2259 failed, 2379 passed, 2514
+failed, 2829 passed) and the largest transcript in the corpus is a single-agent success. It is a
+"stop paying for the attempt" line resting on the clean lower half. Anything quoting it as "videos
+over 2000 sentences fail" is wrong.
+
 ## Backlog
 
 **Throughput / weaker hardware.** With TTS fast on CPU and the GPU idle during synthesis, the
