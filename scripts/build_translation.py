@@ -62,6 +62,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from overdub import pronounce                            # noqa: E402
 from overdub.config import Config                       # noqa: E402
 from overdub.normalize import normalize_for_tts         # noqa: E402
+from overdub.runreport import record_stage_timing        # noqa: E402
 from overdub.stages.translate import _is_bad            # noqa: E402
 from overdub.workdir import WorkDir                      # noqa: E402
 
@@ -123,6 +124,49 @@ def _load_draft(path: Path) -> dict[int, tuple[str, str | None, str]]:
             note = ""
         out[sid] = (text_ru, src, note.strip())
     return out
+
+
+def wave_wall_s(work: WorkDir, chunk_paths: list[Path] | None = None) -> float | None:
+    """Wall-clock of the Sonnet translate wave for this video, in seconds, or None if unmeasurable.
+
+    NOTHING ELSE RECORDS THIS. The LLM call left the host at the translate seam, so the wave is not
+    a pipeline stage: `translate` appeared in the `stages` map of ZERO of 252 timings.json on
+    2026-08-05, and the only other copy of the number is the `duration_ms` of a `Workflow`
+    notification, which is per WAVE (not per video) and dies with the session. So every throughput
+    figure the project publishes silently excludes the seam — measured the same day, a digest
+    reading ×3.73 against an actual ×1.31.
+
+    Both ends come off the filesystem because neither side can stamp a clock: the sub-agent is
+    forbidden to report its own runtime (queue-contract §7 — it touches a marker and the filesystem
+    stamps it), and a workflow script cannot call Date.now() at all (it would break resume).
+
+      start = translate.started, touched by the agent as its FIRST action
+      end   = the last thing an agent wrote: the draft, or the newest chunk file on the chunked
+              path (there --join writes the draft itself, so the draft's mtime is OUR clock, not
+              the agent's)
+
+    Returns None rather than a guess in every case it cannot stand behind — a missing marker costs
+    a timing and nothing else (§7), and a wrong number here would be laundered into total_wall_s
+    and RTF, where nothing downstream could ever contradict it.
+    """
+    marker = work.root / "translate.started"
+    if not marker.exists():
+        return None
+    ends = [p for p in (chunk_paths or []) if p.exists()]
+    if not ends:
+        draft = work.root / "translation.draft.json"
+        if not draft.exists():
+            return None
+        ends = [draft]
+    start = marker.stat().st_mtime
+    end = max(p.stat().st_mtime for p in ends)
+    if end <= start:
+        return None                                      # stale marker from an earlier attempt
+    # A marker older than the transcript belongs to a PREVIOUS translate of a since-repaired
+    # sentences.json: measuring from it would bill this wave for the gap between two runs.
+    if work.sentences.exists() and start < work.sentences.stat().st_mtime:
+        return None
+    return round(end - start, 3)
 
 
 def join_chunks(work: WorkDir, chunks: list[dict]) -> tuple[Path, list[tuple[str, int]]]:
@@ -292,10 +336,13 @@ def main(argv: list[str] | None = None) -> None:
         print(json.dumps(plan_chunks(sentences, args.chunk), ensure_ascii=False))
         return
 
+    chunk_paths: list[Path] = []
     if args.join:
         if args.draft:
             sys.exit("[FAIL] --join builds the draft from the chunk files; --draft contradicts it")
-        draft_path, rows = join_chunks(work, plan_chunks(sentences, args.chunk))
+        plan = plan_chunks(sentences, args.chunk)
+        draft_path, rows = join_chunks(work, plan)
+        chunk_paths = [work.translate_dir / f"{c['from']}-{c['to']}.json" for c in plan]
         print(f"[ok] joined {len(rows)} chunk(s) -> {draft_path}")
         for name, n in rows:
             print(f"  chunk {name}  {n} sentences")
@@ -313,6 +360,17 @@ def main(argv: list[str] | None = None) -> None:
               "(see references/translate-contract.md); reported as scanned=false")
     elif n_scanned < total:
         print(f"[warn] only {n_scanned}/{total} records carried 'src' -- partial source scan")
+    # The seam's own wall clock, recorded into the SAME map the pipeline's stages use, so the
+    # digest's stage split and total_wall_s stop pretending translation is free. From here on a
+    # run's total INCLUDES the seam and is not comparable with one from before 2026-08-05.
+    wall = wave_wall_s(work, chunk_paths)
+    if wall is None:
+        print("[warn] translate wave not timed (no usable translate.started) -- the seam is "
+              "missing from this video's total_wall_s and stage split")
+    else:
+        record_stage_timing(work, "translate", wall)
+        print(f"[ok] translate wave {wall:.0f}s -> timings.json")
+
     print(f"[ok] {total} sentences -> {work.translation} "
           f"({n_fail} flagged, {n_anom} source anomalies, {n_scanned}/{total} src-scanned)")
     for sid, kind, note, src_en in anom_rows:

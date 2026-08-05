@@ -9,6 +9,7 @@ gate, id-contiguity — so a malformed draft fails LOUD (exit) instead of reachi
 from __future__ import annotations
 
 import json
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -357,6 +358,61 @@ def test_join_exits_when_a_stale_plan_names_chunks_that_are_not_on_disk() -> Non
     # the same signal an agent that never finished gives, and the message names both causes.
     sents = [_sent(i, f"line {i}") for i in range(12)]
     assert _join_exits(sents, {"0-3.json": _ru(0, 3), "4-7.json": _ru(4, 7)}, 4)
+
+
+# --- translate-wave wall clock (the seam's only timing) ----------------------------------------
+
+
+def _wave(marker_at=None, draft_at=None, chunks_at=None, sentences_at=0.0):
+    """Build a workdir with controlled mtimes and return wave_wall_s(). Offsets are seconds from
+    an arbitrary epoch; None means "do not create that file"."""
+    base = 1_700_000_000.0
+    with tempfile.TemporaryDirectory() as d:
+        tmp = Path(d)
+        work = WorkDir(root=tmp)
+        work.sentences.write_text(json.dumps([_sent(0, "a")]), encoding="utf-8")
+        os.utime(work.sentences, (base + sentences_at, base + sentences_at))
+        if marker_at is not None:
+            (tmp / "translate.started").write_text("", encoding="utf-8")
+            os.utime(tmp / "translate.started", (base + marker_at, base + marker_at))
+        if draft_at is not None:
+            p = tmp / "translation.draft.json"
+            p.write_text("[]", encoding="utf-8")
+            os.utime(p, (base + draft_at, base + draft_at))
+        paths = []
+        for i, at in enumerate(chunks_at or []):
+            work.translate_dir.mkdir(parents=True, exist_ok=True)
+            p = work.translate_dir / f"{i}-{i}.json"
+            p.write_text("[]", encoding="utf-8")
+            os.utime(p, (base + at, base + at))
+            paths.append(p)
+        return build_translation.wave_wall_s(work, paths)
+
+
+def test_wave_wall_measures_marker_to_draft() -> None:
+    assert _wave(marker_at=10, draft_at=310) == 300.0
+
+
+def test_wave_wall_none_without_a_marker() -> None:
+    # queue-contract §7: a missing marker costs the timing and nothing else. None, never a guess —
+    # a fabricated number here would be laundered into total_wall_s where nothing can contradict it.
+    assert _wave(marker_at=None, draft_at=310) is None
+
+
+def test_wave_wall_none_when_the_marker_is_not_older_than_the_output() -> None:
+    assert _wave(marker_at=310, draft_at=10) is None
+
+
+def test_wave_wall_none_when_the_marker_predates_the_transcript() -> None:
+    # A repair rewrites sentences.json; a marker from before it belongs to a previous translate,
+    # and measuring from it would bill this wave for the gap between two runs.
+    assert _wave(marker_at=10, draft_at=310, sentences_at=100) is None
+
+
+def test_wave_wall_prefers_chunk_mtimes_over_the_joined_draft() -> None:
+    # On the chunked path --join writes the draft, so the draft's mtime is OUR clock, not the
+    # agent's. The last CHUNK is the last thing an agent wrote.
+    assert _wave(marker_at=10, draft_at=9999, chunks_at=[100, 250, 310]) == 300.0
 
 
 if __name__ == "__main__":

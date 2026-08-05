@@ -22,10 +22,15 @@ export const meta = {
 // into translation.draft.json before building translation.json exactly as before. Everything
 // downstream of the seam is byte-identical either way.
 //
-// NO MARKER FILE HERE, and none is needed — the same reasoning queue-contract §7 gives route E.
-// translate.started exists because a per-video agent's only other artifact is one big draft, so a
-// wave that did not fan out is otherwise invisible. Here the chunk files ARE per-agent evidence:
-// six files with six mtimes say more than one marker would, and --join names the missing one.
+// THE MARKER IS NOT FOR VERIFICATION HERE, IT IS THE WAVE'S START CLOCK. Verification needs none
+// on this path — the chunk files ARE per-agent evidence, six files with six mtimes say more than
+// one marker would, and --join names the missing one (the reasoning queue-contract §7 gives
+// route E). But build_translation.py times the seam as `last agent write - translate.started`,
+// and without a start stamp a chunked video contributes NOTHING to the one measurement that says
+// what the translate seam costs. So the FIRST chunk touches it and the rest do not: one marker
+// per video, same name and same meaning as the per-video route, and the chain guarantees the
+// first chunk really is first. Re-running a middle chunk alone therefore leaves the marker
+// pointing at the original wave — that video's recorded wall is then a floor, not its cost.
 //
 // THE CHUNK BOUNDARIES ARE NOT DECIDED HERE. build_translation.py --plan cuts on the longest pause
 // near the target and the same function re-derives the cut at --join time, so the planner and the
@@ -76,7 +81,19 @@ CONTINUITY. Yours is the FIRST chunk of this video, so there is nothing before i
 Russian for the recurring terms, products and names carefully and stay consistent with yourself:
 the agents translating the later chunks read your output and are told to follow it.`
 
-  return `MANDATORY FIRST READ: ${CONTRACT}
+  // Only the first chunk of a video stamps the wave's start. Later ones must not: the marker is
+  // one per video, and a chunk re-touching it would move the start forward and report the wave as
+  // shorter than it was.
+  const marker = job.prev ? '' : `Your FIRST action, before reading anything: create the empty marker file
+${dir}\\translate.started
+
+Use PowerShell: New-Item -ItemType File -Force "${dir}\\translate.started" | Out-Null
+Its timestamp is where this video's translate wall is measured FROM. Do not write a timestamp INTO
+the file and never report your own runtime — the filesystem stamps it, you only touch it.
+
+`
+
+  return `${marker}MANDATORY FIRST READ: ${CONTRACT}
 That file is the translate-seam contract: the translation rules (mirrored from the local route's
 SYSTEM prompt), the source-anomaly vocabulary, and the exact draft schema. Read ALL of it before
 translating a single sentence. If it is missing or unreadable, STOP and return the single line

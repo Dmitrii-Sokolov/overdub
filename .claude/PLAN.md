@@ -387,6 +387,30 @@ failed, 2829 passed) and the largest transcript in the corpus is a single-agent 
 "stop paying for the attempt" line resting on the clean lower half. Anything quoting it as "videos
 over 2000 sentences fail" is wrong.
 
+**(F) `total_wall_s` CHANGED SCOPE on 2026-08-05 — it now includes the translate seam.** Not a
+contamination like (C): the number was always missing a real cost and now is not.
+`build_translation.py` records the Sonnet wave into `stages["translate"]`, so from that date a run's
+`total_wall_s`, `rtf`, `breakdown_pct` and the batch stage split all count the seam. **Before it,
+`translate` was absent from the `stages` map of all 252 timings.json on disk** — so every published
+throughput figure from before excludes it and the two are not comparable. Measured on
+`7xTGNNLPyMI` the same day: stage walls alone imply ×3.73 over the corpus, the real end-to-end
+figure was ×1.31.
+
+Three things to know before quoting the new number. It is only as good as `translate.started`, so a
+video whose agent skipped the marker records NO wave and its total silently reverts to the old
+meaning — the helper prints a `[warn]` and that warning is the only signal. A chunked video whose
+middle chunk was re-run alone measures from the ORIGINAL wave's marker, so its wall is a floor. And
+the seam wall is orchestrator time, not machine time: it includes the sub-agents' own latency and
+queueing behind the concurrency cap, which is exactly what makes it the right input for the
+overlap question and the wrong input for a GPU-utilisation one.
+
+**What it is FOR:** sizing the pipelining decision — the batch is stage-major
+(`for st in stages: for j in jobs`, `cli.py`), so the translate wave is a full barrier during which
+the GPU idles, and nothing has ever measured what that barrier costs. Collect one batch, then
+decide. Note the stage-major rationale (DECISIONS 2026-07-19) is partly EXPIRED: its core argument
+was that a model's lifetime is one stage sweep so peak VRAM is the max over models rather than
+their sum, and it was sized around the local ~8-9 GB Gemma translator that no longer exists.
+
 ## Backlog
 
 **Throughput / weaker hardware.** With TTS fast on CPU and the GPU idle during synthesis, the

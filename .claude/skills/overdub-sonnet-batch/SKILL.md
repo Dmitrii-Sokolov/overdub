@@ -410,10 +410,16 @@ with the videos and segments that need a listen.
 **The digest's `throughput` cannot answer that and must never be quoted as if it could.** It is
 Σ(`video_sec`) / Σ(`total_wall_s`), and `total_wall_s` is the SUM OF THE SEVEN STAGE TIMERS —
 verified by adding up `vWidan8ggGo`'s seven stages, which reproduce its `total_wall_s` exactly.
-Everything between the timers is invisible to it: process starts, the gaps between invocations,
-and on this route the whole Sonnet translate wave, which is not a stage at all — `translate`
-appears in the `stages` map of NO `run.json` on disk (checked over all 193 of them, 2026-08-02;
-re-check the property, not the count, if you need it again).
+Everything between the timers is invisible to it: process starts and the gaps between invocations.
+
+**The translate wave used to be invisible here too and no longer is (2026-08-05).**
+`build_translation.py` now records it into `stages["translate"]`, so on a video translated since
+that date the seam IS inside `total_wall_s`. Two consequences, both load-bearing. A total from
+before that date is not comparable with one from after — PLAN "Numbers to re-measure" (F) carries
+the boundary. And the recording depends on `translate.started`: when the helper prints
+`[warn] translate wave not timed`, that video's total silently means the OLD thing, so read the
+helper's output before trusting a total. What is still outside every timer, always: process starts
+and the human's gaps.
 
 So compute the real ratio from the stamps. Three `STEP_ELAPSED_S=` lines (steps 1, 1b, 3) plus
 step 2's workflow `duration_ms ÷ 1000`. The queue's audio comes off the run reports:
