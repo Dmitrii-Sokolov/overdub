@@ -205,6 +205,13 @@ Parakeet worker has exited, and the Sonnet agents run off-host. `separate` is th
 inputs are all already on disk (`source.mkv`, plus a transcript to prove a dub is coming), so it is
 the only work available to fill that hole.
 
+**The `.venv-demucs` preflight moved with it.** Step 3 still lists that check, but the first stage
+that needs demucs now runs HERE — run it before the sweep, not before the resume:
+
+```powershell
+.venv-demucs\Scripts\python.exe -c "import demucs; print('demucs ok')"
+```
+
 ```powershell
 Start-Process -NoNewWindow .venv-asr\Scripts\python.exe `
   -ArgumentList '-X','utf8','-m','overdub','--batch','queue.txt','--only','separate'
