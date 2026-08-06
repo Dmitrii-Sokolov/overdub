@@ -105,12 +105,20 @@ diverge from it.
 
 ## Design rules
 
-- Every TTS segment goes through ASR verification (whisper-small round-trip +
-  normalized text similarity), always on raw audio — before atempo. Failed
-  segments are flagged in the run report; for engines with a random seed, retry
-  with a new seed up to N times first (Silero is deterministic — reseeding is a
-  no-op, so its failures are flagged directly). The pipeline never blocks on a
-  bad segment, never hides one.
+- ASR verification (whisper-small round-trip + normalized text similarity) runs on raw
+  audio — before atempo — and is **OFF by default since 2026-08-06**
+  (`verify_roundtrip`, DECISIONS). It measured 24 flags over 5852 units, of which
+  two were real defects, for ~0.94 h of GPU per 123-video batch. Turn it back ON
+  to re-measure after any engine, voice or normalization change: it is the only
+  detector that HEARS the output, so its flag rate is a statement about the
+  engine's health on that day and nothing else can produce one. With it off,
+  `run.json` carries `verify.roundtrip: false` and the digest prints
+  `verify off` — never `verify 0`, which would claim the audio was heard.
+  Failed segments are flagged in the run report; for engines with a random seed,
+  retry with a new seed up to N times first (Silero is deterministic — reseeding
+  is a no-op, so its failures are flagged directly). The pipeline never blocks on
+  a bad segment, never hides one. The completeness text check lives in the same
+  stage and is unaffected by the switch.
 - All intermediate artifacts (transcript, translation, per-segment audio) are
   persisted to the work dir. Every stage must be resumable and re-runnable in
   isolation — the pipeline is semi-automated by design.

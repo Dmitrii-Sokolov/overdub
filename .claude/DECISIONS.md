@@ -71,6 +71,7 @@ divider. Look things up through this index, not by scrolling.
 - `07-16` dead-air elimination BUILD † · `07-16` interim ear verdict
 
 **Pipeline, batch, artifacts**
+- `08-06` verify round-trip ships OFF (2 real defects in 24 flags); completeness stays
 - `08-03` CHANGELOG.md retired; measurements retire to DECISIONS
 - `07-28` the tail DEGRADES instead of failing: a miss costs a track, not the artifact
 - `07-19` stage-major is the default batch order · `07-19` the VRAM rule is a budget
@@ -95,6 +96,48 @@ divider. Look things up through this index, not by scrolling.
 † carries a `SUPERSEDED` header — the code it describes is gone or changed. Read the header first.
 
 ---
+
+## 2026-08-06 — the verify ROUND-TRIP ships OFF; the completeness check in the same stage stays ON
+
+**Read by hand, all 24 of them.** Over the 149-video batch of 2026-08-06: 123 videos, 5852 render
+units, **24 `low_similarity` flags = 0.41%**, no `empty_hyp`, no `missing_wav`, similarity median
+0.991 and worst 0.631. Of the 24, **two were real dub defects** — `1WMbX0G3KZM` u127, where the
+first of four sentences is absent from the audio entirely, and `1KEvpgu77V8` u1213, where Silero
+held a final vowel into a long drone. Four more were the Latin-spelling class (`pronounce` owns
+that, not TTS). The remaining ~18 were the metric failing on 1-3 word units, where one wrong token
+sinks the score: "Эм..." heard as "М." scores 0.667 and is a correct render. Cost of the pass:
+**0.94 h of GPU per 123-video batch, 11% of its stage wall.**
+
+**Decision.** `verify_roundtrip = False`. The stage still runs: it writes `report.json`, keeps its
+`synth_key`/`units_key` self-invalidation, and still runs the completeness text check — which costs
+no GPU and shares the stage by placement, not by dependency (199 flags on the same batch, including
+71 `num_loss`). Only the whisper-small load and the per-unit comparison are skipped, and the model
+is not loaded at all, because that load IS the cost.
+
+**Rejected: deleting the stage.** It would take completeness with it for no extra saving.
+
+**Rejected: keeping it for units above ~3 words.** It would drop most of the noise and keep both
+real catches, but the saving is small — short units are cheap and the time is in the long ones —
+so it buys precision, not the 0.94 h the switch was asked for. Still the right shape if the
+round-trip is ever turned back on by default.
+
+**What this costs, stated plainly.** This was the only detector that HEARS the output; everything
+else judges text. A defect like the unspoken sentence above is invisible to every other check.
+The 0.41% therefore measures the ENGINE'S HEALTH on 2026-08-06 and nothing more — turn the switch
+back on to re-measure after any engine, voice or normalization change, because with it off the
+pipeline cannot tell a healthy Silero from a broken one.
+
+**Not the stale-wav net, which was the reason to hesitate and turned out not to bind.** Verify's
+reference comes from the current `translation.json`, so a wav rendered from an older translation
+used to self-flag. But `synthesize.done()` already re-renders a unit whose joined `text_tts`
+changed, so a re-translation still forces resynthesis with the round-trip off. The net was a
+SECOND line, not the only one.
+
+**`verify 0` must never appear for an unscanned run.** `report.json` carries
+`verify.roundtrip`, `run.json` copies it, and the digest prints `verify off`. An absent stamp reads
+as `true`, never `false` — every report written before the switch existed had an unconditional
+round-trip, and defaulting the other way would relabel the whole corpus as never-checked. This is
+the same rule `src` follows at the translate seam: not scanned is a different claim from clean.
 
 ## 2026-08-05 — route B gets a CHUNKED translator, as an escape hatch and not as the default
 

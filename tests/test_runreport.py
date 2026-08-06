@@ -134,6 +134,34 @@ def test_build_unit_dedup_speed_and_verify() -> None:
         assert json.loads((Path(d) / "run.json").read_text(encoding="utf-8")) == run
 
 
+def test_verify_roundtrip_absent_stamp_reads_as_scanned() -> None:
+    # Every report written before the switch existed had an unconditional round-trip. Defaulting
+    # the missing stamp to False would relabel the whole corpus as never-checked.
+    with tempfile.TemporaryDirectory() as d:
+        work = _mkwork(d, report=_two_unit_report(),
+                       translation=[{"id": i, "status": "ok"} for i in range(4)])
+        run = runreport.build_run_report(work, _CFG)
+        assert run["verify"]["roundtrip"] is True
+
+
+def test_verify_roundtrip_false_is_carried_into_run_json() -> None:
+    # With the round-trip off, n_flagged 0 means NOT SCANNED. The flag that says so has to survive
+    # into run.json, because that is the only thing standing between "nothing listened" and a
+    # report that reads as a clean audio check.
+    with tempfile.TemporaryDirectory() as d:
+        rep = _two_unit_report()
+        rep["segments"] = [_unit(i, (i // 2) * 2, verify_flag=None) for i in range(4)]
+        rep["verify"] = {"model": None, "roundtrip": False, "n_units": 2, "n_segments": 4,
+                         "n_flagged": 0, "n_retried": 0, "n_repaired": 0}
+        work = _mkwork(d, report=rep,
+                       translation=[{"id": i, "status": "ok"} for i in range(4)])
+        run = runreport.build_run_report(work, _CFG)
+        assert run["verify"]["roundtrip"] is False
+        assert run["verify"]["n_flagged"] == 0
+        # and an unscanned run must not be dragged into triage by the absence of flags
+        assert run["verify"]["by_type"]["low_similarity"] == 0
+
+
 # --- translate by_type --------------------------------------------------------
 def test_translate_by_type_unknown_bucket() -> None:
     with tempfile.TemporaryDirectory() as d:

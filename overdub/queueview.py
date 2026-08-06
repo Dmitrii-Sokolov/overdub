@@ -418,7 +418,10 @@ def render_run_report(run, offenders, summary=None):
     sp = run.get("speed", {}) or {}
     flags_line = (
         f"- flags: translate {tr.get('n_failed', 0)}/{tr.get('n_sentences', 0)}"
-        f" · verify {v.get('n_flagged', 0)}"
+        # "verify 0" and "verify off" are different claims: one says the audio was heard and was
+        # fine, the other that nothing listened. Printing the count for an unscanned run is the
+        # clean-looking-empty-report failure this project forbids.
+        f" · verify {v.get('n_flagged', 0) if v.get('roundtrip', True) else 'off'}"
         f" · completeness {c.get('n_actionable', c.get('n_flagged', 0))}"
         f" (+{c.get('n_advisory', 0)} advisory)"
         f" · speed med {sp.get('median')}/p95 {sp.get('p95')}/max {sp.get('max')}"

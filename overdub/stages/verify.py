@@ -77,7 +77,13 @@ class VerifyStage:
         # session-owned: one whisper-small load per stage SWEEP. Inside a stage the session
         # also dedupes it against synthesize's reseed verifier when both run in the same
         # sweep — across stages it is loaded once per sweep, released at each sweep's end.
-        model = ctx.session.whisper(cfg, cfg.verify_model, role="verify")
+        # Loaded ONLY when the round-trip runs: with it off the stage is pure CPU text work and
+        # loading whisper would spend the whole cost the switch exists to avoid.
+        roundtrip = bool(cfg.verify_roundtrip)
+        model = ctx.session.whisper(cfg, cfg.verify_model, role="verify") if roundtrip else None
+        if not roundtrip:
+            print("       [info] verify: round-trip OFF (verify_roundtrip) — units are NOT "
+                  "checked against the audio; completeness still runs", file=sys.stderr)
         rep = report.load(ctx.work.report)                 # preserve any assemble fields
         n_flag = n_retried = n_repaired = 0
         for u in units:
@@ -90,7 +96,13 @@ class VerifyStage:
             vflag: str | None = None
             hyp = ""
 
-            if not ref:
+            if not roundtrip:
+                # Every per-unit verdict stays None: NOT SCANNED, which is a different fact from
+                # "clean" and must never render as one. The distinction is carried out of here by
+                # rep["verify"]["roundtrip"] below, because a null similarity alone is
+                # indistinguishable from a unit whose check failed to produce a number.
+                pass
+            elif not ref:
                 vflag = "empty_ref"
             elif not wav.exists() or _frames(wav) == 0:
                 vflag = "missing_wav"
@@ -130,7 +142,9 @@ class VerifyStage:
         rep["video_id"] = ctx.work.root.name
         rep["similarity_threshold"] = cfg.similarity_threshold
         rep["similarity_threshold_compressed"] = cfg.similarity_threshold_compressed
-        rep["verify"] = {"model": cfg.verify_model, "synth_key": man.get("synth_key"),
+        rep["verify"] = {"model": (cfg.verify_model if roundtrip else None),
+                         "roundtrip": roundtrip,          # False => n_flagged 0 means NOT SCANNED
+                         "synth_key": man.get("synth_key"),
                          "units_key": man.get("units_key"),
                          "n_units": len(units), "n_segments": len(segs), "n_flagged": n_flag,
                          "n_retried": n_retried, "n_repaired": n_repaired}

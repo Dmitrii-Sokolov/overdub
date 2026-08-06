@@ -504,11 +504,34 @@ def test_verify_asks_for_the_verify_role_while_the_transcriber_is_moved() -> Non
                                                  "units_key": "u"}), encoding="utf-8")
         cfg = Config()
         cfg.whisper_compute_type = "int8_float16"
+        cfg.verify_roundtrip = True     # the round-trip ships OFF (2026-08-06); this test is
+                                        # ABOUT the round-trip, so it asks for it explicitly
         ctx = _ctx(work, cfg)
         seen, rec = _role_recorder()
         ctx.session.whisper = rec                       # type: ignore[method-assign]
         _quiet(VerifyStage().run, ctx)
         assert seen == [("small", "verify", "float16")], seen
+
+
+def test_verify_loads_no_model_when_the_roundtrip_is_off() -> None:
+    """The whole cost of the stage is that model load, so the switch has to prevent it — not
+    just skip the comparison afterwards."""
+    with tempfile.TemporaryDirectory() as d:
+        tmp = Path(d) / VID
+        work = _work(tmp)
+        (tmp / "segments").mkdir(parents=True, exist_ok=True)
+        work.translation.write_text("[]", encoding="utf-8")
+        work.seg_manifest.write_text(json.dumps({"units": [], "synth_key": "k",
+                                                 "units_key": "u"}), encoding="utf-8")
+        cfg = Config()
+        assert cfg.verify_roundtrip is False            # the shipped default
+        ctx = _ctx(work, cfg)
+        seen, rec = _role_recorder()
+        ctx.session.whisper = rec                       # type: ignore[method-assign]
+        _quiet(VerifyStage().run, ctx)
+        assert seen == []
+        rep = json.loads(work.report.read_text(encoding="utf-8"))
+        assert rep["verify"]["roundtrip"] is False       # NOT SCANNED, not "clean"
 
 
 class _FakeEngine:

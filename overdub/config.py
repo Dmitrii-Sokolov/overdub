@@ -203,6 +203,24 @@ class Config:
     demucs_python: Path = Path(".venv-demucs/Scripts/python.exe")  # bed mode only
 
     # verification — whisper-small round-trip
+    verify_roundtrip: bool = False  # OFF since 2026-08-06 (DECISIONS). Measured over 123 videos /
+                                    # 5852 units: 24 flags = 0.41%, and reading all 24 by hand,
+                                    # TWO were real dub defects (an unspoken sentence, a held
+                                    # vowel). The rest were the metric failing on 1-3 word units
+                                    # and the Latin-spelling class, which pronounce owns. ~0.94 h
+                                    # of GPU per 123-video batch for that.
+                                    # WHAT THIS TURNS OFF is the only detector that HEARS the
+                                    # output; everything else in the pipeline judges text. So the
+                                    # 0.41% is a statement that Silero is healthy TODAY, not that
+                                    # the check is worthless — turn it back on to re-measure after
+                                    # any engine, voice or normalization change, and read
+                                    # `verify.roundtrip` in run.json before quoting a flag count.
+                                    # NOT the stale-wav net: synthesize re-renders a unit whose
+                                    # joined text_tts changed, so a re-translation still forces
+                                    # resynthesis with this off (stages/synthesize.py, done()).
+                                    # The completeness text check is UNAFFECTED and still runs —
+                                    # it costs no GPU and lives in the same stage by accident of
+                                    # placement, not by dependency.
     verify_model: str = "small"
     verify_compute_type: str = "float16"   # DELIBERATELY NOT inherited from whisper_compute_type.
                                            # The round-trip verifier is the pipeline's MEASURING

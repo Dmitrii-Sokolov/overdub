@@ -598,6 +598,10 @@ def _build_run_report(work, cfg):
             "items": sa_items,
         },
         "verify": {
+            # Absent stamp = a report from before the switch existed, when the round-trip was
+            # unconditional — so it reads True, never False. Guessing the other way would relabel
+            # every historical run as unscanned.
+            "roundtrip": bool(vr.get("roundtrip", True)),
             "n_units": int(vr.get("n_units", 0) or 0),
             "n_segments": int(vr.get("n_segments", 0) or 0),
             "n_flagged": v_n_flagged,
