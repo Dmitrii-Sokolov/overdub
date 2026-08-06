@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import sys
 import traceback
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -496,6 +497,62 @@ def _run_batch_video_major(urls: list[str], cfg: Config, *, force: bool,
     return _summarize(results, not_run, halted, cfg, order="video-major")
 
 
+def _prefetch_downloads(jobs, stage, cfg, *, force: bool, only: set[str] | None) -> None:
+    """Fetch the batch's videos CONCURRENTLY before the stage sweep. Best-effort, never raises.
+
+    download is the only stage that holds no GPU and is bound by the network, so it is the only
+    one a thread pool helps: on the 2026-08-06 baseline it was 323.8 s of strictly serial fetching
+    (13.3% of machine time) whose longest single video was 82 s — most of it queue, not transfer.
+
+    WHY A PRE-PASS AND NOT A PARALLEL BRANCH INSIDE THE SWEEP. The sweep's inner loop owns the
+    STOP semantics, the cross-stage status machine and failure isolation, all of them pinned by
+    tests; widening it to run jobs concurrently would put the batch's convergence guarantees on
+    the line for one stage's wall clock. Here the sweep is untouched and stays the AUTHORITY: this
+    pass runs the same stage through the same `run_pipeline`, so timings, spans and the artifact
+    contract come from one code path, and anything it fails to fetch simply has `done() == False`
+    when the sweep reaches it — refetched sequentially, reported as an ordinary FAIL row. That is
+    why every exception here is swallowed: a prefetch failure must cost a retry, never a video.
+
+    Per-video timings.json files are distinct, so the concurrent writes do not race each other.
+
+    Output interleaves. `contextlib.redirect_stdout` swaps a PROCESS-global, so it cannot separate
+    thread output, and run_pipeline's own `[run ]/[ok ]` lines carry no video id — the completion
+    lines printed from this thread are what attributes the work.
+    """
+    if only is not None and stage.name not in only:
+        return
+    if force:
+        # --force makes run_pipeline skip done() entirely, so the sweep would fetch every video a
+        # SECOND time and the pre-pass would be pure waste. Everything this pass buys rests on the
+        # sweep skipping what is already on disk, which is exactly what --force switches off.
+        return
+    pending = [j for j in jobs if not stage.done(j.ctx)]
+    width = min(int(getattr(cfg, "download_concurrency", 1) or 1), len(pending))
+    if width <= 1:
+        return
+    print(f"\n--- prefetch: {len(pending)} download(s), {width} at a time")
+    stopped = False
+    with ThreadPoolExecutor(max_workers=width) as pool:
+        futures = {pool.submit(run_pipeline, j.ctx, [stage], force=force, only=only,
+                               owns_session=False): j for j in pending}
+        for fut in as_completed(futures):
+            j = futures[fut]
+            try:
+                fut.result()
+                print(f"[ok  ] prefetched {j.vid}")
+            except StopRequested:
+                stopped = True
+            except Exception as e:                   # noqa: BLE001 — see the docstring
+                print(f"[warn] prefetch {j.vid}: {type(e).__name__}: {e} — the sweep will retry it",
+                      file=sys.stderr)
+    if stopped:
+        # check_stop CONSUMED the file, and this pass has no business owning the halt: it reports
+        # nothing per video and would leave the sweep running against a stop the operator already
+        # made. Put it back and let the sweep honor it at its own checkpoint, with its own row.
+        (cfg.work_root / STOP_NAME).write_text("", encoding="utf-8")
+        print("[stop] STOP seen during prefetch — handing it to the sweep")
+
+
 @dataclass
 class _Job:
     """One video's slot in a stage-major batch. `status` is the cross-stage gate: only
@@ -536,6 +593,13 @@ def _run_batch_stage_major(urls: list[str], cfg: Config, *, force: bool,
         print(f"overdub: {j.url}")
         print(f"work dir: {j.ctx.work.root}")
     halted: str | None = None
+
+    # Concurrent fetch BEFORE the sweep, so the sweep's own download pass finds the artifacts and
+    # fast-skips. Deliberately outside the loop below: that loop's guarantees are the batch's, and
+    # this stage's wall clock does not buy a share of them. Best-effort by contract.
+    dl = next((s for s in stages if s.name == "download"), None)
+    if dl is not None and len(jobs) > 1:
+        _prefetch_downloads(jobs, dl, cfg, force=force, only=only)
 
     for st in stages:
         try:

@@ -101,11 +101,19 @@ def _cfg_file(tmp: Path) -> Path:
     Load-bearing: Config() defaults work_root to ./work, and any test that reaches _run_one
     goes through WorkDir.for_url → mkdir(parents=True). Without this every such test would
     quietly pollute the repo's real work/ directory.
+
+    `download_concurrency = 1` turns the download PREFETCH off for every test driving main from
+    here, and that is deliberate rather than convenient. These tests assert the SWEEP's traversal
+    order against fake stages whose done() never becomes True, so a pre-pass would show up as a
+    second run of every download and drown the property under test. A real download stage makes
+    the sweep's pass a `[skip]`, which is why this only ever bites the fakes. The prefetch has its
+    own tests in test_batch_order.py.
     """
     p = tmp / "overdub.toml"
     root = str(tmp / "work").replace("\\", "/")
     out = str(tmp / "out").replace("\\", "/")
-    p.write_text(f'work_root = "{root}"\noutput_dir = "{out}"\n', encoding="utf-8")
+    p.write_text(f'work_root = "{root}"\noutput_dir = "{out}"\ndownload_concurrency = 1\n',
+                 encoding="utf-8")
     return p
 
 

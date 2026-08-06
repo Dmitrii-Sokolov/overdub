@@ -198,6 +198,91 @@ def test_force_bypasses_done_for_every_pair() -> None:
     assert not [t for t in trace if len(t) == 3]         # done() never consulted under --force
 
 
+# --- download prefetch ---------------------------------------------------------------
+
+class _FetchStage:
+    """A download-shaped fake: done() flips to True once it has run for that video.
+
+    FakeStage's done() never flips, which is exactly what makes it the wrong tool here — the
+    prefetch's whole premise is that the sweep then finds the artifact and skips, so a fake that
+    cannot express "the artifact now exists" would show the pre-pass as pure double work.
+    `fail_once` fails the first attempt only, which is how a transient fetch error looks.
+    """
+
+    name = "download"
+
+    def __init__(self, trace, *, fail_once=(), stop_on=()):
+        self._trace, self._done = trace, set()
+        self._fail_once, self._stop = set(fail_once), set(stop_on)
+
+    def done(self, ctx) -> bool:
+        return ctx.work.root.name in self._done
+
+    def run(self, ctx) -> None:
+        vid = ctx.work.root.name
+        self._trace.append((self.name, vid))
+        if vid in self._stop:
+            (ctx.cfg.work_root / STOP_NAME).write_text("", encoding="utf-8")
+        if vid in self._fail_once:
+            self._fail_once.discard(vid)
+            raise RuntimeError(f"transient fetch failure on {vid}")
+        self._done.add(vid)
+
+
+def test_prefetch_fetches_every_video_before_the_sweep_reaches_transcribe() -> None:
+    trace: list = []
+    stages = [_FetchStage(trace), FakeStage("transcribe", trace)]
+    with tempfile.TemporaryDirectory() as d:
+        code, out = _drive(Path(d), stages)
+    assert code == 0
+    runs = _runs(trace)
+    # the three fetches land first (pool order is not deterministic, so compare as a set), and
+    # the sweep's own download pass adds nothing — done() is True by then
+    assert {v for s, v in runs[:3]} == set(VIDS)
+    assert all(s == "download" for s, _ in runs[:3])
+    assert runs[3:] == [("transcribe", v) for v in VIDS]
+    assert "prefetch:" in out
+
+
+def test_force_turns_the_prefetch_off_so_nothing_is_fetched_twice() -> None:
+    # --force makes run_pipeline skip done() entirely, so a pre-pass would fetch every video and
+    # the sweep would fetch it again. The guard is the whole reason --force opts out.
+    trace: list = []
+    stages = [_FetchStage(trace), FakeStage("transcribe", trace)]
+    with tempfile.TemporaryDirectory() as d:
+        code, out = _drive(Path(d), stages, force=True)
+    assert code == 0
+    assert _runs(trace) == [("download", v) for v in VIDS] + [("transcribe", v) for v in VIDS]
+    assert "prefetch:" not in out
+
+
+def test_a_prefetch_failure_costs_a_retry_and_never_the_video() -> None:
+    # The pre-pass is best-effort and the sweep is the authority: a video it drops still has
+    # done() == False, so the sweep fetches it sequentially and reports it normally.
+    trace: list = []
+    stages = [_FetchStage(trace, fail_once=VIDS[1:2]), FakeStage("transcribe", trace)]
+    with tempfile.TemporaryDirectory() as d:
+        code, out = _drive(Path(d), stages)
+    assert code == 0                                     # the video survived
+    assert ("download", VIDS[1]) in _runs(trace)[3:]     # ...refetched inside the sweep
+    assert _runs(trace).count(("download", VIDS[1])) == 2
+    assert ("transcribe", VIDS[1]) in _runs(trace)
+
+
+def test_a_stop_during_prefetch_is_handed_back_to_the_sweep() -> None:
+    # check_stop CONSUMES the file. The pre-pass reports nothing per video, so owning the halt
+    # there would leave the sweep running against a stop the operator already made.
+    trace: list = []
+    stages = [_FetchStage(trace, stop_on=VIDS[0:1]), FakeStage("transcribe", trace)]
+    with tempfile.TemporaryDirectory() as d:
+        tmp = Path(d)
+        code, out = _drive(tmp, stages)
+        stop_left = (tmp / "work" / STOP_NAME).exists()
+    assert code == 3                                     # the sweep honored it
+    assert not stop_left                                 # ...and consumed it there
+    assert not [t for t in _runs(trace) if t[0] == "transcribe"]
+
+
 # --- STOP --------------------------------------------------------------------------
 
 def test_stop_halts_both_loops_and_is_consumed() -> None:

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import gc
 import sys
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -20,6 +21,15 @@ from .workdir import WorkDir
 
 STOP_NAME = "STOP"
 
+_STOP_LOCK = threading.Lock()
+"""Serializes the see-and-consume in check_stop.
+
+The invariant that needs protecting is "exactly ONE (stage, video) pair can ever observe a STOP"
+— the whole reason the file is consumed at honor time. It held for free while every checkpoint
+ran on one thread; the download PREFETCH (cli._prefetch_downloads) broke that assumption, and
+two threads racing the exists()/unlink() pair would both raise and report two videos as stopped
+for one operator action."""
+
 
 class StopRequested(Exception):
     """STOP file seen at a checkpoint; str(exc) says where ("before stage 'x'")."""
@@ -30,12 +40,13 @@ def check_stop(work_root: Path, where: str) -> None:
     Consuming at honor time means a plain re-run resumes; the stale-file sweep at
     run start (cli.main) is the safety net for a crash between detect and unlink."""
     stop = work_root / STOP_NAME
-    if not stop.exists():
-        return
-    try:
-        stop.unlink()
-    except OSError:
-        print(f"[warn] could not remove {stop} — remove it manually")
+    with _STOP_LOCK:                 # see-and-consume is one indivisible step — see _STOP_LOCK
+        if not stop.exists():
+            return
+        try:
+            stop.unlink()
+        except OSError:
+            print(f"[warn] could not remove {stop} — remove it manually")
     raise StopRequested(where)
 
 
