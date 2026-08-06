@@ -453,6 +453,16 @@ def render_run_report(run, offenders, summary=None):
             " · ".join(f"{_span_clock(s)}-{_span_clock(e)} ({e - s:.1f}s)" for s, e in spans)
             if spans else "timings not recorded (this run predates the span stamp)")
 
+    # What the MIX did about those spans. Printed only when the swap actually happened: 0.0 (a
+    # non-bed mode) and None (a mux predating it) both mean the bed plays there, which the line
+    # above already reports as speech with no dub under it. Claiming a passthrough that did not
+    # happen would be the worse error — the operator would stop expecting to hear the failure.
+    mx = run.get("mux", {}) or {}
+    pass_line = (f"- original audio: {mx.get('orig_passthrough_spans')} span(s) / "
+                 f"{format_dur(mx.get('orig_passthrough_sec'))} of uncovered speech play the "
+                 f"ENGLISH original instead of the bed"
+                 if mx.get("orig_passthrough_sec") else None)
+
     tr = run.get("translate", {}) or {}
     v = run.get("verify", {}) or {}
     c = run.get("completeness", {}) or {}
@@ -500,6 +510,8 @@ def render_run_report(run, offenders, summary=None):
     lines.append(asr_line)
     if gap_line:
         lines.append(gap_line)
+    if pass_line:
+        lines.append(pass_line)
     lines.append(flags_line)
     if fill_line:
         lines.append(fill_line)

@@ -197,6 +197,30 @@ def _load_timings(work):
     return path, (doc if isinstance(doc, dict) else {})
 
 
+def unrecovered_spans(work):
+    """[(start, end)] seconds of speech BOTH ASR reads failed to transcribe — or None.
+
+    The one reader of `detail.transcribe.hole_spans_unrecovered`, because the absence contract is
+    load-bearing and now has two consumers: a run from before the stamp carries the COUNT and not
+    the timings, so a missing key is UNKNOWN, never "checked, nothing uncovered". None and []
+    are different answers and a caller that collapses them silently claims a video was clean.
+
+    Not recomputable. The spans are defined against the VAD's own segments, which live in the
+    Parakeet worker's venv and never reach the disk — this stamp is the only record of them.
+    """
+    tdetail = (_load_timings(work)[1].get("detail") or {}).get("transcribe") or {}
+    spans = tdetail.get("hole_spans_unrecovered")
+    if not isinstance(spans, list):
+        return None
+    out = []
+    for span in spans:
+        try:
+            out.append((float(span[0]), float(span[1])))
+        except (TypeError, ValueError, IndexError, KeyError):
+            continue                                        # a torn entry drops, the rest stand
+    return out
+
+
 def record_stage_timing(work, stage, wall_s) -> None:
     """Upsert ONE stage's wall-clock into work/timings.json, atomically, preserving every other
     stage's entry. Called per stage by the pipeline, so an --only or resumed run rewrites only
@@ -404,13 +428,13 @@ def _build_run_report(work, cfg):
         asr_block["hole_words_recovered"] = int(tdetail.get("hole_words_recovered") or 0)
         asr_block["holes_unrecovered"] = int(tdetail.get("holes_unrecovered") or 0)
         asr_block["hole_sec_unrecovered"] = float(tdetail.get("hole_sec_unrecovered") or 0.0)
-        # The spans themselves, and ONLY when the stage stamped them. A run from before that
-        # stamp has the count and not the timings, and defaulting to [] here would render as
-        # "checked, nothing uncovered" over a count that says otherwise — absence is UNKNOWN,
-        # the same contract floor_ratio and the source block already hold to.
-        spans = tdetail.get("hole_spans_unrecovered")
-        if isinstance(spans, list):
-            asr_block["hole_spans_unrecovered"] = [[float(a), float(b)] for a, b in spans]
+        # The spans themselves, and ONLY when the stage stamped them (see unrecovered_spans:
+        # None is UNKNOWN, [] is checked-and-clean). Defaulting absence to [] here would render
+        # as "nothing uncovered" over a count that says otherwise. The mix reads the same
+        # function — the mux stage swaps the ORIGINAL audio in over exactly these spans.
+        spans = unrecovered_spans(work)
+        if spans is not None:
+            asr_block["hole_spans_unrecovered"] = [[a, b] for a, b in spans]
 
     # --- translate -----------------------------------------------------------
     tr_by_type = {k: 0 for k in _TRANSLATE_FLAGS}
@@ -671,6 +695,11 @@ def _build_run_report(work, cfg):
             # {"dub": bool, "en_srt": bool, "ru_srt": bool} — what the container ACTUALLY
             # carries. None for a report written before 2026-07-28 (unknown, not "complete").
             "tracks": mux_tracks,
+            # Seconds of the container playing the ENGLISH original because the ASR lost the
+            # speech there (bed mode). None on a report written before 2026-08-06 and on a
+            # dub-less one — unknown, never a measured zero.
+            "orig_passthrough_sec": mr.get("orig_passthrough_sec"),
+            "orig_passthrough_spans": mr.get("orig_passthrough_spans"),
         },
         "degraded": degraded,
         "flags_total": flags_total,

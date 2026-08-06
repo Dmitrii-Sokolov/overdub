@@ -9,6 +9,15 @@ Modes (dead-air design, DECISIONS 2026-07-16):
   bed     — Demucs no-vocals bed (separate stage) at ORIGINAL level under the dub
             (ear 2026-07-17: attenuating the bed is worse; production default).
 
+ORIGINAL-AUDIO PASSTHROUGH (2026-08-06), bed mode only. Where the ASR produced no text the
+bed plays music and room tone with the voice stripped out, so speech the pipeline LOST is
+indistinguishable from a deliberate pause and the viewer has no way to tell. Over the spans
+transcribe stamped as unrecovered, the original (voice included) is cross-faded in instead:
+you hear an English voice, badly recorded or not, and the failure explains itself. Masked on
+`holes_unrecovered` only and with the dub's own intervals subtracted, so the original can
+never play under Russian speech; the dub's timeline is untouched, so picture sync cannot move.
+
+
 All modes align the dub's RMS to the original speech loudness (one static gain, ±6 dB cap)
 so an A/B between modes compares MECHANISMS, not loudness. Units whose wav is empty
 (empty_tts / synth_error) are NOT ducked — the original EN plays there at full level as the
@@ -39,6 +48,7 @@ import soundfile as sf
 
 from .. import report
 from ..pipeline import Context
+from ..runreport import unrecovered_spans
 from ..workdir import replace_retry
 from .synthesize import units_of
 
@@ -49,6 +59,10 @@ _ATTACK_S = 0.05                  # duck edge ramps
 _RELEASE_S = 0.30
 _MERGE_GAP_S = 1.0                # merge duck intervals closer than this (no phrase-rate pumping)
 _GAIN_CAP_DB = 6.0                # dub loudness alignment is capped to ±6 dB
+_PASS_FADE_S = 0.030              # bed↔original cross-fade at each passthrough edge: the two
+                                  # sources differ in level AND spectrum, so a hard cut is a click
+_PASS_MIN_S = 0.25                # a passthrough piece shorter than this is dropped — it cannot
+                                  # carry a word, so all it contributes is a transient per edge
 
 
 def _extract(src, dst, *, sr=_MIX_SR, ch=2) -> None:
@@ -115,6 +129,71 @@ def _duck_envelope(n: int, spans: list[tuple[int, int]]) -> np.ndarray:
         seg = env[min(n, b):b1]
         seg[:] = np.minimum(seg, up[:len(seg)])
     return env
+
+
+def passthrough_mask(spans_sec, dub_spans, limit, *, sr=_MIX_SR) -> list[tuple[int, int]]:
+    """Sample intervals where the ORIGINAL audio replaces the bed: the unrecovered-speech spans
+    MINUS every interval the dub occupies, clipped to `limit` samples. Pure.
+
+    Subtracting `dub_spans` is not tidiness. A unit's slot runs to the NEXT unit's start, so the
+    unit BEFORE a hole is free to place audio into it, and swapping there would put the English
+    original under Russian speech — the one thing this feature may never do. `dub_spans` is the
+    same pre-atempo upper bound the duck envelope uses, i.e. a superset of the placed audio, so
+    the subtraction errs toward keeping the bed.
+
+    `spans_sec` must be the UNRECOVERED holes only. A recovered one has a dub over it by
+    definition, and passing `holes` here would mask exactly where the pipeline succeeded.
+    """
+    out: list[tuple[int, int]] = []
+    floor = int(_PASS_MIN_S * sr)
+    for a_sec, b_sec in spans_sec or []:
+        pieces = [(max(0, round(float(a_sec) * sr)), min(int(limit), round(float(b_sec) * sr)))]
+        for da, db in dub_spans or []:
+            cut: list[tuple[int, int]] = []
+            for pa, pb in pieces:
+                if db <= pa or da >= pb:                   # disjoint: the piece survives whole
+                    cut.append((pa, pb))
+                    continue
+                if pa < da:
+                    cut.append((pa, da))
+                if db < pb:
+                    cut.append((db, pb))
+            pieces = cut
+        out += [(a, b) for a, b in pieces if b - a >= floor]
+    return sorted(out)
+
+
+def _xfade(n: int, f: int) -> np.ndarray:
+    """Weight of the ORIGINAL across an n-sample mask: 0→1 in, flat, 1→0 out. Linear, like every
+    other ramp in this pipeline (the duck envelope here, assemble's clip fades)."""
+    w = np.ones(n, dtype="float32")
+    if f > 0:
+        w[:f] = np.linspace(0.0, 1.0, f, dtype="float32")
+        w[-f:] = np.linspace(1.0, 0.0, f, dtype="float32")
+    return w
+
+
+def swap_in_original(base: np.ndarray, patches, *, sr=_MIX_SR) -> float:
+    """Cross-fade each (offset, original-slice) patch over `base` IN PLACE; returns seconds swapped.
+
+    Strictly inside the mask: a sample outside every patch is not read, not written and not
+    scaled, which is what makes "the rest of the mix did not move" checkable instead of hoped
+    for. The one thing that still acts globally is run()'s peak guard — that is a property of the
+    finished sum, and making it per-region would be a worse cure than the disease.
+    """
+    total = 0
+    fade = int(_PASS_FADE_S * sr)
+    for a, clip in patches or []:
+        b = min(a + len(clip), len(base))
+        n = b - a
+        if n <= 0:
+            continue
+        w = _xfade(n, min(fade, n // 2))[:, None]
+        seg = base[a:b]
+        seg *= 1.0 - w
+        seg += clip[:n] * w
+        total += n
+    return total / sr
 
 
 def mux_args(video, *, dub=None, subs=(), out, dub_mix: str) -> list[str]:
@@ -210,6 +289,18 @@ class MuxStage:
             print(f"       [info] mux: {', '.join(gained)} now present — re-muxing",
                   file=sys.stderr)
             return False
+        # Original-audio passthrough lands in the finished MIX while moving no mtime, no track
+        # set, no synth_key and no dub_mix — so without a gate here an output.mkv muxed before
+        # 2026-08-06 keeps playing the bed over its uncovered speech and still reads as current.
+        # Absent key = muxed before the feature existed, so it re-muxes ONCE and gains the stamp
+        # (assemble's atempo_floor gate, same shape). Gated on the video actually HAVING uncovered
+        # speech, because otherwise every workdir on disk would re-encode a multi-GB container to
+        # produce a byte-identical file. A stamped 0.0 is a real answer and never churns.
+        if (ctx.cfg.dub_mix == "bed" and "orig_passthrough_sec" not in stamp
+                and unrecovered_spans(ctx.work)):
+            print("       [info] mux: uncovered speech plays the bed in this output — re-muxing "
+                  "with the original passed through", file=sys.stderr)
+            return False
         try:
             man = json.loads(ctx.work.seg_manifest.read_text(encoding="utf-8"))
         except Exception:
@@ -262,6 +353,8 @@ class MuxStage:
         bed48 = w.root / "_mix_bed48.wav"
         mix_wav = w.root / "_mix_ru.wav"
         gain = 1.0
+        pass_sec = 0.0
+        pass_patches: list[tuple[int, np.ndarray]] = []
         try:
             if tracks["dub"]:
                 _extract(w.dub_audio, dub48)               # 24k mono → 48k stereo
@@ -284,6 +377,18 @@ class MuxStage:
                 if cfg.dub_mix == "bed":
                     _extract(w.source_bed, bed48)
                     base = sf.read(str(bed48), dtype="float32")[0]
+                    # The passthrough slices are cut out HERE, while orig is still in memory: they
+                    # are seconds of audio against a whole track, and the `del` below is what keeps
+                    # a 40-minute video from holding two full copies of it.
+                    #
+                    # bed ONLY, and by decision rather than by omission. Under `duck` the base
+                    # already IS the original and no unit span covers an unrecovered hole, so it
+                    # plays there at full level already — the swap would be a no-op on top of a
+                    # behaviour that is correct by construction. Under `replace` the original is
+                    # deliberately absent, and letting it back in for some spans would make the
+                    # mode mean two things at once.
+                    pass_patches = [(a, orig[a:b].copy()) for a, b in
+                                    passthrough_mask(unrecovered_spans(w), spans, len(orig))]
                     del orig
                 else:
                     base = orig
@@ -302,6 +407,7 @@ class MuxStage:
                     mix = base
                 else:                                      # bed
                     base *= _BED_GAIN
+                    pass_sec = swap_in_original(base, pass_patches)
                     base += dub
                     mix = base
                 peak = 0.0                                 # chunked: no full |mix| copy
@@ -331,11 +437,22 @@ class MuxStage:
                           # the export name is unchanged, so this stamp is the only record
                           "tracks": tracks,
                           "dub_gain_db": (round(20 * float(np.log10(gain)), 2)
-                                          if tracks["dub"] else None)}
+                                          if tracks["dub"] else None),
+                          # How much of this container plays the ENGLISH original because the ASR
+                          # lost the speech there. Reported for the same reason the degraded
+                          # `tracks` stamp is: the export name is unchanged, so without this a
+                          # silent VISUAL failure is merely traded for a silent audible one. 0.0
+                          # is a real answer (nothing to pass through, or a mode that does not do
+                          # it); None means no dub was mixed at all. It also gates done() below.
+                          "orig_passthrough_sec": (round(pass_sec, 1) if tracks["dub"] else None),
+                          "orig_passthrough_spans": (len(pass_patches) if tracks["dub"] else None)}
             report.save(w.report, rep)
         finally:
             for p in (dub48, orig48, bed48, mix_wav, w.output.with_suffix(".mkv.tmp")):
                 p.unlink(missing_ok=True)
+        if pass_sec:
+            print(f"       {len(pass_patches)} span(s) / {pass_sec:.1f}s of uncovered speech play "
+                  f"the ENGLISH original instead of the bed")
         shipped = "dub_mix=" + cfg.dub_mix if tracks["dub"] else "NO DUB"
         print(f"       → {w.output.name} ({shipped}, subs: "
               f"{'+'.join(lang for lang, _ in subs) or 'none'})")
