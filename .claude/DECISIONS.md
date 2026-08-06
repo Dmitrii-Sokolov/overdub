@@ -68,6 +68,7 @@ divider. Look things up through this index, not by scrolling.
 - `07-16` verify is ASR-BLIND, confirmed on real content
 
 **Mix / dead air**
+- `08-06` uncovered speech plays the ORIGINAL; the seam is mux, not assemble
 - `07-17` dead air CLOSED by ear (final) · `07-17` compression back to atempo, bed is the mode
 - `07-16` dead-air elimination BUILD † · `07-16` interim ear verdict
 
@@ -99,6 +100,55 @@ divider. Look things up through this index, not by scrolling.
 † carries a `SUPERSEDED` header — the code it describes is gone or changed. Read the header first.
 
 ---
+
+## 2026-08-06 — where the ASR heard nothing, the ORIGINAL audio plays
+
+Where the transcript is empty the bed played music and room tone with the voice stripped out, so
+speech the pipeline LOST sounded exactly like a deliberate pause. Over the spans transcribe stamps
+as unrecovered, the original is now cross-faded in: the viewer hears an English voice and the
+failure explains itself. Presentational by intent — the operator's ear could not make out ~70% of
+those spans either (2026-08-06 batch), so there is nothing to transcribe and nothing to chase.
+
+**The seam is `stages/mux.py`, not `stages/assemble.py`.** PLAN named assemble; assemble builds
+the RU speech on a silent timeline and never sees the bed. The bed-vs-original layering exists
+only in mux, so that is the one place a source swap can happen at all.
+
+- **bed only, by decision.** Under `duck` the base already IS the original and no unit span covers
+  an unrecovered hole, so it plays there at full level already — the swap would be a no-op laid
+  over behaviour that is correct by construction. Under `replace` the original is deliberately
+  absent; letting it back in for some spans would make the mode mean two things.
+- **The mask subtracts the dub's own intervals.** A unit's slot runs to the NEXT unit's start, so
+  the unit before a hole may place audio into it, and swapping there would put English under
+  Russian. Not hypothetical: `fV8rxPt-QeU` has 20.1 s of uncovered speech and 19.9 s passed
+  through — 0.2 s was the dub. The subtracted set is the pre-atempo superset the duck envelope
+  already uses, so the error is always toward keeping the bed.
+- 30 ms linear cross-fade per edge (the two sources differ in level and spectrum, not just
+  content); pieces under 0.25 s are dropped, since they cannot carry a word and contribute only a
+  transient per edge.
+- `done()` re-muxes a container stamped before this existed, but **only when the video actually
+  has spans** — the unconditional form would re-encode every workdir on disk to produce a
+  byte-identical file.
+
+**The acceptance criterion cannot be measured on the finished MKV, and that is the lesson.** "Every
+other second is byte-identical" reads as a diff of the RU track; done that way it reports 193.5 s
+changed over a 5.7 s mask, with differences running from the mask edge to the end of the file.
+That is AAC: the codec reconstructs the waveform only approximately, so one changed sample shifts
+quantization for every frame after it. Measured on the PCM MIX instead (mux run twice on
+`3owcMLGx0NQ`, once with the mask forced empty): 0.676% of frames differ, first at 501.6000 s and
+last at 501.6+5.68 s against a mask of 501.6-507.3, nothing outside it, peak and length identical.
+Read the lossy artifact and you would have concluded the mix leaks everywhere; read the stage the
+change is IN and it is exact. Generalises past this feature: any "did only the intended part
+move" check must be taken upstream of a lossy encoder.
+
+**PLAN's fixture did not exist.** It stated the 2026-08-06 batch "is stamped and is the working
+fixture"; not one of 146 workdirs carried `hole_spans_unrecovered` — the three named videos were
+transcribed before the stamp landed and had the COUNT only, which is exactly the absent-means-
+unknown case. Recovered by re-running the VAD pass over the surviving `source.wav` + `words.json`,
+which is the same second pass the worker ends with, and accepted only because it reproduced the
+worker's own stamped count and seconds exactly on all three (1/5.7 s, 2/9.8 s, 2/20.1 s). A
+recomputation that has to agree with a number the code already wrote is checkable; one that does
+not is a fabrication with a plausible shape. The spans are cheaper to keep than to re-derive: this
+worked only because `source.wav` survived, and a `work/` cleanup would have ended it.
 
 ## 2026-08-06 — Parakeet-TDT 0.6b v3 replaces whisper as the transcriber
 

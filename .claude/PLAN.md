@@ -72,54 +72,16 @@ next measurement is allowed to overturn it.
 **Slugs, not numbers** (DECISIONS 2026-07-22 — the numbering had crept back in and is removed
 again). Retired aliases are noted once per item so an old reference resolves; do not reuse them.
 
-### Play the ORIGINAL audio where nothing was transcribed *(added 2026-08-06)*
+### Listen to an original-audio passthrough once *(added 2026-08-06)*
 
-**The problem, in one sentence:** where the ASR produced no text, the dub currently plays the
-no-vocals bed — music and room tone with the voice stripped out — so a stretch where somebody was
-speaking is indistinguishable from a deliberate pause, and the viewer has no way to tell the dub
-lost something. Playing the ORIGINAL (voice included) there instead makes the failure audible and
-self-explaining: you hear an English voice, badly recorded or not, and you know why there is no
-Russian over it.
-
-Measured on the 2026-08-06 batch (6 videos, deliberately awful source — distortion, overlapping
-speakers, background music): 44 uncovered spans / 462 s, of which the worker's second read
-recovered 1379 words; **5 spans / 35.6 s across 3 videos stayed empty**. The operator's own ear
-could not make out roughly 70% of those either, so this is NOT a transcription bug to chase — the
-audio genuinely has little to recover. That is exactly why the fix is presentational.
-
-**Where the data is — all of it, already on disk.** `TranscribeStage._run_parakeet` stamps
-`hole_spans_unrecovered` = `[[start, end], ...]` into `timings.json` → `detail.transcribe`, beside
-the count and the total seconds, and `run.json` carries them through to the digest (2026-08-06).
-Nothing has to be recomputed or re-derived: the spans are defined against the VAD's own segments,
-which live in the worker's venv and never reach the disk, so that stamp is the only record of them
-there will ever be. Read them, do not try to rebuild them.
-
-A run from BEFORE that stamp carries the count without the spans, and the key is then absent rather
-than `[]` — absence means "unknown", not "checked, nothing uncovered". Any consumer must keep that
-distinction; the 2026-08-06 batch is stamped and is the working fixture.
-
-**Where the change goes:** `overdub/stages/assemble.py`, the dub-vs-bed layering. Today it lays the
-Russian dub over `source_bed.wav` (htdemucs no-vocals) for `dub_mix = "bed"`. The change is a
-time-masked source swap: on an unrecovered span, take the ORIGINAL `source.wav` instead of the bed.
-
-**Constraints, all of them load-bearing:**
-- Mask on `holes_unrecovered` ONLY, never on `holes`. A recovered hole has a dub over it; swapping
-  there would play the original underneath Russian speech.
-- Cross-fade the boundaries (tens of milliseconds). A hard cut between bed and original is a click,
-  and the two sources differ in level and spectrum, not just content.
-- `dub_mix` has three modes. This is meaningful for `bed` (the production default) and arguably for
-  `duck`; under `replace` the original is deliberately absent and the mode's contract should not be
-  bent — decide explicitly and say so in the code, do not let it fall out of the implementation.
-- The dub's timeline must not move. Picture sync is fixed by construction and this is a mix-level
-  change only.
-- Report it: the run report should say a video had original-audio passthrough and for how long,
-  otherwise a silent visual failure is traded for a silent audible one.
-
-**Acceptance:** on `3owcMLGx0NQ`, `tfg_Ay1FSe4` and `fV8rxPt-QeU` from the 2026-08-06 batch (their
-`timings.json` carries the unrecovered spans), the finished MKV plays the English original across
-each such span, with no click at either edge, and every other second of the dub is byte-identical
-to a build without this feature. The last clause is the real test — a mix change that touches audio
-outside its mask is a regression, not a feature.
+The passthrough shipped 2026-08-06 (DECISIONS): where the ASR recovered nothing, the mix cross-fades
+the English original in over the bed. Everything measurable was measured — the swap is confined to
+its mask at the PCM level, the dub timeline and the track peak do not move, and the three fixture
+videos carry 5.7 / 9.8 / 19.9 s of it. What is NOT measured is the only verdict that counts here:
+whether the seam is audible. Open `3owcMLGx0NQ` at 8:22, `tfg_Ay1FSe4` at 10:57 or `fV8rxPt-QeU` at
+13:24 and listen to both edges. If a 30 ms linear cross-fade is too short, the knob is
+`_PASS_FADE_S` in `stages/mux.py`; the mask floor beside it (`_PASS_MIN_S`, 0.25 s) is a guess of
+the same kind and has never been heard either.
 
 ### Pipeline the batch instead of running it stage by stage *(added 2026-08-06)*
 
