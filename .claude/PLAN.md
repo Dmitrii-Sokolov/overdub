@@ -157,15 +157,23 @@ and therefore the first agent, which is the objective. And the sweep must finish
 stage entry silently. If that ordering ever becomes awkward to hold by hand, the fix is a lock in
 `overdub/timings.py`, not a rule in a fifth place.
 
-**What has to move.** `run_pipeline` is stage-major with `--video-major` already available as a
-flag, but the seam is the hard part: route B's translation is produced OUTSIDE the pipeline by
-sub-agents that the skill orchestrates in waves (`.claude/skills/overdub-sonnet-batch/SKILL.md`
-step 2, `.claude/workflows/translate-batch.js`). A per-video trigger means the orchestrator must
-watch for `sentences.json` appearing and dispatch on it, rather than fanning out once over a
-finished list. `Session` holds one model per sweep — but in the TAIL it amortises only Silero:
-demucs and ffmpeg are per-video subprocesses already. So measure Silero's load cost before assuming
-new architecture is needed; if it is small, "the skill calls `--only synthesize,assemble,separate,
-mux` per video as translations land" may be the whole change, and `run_pipeline` never moves.
+**The per-video trigger is BUILT 2026-08-06 — `scripts/drain.py`, and `run_pipeline` never moved.**
+The guess above was right: nothing in the pipeline had to change, because `TranslateStage.done()`
+is "translation.json exists", so a plain per-video `-m overdub <url>` fast-skips everything
+upstream and runs exactly the tail. What was missing was only something to WAIT for a draft, which
+no pipeline stage can be — the drafts are written by sub-agents the orchestrator dispatches, so the
+filesystem is the only thing that knows. The drain watches, builds and runs each video's tail one
+at a time (serial on purpose: the tail still contains `separate`, and serializing there is what
+keeps this from needing a GPU queue of its own). Unmeasured on a real batch; the runbook step
+replaces both the `separate` sweep and the per-video build loop.
+
+**What is still open in the trigger's OTHER half.** Dispatching the translator agents themselves
+per video — as each `sentences.json` lands, rather than one fan-out over the finished list — is
+NOT built and is worth much less than it looks: the wave ends on its slowest AGENT, and that agent
+starts when ITS transcript exists either way, so the win is bounded by the spread of the
+transcribe phase (151.4 s over 10 videos on the baseline) and not by the wave. It also cannot use
+`Workflow` as it stands — the whole queue goes in one call by contract (queue-contract §6). Do the
+arithmetic on a real batch before building it.
 `download` **SHIPPED 2026-08-06** as a concurrent pre-pass before the sweep
 (`cli._prefetch_downloads`, `download_concurrency` = 3), deliberately outside the sweep's loop so
 the batch's STOP, status-machine and isolation guarantees were not put on the line for one stage's

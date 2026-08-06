@@ -74,6 +74,7 @@ divider. Look things up through this index, not by scrolling.
 - `07-16` dead-air elimination BUILD † · `07-16` interim ear verdict
 
 **Pipeline, batch, artifacts**
+- `08-06` the per-video trigger is a WATCHER beside the wave; the pipeline did not move
 - `08-06` Parakeet and htdemucs DO co-reside; a re-download is not transcript-neutral
 - `08-06` the download prefetch is a PRE-PASS, not a parallel branch inside the sweep
 - `08-06` `separate` is SCHEDULED, not positioned: its gate asks whether a dub is coming
@@ -105,6 +106,40 @@ divider. Look things up through this index, not by scrolling.
 † carries a `SUPERSEDED` header — the code it describes is gone or changed. Read the header first.
 
 ---
+
+## 2026-08-06 — the per-video trigger is a WATCHER beside the wave, and the pipeline did not move
+
+The tail used to start only after the LAST agent finished: 1145.6 s of work queued behind a
+787.9 s wave, with the machine idle through most of it. `scripts/drain.py` watches for each
+video's `translation.draft.json`, and the moment one lands it builds that video's
+`translation.json` and runs its pipeline to MKV — while the other agents are still writing.
+
+**No pipeline change was needed, which was the open question.** `TranslateStage.done()` is
+"translation.json exists", so a plain per-video `-m overdub <url>` already fast-skips download,
+transcribe and translate and runs exactly the tail. The only missing piece was something to WAIT,
+and no stage can be that: the drafts are written by sub-agents the orchestrator dispatches, so the
+filesystem is the only thing that knows a video is ready. The drain is therefore a SCHEDULER — it
+owns no artifact, enforces no contract, and every file it produces comes from the same code the
+ordinary resume would have run. `run_pipeline` is untouched, and so is the batch's status machine.
+
+**Serial over videos, deliberately.** The tail still contains `separate`, the one GPU stage left
+in it. Draining one video at a time serializes that for free; a pool would have needed the GPU
+queue this project has repeatedly decided not to build yet.
+
+**Three things it may never do, each a silent failure if it did.** It must not read a half-written
+draft as ready — the file arrives through a sub-agent's shell redirect, so readiness is a
+successful JSON PARSE, not `exists()`; a torn read costs one more poll, while trusting it burns
+the video on a build against a truncated draft. It must not consume a `work/STOP` — `check_stop`
+consumes at honor time and exactly one (stage, video) pair may observe one, and this scheduler
+reports nothing per video, so it observes and leaves the file. And it must not decide a video is
+finished with: anything it could not drain is reported `pending` and left for the ordinary step-3
+resume, because the queue is the human's (queue-contract §3).
+
+**Rejected for now: dispatching the TRANSLATORS per video too.** It is the other half of the
+trigger and it is worth much less than it looks — the wave ends on its slowest AGENT, which starts
+when ITS transcript exists either way, so the win is bounded by the spread of the transcribe phase
+(151.4 s over 10 videos) rather than by the wave. It also cannot use `Workflow` as it stands,
+since the whole queue goes in one call by contract (§6).
 
 ## 2026-08-06 — Parakeet and htdemucs DO co-reside; and a re-download is not transcript-neutral
 

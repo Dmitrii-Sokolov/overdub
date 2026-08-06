@@ -197,7 +197,35 @@ It returns `{done, failed, incomplete, unclear, total}`, all by id. `failed` is 
 a `CONTRACT-MISSING`; `incomplete` is an agent that could not cover every id; `unclear` is a status
 line that did not parse — **not a failure**, and the disk decides.
 
-### Then fill the idle GPU: start `separate` while the wave runs (added 2026-08-06)
+### Then DRAIN the queue while the wave runs (added 2026-08-06) — replaces the two steps below
+
+**Start this right after the Workflow call returns its task id.** It watches for each video's
+`translation.draft.json` and, the moment one appears, builds that video's `translation.json` and
+runs its pipeline to MKV — while the other agents are still writing. On the 2026-08-06 baseline
+the tail was 1145.6 s starting only after a 787.9 s wave had fully finished; draining puts most of
+it under the wave.
+
+```powershell
+Start-Process -NoNewWindow .venv-asr\Scripts\python.exe `
+  -ArgumentList '-X','utf8','scripts\drain.py','--queue','queue.txt'
+```
+
+**It REPLACES both the `separate` sweep below and the per-video `build_translation.py` loop** —
+draining a video runs the build and the tail in that order, so nothing can race on that video's
+`timings.json`. Run the two older steps only if you are NOT draining.
+
+Read its final summary. `pending` means no usable draft appeared before the deadline — that video
+is not lost and not finished, the step-3 resume still owes it, and step 3 below runs unchanged and
+picks up whatever the drain left. `failed` means the build or the pipeline exited non-zero for
+that video; the reason is on the line, and it is an ordinary per-video failure, not a batch one.
+
+Two things it deliberately does not do: it never consumes a `work/STOP` (it stops watching and
+leaves the file, because the pipeline is the layer that reports a halt per video), and it never
+decides a video is done with — the queue is the human's (queue-contract §3). A video on the
+CHUNKED path is also left alone: its draft is derived from the chunk files rather than written by
+one agent (§5), so its build stays the orchestrator's.
+
+### The older path: start `separate` while the wave runs (2026-08-06, superseded by the drain)
 
 **Immediately after the Workflow call returns its task id — not after the wave finishes.** The
 seam is the one stretch where the GPU is completely free: the step-1 process that held the
