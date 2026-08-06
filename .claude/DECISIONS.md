@@ -71,6 +71,7 @@ divider. Look things up through this index, not by scrolling.
 - `07-16` dead-air elimination BUILD † · `07-16` interim ear verdict
 
 **Pipeline, batch, artifacts**
+- `08-06` the JS runtime is a WHEEL in the venv (deno), not a host binary and not Node
 - `08-06` a no-speech video ships without a dub; the queue converges
 - `08-06` verify round-trip ships OFF (2 real defects in 24 flags); completeness stays
 - `08-03` CHANGELOG.md retired; measurements retire to DECISIONS
@@ -97,6 +98,35 @@ divider. Look things up through this index, not by scrolling.
 † carries a `SUPERSEDED` header — the code it describes is gone or changed. Read the header first.
 
 ---
+
+## 2026-08-06 — the YouTube JS runtime is a wheel inside `.venv-asr`, not a host binary
+
+**The warning that started it.** `yt-dlp 2026.7.4` prints "No supported JavaScript runtime could be
+found … YouTube extraction without a JS runtime has been deprecated, and some formats may be
+missing" (`extractor/youtube/_video.py`). Four runtimes are supported — deno, node, quickjs, bun —
+and only deno is on by default; the rest need `--js-runtimes RUNTIME[:PATH]`.
+
+**Measured before deciding, on `PBGJ9bLN3NQ` (2026-08-06): 23 formats with the runtime, 23 without.**
+So the "missing formats" half of the warning did NOT bind on the video that was checked, and this
+change bought no format on it. What it buys is the deprecation: the jsless path is on its way out
+upstream, and the fix is cheap now and a broken queue later. The 403s of 2026-07-20 are a plausible
+second beneficiary and are NOT claimed as one — nothing was measured there.
+
+**Decision.** `pyproject.toml` depends on `yt-dlp[default,deno]` instead of bare `yt-dlp`. `deno`
+ships the runtime as a 41 MB wheel that lands in `.venv-asr\Scripts`; `default` pulls `yt-dlp-ejs`,
+without which yt-dlp would fetch its JS components over the network per run (`--remote-components
+ejs:npm`). Both were missing here because the dependency had no extras at all.
+
+**Rejected: `--js-runtimes node` in the download stage.** Node 22 is already on this host, so it
+looked free — that is exactly the trap. It would make a host-wide Node install a load-bearing
+dependency that appears in NO manifest, next to a project rule that names ffmpeg and yt-dlp as the
+only external binaries. The venv wheel keeps `pip install -e .` the whole story and survives a
+machine change. Upstream also sandboxes deno and does not sandbox node, which is the tiebreaker for
+running YouTube's own JS.
+
+**Not touched: `download.py`.** No flag was added anywhere — deno is default-enabled, so resolution
+happens because the binary is next to `sys.executable`. The stage keeps its two `subprocess.run`
+argv lists exactly as they were, and the fix cannot drift out of sync with them.
 
 ## 2026-08-06 — a video with NO SPEECH ships without a dub instead of stopping the run
 

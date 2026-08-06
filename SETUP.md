@@ -40,7 +40,7 @@ py -3.12 -m venv .venv-asr ; .venv-asr\Scripts\Activate.ps1
 pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu128   # torch/torchaudio ONLY on this index
 pip install faster-whisper                                                        # pulls ctranslate2>=4.5 (cuDNN 9 / CUDA 12)
 pip install nvidia-cublas-cu12 nvidia-cudnn-cu12==9.*                             # DLLs; see discovery caveat below
-pip install -e .                                                                  # overdub package + deps (yt-dlp, soundfile, omegaconf)
+pip install -e .                                                                  # overdub package + deps (yt-dlp[default,deno] — the JS runtime lands in .venv-asr\Scripts, soundfile, omegaconf)
 python -c "import torch; print(torch.__version__, torch.version.cuda, torch.cuda.is_available())"
 # Silero model auto-downloads on first synthesis (~38 MB, torch.hub cache)
 ```
@@ -51,8 +51,8 @@ mojibake the overnight log lines morning triage reads.
 ### External binaries (verify, don't auto-install — project rule)
 ```powershell
 winget install Gyan.FFmpeg              # ffmpeg + ffprobe on PATH
-.venv-asr\Scripts\python.exe -m pip install -U yt-dlp   # the pipeline resolves yt-dlp venv-first; a PATH copy is only the fallback
-ffmpeg -version ; ffprobe -version ; .venv-asr\Scripts\yt-dlp.exe --version
+.venv-asr\Scripts\python.exe -m pip install -U "yt-dlp[default,deno]"   # the pipeline resolves yt-dlp venv-first; a PATH copy is only the fallback
+ffmpeg -version ; ffprobe -version ; .venv-asr\Scripts\yt-dlp.exe --version ; .venv-asr\Scripts\deno.exe --version
 ```
 
 ## `--index-url` scoping (critical)

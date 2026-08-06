@@ -6,7 +6,11 @@ requires-python = ">=3.12"
 # torch / torchaudio are installed separately from the CUDA wheel index (see SETUP.md),
 # so they are intentionally NOT listed here — pip must not pull a CPU build over them.
 dependencies = [
-    "yt-dlp",
+    # extras, not bare "yt-dlp": YouTube extraction without a JS runtime is deprecated upstream
+    # and drops formats. `deno` ships the runtime as a wheel and `default` pulls yt-dlp-ejs, so
+    # both land inside .venv-asr — the alternative (--js-runtimes node) would make a host-wide
+    # Node install a silent third external binary. See DECISIONS 2026-08-06.
+    "yt-dlp[default,deno]",
     "faster-whisper",
     "num2words",      # RU number spelling for TTS normalization (0..millions, cased)
     "soundfile",      # wav I/O (version-stable, unlike torchaudio.save)
