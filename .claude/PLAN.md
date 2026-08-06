@@ -87,13 +87,16 @@ recovered 1379 words; **5 spans / 35.6 s across 3 videos stayed empty**. The ope
 could not make out roughly 70% of those either, so this is NOT a transcription bug to chase — the
 audio genuinely has little to recover. That is exactly why the fix is presentational.
 
-**Where the data is, and the one gap to close first.** `parakeet_worker` already computes the
-spans and puts them in its meta as `holes_unrecovered` = `[[start, end], ...]`. But
-`TranscribeStage._run_parakeet` currently records only the COUNT and the total seconds into
-`timings.json` (`holes_unrecovered`, `hole_sec_unrecovered`) — **the ranges themselves are dropped
-on the floor.** Step one of this task is therefore to persist the ranges (per-video, in
-`timings.json` `detail.transcribe`, same shape the worker emits), because nothing downstream can
-act without them.
+**Where the data is — all of it, already on disk.** `TranscribeStage._run_parakeet` stamps
+`hole_spans_unrecovered` = `[[start, end], ...]` into `timings.json` → `detail.transcribe`, beside
+the count and the total seconds, and `run.json` carries them through to the digest (2026-08-06).
+Nothing has to be recomputed or re-derived: the spans are defined against the VAD's own segments,
+which live in the worker's venv and never reach the disk, so that stamp is the only record of them
+there will ever be. Read them, do not try to rebuild them.
+
+A run from BEFORE that stamp carries the count without the spans, and the key is then absent rather
+than `[]` — absence means "unknown", not "checked, nothing uncovered". Any consumer must keep that
+distinction; the 2026-08-06 batch is stamped and is the working fixture.
 
 **Where the change goes:** `overdub/stages/assemble.py`, the dub-vs-bed layering. Today it lays the
 Russian dub over `source_bed.wav` (htdemucs no-vocals) for `dub_mix = "bed"`. The change is a
