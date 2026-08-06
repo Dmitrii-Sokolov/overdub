@@ -72,6 +72,88 @@ next measurement is allowed to overturn it.
 **Slugs, not numbers** (DECISIONS 2026-07-22 — the numbering had crept back in and is removed
 again). Retired aliases are noted once per item so an old reference resolves; do not reuse them.
 
+### Play the ORIGINAL audio where nothing was transcribed *(added 2026-08-06)*
+
+**The problem, in one sentence:** where the ASR produced no text, the dub currently plays the
+no-vocals bed — music and room tone with the voice stripped out — so a stretch where somebody was
+speaking is indistinguishable from a deliberate pause, and the viewer has no way to tell the dub
+lost something. Playing the ORIGINAL (voice included) there instead makes the failure audible and
+self-explaining: you hear an English voice, badly recorded or not, and you know why there is no
+Russian over it.
+
+Measured on the 2026-08-06 batch (6 videos, deliberately awful source — distortion, overlapping
+speakers, background music): 44 uncovered spans / 462 s, of which the worker's second read
+recovered 1379 words; **5 spans / 35.6 s across 3 videos stayed empty**. The operator's own ear
+could not make out roughly 70% of those either, so this is NOT a transcription bug to chase — the
+audio genuinely has little to recover. That is exactly why the fix is presentational.
+
+**Where the data is, and the one gap to close first.** `parakeet_worker` already computes the
+spans and puts them in its meta as `holes_unrecovered` = `[[start, end], ...]`. But
+`TranscribeStage._run_parakeet` currently records only the COUNT and the total seconds into
+`timings.json` (`holes_unrecovered`, `hole_sec_unrecovered`) — **the ranges themselves are dropped
+on the floor.** Step one of this task is therefore to persist the ranges (per-video, in
+`timings.json` `detail.transcribe`, same shape the worker emits), because nothing downstream can
+act without them.
+
+**Where the change goes:** `overdub/stages/assemble.py`, the dub-vs-bed layering. Today it lays the
+Russian dub over `source_bed.wav` (htdemucs no-vocals) for `dub_mix = "bed"`. The change is a
+time-masked source swap: on an unrecovered span, take the ORIGINAL `source.wav` instead of the bed.
+
+**Constraints, all of them load-bearing:**
+- Mask on `holes_unrecovered` ONLY, never on `holes`. A recovered hole has a dub over it; swapping
+  there would play the original underneath Russian speech.
+- Cross-fade the boundaries (tens of milliseconds). A hard cut between bed and original is a click,
+  and the two sources differ in level and spectrum, not just content.
+- `dub_mix` has three modes. This is meaningful for `bed` (the production default) and arguably for
+  `duck`; under `replace` the original is deliberately absent and the mode's contract should not be
+  bent — decide explicitly and say so in the code, do not let it fall out of the implementation.
+- The dub's timeline must not move. Picture sync is fixed by construction and this is a mix-level
+  change only.
+- Report it: the run report should say a video had original-audio passthrough and for how long,
+  otherwise a silent visual failure is traded for a silent audible one.
+
+**Acceptance:** on `3owcMLGx0NQ`, `tfg_Ay1FSe4` and `fV8rxPt-QeU` from the 2026-08-06 batch (their
+`timings.json` carries the unrecovered spans), the finished MKV plays the English original across
+each such span, with no click at either edge, and every other second of the dub is byte-identical
+to a build without this feature. The last clause is the real test — a mix change that touches audio
+outside its mask is a regression, not a feature.
+
+### Pipeline the batch instead of running it stage by stage *(added 2026-08-06)*
+
+Stop waiting for the whole batch to finish transcribing before translation starts: launch a
+translator sub-agent for a video the moment ITS transcript exists, and push each video onward
+through synthesize → assemble → separate → mux the moment ITS translation lands.
+
+**What the measurement says.** On the 2026-08-06 batch (6 videos, 1.68 h of source): the batch took
+1537 s wall. All six translator agents started within 7 seconds of each other and their union was
+664 s — they are already parallel WITH EACH OTHER, and the serial part is the barrier around them.
+transcribe was 85 s total and download 93 s, while the post-translate tail (synthesize 159 +
+separate 161 + mux 221 + assemble 24 = 565 s) is a bigger block than transcribe by far. Overlapping
+the tail of one video with the translation of the next is where the win is — a rough ceiling is
+`first video's download+transcribe + the slowest agent + one tail`, order of 900 s against 1537,
+so ~1.7×. Cheap to sanity-check before building anything: the numbers above come from
+`work/<id>/timings.json` plus `translate.started` / `translation.draft.json` mtimes.
+
+**The catch that makes this more than a scheduler change:** `stages.translate` is written by
+`build_translation.py`, not by the pipeline, and it measures the SUB-AGENT's wall clock. Those
+intervals overlap, so summing them across videos counts the same seconds up to 4.41× (measured
+2026-08-06). Any scheduling work here MUST report a union or an elapsed window, never a sum, or it
+will "prove" a speedup that is an artefact of double-counting. This is also why the digest's
+translate share reads 79.7% when the honest figure is 43.2%.
+
+**What has to move.** `run_pipeline` is stage-major with `--video-major` already available as a
+flag, but the seam is the hard part: route B's translation is produced OUTSIDE the pipeline by
+sub-agents that the skill orchestrates in waves (`.claude/skills/overdub-sonnet-batch/SKILL.md`
+step 2, `.claude/workflows/translate-batch.js`). A per-video trigger means the orchestrator must
+watch for `sentences.json` appearing and dispatch on it, rather than fanning out once over a
+finished list. `Session` holds one model per sweep, so a naive per-video loop reloads Parakeet and
+Silero repeatedly — the worker's `--serve` process already survives a sweep, but that lifetime is
+tied to the session and needs checking before anything reorders stages.
+
+**Do not start with code.** Establish the honest baseline first (elapsed wall for the whole batch,
+not summed stage times), then decide whether the win comes from overlapping the tail, from starting
+agents earlier, or from both — the two have different costs and only one of them touches the seam.
+
 ### Name list at ASR — the proper-noun class
 
 `model.transcribe` passes neither `initial_prompt` nor `hotwords` today. The SOURCE pass is
