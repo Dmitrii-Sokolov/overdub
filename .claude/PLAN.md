@@ -135,11 +135,14 @@ the slowest agent — the argument rests on the tail, not on the agent.
 
 **`separate` INSIDE the translate wave — BUILT 2026-08-06, not yet exercised on a batch.** The
 gate moved (`SeparateStage.done` now runs on a dub OR a non-empty transcript, DECISIONS) and the
-route-B runbook starts the sweep right after the Workflow call. What is left is one ordinary batch
-to confirm it: **×1.85 is a projection** — 301.5 s of demucs moved into an 811.6 s hole off the
-baseline's own numbers, tail 1145.6 → 844.1 s — and it stays a projection until a run measures it.
-The check is cheap and needs no special batch: `spans.separate` should sit inside the wave's
-window, and `runs.jsonl`'s step-3 row should be ~300 s shorter.
+route-B runbook starts the sweep right after the Workflow call. **CONFIRMED on real media
+2026-08-06** (3 videos, 0.46 h): the sweep ran to completion inside the wave — 99 s of demucs
+against a 327 s wave, finishing 228 s before it closed — the resume then skipped all three beds,
+and the wave cost not one extra second. 17.1% of that batch's 479 s of machine time.
+**The MECHANISM is confirmed; the SIZE is not.** 17.1% here against 12.4% projected on the
+10-video baseline is not a sharpened estimate, it is a different queue: on three videos the seam is
+347 s of 479, so tail-to-wave sits somewhere else entirely. Expect the share to move with the
+queue and never quote one of the two numbers as the figure.
 
 Two things that must not drift while it is unexercised. It is NOT "right after transcribe" —
 demucs is the bigger of the two GPU consumers, so beside transcription it delays the transcripts
@@ -160,8 +163,11 @@ mux` per video as translations land" may be the whole change, and `run_pipeline`
 `download` **SHIPPED 2026-08-06** as a concurrent pre-pass before the sweep
 (`cli._prefetch_downloads`, `download_concurrency` = 3), deliberately outside the sweep's loop so
 the batch's STOP, status-machine and isolation guarantees were not put on the line for one stage's
-wall clock. Unverified on real media like the `separate` move: 323.8 → an expected ~90 s bounded by
-the longest single fetch (82 s on the baseline), and it carries a risk the others do not — a queue
+wall clock. **CONFIRMED on real media 2026-08-06**: three fetches started in the same second,
+33.3 s of transfer completed in 20.1 s of wall clock (×1.65), bounded by the longest single fetch
+exactly as predicted, and the sweep then skipped all three. Do NOT compare that 20.1 s against the
+42.5 s the same three took serially on an earlier day — the network was faster this time and the
+honest pair is 33.3 → 20.1. It carries a risk the others do not — a queue
 already reaches YouTube as one burst, and 2026-07-20 lost two videos of twelve to transient
 403 / "unavailable". If a batch starts showing those, the knob is the first thing to turn down.
 And if `verify_roundtrip` is ever turned back on (the docs require it after any engine or voice
