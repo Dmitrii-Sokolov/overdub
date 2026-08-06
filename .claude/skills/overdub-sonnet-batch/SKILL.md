@@ -197,6 +197,36 @@ It returns `{done, failed, incomplete, unclear, total}`, all by id. `failed` is 
 a `CONTRACT-MISSING`; `incomplete` is an agent that could not cover every id; `unclear` is a status
 line that did not parse — **not a failure**, and the disk decides.
 
+### Then fill the idle GPU: start `separate` while the wave runs (added 2026-08-06)
+
+**Immediately after the Workflow call returns its task id — not after the wave finishes.** The
+seam is the one stretch where the GPU is completely free: the step-1 process that held the
+Parakeet worker has exited, and the Sonnet agents run off-host. `separate` is the only stage whose
+inputs are all already on disk (`source.mkv`, plus a transcript to prove a dub is coming), so it is
+the only work available to fill that hole.
+
+```powershell
+Start-Process -NoNewWindow .venv-asr\Scripts\python.exe `
+  -ArgumentList '-X','utf8','-m','overdub','--batch','queue.txt','--only','separate'
+```
+
+Measured on the 2026-08-06 baseline: 301.5 s of demucs moved out of the post-translate tail and
+into an 811.6 s wave — **12.4% of the whole batch**, the largest single scheduling win available,
+and it costs no change to the seam. It fits comfortably: the tail shrinks 1145.6 → 844.1 s.
+
+**One ordering rule, and it is not optional: the sweep must FINISH before
+`build_translation.py` runs.** Both write `work/<id>/timings.json` by read-modify-write, so a
+genuine overlap silently drops one of the two stage entries — an observability loss with no error
+and no flag. Separate takes ~40% of a wave's length, so waiting is normally free; check before
+building:
+
+```powershell
+Get-Process python -ErrorAction SilentlyContinue | Where-Object { $_.Id -ne $PID }   # expect none
+```
+
+A no-speech video is skipped by the stage itself (empty transcript → no dub is coming → no bed),
+so this does NOT need the `$noSpeech` list applied to it.
+
 ### Verify from disk, not from the run's account
 
 Contract §7 — the rule and what a missing marker does and does not mean. The marker here is

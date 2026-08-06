@@ -5,13 +5,21 @@ Runs htdemucs (hardcoded — no model knob) in its own venv (.venv-demucs) as a 
 subprocess: demucs's torch pins must not gamble the ASR stack.
 
 Extracts a 44.1 kHz STEREO wav from source.mkv first — the 16 kHz mono source.wav used for
-STT is unusable for separation. ~3 GB VRAM, standalone between assemble and mux (nothing
-heavy is co-resident). done() is a no-op unless cfg.dub_mix == "bed"; the atomic
-source_bed.wav is the resume gate — separation runs once per video.
+STT is unusable for separation. ~3 GB VRAM; done() is a no-op unless cfg.dub_mix == "bed",
+and the atomic source_bed.wav is the resume gate — separation runs once per video.
+
+POSITION IS NOT FIXED (2026-08-06). Its only hard input is source.mkv, so the stage may run
+any time after download — see done() for the gate that lets it. In the default stage-major
+sweep it still sits between assemble and mux with nothing heavy co-resident; run it during
+the translate seam instead and it shares the card with nothing, because the pipeline process
+that held the Parakeet worker has already exited by then. What it must NOT be scheduled
+beside is transcribe: demucs is the larger of the two GPU consumers, so overlapping them
+delays the transcripts and therefore the whole batch's first translation.
 """
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
@@ -22,25 +30,48 @@ from ..pipeline import Context
 from ..workdir import replace_retry
 
 
+def _has_speech(work) -> bool:
+    """Does sentences.json hold at least one sentence? Never raises.
+
+    Missing, torn or empty all read as False — "no evidence a dub is coming". False is the
+    conservative answer for the gate below: it costs a bed that the loud failure downstream still
+    catches (mux raises on bed mode with a dub and no bed), where True would spend an htdemucs
+    pass on the strength of a file nobody could parse."""
+    try:
+        return bool(json.loads(work.sentences.read_text(encoding="utf-8")))
+    except (OSError, ValueError):
+        return False
+
+
 class SeparateStage:
     name = "separate"
 
     def done(self, ctx: Context) -> bool:
         if ctx.cfg.dub_mix != "bed":
             return True                                    # no-op unless the bed is wanted
-        if not ctx.work.dub_audio.exists():
-            # Nothing to lay a bed UNDER. assemble ran before this stage and degraded (no speech,
-            # no translation, no synthesis), so mux will ship the original audio untouched and a
-            # ~3 GB-VRAM htdemucs pass would render an ambience track nobody mixes. Costs the most
-            # of any wasted stage here: median 20 s, worst 449 s, and a music-only video — exactly
-            # the no-speech case — is the slowest kind to separate.
-            #
-            # Reads as done() rather than an early return in run() so a resume does not re-decide
-            # it every sweep. Safe because the driver always runs assemble first; an `--only
-            # separate` before assemble would skip the bed, and the dub that appeared later would
-            # then meet mux's bed-with-no-bed raise, which is the loud failure, not a silent one.
+        if ctx.work.source_bed.exists():
             return True
-        return ctx.work.source_bed.exists()
+        # Will this video get a dub? Two pieces of evidence, and the stage runs on EITHER, because
+        # they become available at different times and only the weaker one exists early:
+        #
+        #   dub_ru.wav — assemble has run and produced one. Definitive, and the only evidence
+        #     there was until 2026-08-06.
+        #   a non-empty transcript — the earliest signal, available right after transcribe. It is
+        #     what lets separate run BEFORE assemble, which is the point: demucs is the only GPU
+        #     work that depends on nothing but source.mkv, so it can fill the translate seam's
+        #     idle GPU instead of sitting in the post-translate tail (PLAN, measured: 301.5 s of
+        #     a 2438.6 s batch).
+        #
+        # Skipping still protects the expensive case it was built for. A no-speech video — a
+        # music-only clip, the slowest kind to separate at up to 449 s — has an EMPTY transcript
+        # and no dub, so it matches neither and is skipped exactly as before. What the transcript
+        # arm newly exposes is narrower: a video with speech whose translation or synthesis then
+        # fails pays one htdemucs pass for a bed nobody mixes. That is the accepted trade, and mux
+        # does not mind — it requires the bed only when a dub exists.
+        #
+        # Still a done() rather than an early return in run() so a resume does not re-decide it
+        # every sweep.
+        return not (ctx.work.dub_audio.exists() or _has_speech(ctx.work))
 
     def run(self, ctx: Context) -> None:
         cfg = ctx.cfg
