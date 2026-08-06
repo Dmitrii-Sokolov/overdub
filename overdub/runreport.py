@@ -391,6 +391,20 @@ def _build_run_report(work, cfg):
     else:
         asr_block = {"n_words": 0, "floor_ratio": None, "floor_longest_run": None}
 
+    # Uncovered speech (Parakeet only — the transcribe stage stamps these; whisper workdirs and
+    # every pre-2026-08-06 one simply have no key and read as None). NOT recomputed here the way
+    # floor_ratio is: the spans are defined against the VAD's own segments, which live in the
+    # worker's venv and are not on disk, so the stage's stamp is the only record there will ever
+    # be. `unrecovered` is the actionable one — speech that a second read ALSO failed to
+    # transcribe, i.e. a stretch of the video that will ship with no dub under it.
+    tdetail = (_load_timings(work)[1].get("detail") or {}).get("transcribe") or {}
+    if "holes_unrecovered" in tdetail or "asr_repair_windows" in tdetail:
+        asr_block["holes"] = int(tdetail.get("asr_repair_windows") or 0)
+        asr_block["hole_sec"] = float(tdetail.get("hole_sec") or 0.0)
+        asr_block["hole_words_recovered"] = int(tdetail.get("hole_words_recovered") or 0)
+        asr_block["holes_unrecovered"] = int(tdetail.get("holes_unrecovered") or 0)
+        asr_block["hole_sec_unrecovered"] = float(tdetail.get("hole_sec_unrecovered") or 0.0)
+
     # --- translate -----------------------------------------------------------
     tr_by_type = {k: 0 for k in _TRANSLATE_FLAGS}
     sa_by_type = {k: 0 for k in _SOURCE_KINDS}
@@ -552,7 +566,14 @@ def _build_run_report(work, cfg):
     mux_tracks = mr.get("tracks") if isinstance(mr.get("tracks"), dict) else None
     degraded = bool(ar.get("degraded")) or (mux_tracks is not None
                                             and not all(mux_tracks.values()))
-    needs_triage = flags_actionable > 0 or n_over > 0 or degraded
+    # Unrecovered speech is ACTIONABLE and joins needs_triage directly, unlike every advisory flag
+    # above. The distinction those make is "can a human do anything about it" — here they can and
+    # must: the VAD heard speech, two independent decodes produced no words for it, so that
+    # stretch of the finished MKV plays with no dub under it and nothing else in the report says
+    # so. It is also RARE by construction (every hole measured 2026-08-06 was recovered on the
+    # second read), so it cannot flood the flag the way entity_loss did at 11 of 12.
+    n_unrecovered = int(asr_block.get("holes_unrecovered") or 0)
+    needs_triage = flags_actionable > 0 or n_over > 0 or degraded or n_unrecovered > 0
 
     run = {
         "video_id": work.root.name,

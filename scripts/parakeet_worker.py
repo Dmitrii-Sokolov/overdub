@@ -292,14 +292,17 @@ def _fill_holes(model, audio, segments, words: list[dict]) -> tuple[list, int]:
     re-transcribe audio that already has words; taking those too would duplicate them, and taking
     the pad's version over the original would let a 5 s clip overrule a full-context read.
 
-    Returns (holes, recovered_word_count) and mutates `words` in place — the caller stamps both
-    into meta.json, because a hole that could NOT be recovered has to stay visible.
+    Returns (holes, recovered_word_count, still_empty) and mutates `words` in place. The third
+    value is the one that matters downstream: it is `uncovered_spans` RE-RUN over the repaired word
+    list, so it counts holes the second read also failed to fill. A recovered-word count cannot
+    answer that on its own — three holes with one of them repaired still reports "words recovered"
+    while a minute of speech is missing.
     """
     if not segments:
-        return [], 0
+        return [], 0, []
     holes = uncovered_spans(segments, words)
     if not holes:
-        return [], 0
+        return [], 0, []
     if len(holes) > HOLE_MAX_PER_VIDEO:
         print(f"       [warn] {len(holes)} uncovered spans — beyond the {HOLE_MAX_PER_VIDEO} this "
               f"repairs; decoding the first {HOLE_MAX_PER_VIDEO} only", file=sys.stderr)
@@ -318,7 +321,7 @@ def _fill_holes(model, audio, segments, words: list[dict]) -> tuple[list, int]:
         words.extend(got)
         added += len(got)
     words.sort(key=lambda w: (w["start"], w["end"]))
-    return holes, added
+    return holes, added, uncovered_spans(segments, words)
 
 
 def transcribe_one(model, wav: Path, *, use_vad: bool = True) -> tuple[list[dict], dict]:
@@ -337,7 +340,8 @@ def transcribe_one(model, wav: Path, *, use_vad: bool = True) -> tuple[list[dict
             return [], {"audio_sec": round(duration, 1), "wall_sec": 0.0, "rtf": 0.0,
                         "chunks": 0, "n_words": 0, "vram_peak_mb": None,
                         "vad": "on", "vad_speech_sec": 0.0, "vad_blocks": 0,
-                        "holes": [], "hole_sec": 0.0, "hole_words_recovered": 0}
+                        "holes": [], "hole_sec": 0.0, "hole_words_recovered": 0,
+                        "holes_unrecovered": [], "hole_sec_unrecovered": 0.0}
     elif use_vad:
         print("       [warn] silero-vad unavailable — decoding without a speech gate; "
               "non-speech stretches may come back as invented words", file=sys.stderr)
@@ -368,7 +372,7 @@ def transcribe_one(model, wav: Path, *, use_vad: bool = True) -> tuple[list[dict
         # allocator makes the next replay read freed memory. Bounding the peak is the CHUNK SIZE's
         # job, and only that: same-sized chunks let the allocator reuse the same blocks anyway.
     words = _stitch(per_window)
-    holes, recovered = _fill_holes(model, audio, segments, words)
+    holes, recovered, still_empty = _fill_holes(model, audio, segments, words)
     wall = time.perf_counter() - t0
 
     meta = {
@@ -382,11 +386,14 @@ def transcribe_one(model, wav: Path, *, use_vad: bool = True) -> tuple[list[dict
         "vad": vad_state,
         "vad_speech_sec": round(speech_sec, 1),
         "vad_blocks": len(blocks) if blocks else 0,
-        # Both numbers, always. `holes: 3, recovered: 0` is a video to look at by hand; reporting
-        # only the recovery would make a failed repair indistinguishable from a clean decode.
+        # All four, always. Reporting only the recovery would make a failed repair
+        # indistinguishable from a clean decode, and reporting only the count would hide that one
+        # hole out of three is still empty. `holes_unrecovered` is what a human acts on.
         "holes": [[round(a, 1), round(b, 1)] for a, b in holes],
         "hole_sec": round(sum(b - a for a, b in holes), 1),
         "hole_words_recovered": recovered,
+        "holes_unrecovered": [[round(a, 1), round(b, 1)] for a, b in still_empty],
+        "hole_sec_unrecovered": round(sum(b - a for a, b in still_empty), 1),
     }
     return words, meta
 
@@ -502,7 +509,10 @@ def main() -> int:
               f"{meta['chunks']} chunk(s)  VRAM {meta['vram_peak_mb']} MB  "
               f"vad {meta['vad']} {meta['vad_speech_sec'] / 60:.1f}min/{meta['vad_blocks']}blk"
               + (f"  HOLES {len(meta['holes'])} ({meta['hole_sec']:.0f}s) "
-                 f"+{meta['hole_words_recovered']}w" if meta["holes"] else ""),
+                 f"+{meta['hole_words_recovered']}w"
+                 + (f"  STILL EMPTY {len(meta['holes_unrecovered'])} "
+                    f"({meta['hole_sec_unrecovered']:.0f}s)"
+                    if meta["holes_unrecovered"] else "") if meta["holes"] else ""),
               file=sys.stderr)
 
     print(f"[parakeet] {ok} ok, {failed} failed, {time.perf_counter() - t_batch:.0f}s total",

@@ -567,16 +567,28 @@ class TranscribeStage:
             ctx.work.sentences.write_text(
                 json.dumps(sentences, ensure_ascii=False, indent=2), encoding="utf-8")
             work_s = time.perf_counter() - t0
+            holes = wmeta.get("holes") or []
+            unrecovered = wmeta.get("holes_unrecovered") or []
             runreport.record_stage_detail(
                 ctx.work, "transcribe", work_sec=round(work_s, 3), asr_passes=1,
-                asr_key=asr_key(cfg), asr_repair_windows=len(wmeta.get("holes") or []),
+                asr_key=asr_key(cfg), asr_repair_windows=len(holes),
                 vad_speech_sec=wmeta.get("vad_speech_sec"),
-                hole_words_recovered=wmeta.get("hole_words_recovered", 0))
-            holes = wmeta.get("holes") or []
+                hole_sec=wmeta.get("hole_sec", 0.0),
+                hole_words_recovered=wmeta.get("hole_words_recovered", 0),
+                # The one number a human acts on: speech the SECOND read also failed to
+                # transcribe. Recorded even when it is 0, so "this video was checked and is
+                # clean" is distinguishable from "this video predates the check".
+                holes_unrecovered=len(unrecovered),
+                hole_sec_unrecovered=wmeta.get("hole_sec_unrecovered", 0.0))
             note = (f", {len(holes)} uncovered span(s) re-read (+"
                     f"{wmeta.get('hole_words_recovered', 0)} words)") if holes else ""
             print(f"       {len(flat)} words → {len(sentences)} sentences  "
                   f"({work_s:.1f}s excl. model load{note})")
+            if unrecovered:
+                print(f"       [warn] {len(unrecovered)} span(s) of speech still have NO words "
+                      f"after a second read ({wmeta.get('hole_sec_unrecovered', 0.0):.0f}s total, "
+                      f"first at {unrecovered[0][0]:.0f}s) — this video needs an ear",
+                      file=sys.stderr)
             if not flat:
                 print(f"       [info] no speech detected — empty transcript "
                       f"(VAD gate, {wmeta.get('vad_blocks', 0)} speech blocks)")

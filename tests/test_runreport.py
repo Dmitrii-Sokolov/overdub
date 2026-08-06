@@ -63,6 +63,19 @@ def _unit(sid, gid, *, status="ok", verify_flag=None, combined=None, speed=None,
     }
 
 
+def _clean_report():
+    """A report with NOTHING flagged — the baseline for testing that one new signal, and only it,
+    decides needs_triage. `_two_unit_report()` carries a verify flag and cannot answer that."""
+    segs = [_unit(i, i - i % 2, verify_flag=None, combined=1.0, speed=1.0) for i in range(4)]
+    return {
+        "segments": segs,
+        "verify": {"model": "small", "n_units": 2, "n_segments": 4, "n_flagged": 0,
+                   "n_retried": 0, "n_repaired": 0},
+        "completeness": {"n_sentences": 4, "n_flagged": 0, "n_num_loss": 0, "n_neg_loss": 0,
+                         "n_length": 0},
+    }
+
+
 def _two_unit_report(**verify_extra):
     """Report with 2 render units of 2 sentences each: unit A (ids 0,1 / group 0) flagged +
     fast (combined 2.0), unit B (ids 2,3 / group 2) clean + neutral (combined 1.0)."""
@@ -1140,10 +1153,85 @@ def test_batch_row_golden_cells() -> None:
         # wall is a DURATION since 2026-07-25 (one unit, one decimal), and `flags` leads the flag
         # group as actionable/total — the row's "how much is wrong here" answer, which previously
         # meant adding five columns by eye.
-        ("wall", "2.1m"), ("rtf", "0.256"), ("flags", "6/15"), ("floor", "3.4%"), ("tr", "2"),
-        ("vf", "1"), ("cp", "3"), ("adv", "5"), ("src", "4"),
+        # gap is "-" here, not "0s": this fixture carries no hole data, i.e. it came from an engine
+        # that cannot report uncovered speech, and a zero would claim the video was checked.
+        ("wall", "2.1m"), ("rtf", "0.256"), ("flags", "6/15"), ("floor", "3.4%"), ("gap", "-"),
+        ("tr", "2"), ("vf", "1"), ("cp", "3"), ("adv", "5"), ("src", "4"),
         ("spd_max", "2.13"), ("n_over", "1"),
     ]
+
+
+def test_unrecovered_speech_reaches_run_json_and_forces_triage() -> None:
+    """The stage stamps hole data into timings.json and the report must carry it to needs_triage.
+
+    This is the one Parakeet failure the rest of the report cannot see: the VAD heard speech, two
+    independent decodes produced no words for it, and the finished MKV plays that stretch with no
+    dub under it. Every other signal here reads the TEXT, which is exactly what is missing.
+
+    Built on a CLEAN report on purpose — `_two_unit_report()` carries a verify flag of its own and
+    would set needs_triage by itself, so the assertion would pass with the hole logic deleted.
+    """
+    with tempfile.TemporaryDirectory() as d:
+        work = _mkwork(d, report=_clean_report(),
+                       translation=[{"id": i, "status": "ok"} for i in range(4)],
+                       timings={"stages": {"transcribe": 10.0},
+                                "detail": {"transcribe": {
+                                    "asr_key": "parakeet-tdt-0.6b-v3|vad=True",
+                                    "asr_repair_windows": 2, "hole_sec": 55.0,
+                                    "hole_words_recovered": 130,
+                                    "holes_unrecovered": 1, "hole_sec_unrecovered": 41.0}}})
+        run = runreport._build_run_report(work, Config())
+    assert run["asr"]["holes"] == 2, run["asr"]
+    assert run["asr"]["holes_unrecovered"] == 1, run["asr"]
+    assert run["asr"]["hole_sec_unrecovered"] == 41.0, run["asr"]
+    assert run["needs_triage"] is True, run
+
+
+def test_a_repaired_hole_alone_does_not_force_triage() -> None:
+    # Every hole measured on 2026-08-06 was recovered on the second read. If a successful repair
+    # tripped the flag, the flag would fire on ordinary runs and stop meaning anything — the way
+    # entity_loss did at 11 of 12 videos.
+    with tempfile.TemporaryDirectory() as d:
+        work = _mkwork(d, report=_clean_report(),
+                       translation=[{"id": i, "status": "ok"} for i in range(4)],
+                       timings={"stages": {"transcribe": 10.0},
+                                "detail": {"transcribe": {
+                                    "asr_repair_windows": 1, "hole_sec": 41.0,
+                                    "hole_words_recovered": 173,
+                                    "holes_unrecovered": 0, "hole_sec_unrecovered": 0.0}}})
+        run = runreport._build_run_report(work, Config())
+    assert run["asr"]["holes"] == 1 and run["asr"]["holes_unrecovered"] == 0
+    assert run["needs_triage"] is False, run
+
+
+def test_a_whisper_workdir_has_no_hole_keys_at_all() -> None:
+    # Absence must stay distinguishable from zero: a whisper (or pre-2026-08-06) workdir was never
+    # checked for uncovered speech, and reporting 0 would claim it was.
+    with tempfile.TemporaryDirectory() as d:
+        work = _mkwork(d, report=_two_unit_report(),
+                       translation=[{"id": i, "status": "ok"} for i in range(4)],
+                       timings={"stages": {"transcribe": 10.0},
+                                "detail": {"transcribe": {"asr_key": "large-v3|float16|beam=5",
+                                                          "asr_passes": 1}}})
+        run = runreport._build_run_report(work, Config())
+    assert "holes_unrecovered" not in run["asr"], run["asr"]
+    assert dict(queueview.batch_row(run)["cells"])["gap"] == "-"
+
+
+def test_a_parakeet_row_reports_the_gap_and_blanks_the_floor() -> None:
+    # The two engines' health columns are mutually exclusive, and the trap is floor_ratio: it is
+    # honestly 0.0 on an 80 ms grid, which reads as "alignment healthy" when it means "this
+    # detector does not apply here". A row with hole data must print floor as n/a and say the gap.
+    run = {
+        "video_id": "vid00000001", "title": "Talk", "needs_triage": True,
+        "timings": {"total_wall_s": 60.0, "rtf": 0.1},
+        "asr": {"floor_ratio": 0.0, "holes": 2, "hole_words_recovered": 40,
+                "holes_unrecovered": 1, "hole_sec_unrecovered": 41.0},
+        "flags_actionable": 1, "flags_total": 1,
+    }
+    cells = dict(queueview.batch_row(run)["cells"])
+    assert cells["floor"] == "n/a", cells
+    assert cells["gap"] == "41s", cells
 
 
 def test_batch_row_floor_na_src_dash_and_blank_wall() -> None:
@@ -1263,8 +1351,8 @@ def test_batch_columns_is_the_single_header_source() -> None:
     # The header the digest prints IS " | ".join of BATCH_COLUMNS labels — one constant, no
     # second list to drift. Both the literal and the script's stdout are pinned.
     header = " | ".join(label for _key, label in queueview.BATCH_COLUMNS)
-    assert header == ("video | title | wall | rtf | flags | floor | tr | vf | cp | adv | src | "
-                      "spd_max | >1.8 | triage")
+    assert header == ("video | title | wall | rtf | flags | floor | gap | tr | vf | cp | adv | "
+                      "src | spd_max | >1.8 | triage")
     with tempfile.TemporaryDirectory() as d:
         work = _mkwork(d, report=_two_unit_report(),
                        translation=[{"id": i, "status": "ok"} for i in range(4)])

@@ -229,7 +229,12 @@ BATCH_COLUMNS = (
     # much is wrong with this one", and answering it used to mean adding five columns by eye
     # (operator report 2026-07-25). The five stay — they say WHAT is wrong, which the sum cannot.
     ("flags", "flags"),
-    ("floor", "floor"), ("tr", "tr"), ("vf", "vf"), ("cp", "cp"), ("adv", "adv"),
+    # `gap` is seconds of speech the ASR left with no words after a second read — the Parakeet
+    # failure mode that no other column can show, because nothing else in the report knows the
+    # video had speech there. It sits beside `floor` on purpose: the two are the same question
+    # ("did the transcriber lose the audio") asked of the two engines, and exactly one of them is
+    # meaningful per run.
+    ("floor", "floor"), ("gap", "gap"), ("tr", "tr"), ("vf", "vf"), ("cp", "cp"), ("adv", "adv"),
     ("src", "src"), ("spd_max", "spd_max"), ("n_over", ">1.8"), ("triage", "triage"),
 )
 
@@ -245,7 +250,13 @@ def batch_row(run) -> dict:
     and a pre-rendered string would force one medium's choice on the other."""
     t = run.get("timings", {}) or {}
     sp = run.get("speed", {}) or {}
-    fr = (run.get("asr", {}) or {}).get("floor_ratio")
+    asr = run.get("asr", {}) or {}
+    fr = asr.get("floor_ratio")
+    # A run stamped with hole data came from Parakeet, and floor_ratio is NOT MEANINGFUL there:
+    # it counts words pinned to the 0.02 s floor, and an 80 ms timestamp grid never puts one
+    # there. Printing the honest 0.0% would read as "alignment healthy" when the truth is "this
+    # detector does not apply to this engine" — the exact confusion the column exists to prevent.
+    engine_has_holes = "holes_unrecovered" in asr
     src = run.get("source", {}) or {}
     cp = run.get("completeness", {}) or {}
     cells = [
@@ -256,7 +267,11 @@ def batch_row(run) -> dict:
         # things fired, "21" reads as a disaster when 19 are advisory names the operator has
         # already been told to ignore.
         ("flags", f"{run.get('flags_actionable', 0)}/{run.get('flags_total', 0)}"),
-        ("floor", f"{fr:.1%}" if fr is not None else "n/a"),
+        ("floor", "n/a" if engine_has_holes else (f"{fr:.1%}" if fr is not None else "n/a")),
+        # Blank, not "0s", when the engine cannot produce this: a zero would claim the video was
+        # checked for uncovered speech and came back clean.
+        ("gap", (f"{asr.get('hole_sec_unrecovered', 0.0):.0f}s"
+                 if engine_has_holes else "-")),
         ("tr", str((run.get("translate", {}) or {}).get("n_failed", 0))),
         ("vf", str((run.get("verify", {}) or {}).get("n_flagged", 0))),
         # cp = ACTIONABLE completeness flags; adv = advisory-only ones (length_short,

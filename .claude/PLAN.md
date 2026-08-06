@@ -253,14 +253,13 @@ about to change.
 
 ## Also open — independent, none of them ordered against the list above
 
-- **Uncovered-speech spans: the worker repairs them, nothing yet WATCHES them.** Parakeet drops
-  stretches of real speech at window boundaries (20 spans over 146 videos, largest 41 s / 125
-  words, 2026-08-06). `parakeet_worker` detects and re-reads them, and every repair so far returned
-  the text — but a re-read that comes back EMPTY is currently visible only in `meta.holes` against
-  `hole_words_recovered` in that video's `timings.json`. Two gaps: the run report does not surface
-  it, so a batch cannot be triaged on it; and `needs_triage` does not key on it, so a video that
-  silently lost a minute of speech still ships looking clean. Cheap — both fields are already on
-  disk. This is the one place the new engine can fail in exactly the way the old one could not.
+- **Uncovered speech is now reported and triaged — what is left is a POPULATION.** The worker
+  stamps `holes` / `hole_words_recovered` / `holes_unrecovered`, `run.json` carries them, the batch
+  digest has a `gap` column and an unrecovered span sets `needs_triage` (2026-08-06). What no one
+  has yet is a rate: every hole measured on the 165-video corpus was recovered on the second read,
+  so `holes_unrecovered > 0` has **never actually fired on real media** and its precision is
+  unknown. Watch the column across the next few batches before treating it as calibrated — and if
+  it stays at zero, that is the answer, not a reason to loosen it.
 - **`--repair-asr` has no equivalent on the shipped engine.** It refuses on Parakeet (its accept
   gate is vacuous on a deterministic decoder, DECISIONS 2026-08-06), and the coverage repair inside
   the worker replaces only its uncovered-speech half. The detector-driven half — `completeness`
