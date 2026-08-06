@@ -74,6 +74,7 @@ divider. Look things up through this index, not by scrolling.
 - `07-16` dead-air elimination BUILD † · `07-16` interim ear verdict
 
 **Pipeline, batch, artifacts**
+- `08-06` `separate` is SCHEDULED, not positioned: its gate asks whether a dub is coming
 - `08-06` the JS runtime is a WHEEL in the venv (deno), not a host binary and not Node
 - `08-06` a no-speech video ships without a dub; the queue converges
 - `08-06` verify round-trip ships OFF (2 real defects in 24 flags); completeness stays
@@ -102,6 +103,38 @@ divider. Look things up through this index, not by scrolling.
 † carries a `SUPERSEDED` header — the code it describes is gone or changed. Read the header first.
 
 ---
+
+## 2026-08-06 — `separate` is scheduled, not positioned: its gate asks whether a dub is COMING
+
+`SeparateStage.done()` skipped whenever `dub_ru.wav` was absent, which pinned the stage after
+assemble: the only evidence it accepted was the dub itself. That made the one piece of GPU work
+with no dependency on the translation sit in the post-translate tail, while the card idled through
+the entire Sonnet wave — 811.6 s of nothing on the 2026-08-06 baseline.
+
+The gate now runs on EITHER the dub or a non-empty transcript, so the stage may run any time after
+transcribe. Worth 301.5 s moved out of a 2438.6 s batch (12.4%), tail 1145.6 → 844.1 s — the
+largest single scheduling win available and it does not touch the translate seam.
+
+**What the weaker evidence costs, stated plainly.** A dub is proof; a transcript is a forecast. A
+video with speech whose translation or synthesis then FAILS now pays one htdemucs pass for a bed
+nobody mixes — that is the accepted trade. What it does not cost is the case the gate was built
+for: the expensive one is a music-only clip (up to 449 s to separate), and that has an EMPTY
+transcript, so it still matches neither arm and is still skipped. A torn transcript reads as "no
+speech" for the same reason — guessing the other way spends a GPU pass on a file nobody could
+parse, and mux still raises loudly if a dub later appears without a bed.
+
+**Rejected: running it right after transcribe.** The obvious place is wrong. demucs is the BIGGER
+of the two GPU consumers (301.5 s against transcribe's 151.4 s), so putting it beside transcription
+delays every transcript and therefore the batch's first translation — which is the latency the
+whole pipelining item exists to cut. The wave is the correct window precisely because the pipeline
+process holding the Parakeet worker has already exited by then, so demucs shares the card with
+nothing and the VRAM co-residency question never arises.
+
+**The one new hazard: `timings.json` is now written by two processes at once.** The separate sweep
+and `build_translation.py` both read-modify-write it, so a genuine overlap drops one stage entry
+with no error and no flag. Held for now by an ordering rule in the route-B runbook (the sweep
+finishes before the helper runs, and it takes ~40% of a wave). If that becomes awkward to hold by
+hand the answer is a lock in `overdub/timings.py` — not a sixth copy of the rule.
 
 ## 2026-08-06 — the batch gets an absolute clock, and the first honest baseline retires the pipelining estimate
 

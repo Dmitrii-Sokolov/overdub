@@ -133,18 +133,20 @@ than assume: that the tail really is proportional to duration (only its aggregat
 measured, never that scaling per video), and that a long video's CHUNKED translation is not itself
 the slowest agent — the argument rests on the tail, not on the agent.
 
-**Run `separate` INSIDE the translate wave — the biggest single lever, and now measured** (user,
-2026-08-06). demucs needs only `source.wav` and nothing from the translation, while the card sits
-idle for the whole wave. On the baseline that is 301.5 s of GPU work moved into an 811.6 s hole:
-tail 1145.6 → 844.1 s, ceiling ×1.50 → **×1.85**, i.e. **12.4% of the entire batch from this one
-change** — more than every other overlap combined. Not "right after transcribe": demucs is the
-BIGGER GPU consumer of the two, so running it beside transcription delays the transcripts and
-therefore the first agent, which is the objective. Guard it on a non-empty transcript so a
-no-speech video does not pay for a bed it will not use (the transcript exists by then, so the check
-is free) — that preserves today's skip. **This is also what settles the barrier question**: a
-barrier would forbid exactly this dispatch, and it makes the VRAM co-residency reading load-bearing
-rather than avoidable. **Do this one first** — it is self-contained, it does not touch the seam, and
-it is worth more than the reordering work around it.
+**`separate` INSIDE the translate wave — BUILT 2026-08-06, not yet exercised on a batch.** The
+gate moved (`SeparateStage.done` now runs on a dub OR a non-empty transcript, DECISIONS) and the
+route-B runbook starts the sweep right after the Workflow call. What is left is one ordinary batch
+to confirm it: **×1.85 is a projection** — 301.5 s of demucs moved into an 811.6 s hole off the
+baseline's own numbers, tail 1145.6 → 844.1 s — and it stays a projection until a run measures it.
+The check is cheap and needs no special batch: `spans.separate` should sit inside the wave's
+window, and `runs.jsonl`'s step-3 row should be ~300 s shorter.
+
+Two things that must not drift while it is unexercised. It is NOT "right after transcribe" —
+demucs is the bigger of the two GPU consumers, so beside transcription it delays the transcripts
+and therefore the first agent, which is the objective. And the sweep must finish before
+`build_translation.py` runs: both read-modify-write `timings.json`, so a real overlap drops one
+stage entry silently. If that ordering ever becomes awkward to hold by hand, the fix is a lock in
+`overdub/timings.py`, not a rule in a fifth place.
 
 **What has to move.** `run_pipeline` is stage-major with `--video-major` already available as a
 flag, but the seam is the hard part: route B's translation is produced OUTSIDE the pipeline by
