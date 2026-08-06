@@ -538,6 +538,22 @@ def repair_video(ctx: Context, *, ids: list[int] | None, dry_run: bool,
     """(results, n_before, n_after). ids=None means auto. NEVER runs a downstream stage
     (user decision D1) — it only invalidates, so the next ordinary run redoes translate →
     synthesize → verify → assemble → mux honestly."""
+    # REFUSED on Parakeet, and this one refuses rather than warns (2026-08-06). The gate that
+    # carries this mode's correctness is "two independent readings of the clip agree" — it works
+    # because whisper's temperature fallback SAMPLES, so agreement is evidence it stopped guessing.
+    # Parakeet's greedy TDT decoder is deterministic: the two readings are byte-identical every
+    # time, the gate accepts unconditionally, and "delete, do not invent" loses its only enforcer
+    # while every printed line still says the window was verified. A mode that cannot be wrong is
+    # not a safe mode, it is an unguarded splice — and the defect class this was built for
+    # (whisper's repetition loops) is not what Parakeet produces anyway; its uncovered-speech spans
+    # are found and re-read inside the worker, before the transcript is ever written.
+    if getattr(ctx.cfg, "asr_engine", "whisper") != "whisper":
+        raise RuntimeError(
+            f"--repair-asr is a whisper-only mode and asr_engine is {ctx.cfg.asr_engine!r}. Its "
+            f"accept gate is 'two readings of the clip agree', which is vacuously true on a "
+            f"deterministic decoder — it would splice unverified text while reporting it as "
+            f"verified. Parakeet re-reads its own uncovered spans during transcribe; check "
+            f"`holes` / `hole_words_recovered` in the run report instead.")
     owns_clip = window_asr is None
     sentences = load_sentences(ctx.work)
     stamped = check_decode_config(ctx)     # before any GPU time: a foreign decode config makes

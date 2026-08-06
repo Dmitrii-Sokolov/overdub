@@ -109,7 +109,11 @@ class FakeASR:
 
 
 def _ctx(tmp: Path, sentences: list[dict] | None = None) -> Context:
-    cfg = Config()
+    # WHISPER, explicitly: --repair-asr is a whisper-only mode since 2026-08-06 (its accept gate
+    # is "two readings agree", which is vacuously true on Parakeet's deterministic decoder), and
+    # the shipped default engine is now parakeet. A bare Config() would test the refusal, not the
+    # contract — the refusal has its own test at the bottom of this file.
+    cfg = Config(asr_engine="whisper")
     cfg.work_root = tmp / "work"
     cfg.output_dir = tmp / "out"
     work = WorkDir.for_url(URL, cfg.work_root)
@@ -502,6 +506,23 @@ def test_explicit_ids_repair_a_window_the_detectors_cannot_see() -> None:
     assert [x["id"] for x in after] == list(range(len(after)))
     assert any(_norm(reading) == _norm(x["text"]) for x in after), \
         f"the merged sentence is not the window's reading: {[x['text'] for x in after]}"
+
+
+def test_repair_refuses_outright_on_a_deterministic_engine() -> None:
+    # The one failure this mode cannot survive silently: on Parakeet the two clip readings are
+    # byte-identical every time, so readings_agree() is vacuously true and every window would be
+    # accepted while the output still claims the gate agreed. Refusing is the only honest answer —
+    # a warning would leave the unguarded splice happening.
+    import pytest
+
+    with tempfile.TemporaryDirectory() as d:
+        ctx = _ctx(Path(d), _base_sentences())
+        ctx.cfg.asr_engine = "parakeet"
+        with pytest.raises(RuntimeError) as e:
+            repair.repair_video(ctx, ids=[1], dry_run=True, window_asr=FakeASR("anything"))
+    msg = str(e.value)
+    assert "whisper-only" in msg and "parakeet" in msg, msg
+    assert "deterministic" in msg, msg
 
 
 if __name__ == "__main__":

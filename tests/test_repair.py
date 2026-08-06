@@ -74,7 +74,9 @@ def _work(tmp: Path, sentences: list[dict] | None, **artifacts: str) -> WorkDir:
 
 
 def _ctx(work: WorkDir, cfg: Config | None = None) -> Context:
-    cfg = Config() if cfg is None else cfg
+    # whisper explicitly — see the note in tests/test_repair_contract.py::_ctx. --repair-asr is a
+    # whisper-only mode since 2026-08-06 and the shipped default engine is parakeet.
+    cfg = Config(asr_engine="whisper") if cfg is None else cfg
     cfg.work_root = work.root.parent
     return Context(url=URL, cfg=cfg, work=work)
 
@@ -753,7 +755,7 @@ def test_spliced_timings_are_rebased_into_the_window() -> None:
 # --- the CLI driver: exit codes and the missing-transcript rows -----------------------
 
 def _repair_cli(tmp: Path, urls: list[str], *, ids, window_asr) -> int:
-    cfg = Config()
+    cfg = Config(asr_engine="whisper")
     cfg.work_root = tmp
     return _quiet(cli._run_repair, urls, cfg, ids=ids, dry_run=False,
                   window_asr=window_asr)[0]
