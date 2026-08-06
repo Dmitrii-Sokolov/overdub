@@ -123,6 +123,13 @@ def asr_key(cfg, *, cond: "bool | str | None" = None) -> str:
 
     A mismatch is REFUSED on asr_key_core(), not on this whole string — see there.
     """
+    if getattr(cfg, "asr_engine", "whisper") == "parakeet":
+        # Parakeet has no beam and no context feedback — greedy TDT, deterministic. The knobs that
+        # DO move its text are the engine itself and the VAD gate (a gated video yields an empty
+        # transcript, which is as different an artefact as a transcript gets), so those are the
+        # key. `cond` is accepted and ignored rather than rejected: repair passes "mixed"
+        # positionally and must not have to know which engine produced the file it is patching.
+        return f"parakeet-tdt-0.6b-v3|vad={bool(getattr(cfg, 'parakeet_vad', True))}"
     if cond is None:
         cond = bool(cfg.whisper_condition_on_previous)
     return (f"{cfg.whisper_model}|{cfg.compute_type_for('transcribe')}"

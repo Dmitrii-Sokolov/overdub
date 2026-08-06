@@ -520,11 +520,59 @@ class TranscribeStage:
               f"for speed offenders.", file=sys.stderr)
         return flat
 
+    def _run_parakeet(self, ctx: Context) -> tuple[list[W], dict]:
+        """Decode through the .venv-parakeet worker. Returns (words, worker meta).
+
+        No `_guard` here, and that is not an omission: the guard re-runs whisper with context
+        feedback off when the word alignment collapses, and BOTH halves of that are whisper-only.
+        Parakeet has no context feedback to switch off, and it stamps on an 80 ms grid, so
+        floor_run_ratio (share of words pinned to the 0.02 s MIN_WORD_DUR floor) is structurally
+        0.0 on every one of the 145 videos measured 2026-08-06. A guard that cannot fire is worse
+        than no guard: it reads as protection.
+
+        The worker does its own defect handling instead — a VAD speech gate, and a re-read of any
+        speech span it left uncovered — and reports both in its meta, which the caller records.
+        """
+        worker = ctx.session.parakeet(ctx.cfg)
+        raw, meta = worker.transcribe(ctx.work.source_audio)
+        flat = [W(w["text"], float(w["start"]), float(w["end"]), bool(w.get("seg_end", False)))
+                for w in raw]
+        # _dehallucinate STILL applies. It was written for whisper's silence loops, but Parakeet
+        # produces the same shape on non-speech ("That's the seven three" x15, 2026-08-06) — the
+        # engine changed, the defect class did not.
+        return _dehallucinate(flat), meta
+
     def run(self, ctx: Context) -> None:
         from .. import runreport            # local: runreport imports this module lazily too
         from ..asr import asr_key
 
         cfg = ctx.cfg
+        if cfg.asr_engine == "parakeet":
+            self._warn_mixed_rewrite(ctx)
+            t0 = time.perf_counter()
+            flat, wmeta = self._run_parakeet(ctx)
+            ctx.work.words.write_text(
+                json.dumps([{"text": w.text, "start": w.start, "end": w.end, "seg_end": w.seg_end}
+                            for w in flat], ensure_ascii=False, indent=2), encoding="utf-8")
+            sentences = resegment(flat)
+            ctx.work.sentences.write_text(
+                json.dumps(sentences, ensure_ascii=False, indent=2), encoding="utf-8")
+            work_s = time.perf_counter() - t0
+            runreport.record_stage_detail(
+                ctx.work, "transcribe", work_sec=round(work_s, 3), asr_passes=1,
+                asr_key=asr_key(cfg), asr_repair_windows=len(wmeta.get("holes") or []),
+                vad_speech_sec=wmeta.get("vad_speech_sec"),
+                hole_words_recovered=wmeta.get("hole_words_recovered", 0))
+            holes = wmeta.get("holes") or []
+            note = (f", {len(holes)} uncovered span(s) re-read (+"
+                    f"{wmeta.get('hole_words_recovered', 0)} words)") if holes else ""
+            print(f"       {len(flat)} words → {len(sentences)} sentences  "
+                  f"({work_s:.1f}s excl. model load{note})")
+            if not flat:
+                print(f"       [info] no speech detected — empty transcript "
+                      f"(VAD gate, {wmeta.get('vad_blocks', 0)} speech blocks)")
+            return
+
         # BEFORE the model load: the check costs one small JSON read and a forced rewrite over a
         # live translation.json is the one failure this stage can produce that nothing downstream
         # can see.

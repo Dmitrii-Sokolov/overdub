@@ -18,7 +18,30 @@ class Config:
     source_lang: str = "en"
     target_lang: str = "ru"
 
-    # STT — faster-whisper
+    # STT — engine selection
+    asr_engine: str = "parakeet"     # "parakeet" | "whisper". Parakeet-TDT 0.6b v3 runs in
+                                     # .venv-parakeet as a subprocess worker (overdub/parakeet.py),
+                                     # whisper large-v3 in-process via faster-whisper.
+                                     # Measured 2026-08-06 over 47.9 h / 165 videos: RTF 0.0034 vs
+                                     # 0.087 (~25x), and transcribe is 30.5% of pipeline wall clock
+                                     # across 375 recorded runs, so the batch gets ~1.4x overall.
+                                     # Text quality is a WASH on the fixture (1.56% vs 1.6% WER
+                                     # once measurement artefacts are removed) — the reason to
+                                     # switch is that whisper's repetition loops disappear: in the
+                                     # 8 hand-repaired fixture windows whisper scores 23.3% WER and
+                                     # Parakeet 4.2%. What it costs is proper nouns (6 Claude ->
+                                     # Cloud in one fixture video) and a hard dependency on the VAD
+                                     # gate, without which it invents words on non-speech.
+                                     # Changing this changes SOURCE TEXT -> it is part of asr_key.
+    parakeet_python: Path = Path(".venv-parakeet/Scripts/python.exe")
+    parakeet_vad: bool = True        # NEVER ship this off. Without the gate three silent videos in
+                                     # the 165-video corpus came back with 110, 32 and 6 invented
+                                     # words (2026-08-06); with it, zero, and no healthy video was
+                                     # gated. It also removed all 7 tail truncations and cut
+                                     # uncovered speech from 1246 words to 816. The flag exists to
+                                     # REPRODUCE that measurement, not to trade quality for speed.
+
+    # STT — faster-whisper (asr_engine = "whisper"; also the verify round-trip either way)
     whisper_model: str = "large-v3"
     whisper_device: str = "cuda"
     whisper_compute_type: str = "float16"

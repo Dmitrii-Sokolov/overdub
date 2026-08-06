@@ -115,8 +115,19 @@ def _work(tmp: Path) -> WorkDir:
     return work
 
 
+def Cfg(**kw) -> Config:
+    """A WHISPER config, which is what this file is about.
+
+    The shipped default became `asr_engine = "parakeet"` on 2026-08-06, and Parakeet has neither a
+    beam nor context feedback — so every contract below (beam plumbing, the cond hatch, the
+    alignment guard, the provenance stamp's shape) is whisper's, and a bare Cfg() would test the
+    wrong engine. Parakeet's own contract is section 12.
+    """
+    return Config(asr_engine="whisper", **kw)
+
+
 def _ctx(work: WorkDir, cfg: Config | None = None) -> Context:
-    cfg = Config() if cfg is None else cfg
+    cfg = Cfg() if cfg is None else cfg
     cfg.work_root = work.root.parent
     return Context(url=URL, cfg=cfg, work=work)
 
@@ -126,7 +137,7 @@ def _ctx(work: WorkDir, cfg: Config | None = None) -> Context:
 def test_defaults_resolve_both_roles_to_todays_values() -> None:
     # The split must be a NO-OP at defaults, or every measured number in the corpus (RTF 0.087,
     # the repair-fixture baseline, the similarity distribution) silently describes another build.
-    cfg = Config()
+    cfg = Cfg()
     assert cfg.whisper_beam_size == 5, cfg.whisper_beam_size
     assert cfg.whisper_compute_type == "float16", cfg.whisper_compute_type
     assert cfg.verify_compute_type == "float16", cfg.verify_compute_type
@@ -138,8 +149,8 @@ def test_verify_beam_is_a_constant_not_a_config_key() -> None:
     # Verify decides WHICH units get flagged. If it took cfg.whisper_beam_size it would move
     # under the very experiment it is supposed to measure.
     assert VERIFY_BEAM_SIZE == 5
-    assert not hasattr(Config(), "verify_beam_size")
-    assert not hasattr(Config(), "repair_beam_size")
+    assert not hasattr(Cfg(), "verify_beam_size")
+    assert not hasattr(Cfg(), "repair_beam_size")
 
 
 # --- 2. the decoupling ----------------------------------------------------------------
@@ -147,7 +158,7 @@ def test_verify_beam_is_a_constant_not_a_config_key() -> None:
 def test_verify_compute_type_survives_a_transcribe_only_override() -> None:
     # THE point of the split: this assertion is what fails if verify_compute_type is ever turned
     # into an inherit-sentinel, which would leave problem (a) exactly where it was.
-    cfg = Config()
+    cfg = Cfg()
     cfg.whisper_compute_type = "int8_float16"
     assert cfg.compute_type_for("transcribe") == "int8_float16"
     assert cfg.compute_type_for("verify") == "float16", cfg.compute_type_for("verify")
@@ -155,7 +166,7 @@ def test_verify_compute_type_survives_a_transcribe_only_override() -> None:
 
 def test_transcribe_compute_type_survives_a_verify_only_override() -> None:
     # Symmetric direction: moving the instrument on purpose must not move the transcriber.
-    cfg = Config()
+    cfg = Cfg()
     cfg.verify_compute_type = "int8_float16"
     assert cfg.compute_type_for("transcribe") == "float16"
     assert cfg.compute_type_for("verify") == "int8_float16"
@@ -167,7 +178,7 @@ def test_unknown_role_raises() -> None:
     # A closed 2-element enum: a typo'd role that fell back to a default would silently hand one
     # instrument's compute type to the other.
     try:
-        Config().compute_type_for("nonsense")
+        Cfg().compute_type_for("nonsense")
     except ValueError as e:
         assert "nonsense" in str(e), str(e)
     else:
@@ -178,17 +189,17 @@ def test_unknown_role_raises() -> None:
 
 def test_asr_key_is_stable_and_names_the_config() -> None:
     # A string, not a hash: the refusal message has to be actionable.
-    assert asr_key(Config()) == "large-v3|float16|beam=5|cond=True", asr_key(Config())
-    assert asr_key(Config()) == asr_key(Config())
+    assert asr_key(Cfg()) == "large-v3|float16|beam=5|cond=True", asr_key(Cfg())
+    assert asr_key(Cfg()) == asr_key(Cfg())
 
 
 def test_asr_key_moves_with_every_source_text_knob() -> None:
-    base = asr_key(Config())
+    base = asr_key(Cfg())
     for field, value in (("whisper_model", "distil-large-v3"),
                          ("whisper_compute_type", "int8_float16"),
                          ("whisper_beam_size", 1),
                          ("whisper_condition_on_previous", False)):
-        cfg = Config()
+        cfg = Cfg()
         setattr(cfg, field, value)
         assert asr_key(cfg) != base, field
 
@@ -196,10 +207,10 @@ def test_asr_key_moves_with_every_source_text_knob() -> None:
 def test_asr_key_ignores_knobs_that_cannot_change_source_text() -> None:
     # Not a hash of the whole Config: a key that moved on tts_seed would refuse every workdir
     # after an unrelated TTS experiment, and operators would learn to delete the stamp.
-    base = asr_key(Config())
+    base = asr_key(Cfg())
     for field, value in (("tts_seed", 7), ("verify_compute_type", "int8_float16"),
                          ("tts_voice", "kseniya"), ("repair_window_min_sec", 12.0)):
-        cfg = Config()
+        cfg = Cfg()
         setattr(cfg, field, value)
         assert asr_key(cfg) == base, field
 
@@ -207,7 +218,7 @@ def test_asr_key_ignores_knobs_that_cannot_change_source_text() -> None:
 # --- 5. the session cache key ---------------------------------------------------------
 
 def test_session_key_is_the_five_tuple_and_roles_do_not_cross() -> None:
-    cfg = Config()
+    cfg = Cfg()
     with _patched_loader() as rec:
         session = Session()
         t = session.whisper(cfg, cfg.whisper_model, role="transcribe")
@@ -226,7 +237,7 @@ def test_session_key_separates_two_roles_that_differ_only_in_compute_type() -> N
     # The trap: point verify_model at the transcribe model (or flip only the compute type) and a
     # (model, device) key hands BOTH roles the same build — an in-process A/B comparing a thing
     # to itself, invisible in every report.
-    cfg = Config()
+    cfg = Cfg()
     cfg.whisper_model = "small"
     cfg.verify_model = "small"
     cfg.whisper_compute_type = "int8_float16"
@@ -244,7 +255,7 @@ def test_session_key_separates_two_roles_that_differ_only_in_beam() -> None:
     # asr._warm tunes kernels FOR a beam, so an instance warmed at 5 is not interchangeable with
     # one warmed at 1. A key without the beam would silently share one build across the A/B —
     # and would also drag the verifier down to beam 1 with the transcriber.
-    cfg = Config()
+    cfg = Cfg()
     cfg.whisper_model = "small"
     cfg.verify_model = "small"
     cfg.whisper_beam_size = 1
@@ -293,7 +304,7 @@ def test_transcribe_stage_decodes_at_the_config_beam() -> None:
         tmp = Path(d) / VID
         work = _work(tmp)
         work.source_audio.write_bytes(b"RIFF")
-        cfg = Config()
+        cfg = Cfg()
         cfg.whisper_beam_size = 1
         ctx = _ctx(work, cfg)
         model, roles = FakeModel(), []
@@ -312,7 +323,7 @@ def test_repair_window_decodes_at_the_same_config_beam() -> None:
         tmp = Path(d) / VID
         work = _work(tmp)
         work.source_audio.write_bytes(b"RIFF")
-        cfg = Config()
+        cfg = Cfg()
         cfg.whisper_beam_size = 1
         ctx = _ctx(work, cfg)
         model, roles = FakeModel(), []
@@ -365,7 +376,7 @@ def test_done_accepts_a_pre_stamp_workdir() -> None:
 
 def test_done_accepts_a_matching_stamp() -> None:
     with tempfile.TemporaryDirectory() as d:
-        ctx = _stamped_ctx(Path(d) / VID, asr_key(Config()))
+        ctx = _stamped_ctx(Path(d) / VID, asr_key(Cfg()))
         assert TranscribeStage().done(ctx) is True
 
 
@@ -374,7 +385,7 @@ def test_done_warns_on_a_mixed_provenance_workdir_and_names_both_configs() -> No
     # carries a stamp — while breaking `--batch --force`, which rebuilds translation.json two
     # stages later and was never wrong. The workdir must stay usable; the operator must be told.
     with tempfile.TemporaryDirectory() as d:
-        cfg = Config()
+        cfg = Cfg()
         cfg.whisper_beam_size = 1
         ctx = _stamped_ctx(Path(d) / VID, "large-v3|float16|beam=5|cond=True", cfg)
         ok, out = _quiet(TranscribeStage().done, ctx)
@@ -390,7 +401,7 @@ def test_run_stamps_the_key_that_done_reads_back() -> None:
         tmp = Path(d) / VID
         work = _work(tmp)
         work.source_audio.write_bytes(b"RIFF")
-        cfg = Config()
+        cfg = Cfg()
         cfg.whisper_beam_size = 1
         ctx = _ctx(work, cfg)
         ctx.session.whisper = lambda c, m, *, role: FakeModel()  # type: ignore[method-assign]
@@ -413,6 +424,14 @@ def test_shipped_toml_resolves_to_todays_effective_asr_settings() -> None:
     toml = _ROOT / "overdub.toml"
     assert toml.exists(), toml
     cfg = Config.load(toml)
+    # The shipped file selects the ENGINE, and that is the one setting here that rebases every
+    # measured number at once. Asserted on the real load, not on Cfg(), precisely because this test
+    # exists to catch the shipped config drifting away from what the corpus was measured under.
+    assert cfg.asr_engine == "parakeet", cfg.asr_engine
+    assert cfg.parakeet_vad is True, cfg.parakeet_vad
+    assert asr_key(cfg) == "parakeet-tdt-0.6b-v3|vad=True", asr_key(cfg)
+    # whisper's own settings still ship unchanged — it remains the verify round-trip's engine and
+    # the fallback transcriber, so its numbers must not move under us either.
     assert cfg.whisper_model == "large-v3", cfg.whisper_model
     assert cfg.whisper_device == "cuda", cfg.whisper_device
     assert cfg.whisper_beam_size == 5, cfg.whisper_beam_size
@@ -420,7 +439,7 @@ def test_shipped_toml_resolves_to_todays_effective_asr_settings() -> None:
     assert cfg.verify_model == "small", cfg.verify_model
     assert cfg.compute_type_for("transcribe") == "float16"
     assert cfg.compute_type_for("verify") == "float16"
-    assert asr_key(cfg) == asr_key(Config()) == "large-v3|float16|beam=5|cond=True"
+    assert asr_key(Cfg()) == "large-v3|float16|beam=5|cond=True"
 
 
 # --- 10. the loader actually forwards what it was asked for ---------------------------
@@ -502,7 +521,7 @@ def test_verify_asks_for_the_verify_role_while_the_transcriber_is_moved() -> Non
         work.translation.write_text("[]", encoding="utf-8")
         work.seg_manifest.write_text(json.dumps({"units": [], "synth_key": "k",
                                                  "units_key": "u"}), encoding="utf-8")
-        cfg = Config()
+        cfg = Cfg()
         cfg.whisper_compute_type = "int8_float16"
         cfg.verify_roundtrip = True     # the round-trip ships OFF (2026-08-06); this test is
                                         # ABOUT the round-trip, so it asks for it explicitly
@@ -523,7 +542,7 @@ def test_verify_loads_no_model_when_the_roundtrip_is_off() -> None:
         work.translation.write_text("[]", encoding="utf-8")
         work.seg_manifest.write_text(json.dumps({"units": [], "synth_key": "k",
                                                  "units_key": "u"}), encoding="utf-8")
-        cfg = Config()
+        cfg = Cfg()
         assert cfg.verify_roundtrip is False            # the shipped default
         ctx = _ctx(work, cfg)
         seen, rec = _role_recorder()
@@ -563,7 +582,7 @@ def test_the_reseed_verifier_asks_for_the_verify_role_too() -> None:
             [{"id": 0, "start": 0.0, "end": 2.0, "src_en": "hello",
               "text_ru": "привет", "text_tts": "привет", "status": "ok"}],
             ensure_ascii=False), encoding="utf-8")
-        cfg = Config()
+        cfg = Cfg()
         cfg.tts_engine = "silero"                       # synth_key must need no assets here
         cfg.whisper_compute_type = "int8_float16"
         cfg.tts_max_retries = 1
@@ -582,22 +601,22 @@ def test_asr_key_core_drops_cond_and_keeps_the_other_three() -> None:
     documented as a per-source escape hatch, so refusing on it poisoned the workdir the hatch
     existed to produce. The other three are global config facts the sweep moves and the operator
     must not be able to land as a no-op."""
-    base = asr_key(Config())
+    base = asr_key(Cfg())
     assert asr_key_core(base) == "large-v3|float16|beam=5"
-    assert asr_key_core(asr_key(Config(), cond=False)) == asr_key_core(base)
-    assert asr_key_core(asr_key(Config(), cond="mixed")) == asr_key_core(base)
+    assert asr_key_core(asr_key(Cfg(), cond=False)) == asr_key_core(base)
+    assert asr_key_core(asr_key(Cfg(), cond="mixed")) == asr_key_core(base)
     for field, value in (("whisper_model", "distil-large-v3"),
                          ("whisper_compute_type", "int8_float16"),
                          ("whisper_beam_size", 1)):
-        cfg = Config()
+        cfg = Cfg()
         setattr(cfg, field, value)
         assert asr_key_core(asr_key(cfg)) != asr_key_core(base), field
 
 
 def test_asr_key_records_the_cond_it_is_given() -> None:
-    assert asr_key(Config(), cond=False).endswith("|cond=False")
-    assert asr_key(Config(), cond="mixed").endswith("|cond=mixed")
-    assert asr_key(Config()).endswith("|cond=True")            # default: the config's value
+    assert asr_key(Cfg(), cond=False).endswith("|cond=False")
+    assert asr_key(Cfg(), cond="mixed").endswith("|cond=mixed")
+    assert asr_key(Cfg()).endswith("|cond=True")            # default: the config's value
 
 
 def test_done_keeps_a_workdir_whose_cond_alone_differs() -> None:
@@ -688,7 +707,7 @@ def test_a_forced_rewrite_over_a_live_translation_warns_loudly() -> None:
     translation.json two stages later); the operator gets the one line that makes it visible."""
     with tempfile.TemporaryDirectory() as d:
         tmp = Path(d) / VID
-        cfg = Config()
+        cfg = Cfg()
         cfg.whisper_beam_size = 1
         ctx = _stamped_ctx(tmp, "large-v3|float16|beam=5|cond=True", cfg)
         ctx.work.source_audio.write_bytes(b"RIFF")
@@ -705,7 +724,7 @@ def test_a_forced_rewrite_with_no_translation_stays_free() -> None:
     # The sweep's own legitimate move. Scoped to the artifact that makes the failure silent.
     with tempfile.TemporaryDirectory() as d:
         tmp = Path(d) / VID
-        cfg = Config()
+        cfg = Cfg()
         cfg.whisper_beam_size = 1
         ctx = _stamped_ctx(tmp, "large-v3|float16|beam=5|cond=True", cfg)
         ctx.work.source_audio.write_bytes(b"RIFF")
@@ -734,7 +753,7 @@ def test_repair_warns_about_a_window_at_another_beam() -> None:
     exists to prevent. Warns rather than refuses: the refusing version ran ahead of the
     no-defect-windows early return, so a repair that would change nothing still exited 1."""
     with tempfile.TemporaryDirectory() as d:
-        cfg = Config()
+        cfg = Cfg()
         cfg.whisper_beam_size = 1
         ctx = _stamped_ctx(Path(d) / VID, "large-v3|float16|beam=5|cond=True", cfg)
         stamped, out = _quiet(repair.check_decode_config, ctx)
@@ -757,14 +776,14 @@ def test_a_repaired_transcript_stamps_cond_mixed_and_counts_its_windows() -> Non
     pure cond value is no longer true. invalidate_downstream deliberately PRESERVES timings.json,
     so nothing else could record this."""
     with tempfile.TemporaryDirectory() as d:
-        ctx = _stamped_ctx(Path(d) / VID, asr_key(Config()))
-        repair.stamp_repaired(ctx, asr_key(Config()), 2)
-        repair.stamp_repaired(ctx, asr_key(Config()), 1)
+        ctx = _stamped_ctx(Path(d) / VID, asr_key(Cfg()))
+        repair.stamp_repaired(ctx, asr_key(Cfg()), 2)
+        repair.stamp_repaired(ctx, asr_key(Cfg()), 1)
         detail = json.loads((ctx.work.root / "timings.json").read_text(
             encoding="utf-8"))["detail"]["transcribe"]
-        assert detail["asr_key"] == asr_key(Config(), cond="mixed")
+        assert detail["asr_key"] == asr_key(Cfg(), cond="mixed")
         assert detail["asr_repair_windows"] == 3            # cumulative across passes
-        assert asr_key_core(detail["asr_key"]) == asr_key_core(asr_key(Config()))
+        assert asr_key_core(detail["asr_key"]) == asr_key_core(asr_key(Cfg()))
 
 
 def test_a_pre_stamp_workdir_gets_the_count_but_no_invented_key() -> None:

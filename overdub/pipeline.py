@@ -88,6 +88,19 @@ class Session:
         return self.get(("whisper", model, cfg.whisper_device, ct, beam),
                         lambda: load_whisper(model, cfg.whisper_device, ct, beam_size=beam))
 
+    def parakeet(self, cfg: Config):
+        """The .venv-parakeet ASR worker, one live process per stage sweep.
+
+        Keyed on what changes the process's OUTPUT (interpreter, attention mode, VAD), so a config
+        change gets a new worker instead of silently reusing one started under the old settings.
+        clear() finds its close() by the same duck-typing every other cached object goes through —
+        and unlike a WhisperModel, failing to call it leaks an OS process, so this must stay in the
+        cache rather than being constructed per video."""
+        from .parakeet import ParakeetWorker
+
+        return self.get(("parakeet", str(cfg.parakeet_python), bool(cfg.parakeet_vad)),
+                        lambda: ParakeetWorker(cfg.parakeet_python, vad=bool(cfg.parakeet_vad)))
+
     def tts_engine(self, cfg: Config):
         from .tts import build_engine
 
