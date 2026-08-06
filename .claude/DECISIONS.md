@@ -143,6 +143,8 @@ re-fetch is not transcript-neutral, at least not always. What is NOT established
 downloads were not compared for format or bytes, so "yt-dlp picked a different format" is the
 likely explanation and not a measured one.
 
+## 2026-08-06 — the download prefetch is a PRE-PASS, not a parallel branch inside the sweep
+
 `download` is the only stage holding no GPU and bound by the network, and on the baseline it was
 323.8 s of strictly serial fetching (13.3% of machine time) whose longest single video was 82 s —
 so most of it was the queue, not the transfer. It now runs concurrently, `download_concurrency = 3`.
