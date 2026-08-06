@@ -125,7 +125,13 @@ diverge from it.
 - **A MISSING artifact degrades; an INCONSISTENT one raises** (2026-07-28, see
   DECISIONS). `assemble` with no translation writes `en.srt` off `sentences.json`
   and builds no dub; `mux` requires only `source.mkv` and ships whatever tracks
-  exist. Both announce it loudly and stamp it (`assemble.degraded`, `mux.tracks`,
+  exist. Since 2026-08-06 an EMPTY transcript is a third case and is neither:
+  `TranslateStage` writes `translation.json` as `[]` itself and says so, because
+  an empty translation is the CONSISTENT answer to a video with no speech, not a
+  missing artifact. `separate` then skips too (no dub to lay a bed under) and the
+  video ships without a dub — so a queue converges, every URL in yielding a
+  container out. A transcript that is ABSENT rather than empty still raises: that
+  video has not been shown to have no speech. Both announce it loudly and stamp it (`assemble.degraded`, `mux.tracks`,
   `run.json.degraded`, `needs_triage` true) — the export FILENAME is unchanged, so
   the report is the only record. Artifacts that DISAGREE (non-contiguous ids, units
   not covering the ids, a dub with no manifest, `bed` with no bed) still raise: a

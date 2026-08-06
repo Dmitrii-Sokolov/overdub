@@ -126,6 +126,26 @@ $sumTodo = @($ids | Where-Object {
     (Get-Item "work\$_\sentences.json").LastWriteTime -gt (Get-Item $s).LastWriteTime })
 ```
 
+**Then drop the videos with NO SPEECH from both lists — they need no agent at all** (2026-08-06).
+whisper returned an empty transcript, so there is nothing to translate and nothing to summarize,
+and since that date the pipeline writes their empty `translation.json` itself and ships them
+without a dub. Skipping them is pure saving: measured on the 2026-08-04 batch, **32 of 52
+sub-agents translated and summarized nothing** because 16 of 26 transcripts were empty.
+
+```powershell
+$noSpeech = @(.venv-asr\Scripts\python.exe -X utf8 -c "import json,pathlib,sys
+for i in sys.argv[1:]:
+    p = pathlib.Path('work')/i/'sentences.json'
+    if p.exists() and not json.loads(p.read_text(encoding='utf-8')): print(i)" @ids)
+$todo    = @($todo    | Where-Object { $_ -notin $noSpeech })
+$sumTodo = @($sumTodo | Where-Object { $_ -notin $noSpeech })
+"no speech, skipped: $($noSpeech.Count)"
+```
+
+Do NOT hand-write their `translation.json` to clear the step-3 gate — that is the forged
+completion artifact contract §3 forbids. The pipeline is the only producer, and the gate below
+already passes for them because `TranslateStage` writes the file on the resume.
+
 **A missing `translation.draft.json` OUTRANKS a present `translation.json`. Always** — the
 derived-artifact rule, [`docs/queue-contract.md`](../../../docs/queue-contract.md) §5. Add the
 video to `$todo` and re-translate it; do not reason your way out of the contradiction by opening
@@ -309,15 +329,22 @@ the two routes produce different artifacts under one name.
 
 ## Step 3 — Resume the full pipeline
 
-**Gate before resuming (do not skip):** `work/<id>/translation.json` must exist for EVERY id
-in `$ids`:
+**Gate before resuming (do not skip):** `work/<id>/translation.json` must exist for every id in
+`$ids` **that has speech** — the no-speech ones are expected to be missing it here, because
+`TranslateStage` writes theirs during the resume itself:
 
 ```powershell
-$ids | Where-Object { -not (Test-Path "work\$_\translation.json") }   # must print nothing
+$ids | Where-Object { $_ -notin $noSpeech -and -not (Test-Path "work\$_\translation.json") }
+# must print nothing
 ```
 
-A video missing it has nothing for the resume to dub from — the translate seam is the only
-producer of `translation.json`, so the fix is always step 2 for that video.
+A video with speech missing it has nothing for the resume to dub from — the translate seam is the
+only producer for those, so the fix is always step 2 for that video.
+
+**Do not widen this into "no translation.json anywhere" and do not narrow it by trusting
+`$noSpeech` blindly.** The exemption is the ONE case where the pipeline produces the artifact
+itself, and it is keyed on an empty `sentences.json` — a video whose transcribe FAILED has no
+`sentences.json` at all, is therefore not in `$noSpeech`, and must still trip this gate.
 
 Also preflight the synthesis prerequisites now, before an overnight run — the point is that a
 missing piece fails the first synthesize HOURS into the night, so check it while a human is

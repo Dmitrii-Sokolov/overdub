@@ -71,6 +71,7 @@ divider. Look things up through this index, not by scrolling.
 - `07-16` dead-air elimination BUILD † · `07-16` interim ear verdict
 
 **Pipeline, batch, artifacts**
+- `08-06` a no-speech video ships without a dub; the queue converges
 - `08-06` verify round-trip ships OFF (2 real defects in 24 flags); completeness stays
 - `08-03` CHANGELOG.md retired; measurements retire to DECISIONS
 - `07-28` the tail DEGRADES instead of failing: a miss costs a track, not the artifact
@@ -96,6 +97,42 @@ divider. Look things up through this index, not by scrolling.
 † carries a `SUPERSEDED` header — the code it describes is gone or changed. Read the header first.
 
 ---
+
+## 2026-08-06 — a video with NO SPEECH ships without a dub instead of stopping the run
+
+**The property being bought is CONVERGENCE: the list of URLs in is the list of containers out.**
+Until now a no-speech video could not reach `out/` at all. `TranslateStage.run` raises when
+`translation.json` is absent, and nothing could legally produce an empty one — the degraded
+`assemble` branch needs the file to EXIST and be `[]`, `build_translation.py` refuses to run
+without a draft, so a sub-agent was the only producer. The result was a queue that silently
+returned fewer videos than it took, and 32 of 52 sub-agents on the 2026-08-04 batch translating
+and summarizing nothing, because 16 of 26 transcripts were empty.
+
+**Decision.** `TranslateStage.run` writes `[]` when `sentences.json` parses to an empty list, and
+says so. `assemble` then takes its existing `no_transcript` exit, `separate` skips (nothing to lay
+a bed under), and `mux` ships the container.
+
+**Written in the PIPELINE, not in the route-B helper**, which is where INBOX had proposed it. The
+pipeline is the only producer every route shares, so a no-speech video now needs no orchestrator
+cooperation and no sub-agent on ANY route — and nothing hand-writes a completion artifact, which
+queue-contract §3 forbids. The route-B skill drops those ids from the fan-out instead.
+
+**The line, and it is the whole risk of this change: an ABSENT transcript is not an empty one.**
+A video whose transcribe failed has no `sentences.json`, has NOT been shown to have no speech, and
+must still stop the run — as must a torn file and one that is not a list. Treating those as
+no-speech would ship them silently, which is exactly the class this stage was written to prevent.
+`_load_sentences` returns `None` for all three and `[]` only for a real empty list; mutating that
+distinction turns the guard off and the test suite catches it.
+
+**Rejected: skipping the video entirely at the driver.** It would need a new "skip" concept in the
+stage-major loop, and it would produce no container — losing the convergence property this change
+exists to get.
+
+**`separate` gates on the DUB, not on the transcript.** `dub_ru.wav` absent means there is nothing
+to mix a bed under, whatever the reason (no speech, no translation, no synthesis), so one condition
+covers all three. It is a ~3 GB-VRAM htdemucs pass at median 20 s and worst 449 s — and a
+music-only clip, exactly the no-speech case, is the slowest kind to separate. Ordering assumption
+stated in the code: the driver always runs `assemble` before `separate`.
 
 ## 2026-08-06 — the verify ROUND-TRIP ships OFF; the completeness check in the same stage stays ON
 

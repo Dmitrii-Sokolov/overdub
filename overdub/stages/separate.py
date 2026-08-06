@@ -28,6 +28,18 @@ class SeparateStage:
     def done(self, ctx: Context) -> bool:
         if ctx.cfg.dub_mix != "bed":
             return True                                    # no-op unless the bed is wanted
+        if not ctx.work.dub_audio.exists():
+            # Nothing to lay a bed UNDER. assemble ran before this stage and degraded (no speech,
+            # no translation, no synthesis), so mux will ship the original audio untouched and a
+            # ~3 GB-VRAM htdemucs pass would render an ambience track nobody mixes. Costs the most
+            # of any wasted stage here: median 20 s, worst 449 s, and a music-only video — exactly
+            # the no-speech case — is the slowest kind to separate.
+            #
+            # Reads as done() rather than an early return in run() so a resume does not re-decide
+            # it every sweep. Safe because the driver always runs assemble first; an `--only
+            # separate` before assemble would skip the bed, and the dub that appeared later would
+            # then meet mux's bed-with-no-bed raise, which is the loud failure, not a silent one.
+            return True
         return ctx.work.source_bed.exists()
 
     def run(self, ctx: Context) -> None:

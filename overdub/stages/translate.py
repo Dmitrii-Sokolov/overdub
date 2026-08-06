@@ -14,7 +14,9 @@ inventory of its hand-synced copies is in PLAN, "Slot fit" obstacle (iii).
 
 from __future__ import annotations
 
+import json
 import re
+import sys
 
 from ..normalize import normalize_for_tts
 from ..pipeline import Context
@@ -125,6 +127,19 @@ def _is_bad(text_ru: str, src_en: str, cfg) -> str | None:
     return None
 
 
+def _load_sentences(ctx: Context) -> list | None:
+    """sentences.json as a list, or None for missing / torn / not-a-list.
+
+    The None is the whole point of the function: an ABSENT transcript is not an empty one. A
+    video whose transcribe never ran must still hit the raise below — treating it as no-speech
+    would ship it silently, which is the failure this stage exists to prevent."""
+    try:
+        doc = json.loads(ctx.work.sentences.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return doc if isinstance(doc, list) else None
+
+
 class TranslateStage:
     name = "translate"
 
@@ -132,11 +147,29 @@ class TranslateStage:
         return ctx.work.translation.exists()
 
     def run(self, ctx: Context) -> None:
-        """Reached only when `translation.json` is absent — and nothing here can produce it.
+        """Reached only when `translation.json` is absent — and nothing here can produce it,
+        with ONE exception: a transcript with no sentences in it.
 
-        Raising is the whole point: without this the run would carry on and mux a video with no
-        dub, which is the silent-failure class the project forbids. The fix is always to produce
-        the artifact at the seam (route B), never to restart something here."""
+        Raising is otherwise the whole point: without it the run would carry on and mux a video
+        with no dub, which is the silent-failure class the project forbids. The fix is always to
+        produce the artifact at the seam (route B), never to restart something here."""
+        sentences = _load_sentences(ctx)
+        if sentences == []:
+            # NO SPEECH. whisper returned nothing for this video — a music clip, an instrumental,
+            # silence. The empty translation is not a missing artifact, it is the CONSISTENT and
+            # complete answer to an empty transcript, so writing it degrades instead of raising
+            # (the 2026-07-28 line: missing degrades, INCONSISTENT raises). assemble then takes
+            # its no_transcript exit, builds no dub, and mux ships the video — which is what makes
+            # the queue converge: every URL in yields a container out.
+            #
+            # Written HERE rather than by the route-B helper on purpose. The pipeline is the only
+            # producer every route shares, so a no-speech video needs no orchestrator cooperation
+            # and no sub-agent — and nothing has to hand-write a completion artifact, which
+            # queue-contract §3 forbids for good reason.
+            ctx.work.translation.write_text("[]", encoding="utf-8")
+            print(f"       [info] no speech in {ctx.work.root.name} — empty translation written; "
+                  "the video will ship without a dub", file=sys.stderr)
+            return
         raise RuntimeError(
             f"{ctx.work.translation.name} is missing for {ctx.work.root.name} — translation is "
             "produced at the seam, not by the pipeline. Run route B step 2 for this video "
