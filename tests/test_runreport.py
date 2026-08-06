@@ -98,26 +98,6 @@ def _two_unit_report(**verify_extra):
     return rep
 
 
-# --- record_stage_timing ------------------------------------------------------
-def test_record_stage_timing_upsert_and_rounding() -> None:
-    with tempfile.TemporaryDirectory() as d:
-        work = _mkwork(d)
-        runreport.record_stage_timing(work, "download", 12.3456)
-        runreport.record_stage_timing(work, "transcribe", 45.1)
-        runreport.record_stage_timing(work, "download", 10.0)   # upsert overwrites ONLY download
-        data = json.loads((Path(d) / "timings.json").read_text(encoding="utf-8"))
-        assert data["stages"]["download"] == 10.0
-        assert data["stages"]["transcribe"] == 45.1             # other stage preserved
-
-
-def test_record_stage_timing_rounds_to_3dp() -> None:
-    with tempfile.TemporaryDirectory() as d:
-        work = _mkwork(d)
-        runreport.record_stage_timing(work, "synthesize", 1.234567)
-        data = json.loads((Path(d) / "timings.json").read_text(encoding="utf-8"))
-        assert data["stages"]["synthesize"] == 1.235
-
-
 # --- _percentile --------------------------------------------------------------
 def test_percentile() -> None:
     assert runreport._percentile([5.0], 0.5) == 5.0                      # n==1

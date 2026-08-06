@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import shutil
@@ -12,7 +13,7 @@ import traceback
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import queueview, repair, runreport
+from . import queueview, repair, runreport, timings
 from .config import Config
 from .pipeline import Context, STOP_NAME, Session, StopRequested, check_stop, run_pipeline
 from .stages import all_stages, scout_stages
@@ -105,12 +106,62 @@ def main(argv: list[str] | None = None) -> None:
                              ids=repair_ids, dry_run=args.repair_dry_run))
     if urls is not None:
         run = _run_batch_video_major if args.video_major else _run_batch_stage_major
-        sys.exit(run(urls, cfg, force=args.force, only=only, scout=args.scout))
+        order = "video-major" if args.video_major else "stage-major"
+        with _run_window(cfg, [video_id(u) for u in urls], order):
+            code = run(urls, cfg, force=args.force, only=only, scout=args.scout)
+        sys.exit(code)
+    with _run_window(cfg, [video_id(args.url)], "single"):
+        try:
+            _run_one(args.url, cfg, force=args.force, only=only, scout=args.scout)
+        except StopRequested as e:
+            print(f"[stop] STOP file honored — halted {e}; re-run the same command to resume")
+            sys.exit(3)
+
+
+def _config_key(cfg) -> str:
+    """The config fingerprint stamped into runs.jsonl: the two canonical keys the project already
+    maintains, joined. asr_key covers the engine and everything that changes source text;
+    synth_key covers everything that changes rendered audio and carries an INVARIANT that any new
+    audio-affecting knob must enter it, so this string cannot silently fall behind the pipeline.
+
+    It is the config's INTENT. asr_key also has a per-run OUTCOME form (transcribe._guard can
+    re-decode with a flag off and stamps what actually ran) — that one is per video and has no
+    meaning at the grain of a whole invocation, so it is deliberately not used here.
+
+    Cannot raise, because its ONE caller evaluates it inside a finally: an exception there would
+    replace whatever was already unwinding and turn a lost timing into a lost run. "unknown" is
+    the honest degradation — a row whose fingerprint is missing must be visibly unusable for
+    cross-night comparison rather than quietly absent from the series.
+    """
     try:
-        _run_one(args.url, cfg, force=args.force, only=only, scout=args.scout)
-    except StopRequested as e:
-        print(f"[stop] STOP file honored — halted {e}; re-run the same command to resume")
-        sys.exit(3)
+        from .asr import asr_key
+        from .tts import synth_key
+
+        return f"{asr_key(cfg)}||{synth_key(cfg)}"
+    except Exception as e:                                  # noqa: BLE001 — see the docstring
+        print(f"[warn] config fingerprint unavailable ({e}) — runs.jsonl row is not comparable",
+              file=sys.stderr)
+        return "unknown"
+
+
+@contextlib.contextmanager
+def _run_window(cfg, ids, order):
+    """Bracket one pipeline invocation and append its elapsed window to work/runs.jsonl.
+
+    Wraps the drivers instead of living inside them so the single-video path is measured by the
+    same instrument as a batch: a run of one is still a run, and a series with holes where those
+    runs were is a series that cannot be summed.
+
+    The row is written on the way out whatever happened — a STOP, a crash, an --only sweep that
+    did almost nothing. A halted run still consumed the wall clock it consumed, and writing only
+    the clean ones would bias the series toward them while looking complete.
+    """
+    started = timings.now_iso()
+    try:
+        yield
+    finally:
+        timings.record_run(cfg.work_root, ids, started=started, finished=timings.now_iso(),
+                           order=order, config_key=_config_key(cfg))
 
 
 def _run_one(url: str, cfg: Config, *, force: bool, only: set[str] | None,

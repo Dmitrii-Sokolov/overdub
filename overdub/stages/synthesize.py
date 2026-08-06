@@ -174,7 +174,7 @@ class SynthesizeStage:
         return True
 
     def run(self, ctx: Context) -> None:
-        from .. import runreport            # local: runreport imports stages lazily too
+        from .. import timings
 
         cfg = ctx.cfg
         segs = json.loads(ctx.work.translation.read_text(encoding="utf-8"))
@@ -385,7 +385,7 @@ class SynthesizeStage:
                 p.unlink(missing_ok=True)
         # `need` is the pre-loop snapshot, and it has to be: reusable() re-reads the wav from
         # disk, so asking it again down here would call a just-rendered unit reusable.
-        runreport.record_stage_detail(
+        timings.record_stage_detail(
             ctx.work, "synthesize", work_sec=round(work_s, 3), n_units=len(out),
             n_rendered=len(need), n_synth_calls=synth_calls)
         print(f"       {len(segs)} sentences → {len(out)} units → manifest.json "

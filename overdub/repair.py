@@ -521,15 +521,15 @@ def stamp_repaired(ctx: Context, stamped: "str | None", n_windows: int) -> None:
     invented stamp is a worse record than none. The count is cumulative across passes — the same
     "counter that explains an outlier" role asr_passes plays for the guard.
     """
-    from . import runreport
+    from . import timings
     from .asr import asr_key
 
-    detail = runreport._load_timings(ctx.work)[1].get("detail") or {}
+    detail = timings.load_timings(ctx.work)[1].get("detail") or {}
     prior = (detail.get("transcribe") or {}).get("asr_repair_windows")
     fields: dict = {"asr_repair_windows": (prior if isinstance(prior, int) else 0) + n_windows}
     if stamped is not None:
         fields["asr_key"] = asr_key(ctx.cfg, cond="mixed")
-    runreport.record_stage_detail(ctx.work, "transcribe", **fields)
+    timings.record_stage_detail(ctx.work, "transcribe", **fields)
 
 
 # --- per-video orchestration --------------------------------------------------

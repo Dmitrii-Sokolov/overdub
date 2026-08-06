@@ -14,7 +14,10 @@ would put a many-workdir walk inside the per-video rollup the pipeline calls.
 Pure stdlib on purpose (json/math/os/re/shutil/subprocess): the aggregation logic is unit-tested
 without importing torch/whisper/soundfile, and the module has NO dependency on
 pipeline/stages/cli/config internals (config is passed in), so importing it from pipeline.py
-cannot create a cycle. It now has NO package imports at all.
+cannot create a cycle. Its ONE package import is `timings`, the leaf module that owns
+work/<id>/timings.json — itself import-free, so the no-cycle property is unchanged. That module
+holds the WRITERS this one used to carry (2026-08-06); the split is reader/writer, which is the
+line this docstring already draws in its first paragraph.
 
 Design discipline inherited from the rest of the pipeline: atomic writes (tmp + os.replace),
 "never a silent loss" (every failure prints a [warn] and degrades to a partial/None report
@@ -43,6 +46,8 @@ import re
 import shutil
 import subprocess
 import sys
+
+from .timings import load_timings
 
 # Fixed vocabularies — kept explicit so a run.json always carries every key at 0 (a consumer
 # can diff two runs without None-guarding), and an unknown/new flag can never silently vanish.
@@ -181,22 +186,6 @@ def _ffprobe_duration(work):
 
 
 # --- public API ---------------------------------------------------------------
-def _load_timings(work):
-    """work/<id>/timings.json → the WHOLE document, or {} when absent. A torn file is reported
-    once and treated as empty, because rebuilding from {} silently drops prior stage walls
-    (understating total_wall/RTF) and that loss must stay visible."""
-    path = work.root / "timings.json"
-    doc = _load_json(path)
-    if doc is None and path.exists():
-        try:
-            if path.read_text(encoding="utf-8").strip():
-                print(f"[warn] {path.name} unreadable — prior stage timings discarded",
-                      file=sys.stderr)
-        except OSError:
-            pass
-    return path, (doc if isinstance(doc, dict) else {})
-
-
 def unrecovered_spans(work):
     """[(start, end)] seconds of speech BOTH ASR reads failed to transcribe — or None.
 
@@ -208,7 +197,7 @@ def unrecovered_spans(work):
     Not recomputable. The spans are defined against the VAD's own segments, which live in the
     Parakeet worker's venv and never reach the disk — this stamp is the only record of them.
     """
-    tdetail = (_load_timings(work)[1].get("detail") or {}).get("transcribe") or {}
+    tdetail = (load_timings(work)[1].get("detail") or {}).get("transcribe") or {}
     spans = tdetail.get("hole_spans_unrecovered")
     if not isinstance(spans, list):
         return None
@@ -219,55 +208,6 @@ def unrecovered_spans(work):
         except (TypeError, ValueError, IndexError, KeyError):
             continue                                        # a torn entry drops, the rest stand
     return out
-
-
-def record_stage_timing(work, stage, wall_s) -> None:
-    """Upsert ONE stage's wall-clock into work/timings.json, atomically, preserving every other
-    stage's entry. Called per stage by the pipeline, so an --only or resumed run rewrites only
-    the stages it actually ran; skipped stages keep their last real timing. Tolerates a
-    missing/torn file. MUST NOT raise into the caller — a failed timing write is a [warn], never
-    a broken pipeline.
-
-    Writes back the WHOLE document, not {"stages": ...}. It used to replace the file with just
-    that one key, which was invisible while `stages` was the only section and silently ate
-    `detail` the moment a second one existed."""
-    try:
-        path, doc = _load_timings(work)
-        stages = doc.get("stages")
-        if not isinstance(stages, dict):
-            stages = {}
-        stages[stage] = round(float(wall_s), 3)
-        doc["stages"] = stages
-        _atomic_write_json(path, doc)
-    except Exception as e:                                  # noqa: BLE001 — must never propagate
-        print(f"[warn] could not record timing for {stage!r}: {e}", file=sys.stderr)
-
-
-def record_stage_detail(work, stage, **fields) -> None:
-    """Upsert a stage's INNER measurements into work/timings.json → detail[<stage>].
-
-    Kept apart from `stages` because the two answer different questions and must never be summed
-    together. `stages[x]` is the pipeline's wall clock for the whole stage — model load included,
-    which is what the run's cost actually was. `detail[x]` is what the stage measured about
-    ITSELF (transcribe: decode time with the load excluded, and how many ASR passes ran), which
-    is what a before/after optimization comparison needs and what the wall clock cannot give:
-    load lands on whichever video happens to be first in the sweep.
-
-    Same never-raises contract as record_stage_timing."""
-    try:
-        path, doc = _load_timings(work)
-        detail = doc.get("detail")
-        if not isinstance(detail, dict):
-            detail = {}
-        entry = detail.get(stage)
-        if not isinstance(entry, dict):
-            entry = {}
-        entry.update(fields)
-        detail[stage] = entry
-        doc["detail"] = detail
-        _atomic_write_json(path, doc)
-    except Exception as e:                                  # noqa: BLE001 — must never propagate
-        print(f"[warn] could not record detail for {stage!r}: {e}", file=sys.stderr)
 
 
 def _stage_overhead(stages, detail):
@@ -421,7 +361,7 @@ def _build_run_report(work, cfg):
     # worker's venv and are not on disk, so the stage's stamp is the only record there will ever
     # be. `unrecovered` is the actionable one — speech that a second read ALSO failed to
     # transcribe, i.e. a stretch of the video that will ship with no dub under it.
-    tdetail = (_load_timings(work)[1].get("detail") or {}).get("transcribe") or {}
+    tdetail = (load_timings(work)[1].get("detail") or {}).get("transcribe") or {}
     if "holes_unrecovered" in tdetail or "asr_repair_windows" in tdetail:
         asr_block["holes"] = int(tdetail.get("asr_repair_windows") or 0)
         asr_block["hole_sec"] = float(tdetail.get("hole_sec") or 0.0)

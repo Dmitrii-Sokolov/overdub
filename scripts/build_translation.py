@@ -62,7 +62,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from overdub import pronounce                            # noqa: E402
 from overdub.config import Config                       # noqa: E402
 from overdub.normalize import normalize_for_tts         # noqa: E402
-from overdub.runreport import record_stage_timing        # noqa: E402
+from overdub.timings import (                            # noqa: E402
+    iso_from_epoch, record_stage_span, record_stage_timing)
 from overdub.stages.translate import _is_bad            # noqa: E402
 from overdub.workdir import WorkDir                      # noqa: E402
 
@@ -126,8 +127,9 @@ def _load_draft(path: Path) -> dict[int, tuple[str, str | None, str]]:
     return out
 
 
-def wave_wall_s(work: WorkDir, chunk_paths: list[Path] | None = None) -> float | None:
-    """Wall-clock of the Sonnet translate wave for this video, in seconds, or None if unmeasurable.
+def wave_window(work: WorkDir, chunk_paths: list[Path] | None = None) -> "tuple[float, float] | None":
+    """(start, end) POSIX timestamps of the Sonnet translate wave for this video, or None if
+    unmeasurable.
 
     NOTHING ELSE RECORDS THIS. The LLM call left the host at the translate seam, so the wave is not
     a pipeline stage: `translate` appeared in the `stages` map of ZERO of 252 timings.json on
@@ -166,7 +168,13 @@ def wave_wall_s(work: WorkDir, chunk_paths: list[Path] | None = None) -> float |
     # sentences.json: measuring from it would bill this wave for the gap between two runs.
     if work.sentences.exists() and start < work.sentences.stat().st_mtime:
         return None
-    return round(end - start, 3)
+    return start, end
+
+
+def wave_wall_s(work: WorkDir, chunk_paths: list[Path] | None = None) -> float | None:
+    """Seconds of wall clock in the translate wave, or None — wave_window's two ends subtracted."""
+    win = wave_window(work, chunk_paths)
+    return None if win is None else round(win[1] - win[0], 3)
 
 
 def join_chunks(work: WorkDir, chunks: list[dict]) -> tuple[Path, list[tuple[str, int]]]:
@@ -363,12 +371,19 @@ def main(argv: list[str] | None = None) -> None:
     # The seam's own wall clock, recorded into the SAME map the pipeline's stages use, so the
     # digest's stage split and total_wall_s stop pretending translation is free. From here on a
     # run's total INCLUDES the seam and is not comparable with one from before 2026-08-05.
-    wall = wave_wall_s(work, chunk_paths)
-    if wall is None:
+    win = wave_window(work, chunk_paths)
+    if win is None:
         print("[warn] translate wave not timed (no usable translate.started) -- the seam is "
               "missing from this video's total_wall_s and stage split")
     else:
+        wall = round(win[1] - win[0], 3)
         record_stage_timing(work, "translate", wall)
+        # Both stamps are the marker: the agent touches it as its FIRST action, so whatever it
+        # spent queueing behind the concurrency cap happened before any clock this seam can read.
+        # The wave is the one span whose enqueued is a floor rather than the real decision point.
+        record_stage_span(work, "translate", enqueued=iso_from_epoch(win[0]),
+                          started=iso_from_epoch(win[0]), finished=iso_from_epoch(win[1]),
+                          clock="translate.started/draft mtime")
         print(f"[ok] translate wave {wall:.0f}s -> timings.json")
 
     print(f"[ok] {total} sentences -> {work.translation} "

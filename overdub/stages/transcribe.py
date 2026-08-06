@@ -411,9 +411,9 @@ def _stamped_key(ctx: Context) -> "str | None":
     location can never be spelled three ways. A non-string stamp reads as absent: a hand-edited
     timings.json must degrade to "no provenance", not crash a stage.
     """
-    from .. import runreport            # local, same reason as run()
+    from .. import timings
 
-    detail = runreport._load_timings(ctx.work)[1].get("detail") or {}
+    detail = timings.load_timings(ctx.work)[1].get("detail") or {}
     stamped = (detail.get("transcribe") or {}).get("asr_key")
     return stamped if isinstance(stamped, str) else None
 
@@ -552,7 +552,7 @@ class TranscribeStage:
         return _dehallucinate(flat), meta
 
     def run(self, ctx: Context) -> None:
-        from .. import runreport            # local: runreport imports this module lazily too
+        from .. import timings
         from ..asr import asr_key
 
         cfg = ctx.cfg
@@ -569,7 +569,7 @@ class TranscribeStage:
             work_s = time.perf_counter() - t0
             holes = wmeta.get("holes") or []
             unrecovered = wmeta.get("holes_unrecovered") or []
-            runreport.record_stage_detail(
+            timings.record_stage_detail(
                 ctx.work, "transcribe", work_sec=round(work_s, 3), asr_passes=1,
                 asr_key=asr_key(cfg), asr_repair_windows=len(holes),
                 vad_speech_sec=wmeta.get("vad_speech_sec"),
@@ -655,7 +655,7 @@ class TranscribeStage:
         work_s = time.perf_counter() - t0
         # asr_key alongside the timings: it is the only on-disk record of WHICH decode config
         # produced this transcript, and done() reads it back to refuse a mixed-provenance workdir.
-        runreport.record_stage_detail(ctx.work, "transcribe", work_sec=round(work_s, 3),
+        timings.record_stage_detail(ctx.work, "transcribe", work_sec=round(work_s, 3),
                                       asr_passes=passes, asr_key=asr_key(cfg, cond=cond_used),
                                       asr_repair_windows=0)   # a fresh pass supersedes any
                                                               # earlier --repair-asr splice

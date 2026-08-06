@@ -48,7 +48,7 @@ import soundfile as sf
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from overdub import asr, repair, runreport  # noqa: E402
+from overdub import asr, repair, runreport, timings  # noqa: E402
 from overdub.asr import (VERIFY_BEAM_SIZE, asr_key, asr_key_core,  # noqa: E402
                          load_whisper, roundtrip_similarity)
 from overdub.config import Config  # noqa: E402
@@ -356,7 +356,7 @@ def _stamped_ctx(tmp: Path, stamp: str | None, cfg: Config | None = None) -> Con
     work = _work(tmp)
     work.sentences.write_text("[]", encoding="utf-8")
     if stamp is not None:
-        runreport.record_stage_detail(work, "transcribe", work_sec=1.0, asr_passes=1,
+        timings.record_stage_detail(work, "transcribe", work_sec=1.0, asr_passes=1,
                                       asr_key=stamp)
     return _ctx(work, cfg)
 

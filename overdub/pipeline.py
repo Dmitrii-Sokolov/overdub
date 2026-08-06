@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
-from . import runreport
+from . import timings
 from .config import Config
 from .workdir import WorkDir
 
@@ -173,6 +173,8 @@ def run_pipeline(
             print(f"[skip] {st.name}  (artifact exists)")
             continue
         print(f"[run ] {st.name}")
+        enqueued = timings.now_iso()
+        started = timings.now_iso()
         t0 = time.perf_counter()
         try:
             st.run(ctx)
@@ -181,7 +183,9 @@ def run_pipeline(
             # persist this stage's wall-clock (only stages that ACTUALLY ran — the [skip] and
             # --only-excluded branches above continue before here, so a resumed/partial run keeps
             # every other stage's last real timing). Best-effort: never raises into the runner.
-            runreport.record_stage_timing(ctx.work, st.name, elapsed)
+            timings.record_stage_timing(ctx.work, st.name, elapsed)
+            timings.record_stage_span(ctx.work, st.name, enqueued=enqueued, started=started,
+                                      finished=timings.now_iso())
         finally:
             # UNCONDITIONAL: teardown used to live in each stage's own `finally`, so it ran on
             # the raising path too. A stage that raises can otherwise leave a loaded model

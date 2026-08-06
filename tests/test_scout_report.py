@@ -963,13 +963,13 @@ def test_recording_a_stage_wall_clock_does_not_eat_the_per_video_detail() -> Non
     # record_stage_timing used to write {"stages": ...} back over the whole file, which was
     # invisible while `stages` was the only section and silently destroys `detail` now that a
     # second one exists. The transcribe stage writes both, in that order.
-    from overdub import runreport
+    from overdub import timings
 
     with tempfile.TemporaryDirectory() as d:
         w = WorkDir(Path(d))
         w.root.mkdir(parents=True, exist_ok=True)
-        runreport.record_stage_detail(w, "transcribe", work_sec=61.2, asr_passes=1)
-        runreport.record_stage_timing(w, "transcribe", 88.1)
+        timings.record_stage_detail(w, "transcribe", work_sec=61.2, asr_passes=1)
+        timings.record_stage_timing(w, "transcribe", 88.1)
         doc = json.loads((w.root / "timings.json").read_text(encoding="utf-8"))
     assert doc["stages"]["transcribe"] == 88.1
     assert doc["detail"]["transcribe"] == {"work_sec": 61.2, "asr_passes": 1}

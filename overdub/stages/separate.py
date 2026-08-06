@@ -86,8 +86,8 @@ class SeparateStage:
         # at R²=0.000 — load-dominated, does not scale — so counting it as work overstated rtf_work
         # by the whole demucs wall (~13.2 s/video). overhead[separate] = wall − work_sec then lands
         # that load where it belongs. Never-raises, like every record_stage_detail caller.
-        from .. import runreport                            # local: avoid an import cycle at load
-        runreport.record_stage_detail(ctx.work, "separate",
+        from .. import timings
+        timings.record_stage_detail(ctx.work, "separate",
                                       work_sec=round(extract_s, 3),
                                       demucs_sec=round(demucs_s, 3))
         print("       source_bed.wav ← htdemucs no-vocals stem")
