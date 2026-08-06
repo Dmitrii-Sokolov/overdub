@@ -74,6 +74,7 @@ divider. Look things up through this index, not by scrolling.
 - `07-16` dead-air elimination BUILD † · `07-16` interim ear verdict
 
 **Pipeline, batch, artifacts**
+- `08-06` Parakeet and htdemucs DO co-reside; a re-download is not transcript-neutral
 - `08-06` the download prefetch is a PRE-PASS, not a parallel branch inside the sweep
 - `08-06` `separate` is SCHEDULED, not positioned: its gate asks whether a dub is coming
 - `08-06` the JS runtime is a WHEEL in the venv (deno), not a host binary and not Node
@@ -105,7 +106,42 @@ divider. Look things up through this index, not by scrolling.
 
 ---
 
-## 2026-08-06 — the download prefetch is a PRE-PASS, not a parallel branch inside the sweep
+## 2026-08-06 — Parakeet and htdemucs DO co-reside; and a re-download is not transcript-neutral
+
+Two measurements taken while sizing the GPU mutex, one of which killed the mutex's premise and one
+of which is about something else entirely.
+
+**Co-residency: 9930 MiB of 12282 peak, no OOM.** `--only transcribe --force` and `--only separate`
+were run as two concurrent processes and both completed their real work (28.8 s / 2055 words, and
+16.2 s with the bed written). So "the Parakeet worker holds the card, therefore htdemucs must wait"
+— the one real argument for a phase barrier, and the reason the mutex was framed as protecting
+VRAM — **is not established on this host**. A scheduler may simply run them together.
+
+What the number does NOT license: 19% headroom is thin, it is ONE pair of videos (10 and 12
+minutes), and Parakeet's footprint is the length-dependent half. An unattended night over
+arbitrary lengths has not been shown to fit, and this measurement cannot show it.
+
+**The mutex has no call path to guard today.** The only concurrency in the codebase is the
+download prefetch pool, and download holds no GPU; `run_pipeline` and the stage sweep are strictly
+sequential, so no two GPU stages can meet inside one process. The live hazard is two PROCESSES
+(the route-B runbook now asks the operator to start a second one), and a `threading.Lock` cannot
+see across that boundary. The mutex therefore belongs to the per-video scheduler, not beside it —
+building it now would be a lock that reads as protection and provides none.
+
+**Longest-first ordering is inert for the same reason.** Every stage in the sweep is a full
+barrier and the translate wave is fanned out once over the finished list, so the first translation
+cannot start before the LAST transcript exists — no ordering of the sweep moves it. Sorting the
+download pool would help, but on a first run no duration exists yet (`source.info.json` is written
+BY download). Both are components of the scheduler, not steps toward it.
+
+**Separately: re-downloading a video CHANGED its transcript.** `uFYLIdYXntk` read 2057 words /
+149 sentences before its `source.mkv` was deleted and re-fetched, and 2055 / 150 after. Isolated
+in one step — a second `--force` decode of the SAME file reproduced 2055 / 150 exactly, so the
+decoder is deterministic and the input moved. This is evidence on the open backlog question about
+reusing scout audio on promotion, which PLAN records as "believed benign, never checked": a
+re-fetch is not transcript-neutral, at least not always. What is NOT established is why — the two
+downloads were not compared for format or bytes, so "yt-dlp picked a different format" is the
+likely explanation and not a measured one.
 
 `download` is the only stage holding no GPU and bound by the network, and on the baseline it was
 323.8 s of strictly serial fetching (13.3% of machine time) whose longest single video was 82 s —

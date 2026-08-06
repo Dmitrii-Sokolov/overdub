@@ -116,22 +116,28 @@ that does not say which one it is means nothing.
 and mux are ffmpeg, download is network, and `verify_roundtrip` is off by default since 2026-08-06.
 Exactly TWO stages hold the card: `transcribe` (the Parakeet `--serve` worker) and `separate`
 (demucs `-d cuda`, `stages/separate.py`). So synthesize — 13.1% of machine time on the baseline —
-needs no coordination at all and can run beside anything. **The primitive is a GPU mutex with priority to transcribe, NOT a phase barrier**: a
-barrier ("no tail until every video is transcribed") buys the same safety and adds a failure mode,
-since one long video would then hold every short one. The one real argument for a barrier is VRAM,
-not compute — the Parakeet worker holds the card for the whole sweep, so if htdemucs does not fit
-beside it in 12 GB the worker must be killed first. That is an `nvidia-smi` reading during one run,
-not a design debate, and it now gates two decisions (see the next paragraph).
+needs no coordination at all and can run beside anything. **The VRAM argument for a phase barrier
+is MEASURED AND DEAD** (2026-08-06, DECISIONS): Parakeet and htdemucs ran as two concurrent
+processes at a peak of 9930 MiB of 12282 with no OOM, so nothing forces the worker to be killed
+before demucs starts. Two caveats travel with that number — 19% headroom is thin, and it is ONE
+pair of videos (10 and 12 min) where Parakeet holds the length-dependent half. An unattended night
+over arbitrary lengths has not been shown to fit.
 
-**Order the queue LONGEST first.** Shortest-first is the intuitive choice and it is backwards. On
-the baseline, transcribe runs at RTF 0.0103 against a tail at 0.0777 — **7.5× apart** — so a long
-video costs its own transcribe in head-of-line blocking at the mutex but leaves a tail 7.5× that
-size unoverlappable if it lands last. Long pole first, so there is something left to overlap it
-with. No pre-pass needed: duration is free from `source.info.json`, so a greedy "take the longest
-READY video" approximates it online while downloads run concurrently. Two things to check rather
-than assume: that the tail really is proportional to duration (only its aggregate shape was
-measured, never that scaling per video), and that a long video's CHUNKED translation is not itself
-the slowest agent — the argument rests on the tail, not on the agent.
+**A GPU mutex and LONGEST-first ordering are PARTS of the scheduler below, not steps toward it**
+(established 2026-08-06 before building either). No two GPU stages can meet inside one process
+today — the only concurrency is the download prefetch pool and download holds no GPU — so a mutex
+would guard nothing, and the live hazard is two PROCESSES, which an in-process lock cannot see.
+Ordering is inert for the same structural reason: every stage in the sweep is a full barrier and
+the wave is fanned out once over the finished list, so the first translation cannot start before
+the LAST transcript exists and no ordering of the sweep moves it. Sorting the download pool would
+help, but on a first run no duration exists yet — `source.info.json` is written BY download.
+
+When the scheduler does arrive, the ordering argument is: transcribe runs at RTF 0.0103 against a
+tail at 0.0777 — **7.5× apart** — so a long video costs its own transcribe in head-of-line blocking
+but leaves a tail 7.5× that size unoverlappable if it lands last. Long pole first. Two things to
+check rather than assume: that the tail really is proportional to duration (only its aggregate
+shape was measured, never that scaling per video), and that a long video's CHUNKED translation is
+not itself the slowest agent — the argument rests on the tail, not on the agent.
 
 **`separate` INSIDE the translate wave — BUILT 2026-08-06, not yet exercised on a batch.** The
 gate moved (`SeparateStage.done` now runs on a dub OR a non-empty transcript, DECISIONS) and the
@@ -645,11 +651,16 @@ field. What is new:
 - `--repair id,id --seed N` (point re-synth + remux; grain = the GROUP after units)
 - normalize polish pass (range+unit "3.5-4.5 GHz" voices the unit as "гхз"; "90х" →
   "девяностох"; "10-20%" keeps a literal dash)
-- reuse the scout audio on promotion instead of re-fetching (~5% waste, accepted 2026-07-20 — but
-  answer the provenance question first: a promoted run OVERWRITES `source.wav` with a
-  differently-decoded file, ba[ext=m4a] vs the scout's opus, while `sentences.json` was read off the
-  old one and `--repair-asr` clips windows from the new one; same master and timeline, believed
-  benign, never checked)
+- reuse the scout audio on promotion instead of re-fetching (~5% waste, accepted 2026-07-20). **The
+  provenance question is no longer open in the "believed benign" direction: a re-fetch CHANGED the
+  transcript** — `uFYLIdYXntk` read 2057 words / 149 sentences, and 2055 / 150 after its
+  `source.mkv` was deleted and re-downloaded (2026-08-06, DECISIONS). Isolated: a second decode of
+  the same file reproduced 2055 / 150 exactly, so the decoder is deterministic and the INPUT moved.
+  Small, but it means `sentences.json` read off the old audio and `--repair-asr` clipping windows
+  from the new one are describing different files. WHY the audio moved is unmeasured — the two
+  downloads were never compared for format or bytes, so "yt-dlp picked a different format" is a
+  hypothesis. Answer that before designing the reuse, because it decides whether reuse is a saving
+  or the actual fix
 - `libopus` for the dub track (one-flag quality upgrade over aac); loudnorm/EQ on the dub;
   singing/music detection → keep original (no robot singing); `--subs-only` fast path
 - fix the `out/` export name collision (identical `<title> [<id>].mkv` across models overwrites —
