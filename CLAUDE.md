@@ -53,8 +53,25 @@ themselves. Rationale: DECISIONS 2026-07-25.
 
 ## Stack (v1)
 
-yt-dlp → faster-whisper large-v3 → Claude Sonnet (semi-automatic, at the translate seam) →
+yt-dlp → Parakeet-TDT 0.6b v3 → Claude Sonnet (semi-automatic, at the translate seam) →
 Silero v5_5_ru → htdemucs no-vocals bed (dub_mix="bed" default) → ffmpeg.
+
+**ASR is Parakeet since 2026-08-06** (`asr_engine`, DECISIONS). It runs in `.venv-parakeet` as a
+subprocess worker — one process per stage sweep — because `nemo_toolkit[asr]` pins numpy below the
+pipeline's. Three facts about it shape everything downstream:
+**it has no VAD**, so the worker runs Silero itself and a video with no speech yields an empty
+transcript rather than invented words (measured: 110, 32 and 6 invented words on three silent
+videos without the gate); **it drops stretches of real speech** at window boundaries, so the worker
+detects uncovered speech spans and re-reads them before writing anything (20 spans over 146 videos,
+the largest 41 s); and **it is deterministic**, which kills `--repair-asr`'s accept gate ("two
+readings agree" is vacuously true) — that mode now refuses on any engine but whisper.
+faster-whisper stays installed in `.venv-asr`: it is the verify round-trip's engine either way, and
+`asr_engine = "whisper"` remains a supported fallback. That fallback is why the whisper-only
+machinery still exists — but none of it runs on the Parakeet path, and that must stay explicit
+rather than accidental: `_guard`/`floor_run_ratio` cannot fire on an 80 ms timestamp grid (measured
+0.0 on all 145 videos), so the stage does not call them there instead of leaving a detector that
+looks alive and protects nothing. `_dehallucinate` is the exception and DOES still run — Parakeet
+produces the same repetition shape whisper does ("That's the seven three" ×15 on a silent file).
 
 TTS engines are pluggable behind an adapter, and **Silero v5_5_ru (voice `eugene`) is THE engine** —
 user decision on speed and hardware cost, quality difference accepted as a deliberate trade
@@ -137,7 +154,7 @@ diverge from it.
   not covering the ids, a dub with no manifest, `bed` with no bed) still raise: a
   lost track is reportable, a confidently wrong dub is not.
 - Translation unit is the sentence (rebuilt from word timestamps), never the
-  raw whisper segment: sentences are translated in order with a rolling
+  raw ASR segment: sentences are translated in order with a rolling
   context window (previous EN sentences + their RU translations). The prompt
   must state that this is dubbing and ask to keep length close to the
   original — no tempo cap doesn't mean no effort.
@@ -163,6 +180,9 @@ test built from the 6 preserved `_pre-repair-sentences.json` / `sentences.json` 
 Read it before changing anything in `overdub/repair.py`, before quoting a recall number for
 `--repair-asr auto`, or before scoring the automation against the human transcripts — the human side
 contains a known error and a deliberate override, so a perfect match is a red flag, not a win.
+Two things it says that this line must not let you miss: the SIX `source.wav` are no longer in
+`work/` (a disk cleanup took them; re-fetched into `work-exp/parakeet/fixture/`), and the mode it
+tests is whisper-only since 2026-08-06, so the fixture runs only with `asr_engine = "whisper"`.
 
 `scripts/asr_probe.py` — the ASR decode-config probe (`--help` is the runbook; there is no
 separate doc, deliberately). Two modes: `--variant` measures one decode variant against the
@@ -172,10 +192,14 @@ code, the verdict comes from reading the word-stream diffs it writes); `--thread
 cross-video threading ceiling (N videos decoded concurrently through one `WhisperModel(num_workers=N)`
 vs serially, wall-clock, mirrored, mean-based). Read it before quoting any transcribe-speed number.
 Adopting a decode change also re-baselines `docs/repair-fixture.md` (the beam is shared with the
-repair window). **The transcribe-speed axis is CLOSED (2026-07-24): all four levers measured, none
-adopted — fp16 large-v3 on one GPU is at its practical ceiling (DECISIONS 2026-07-24). Do not
-re-run these probes to "improve transcribe speed"; reopening needs different hardware or a smaller
-model cleared by ear.**
+repair window). **It measures the WHISPER FALLBACK, not the shipped transcriber** — Parakeet took
+that role on 2026-08-06 and has neither a beam nor context feedback, so none of the variants apply
+to it; comparing the two engines is `scripts/parakeet_compare.py`. The whisper transcribe-speed
+axis remains closed as of 2026-07-24 (all four levers measured, none adopted, fp16 large-v3 at its
+practical ceiling), and the engine switch did not reopen it — that closure was always about levers
+INSIDE whisper, never a claim that the stage is cheap. It is not: transcribe is 30.5% of pipeline
+wall clock over 375 recorded runs (2026-08-06), which is what made a different ENGINE worth 1.4×
+end to end.
 
 `scripts/host_guard.py` — pre-flight check: is the GPU free enough to measure on? Run it (or call
 `require_idle()`) BEFORE any timed work — `asr_probe.py` already gates both of its measuring paths

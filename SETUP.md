@@ -1,13 +1,42 @@
 # SETUP.md — Windows 11 + RTX 4080 Mobile (12 GB) runtime for overdub
 
-## Strategy: pipeline venv + demucs venv
+## Strategy: pipeline venv + parakeet venv + demucs venv
 
-1. **`.venv-asr`** — the pipeline venv: faster-whisper (STT + verify), **Silero — THE TTS engine
-   since 2026-07-25** (via torch.hub, no asset to fetch and no separate venv), the `overdub`
-   package itself. torch cu128 line. A default run needs only this venv plus `.venv-demucs`.
-2. **`.venv-demucs`** — the Demucs separation venv. The `separate` stage calls it as a CLI
+1. **`.venv-asr`** — the pipeline venv: **Silero — THE TTS engine since 2026-07-25** (via
+   torch.hub, no asset to fetch and no separate venv), faster-whisper (the verify round-trip, and
+   the fallback transcriber at `asr_engine = "whisper"`), the `overdub` package itself. torch cu128
+   line.
+2. **`.venv-parakeet`** — the STT venv since 2026-08-06, when Parakeet-TDT 0.6b v3 became the
+   default transcriber. The `transcribe` stage drives it as a subprocess worker
+   (`overdub/parakeet.py` ↔ `scripts/parakeet_worker.py --serve`), one live process per stage
+   sweep. Isolation is not tidiness: `nemo_toolkit[asr]` resolves 137 packages and pins numpy
+   BELOW the pipeline's (2.5.1 → 2.4.6), so installing it into `.venv-asr` would gamble
+   faster-whisper, ctranslate2 and Silero on an ASR dependency tree.
+3. **`.venv-demucs`** — the Demucs separation venv. The `separate` stage calls it as a CLI
    subprocess to build the no-vocals bed for `dub_mix = "bed"` (the production default). Isolation
    is deliberate: demucs's torch pins must not gamble the pipeline stack.
+
+## Parakeet venv (the default transcriber)
+
+Verified on host 2026-08-06: Python 3.12, torch 2.11 cu128, nemo-toolkit 2.7.3. Nothing needs a
+compiler — of the resolved packages only `sox`, `kaldi-python-io` and `wget` arrive as sdists and
+all three are pure Python. `pynini`, the one genuinely Windows-hostile NeMo dependency, belongs to
+`nemo_text_processing` and is NOT pulled by the `[asr]` extra.
+
+```powershell
+py -3.12 -m venv .venv-parakeet
+.venv-parakeet\Scripts\python.exe -m pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu128
+.venv-parakeet\Scripts\python.exe -m pip install "nemo_toolkit[asr]" silero-vad
+# ~2.5 GB of weights auto-download on first use (HF cache); the venv itself is ~7 GB
+.venv-parakeet\Scripts\python.exe -c "import nemo.collections.asr; print('ok')"
+```
+
+`silero-vad` is NOT optional. NeMo has no VAD, and without the gate the model invents words on
+non-speech — three silent videos in the 165-video corpus came back with 110, 32 and 6 invented
+words (2026-08-06). The worker refuses to be quiet about a missing VAD, but it does not stop.
+
+To go back to whisper: `asr_engine = "whisper"` in `overdub.toml`. Nothing else changes — the
+verify round-trip runs on whisper either way, so `.venv-asr` keeps faster-whisper regardless.
 
 ## Demucs venv (bed mix — the default `dub_mix`)
 
@@ -26,8 +55,8 @@ The pipeline needs only `demucs_python = ".venv-demucs/Scripts/python.exe"` (con
 > Verified on host: Silero loads and synthesizes fine on torch 2.11 (cu128). The one catch is that
 > torchaudio 2.11 routes `torchaudio.save` through TorchCodec — so the SileroEngine writes wavs with
 > `soundfile` instead. `.venv-tts` has been retired, and `.venv-f5tts` (8.7 GB) was deleted
-> 2026-08-03 with the F5 engine it served — **two venvs is the whole layout**, and any document
-> saying "three" is stale.
+> 2026-08-03 with the F5 engine it served. The layout was two venvs until 2026-08-06 and is
+> **three** since Parakeet became the transcriber; a document saying "two" predates that.
 
 ## Python
 Use **Python 3.12** on Windows (mid-2026 sweet spot — torch, faster-whisper, ctranslate2 and
@@ -70,7 +99,15 @@ Symptom: `Could not locate cudnn_ops64_9.dll`. Fixes (pick one):
 This is a discovery gap, NOT a reason to add more venvs.
 
 ## VRAM discipline on 12 GB (usable ~10.5–11 GB — WDDM + display reserve ~1–2 GB)
-- **Stage 1** whisper large-v3 fp16 ~4.5–6 GB → SAFE. `del model; gc.collect(); torch.cuda.empty_cache()` before next stage (empty_cache is a no-op while a ref is alive — drop refs FIRST).
+- **Stage 1** Parakeet peaks at ~8.8 GB on the corpus with 10-minute chunks (2026-08-06). The chunk
+  size is the ONLY thing bounding that peak, and the ceiling does not announce itself: at 20-minute
+  chunks every long video pinned exactly 10 813 MB of 12 282 and the WDDM driver started spilling
+  into system RAM instead of failing — 100% GPU utilisation at roughly a twentieth of the
+  throughput, a 271-minute video still decoding after 24 minutes. Do NOT try to bound it with
+  `torch.cuda.empty_cache()` between chunks: NeMo's TDT decoder replays a CUDA graph that holds the
+  captured buffers' raw addresses, and freeing them kills the whole batch with
+  `illegal memory access` (17/17 videos in 8 s).
+  whisper large-v3 fp16 ~4.5–6 GB → SAFE. `del model; gc.collect(); torch.cuda.empty_cache()` before next stage (empty_cache is a no-op while a ref is alive — drop refs FIRST).
 - **Stage 3** TTS costs no VRAM at all (Silero runs on CPU); whisper-small verify adds ~1 GB → SAFE.
   The `separate` stage (htdemucs, ~3 GB) runs standalone between assemble and mux.
   With TTS on the CPU there is no real GPU contention left in a single-video pass.

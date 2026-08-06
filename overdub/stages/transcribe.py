@@ -1,4 +1,13 @@
-"""Transcribe stage: faster-whisper large-v3 → word timestamps → sentences.json.
+"""Transcribe stage: ASR → word timestamps → sentences.json.
+
+TWO ENGINES, ONE OUTPUT CONTRACT. `cfg.asr_engine` picks between Parakeet-TDT (the default since
+2026-08-06, decoded by the `.venv-parakeet` worker — see `_run_parakeet`) and faster-whisper
+large-v3 in-process. Everything below the word list is shared: both produce `list[W]` and the same
+four passes turn it into sentences. The engine-specific notes in this docstring are whisper's, and
+they stay because whisper stays — `asr_engine = "whisper"` is supported and verify uses it anyway.
+Where Parakeet differs materially (no context feedback, an 80 ms timestamp grid, a VAD gate that
+can legitimately yield an empty transcript) it is called out at the code that cares.
+
 
 Word-level sentence resegmentation (design: transcribe-design workflow, see DECISIONS):
 boundaries land ON a word by construction, so there is no fuzzy char→word remapping.

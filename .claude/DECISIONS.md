@@ -48,6 +48,7 @@ divider. Look things up through this index, not by scrolling.
   `07-16` ESpeech bake-off † · `07-16` ESpeech narrator voice †
 
 **ASR / transcribe**
+- `08-06` **Parakeet-TDT replaces whisper as the transcriber** — and what the switch costs
 - `07-24` `condition_on_previous` survives measurement
 - `07-24` transcribe-speed axis closed (fp16 large-v3 at its ceiling)
 - `07-22` batched inference is a DIFFERENT decode, not a faster one
@@ -98,6 +99,61 @@ divider. Look things up through this index, not by scrolling.
 † carries a `SUPERSEDED` header — the code it describes is gone or changed. Read the header first.
 
 ---
+
+## 2026-08-06 — Parakeet-TDT 0.6b v3 replaces whisper as the transcriber
+
+`asr_engine = "parakeet"` is the shipped default. It runs in a third venv (`.venv-parakeet`) as a
+subprocess worker holding one model per stage sweep, exactly the isolation demucs already has and
+for a harder reason: `nemo_toolkit[asr]` resolves 137 packages and pins numpy *below* the
+pipeline's (2.5.1 → 2.4.6).
+
+**Measured on 165 videos / 47.9 h, whisper's own transcripts as the comparison.**
+
+- Speed: RTF 0.0034 vs 0.087, ~25×. Transcribe is 30.5% of pipeline wall clock over 375 recorded
+  runs, so the batch gets ~1.4× end to end. This reopens nothing: the closed "transcribe speed"
+  axis was about levers INSIDE whisper, and reading that closure as "the stage is cheap" was simply
+  wrong — the number was in `timings.json` the whole time.
+- Text quality is a WASH, not a win. On the repair fixture, whisper 1.6% WER and Parakeet 2.7%; but
+  that reference is whisper's own output with human repairs, so whisper is scored against a lightly
+  edited copy of itself. Strip the two measurement artefacts (18 words where Parakeet declines to
+  reproduce a whisper loop the human left in, 49 words of pure tokenisation like `ai driven` /
+  `aidriven`) and Parakeet is 1.56%. Nobody wins on average.
+- **The win is the absence of catastrophes.** In the 8 hand-repaired fixture windows — the places
+  where whisper failed so badly a human intervened — whisper scores 23.3% and Parakeet 4.2%, better
+  in all eight. Across the corpus 5977 words of whisper output are repetition loops Parakeet simply
+  does not produce.
+
+**What it costs, all of it measured rather than feared.**
+
+- No VAD. Three silent videos returned 110, 32 and 6 invented words ("That's the seven three" ×15
+  over 15 minutes). Silero VAD in the worker gates exactly those three and no healthy video.
+- It drops real speech at window boundaries: 20 spans over 146 videos, largest 41 s / 125 words.
+  Half survive every VAD setting tried, so it is the decoder, not the gate. The worker now finds
+  uncovered speech spans and re-reads them — all five tested came back with MORE words than whisper
+  had there, so the hole is a boundary artefact, not deafness.
+- Proper nouns: 6 `Claude` → `Cloud` in one fixture video. Whisper had none there. (It also fixed 3
+  `clawd` that whisper AND the human got wrong in another — no systematic winner, different
+  failures.) This is the domain's own vocabulary, so it stays open in PLAN.
+- Timestamps land on an 80 ms grid instead of ~20 ms.
+
+**REJECTED: keeping `--repair-asr` on the new engine.** Its accept gate is "two independent
+readings of the clip agree", which is evidence only because whisper's temperature fallback samples.
+Greedy TDT is deterministic: the readings are byte-identical, the gate accepts unconditionally, and
+"delete, do not invent" loses its only enforcer while every printed line still says the window was
+verified. It refuses outright on any engine but whisper. A mode that cannot be wrong is not a safe
+mode.
+
+**REJECTED: leaving `_guard`/`floor_run_ratio` wired up.** It keys on words pinned to the 0.02 s
+floor, and an 80 ms grid never puts one there — measured 0.0 on all 145 videos. It stays in the
+whisper path and is not called from the Parakeet one. `_dehallucinate` is the opposite call and
+DOES still run: the engine changed, that defect shape did not.
+
+**REJECTED: `torch.cuda.empty_cache()` between chunks.** Tried to bound the VRAM peak; NeMo's TDT
+decoder replays a CUDA graph holding the captured buffers' raw addresses, so freeing them killed
+17/17 videos with `illegal memory access` — one poisoned context cascades through the whole batch.
+The chunk size is the only knob for the peak, and the ceiling does not announce itself: at
+20-minute chunks every long video pinned 10 813 MB of 12 282 and WDDM began spilling to system RAM
+instead of failing — 100% utilisation at a twentieth of the throughput.
 
 ## 2026-08-06 — the YouTube JS runtime is a wheel inside `.venv-asr`, not a host binary
 

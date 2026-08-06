@@ -1,4 +1,12 @@
-"""ASR decode-config probe — measure one decode variant against the shipped config.
+"""ASR decode-config probe — measure one decode variant against the shipped WHISPER config.
+
+**This probe measures faster-whisper, which stopped being the shipped transcriber on 2026-08-06**
+(`asr_engine = "parakeet"`, DECISIONS). It calls `transcribe_words` directly, so it is unaffected
+by the config key and keeps working — but "the shipped config" below now means "the whisper
+fallback's config", and a speed number from here describes an engine a default run does not use.
+Parakeet has neither a beam nor context feedback, so none of the variants apply to it; comparing
+the two engines is `scripts/parakeet_compare.py`.
+
 
 Built 2026-07-22 to replace a 3100-line sweep harness that never produced a number. It answers
 the "Transcribe speed" roadmap question and nothing else, and it deliberately stops short of a

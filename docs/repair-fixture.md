@@ -20,7 +20,21 @@ In July 2026 a human manually repaired defect windows across 6 videos using exac
 source-anomaly worklist, overwritten per repair. It is NOT part of the fixture pairs.)
 
 The 6 ids: `2YCaBqP8muw`, `DmgujoZ1mmk`, `RyvXxApfHkk`, `W4Ua6XFfX9w`, `W5cga7xipRI`, `ytEN_iAk09c`.
-All six `source.wav` are present, ~75 MB total.
+
+**The audio is NOT in `work/` any more.** All six `source.wav` were gone when the fixture was next
+needed (2026-08-06) — the disk cleanup this document warns about below took them, while this
+paragraph went on claiming "all six are present, ~75 MB total" for weeks. They were re-fetched from
+YouTube into `work-exp/parakeet/fixture/<id>/source.wav` with the same `bestaudio` → 16 kHz mono
+pcm_s16le path the download stage uses, so timings still line up with the preserved transcripts.
+Re-fetching is only possible while the videos stay up: the transcripts are irreplaceable, the audio
+is one `yt-dlp` away *until it is not*.
+
+**--repair-asr itself is whisper-only since 2026-08-06** (DECISIONS): its accept gate is "two
+independent readings of the clip agree", which is vacuously true on Parakeet's deterministic greedy
+decoder, so `repair_video` refuses outright when `asr_engine != "whisper"`. This fixture therefore
+measures a mode that the shipped default no longer runs. It stays because it is the only real-media
+regression test for the clipping and timestamp-rebasing paths, and because `asr_engine = "whisper"`
+remains a supported configuration — run it with that set explicitly.
 
 ## It is a signal, not an oracle — read this before scoring anything
 

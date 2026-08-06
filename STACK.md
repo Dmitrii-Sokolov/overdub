@@ -7,7 +7,7 @@ measured / debugged here: VRAM budgets, host-specific findings, and non-obvious 
 external tools that cost real effort to discover and would be re-derived from scratch without a note.
 If a fact is derivable by reading the code, it does not belong here.
 
-Pipeline: `yt-dlp → faster-whisper large-v3 → Claude Sonnet (translate seam) → Silero v5_5_ru → whisper-small verify → htdemucs bed → ffmpeg (MKV)`
+Pipeline: `yt-dlp → Parakeet-TDT 0.6b v3 → Claude Sonnet (translate seam) → Silero v5_5_ru → whisper-small verify → htdemucs bed → ffmpeg (MKV)`
 
 - **Install:** SETUP.md · **Rationale + history:** `.claude/DECISIONS.md` · **Config defaults:** `overdub/config.py`
 
@@ -40,13 +40,54 @@ never re-encoded).
 
 ---
 
-## Stage 1 — ASR: faster-whisper large-v3 (main) + small (verify)
+## Stage 1a — ASR: Parakeet-TDT 0.6b v3 (the transcriber since 2026-08-06)
+
+**Code:** worker `scripts/parakeet_worker.py` (runs in `.venv-parakeet`; VAD gate, chunking,
+uncovered-speech re-read, `--serve` line protocol) · bridge `overdub/parakeet.py` ·
+`TranscribeStage._run_parakeet`. Selected by `asr_engine` in `overdub/config.py`.
+
+**VRAM: ~8.8 GB at 10-minute chunks** (host-measured 2026-08-06 over 47.9 h). The chunk size is the
+only thing bounding that, and **the ceiling does not raise an error**: at 20-minute chunks every
+long video pinned exactly 10 813 MB of 12 282 and WDDM began spilling into system RAM — 100% GPU
+utilisation at roughly a twentieth of the throughput, a 271-minute video still running after 24
+minutes. A silent 20× slowdown, not an OOM.
+
+**Gotchas:**
+- **`torch.cuda.empty_cache()` between chunks kills the batch.** NeMo's TDT greedy decoder replays a
+  CUDA graph, and a graph holds the raw addresses of the buffers captured into it; handing those
+  blocks back to the allocator makes the next replay read freed memory. Symptom is
+  `CUDA error: an illegal memory access`, and the first failure poisons the context so every later
+  video fails identically — 17/17 in 8 s, all with the same message, one real cause.
+- **NeMo makes fd 1 unusable when it is a pipe.** The first `print` after `from_pretrained` dies with
+  `OSError: [Errno 22] Invalid argument`. The worker's `--serve` mode duplicates the descriptor
+  BEFORE loading the model and points fd 1 at stderr, so the protocol stream cannot be corrupted by
+  anything the model stack writes.
+- **No VAD of any kind.** faster-whisper runs Silero internally (`vad_filter=True`); NeMo does not,
+  and Parakeet invents words on non-speech (110, 32 and 6 words on three silent videos, 2026-08-06).
+  The gate is the worker's job and is not optional.
+- **It drops real speech at window boundaries** — 20 spans over 146 videos, largest 41 s. Not
+  deafness: a re-read of the same samples in a different window returns the text, with MORE words
+  than whisper had there. Hence the worker's coverage check.
+- **Timestamps land on an 80 ms grid** (10 ms features × 8 subsampling), against whisper's ~20 ms.
+  Anything keyed on sub-80 ms word durations is meaningless here — `floor_run_ratio` measured 0.0 on
+  all 145 videos, which is why the alignment guard is not wired into this path.
+- **Language is auto-detected and cannot be forced.** Measured 0.0 non-Latin output across 145
+  videos, so the risk did not materialise on this corpus — but there is no `language="en"` to set.
+- **`nemo_toolkit[asr]` pins numpy below the pipeline's** (2.5.1 → 2.4.6) and resolves 137 packages.
+  This is the whole reason for the third venv. Windows-clean otherwise: only `sox`,
+  `kaldi-python-io` and `wget` arrive as sdists and all three are pure Python; `pynini` belongs to
+  `nemo_text_processing` and is not pulled by the `[asr]` extra.
+
+---
+
+## Stage 1b — ASR: faster-whisper large-v3 (fallback) + small (verify)
 
 **Code:** transcribe `overdub/stages/transcribe.py` (`transcribe_words` — the shared body used by
 both the stage and `--repair-asr`, so they cannot drift in beam/VAD/word_timestamps;
 `TranscribeStage._guard` = the automatic cond retry) · verify `overdub/stages/verify.py` · model load
 + caching `overdub/asr.py` (`load_whisper`, `asr_key`) and `overdub/pipeline.py` (session reuse).
-Both ASR roles are configured in `overdub/config.py`.
+Both ASR roles are configured in `overdub/config.py`. Reached by `asr_engine = "whisper"`; the
+verify round-trip uses whisper-small regardless of that setting.
 
 **VRAM:** large-v3 fp16 ~4.5 GB standard / ~6 GB batched (host-measured ~3.1 GB resident); small
 verify fp16 ~0.5 GB. Well under 12 GB for sequential use. **"never OOMs" is FALSE** — faster-whisper

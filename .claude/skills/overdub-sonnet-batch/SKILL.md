@@ -79,6 +79,17 @@ same step-1 command until clean; completed stages fast-skip.
 
 ### Step 1b — Repair the transcript BEFORE translating it (added 2026-07-25)
 
+**SKIP THIS STEP on the shipped config (2026-08-06).** `--repair-asr` is whisper-only now and
+REFUSES when `asr_engine` is anything else — its accept gate is "two readings of the clip agree",
+which is vacuously true on Parakeet's deterministic decoder, so the mode would splice unverified
+text while reporting it as verified (DECISIONS 2026-08-06). Running it on a default batch raises
+per video and drags the step's exit code to 1; there is nothing to fix by re-running.
+
+The job it did is not gone, it moved earlier: the transcribe worker finds speech spans it left
+uncovered and re-reads them before `sentences.json` is ever written, so a route-B batch arrives at
+translate already repaired. Check `holes` / `hole_words_recovered` in the run report instead of
+running a sweep. The step below applies only with `asr_engine = "whisper"` set explicitly.
+
 ```powershell
 $t0 = Get-Date
 .venv-asr\Scripts\python.exe -X utf8 -m overdub --batch queue.txt --repair-asr auto
@@ -127,7 +138,7 @@ $sumTodo = @($ids | Where-Object {
 ```
 
 **Then drop the videos with NO SPEECH from both lists — they need no agent at all** (2026-08-06).
-whisper returned an empty transcript, so there is nothing to translate and nothing to summarize,
+The ASR returned an empty transcript, so there is nothing to translate and nothing to summarize,
 and since that date the pipeline writes their empty `translation.json` itself and ships them
 without a dub. Skipping them is pure saving: measured on the 2026-08-04 batch, **32 of 52
 sub-agents translated and summarized nothing** because 16 of 26 transcripts were empty.

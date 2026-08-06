@@ -11,9 +11,16 @@ hundreds of hours of single-speaker content.
 ## Pipeline
 
 1. **Download** — `yt-dlp` fetches the video.
-2. **Transcribe (STT)** — `faster-whisper` (large-v3) produces the English
+2. **Transcribe (STT)** — Parakeet-TDT 0.6b v3 (NVIDIA NeMo) produces the English
    transcript with word timestamps; words are re-assembled into sentences with
    `[start, end]`. The sentence is the unit of translation, synthesis and sync.
+   It has been the engine since 2026-08-06 (`asr_engine`, DECISIONS), running in
+   `.venv-parakeet` as a subprocess worker — ~25× faster than whisper large-v3
+   and, more to the point, free of whisper's repetition loops. It brings two
+   needs of its own: a Silero VAD gate, without which it invents words on
+   non-speech, and a coverage check that re-reads speech it dropped at a window
+   boundary. `asr_engine = "whisper"` switches back to `faster-whisper`
+   large-v3, which stays installed because verify uses it either way.
 3. **Translate** — sentence by sentence with a rolling context window
    (previous EN sentences + their RU translations), prompted to keep length
    close to the original (it's dubbing, not prose). Output per sentence: raw RU
@@ -350,6 +357,17 @@ half-translated. It enters route B at the top or route C at S2
 
 ### Repairing an ASR defect
 
+**Whisper-only since 2026-08-06.** `--repair-asr` refuses when `asr_engine` is
+anything else: its accept gate is "two independent readings of the clip agree",
+which is evidence only because whisper's temperature fallback samples. Parakeet
+decodes greedily and deterministically, so the two readings are byte-identical,
+the gate accepts unconditionally, and the mode would splice unverified text
+while reporting it as verified (DECISIONS 2026-08-06). On the default engine the
+equivalent job is done inside the transcribe worker, which finds speech spans it
+left uncovered and re-reads them before writing anything — see `holes` and
+`hole_words_recovered` in the run report. Everything below applies with
+`asr_engine = "whisper"` set.
+
 When whisper collapses — a repetition loop, or a sentence stamped onto an
 impossible span — the fix is not a full re-transcription (1/4 in the manual
 trial) but an isolated re-read of the defect window (7/7). Run it after
@@ -439,7 +457,8 @@ embedded as subtitle tracks for free.
 | Stage | Tool | Notes |
 |---|---|---|
 | Download | yt-dlp | |
-| STT | faster-whisper large-v3 | CUDA |
+| STT | Parakeet-TDT 0.6b v3 (NeMo) | CUDA, `.venv-parakeet` subprocess worker; Silero VAD gate + uncovered-speech re-read |
+| STT fallback | faster-whisper large-v3 | CUDA, `asr_engine = "whisper"` |
 | Translation | Claude Sonnet (semi-auto, at the seam) | sub-agents write `translation.json`; the pipeline resumes from it |
 | TTS | Silero v5_5_ru (`eugene`) | THE engine — CPU, in `.venv-asr`, no voice sample, deterministic; v4_ru only to reproduce pre-2026-07-19 runs |
 | Verification | faster-whisper small | ASR round-trip check |
@@ -450,9 +469,11 @@ embedded as subtitle tracks for free.
 
 - **Primary:** NVIDIA RTX 4080 Mobile, 12 GB VRAM. A model's lifetime is one
   stage sweep, so peak VRAM is the largest single model rather than the sum,
-  which is what makes one model load per BATCH safe. Measured: whisper large-v3
-  ~3.1 GB, htdemucs ~3.0, whisper-small ~0.5. **TTS costs no VRAM at all** —
-  Silero runs on CPU.
+  which is what makes one model load per BATCH safe. Measured: Parakeet ~8.8 GB
+  at 10-minute chunks (2026-08-06 — and the chunk size is the ONLY thing
+  bounding that; see SETUP.md for what happens at the ceiling), whisper
+  large-v3 ~3.1 GB, htdemucs ~3.0, whisper-small ~0.5. **TTS costs no VRAM at
+  all** — Silero runs on CPU.
 - **Secondary (deferred):** Intel Arc B390 iGPU. whisper.cpp (SYCL/OpenVINO) and
   llama.cpp (SYCL) are proven there for STT/translation; Silero-on-CPU makes the
   TTS side a non-question there. See PLAN deferred.

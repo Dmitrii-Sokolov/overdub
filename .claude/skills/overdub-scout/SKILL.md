@@ -45,7 +45,8 @@ Route-C specifics on top of the contract:
   visible against what actually ran.
 - Without `-Unique` in the `$ids` block, two parallel sub-agents would race on the same
   `summary.md`.
-- Whisper on music produces an empty or hallucinated transcript. Under contract §3 that video is
+- ASR on music produces an empty transcript (Parakeet's VAD gate, since 2026-08-06) or, on the
+  whisper fallback, a hallucinated one. Under contract §3 that video is
   still scouted: the summary says plainly that there is no speech and what the transcript does
   contain — a finished row, not a failure and not a question for the user. An honest "тут нечего
   пересказывать", written INTO the summary, is the answer; a skipped video is a hole.

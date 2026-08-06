@@ -87,11 +87,21 @@ re-timed — one MKV shipped with 15 × "Cloud" in EN subs against 35 × "Claude
 name list closes all three surfaces at once. **First here because it is the only known defect that
 survives into a finished MKV and cannot be reached from any later stage.**
 
-**Conditions, non-negotiable:** it changes source text, so it goes into `asr_key` beside the beam;
-and it is adopted only off `asr_probe.py --variant` on the six fixtures, never because it reads
-well — an `initial_prompt` also biases decoding elsewhere in the transcript, which is exactly what
-the probe measures. Open sub-question before any code: where the names come from (video title +
-channel are free and on disk; a per-queue list is an operator step). Rationale: DECISIONS 2026-07-26.
+**Conditions, non-negotiable:** it changes source text, so it goes into `asr_key`; and it is
+adopted only off a measurement on the six fixtures, never because it reads well — biasing an ASR
+toward a word list also changes decoding elsewhere in the transcript, which is what the probe
+measures. Open sub-question before any code: where the names come from (video title + channel are
+free and on disk; a per-queue list is an operator step). Rationale: DECISIONS 2026-07-26.
+
+**The engine changed under this item on 2026-08-06 and the defect did not.** Parakeet produced
+6 × `Cloud` against 30 × `Claude` in `2YCaBqP8muw`, where whisper had 0 — but in `RyvXxApfHkk` it
+was the only source of the three (whisper, the human transcript, itself) to write `Claude`
+correctly all four times. So neither engine owns this class and the fix is still a name list, not
+an engine choice. What DID change is the mechanism: `initial_prompt` / `hotwords` are
+faster-whisper arguments and do not exist here. NeMo carries its own context biasing (a
+`biasing_cfg` rides on every `Hypothesis`) — unmeasured on this corpus, and the first thing to look
+at before designing anything. The verify round-trip still runs on whisper, so the old warning holds
+unchanged: a name list must never reach it.
 
 ### Promotion C→B, confirmed once *(was a pre-batch caveat)*
 
@@ -243,6 +253,20 @@ about to change.
 
 ## Also open — independent, none of them ordered against the list above
 
+- **Uncovered-speech spans: the worker repairs them, nothing yet WATCHES them.** Parakeet drops
+  stretches of real speech at window boundaries (20 spans over 146 videos, largest 41 s / 125
+  words, 2026-08-06). `parakeet_worker` detects and re-reads them, and every repair so far returned
+  the text — but a re-read that comes back EMPTY is currently visible only in `meta.holes` against
+  `hole_words_recovered` in that video's `timings.json`. Two gaps: the run report does not surface
+  it, so a batch cannot be triaged on it; and `needs_triage` does not key on it, so a video that
+  silently lost a minute of speech still ships looking clean. Cheap — both fields are already on
+  disk. This is the one place the new engine can fail in exactly the way the old one could not.
+- **`--repair-asr` has no equivalent on the shipped engine.** It refuses on Parakeet (its accept
+  gate is vacuous on a deterministic decoder, DECISIONS 2026-08-06), and the coverage repair inside
+  the worker replaces only its uncovered-speech half. The detector-driven half — `completeness`
+  seeding a re-read of a garbled or duplicated sentence — has no home now. Whether it needs one is
+  open: those detectors were tuned against whisper's failure modes, and whether Parakeet even
+  produces that class at a rate worth machinery is unmeasured.
 - **Feed `src != ok` from `translation.json` into `repair.seed_ids_from_detectors`** (user-selected
   as the next step, 2026-07-25). The one defect class NO detector sees by construction: a clause
   repeated INSIDE one sentence. Measured on `8zJlKmgMT44` (audible repeats at 3:22 and 9:53): `#44`
