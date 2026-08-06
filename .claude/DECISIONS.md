@@ -74,6 +74,7 @@ divider. Look things up through this index, not by scrolling.
 - `07-16` dead-air elimination BUILD † · `07-16` interim ear verdict
 
 **Pipeline, batch, artifacts**
+- `08-06` the download prefetch is a PRE-PASS, not a parallel branch inside the sweep
 - `08-06` `separate` is SCHEDULED, not positioned: its gate asks whether a dub is coming
 - `08-06` the JS runtime is a WHEEL in the venv (deno), not a host binary and not Node
 - `08-06` a no-speech video ships without a dub; the queue converges
@@ -103,6 +104,38 @@ divider. Look things up through this index, not by scrolling.
 † carries a `SUPERSEDED` header — the code it describes is gone or changed. Read the header first.
 
 ---
+
+## 2026-08-06 — the download prefetch is a PRE-PASS, not a parallel branch inside the sweep
+
+`download` is the only stage holding no GPU and bound by the network, and on the baseline it was
+323.8 s of strictly serial fetching (13.3% of machine time) whose longest single video was 82 s —
+so most of it was the queue, not the transfer. It now runs concurrently, `download_concurrency = 3`.
+
+**Rejected: widening the stage-major loop to run its jobs in a pool.** That loop owns the STOP
+semantics, the cross-stage status machine and per-video failure isolation — the batch's
+convergence guarantees, and the most heavily pinned code in the repo. One stage's wall clock does
+not buy a share of them. The pre-pass instead runs the SAME stage through the SAME `run_pipeline`,
+so timings, spans and the artifact contract come from one code path, and the sweep is untouched
+and remains the authority: anything the pre-pass fails to fetch simply has `done() == False` when
+the sweep arrives, is refetched sequentially and reported as an ordinary FAIL row. Hence every
+exception in it is swallowed — a prefetch failure costs a retry, never a video.
+
+**Two things the concurrency forced, both non-obvious.** `check_stop` had to become thread-safe:
+its invariant is that exactly ONE (stage, video) pair ever observes a STOP, which held for free
+while checkpoints ran on one thread, and two racing threads would have reported two videos stopped
+for one operator action. And a STOP observed during the pre-pass is deliberately NOT honored
+there — the file is written back and handed to the sweep, because the pre-pass reports nothing per
+video and owning the halt would leave the sweep running against a stop already made.
+
+**`--force` opts out.** It makes `run_pipeline` skip `done()` entirely, so the sweep would fetch
+every video a second time and the pre-pass would be pure waste. Everything this buys rests on the
+sweep skipping what is on disk, which is exactly what `--force` switches off.
+
+**The knob is low on purpose and this one carries a risk the other scheduling changes do not.**
+Stage-major already delivers a queue to YouTube as one burst, and 2026-07-20 lost two videos of a
+twelve-video batch to transient 403 / "Video unavailable" that both succeeded on a plain re-run.
+Widening the pool makes the burst burstier. 3 is a guess bounded by that history, not a measured
+optimum, and nothing above it has been tried.
 
 ## 2026-08-06 — `separate` is scheduled, not positioned: its gate asks whether a dub is COMING
 

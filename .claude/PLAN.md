@@ -157,10 +157,15 @@ finished list. `Session` holds one model per sweep — but in the TAIL it amorti
 demucs and ffmpeg are per-video subprocesses already. So measure Silero's load cost before assuming
 new architecture is needed; if it is small, "the skill calls `--only synthesize,assemble,separate,
 mux` per video as translations land" may be the whole change, and `run_pipeline` never moves.
-`download` is network-bound and belongs on its own concurrency, separate from the GPU queue — it
-sits at the head of the critical path the objective names. And if `verify_roundtrip` is ever turned
-back on (the docs require it after any engine or voice change) it is a THIRD GPU consumer: the
-queue must cover it by construction, not be retrofitted.
+`download` **SHIPPED 2026-08-06** as a concurrent pre-pass before the sweep
+(`cli._prefetch_downloads`, `download_concurrency` = 3), deliberately outside the sweep's loop so
+the batch's STOP, status-machine and isolation guarantees were not put on the line for one stage's
+wall clock. Unverified on real media like the `separate` move: 323.8 → an expected ~90 s bounded by
+the longest single fetch (82 s on the baseline), and it carries a risk the others do not — a queue
+already reaches YouTube as one burst, and 2026-07-20 lost two videos of twelve to transient
+403 / "unavailable". If a batch starts showing those, the knob is the first thing to turn down.
+And if `verify_roundtrip` is ever turned back on (the docs require it after any engine or voice
+change) it is a THIRD GPU consumer: the queue must cover it by construction, not be retrofitted.
 
 **Order of work: the first two are DONE** — the instrument shipped and one ordinary stage-major
 batch produced the baseline, both 2026-08-06. What is left is the scheduler, and its order inside
