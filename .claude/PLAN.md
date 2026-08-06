@@ -72,17 +72,6 @@ next measurement is allowed to overturn it.
 **Slugs, not numbers** (DECISIONS 2026-07-22 — the numbering had crept back in and is removed
 again). Retired aliases are noted once per item so an old reference resolves; do not reuse them.
 
-### Listen to an original-audio passthrough once *(added 2026-08-06)*
-
-The passthrough shipped 2026-08-06 (DECISIONS): where the ASR recovered nothing, the mix cross-fades
-the English original in over the bed. Everything measurable was measured — the swap is confined to
-its mask at the PCM level, the dub timeline and the track peak do not move, and the three fixture
-videos carry 5.7 / 9.8 / 19.9 s of it. What is NOT measured is the only verdict that counts here:
-whether the seam is audible. Open `3owcMLGx0NQ` at 8:22, `tfg_Ay1FSe4` at 10:57 or `fV8rxPt-QeU` at
-13:24 and listen to both edges. If a 30 ms linear cross-fade is too short, the knob is
-`_PASS_FADE_S` in `stages/mux.py`; the mask floor beside it (`_PASS_MIN_S`, 0.25 s) is a guess of
-the same kind and has never been heard either.
-
 ### Pipeline the batch instead of running it stage by stage *(added 2026-08-06)*
 
 Stop waiting for the whole batch to finish transcribing before translation starts: launch a

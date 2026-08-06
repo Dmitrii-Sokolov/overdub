@@ -68,6 +68,7 @@ divider. Look things up through this index, not by scrolling.
 - `07-16` verify is ASR-BLIND, confirmed on real content
 
 **Mix / dead air**
+- `08-06` the passthrough seam is inaudible by ear (and what that verdict does NOT cover)
 - `08-06` uncovered speech plays the ORIGINAL; the seam is mux, not assemble
 - `07-17` dead air CLOSED by ear (final) · `07-17` compression back to atempo, bed is the mode
 - `07-16` dead-air elimination BUILD † · `07-16` interim ear verdict
@@ -100,6 +101,20 @@ divider. Look things up through this index, not by scrolling.
 † carries a `SUPERSEDED` header — the code it describes is gone or changed. Read the header first.
 
 ---
+
+## 2026-08-06 — the passthrough seam is inaudible; 30 ms stands
+
+Ear verdict (operator, 2026-08-06): the cross-fade into the English original is not audible, and no
+knob moved — `_PASS_FADE_S` stays at 30 ms per edge. Everything else about the feature was already
+measured the same day (entry below); the ear was the one verdict the PCM check could not stand in
+for, and it is the instrument that adjudicates quality here.
+
+**What the verdict does NOT cover: the mask floor.** The three stamped videos carry spans of
+5.7 / 9.8 / 19.9 s, each more than an order of magnitude above `_PASS_MIN_S` (0.25 s), so nothing
+that floor drops was in what was heard — a listen to those spans cannot say anything about it in
+either direction. It remains a guess, and one nothing has yet reported a defect against; hearing it
+would mean lowering it and listening for the transients it exists to suppress, which is a different
+measurement, not this one.
 
 ## 2026-08-06 — where the ASR heard nothing, the ORIGINAL audio plays
 
