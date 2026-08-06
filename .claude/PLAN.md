@@ -344,9 +344,6 @@ about to change.
   pennies. Transcript, translation and summary survive; the cost is re-synthesis of everything
   downstream. `out/` holds a second hardlink so the result survives on its own. **Blocker inside
   it:** mux's input must move `source.mkv` → `output.mkv`, or a re-mux needs a re-download.
-  **The disk argument this item used to carry is dead (2026-07-27):** it cited 81 GB free from
-  2026-07-20; D: now has 418 GB free against a 30 GB `work/`, so nothing about queue size is
-  bounded by disk today. Re-measure free space before ever reviving that claim.
 - **Recalibrate the floor CHAIN, not the ratio.** `floor_ratio ≥ 0.085` fired on nothing (batch max
   0.070) while two videos had visible collapses; `floor_longest_run ≥ 40` separates exactly those
   two and nothing else, and now drives a digest hint (2026-07-25). `config.py`'s own comment admits
