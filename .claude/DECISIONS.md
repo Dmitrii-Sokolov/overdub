@@ -84,6 +84,7 @@ divider. Look things up through this index, not by scrolling.
 - `07-15` pipeline tail design panel
 
 **Measurement & method** — the entries most likely to save you a day
+- `08-06` **the batch gets an absolute clock**; the first honest baseline retires the ~1.7× estimate
 - `07-25` retrospective: three times the arithmetic was right and the SHAPE was wrong
 - `07-22` measuring ASR inverts the sweep's premise; and the HOST DRIFTS
 - `07-22` overhead is SUBTRACTED per stage, never summed across kinds
@@ -101,6 +102,79 @@ divider. Look things up through this index, not by scrolling.
 † carries a `SUPERSEDED` header — the code it describes is gone or changed. Read the header first.
 
 ---
+
+## 2026-08-06 — the batch gets an absolute clock, and the first honest baseline retires the pipelining estimate
+
+`timings.json` gained a third section, `spans[<stage>]`, carrying three ABSOLUTE stamps —
+`enqueued` (the runner decided the stage must run), `started` (the body began, i.e. after any
+gating) and `finished` — plus `work/runs.jsonl`, one append-only row per pipeline PROCESS with its
+elapsed window, ids, audio and a `config_key`. `stages[x]` is untouched and stays a `perf_counter`
+duration.
+
+**Why three stamps and not two.** A duration cannot say WHEN a stage ran, so it cannot show two
+videos overlapping, and it cannot separate waiting for a shared resource from working — both land
+inside the one measurement. Once anything queues for the GPU, "transcribe 340 s" would be 40 s of
+decode and 300 s of queue with nothing able to tell them apart after the fact. The two stamps
+coincide today because nothing gates; the DEFINITIONS are what had to be fixed before a scheduler,
+not after.
+
+**Why additive and not a redefinition.** `total_wall_s` already changed scope once (2026-08-05, the
+translate seam) and every timings.json on disk is keyed to `stages[x]`'s current meaning. A second
+silent shift would make the corpus unreadable rather than merely incomplete. The two also fail
+differently and that is worth having: `perf_counter` is monotonic and survives a clock step, the
+stamps are comparable ACROSS videos and processes, which is the thing a duration can never be.
+
+**The grain of `runs.jsonl` is one INVOCATION, not a batch or a night** — route B drives the
+pipeline at least twice per queue (a pass to the seam, then a resume), so "batch" would silently
+name two different spans in one series. `config_key` (`asr_key ++ synth_key`) travels with every
+row because a series that quietly spans an engine or voice change is worse than no series.
+
+### The baseline, 10 videos, 4.10 h of source
+
+Machine time **2438.6 s** (step 1 479.4 + Sonnet wave 811.6 + step 3 1147.7) = **×6.05** audio per
+unit of machine time. The attended SESSION span was 5700.6 s (×2.59) and the 3262 s difference is
+the orchestrator's own analysis between steps — two different quantities, and only the first is
+what a scheduler can move.
+
+Per-stage cost as the UNION of spans, never the sum:
+
+| stage | union | sum | share of machine |
+|---|---|---|---|
+| translate | 787.9 s | 4888.6 s (**6.20×**) | 32.3% |
+| mux | 470.3 s | — | 19.3% |
+| download | 323.8 s | — | 13.3% |
+| synthesize | 320.7 s | — | 13.1% |
+| separate | 301.5 s | — | 12.4% |
+| transcribe | 151.4 s | — | 6.2% |
+| assemble | 52.2 s | — | 2.1% |
+
+**The double-count factor is not a constant.** PLAN carried 4.41× off a 6-video batch; this
+10-video one reads 6.20×, because the overlap grows with the width of the fan-out. The warning is
+"a sum lies more the wider the wave", never a coefficient. The pipeline's own digest printed
+`translate 75.1%` against an honest 32.3%.
+
+### What the baseline retired
+
+**The tail does NOT fit inside the wave.** Tail (synthesize+verify+assemble+separate+mux) union
+1145.6 s against a 787.9 s wave — **×1.45 too big**. The estimate in PLAN came off the 2026-08-06
+6-video batch where the inequality ran the other way (565 s tail, 664 s wave), so the projected
+~1.7× end-to-end is withdrawn: the machine must still do head 475.2 + tail 1145.6 = 1620 s, giving
+**×1.50** against today's 2438.6 s.
+
+**Running `separate` INSIDE the wave is confirmed by measurement, and it is the biggest single
+lever.** demucs is 301.5 s of GPU work with no dependency on the translation, and the card is idle
+for the whole 811.6 s wave. Moving it there drops the tail to 844.1 s and lifts the ceiling to
+**×1.85** — worth 12.4% of the entire baseline on its own, more than every other overlap combined.
+
+**`mux` is the biggest machine stage after translate** (19.3%, larger than download and transcribe
+together) and it is ffmpeg and disk, not GPU. Whatever binds after pipelining, it is that.
+
+Barrier cost, measured inside step 1 where no human time contaminates it: the first video finished
+downloading after 12 s and waited **313 s** for the other nine before its transcribe was enqueued.
+
+**One queue, so the ratios are not a population.** What generalises is the direction (a sum lies
+with fan-out width; demucs fits in the wave); what does not is ×1.50 or ×1.85 — tail-to-wave
+depends on what is in the queue, and ten ~25-minute videos is one shape of it.
 
 ## 2026-08-06 — the passthrough seam is inaudible; 30 ms stands
 
