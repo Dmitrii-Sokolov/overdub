@@ -579,7 +579,14 @@ class TranscribeStage:
                 # transcribe. Recorded even when it is 0, so "this video was checked and is
                 # clean" is distinguishable from "this video predates the check".
                 holes_unrecovered=len(unrecovered),
-                hole_sec_unrecovered=wmeta.get("hole_sec_unrecovered", 0.0))
+                hole_sec_unrecovered=wmeta.get("hole_sec_unrecovered", 0.0),
+                # ...and WHERE, because the count alone cannot be acted on: it says "open this
+                # 20-minute video and listen" without saying where, and the spans are
+                # unrecoverable afterwards — they are defined against the VAD's segments, which
+                # live in the worker's venv and never reach the disk. Recovering them for the
+                # 2026-08-06 batch took a second VAD pass over source.wav, which a work/ cleanup
+                # would have made impossible.
+                hole_spans_unrecovered=unrecovered)
             note = (f", {len(holes)} uncovered span(s) re-read (+"
                     f"{wmeta.get('hole_words_recovered', 0)} words)") if holes else ""
             print(f"       {len(flat)} words → {len(sentences)} sentences  "

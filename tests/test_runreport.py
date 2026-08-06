@@ -1187,6 +1187,65 @@ def test_unrecovered_speech_reaches_run_json_and_forces_triage() -> None:
     assert run["needs_triage"] is True, run
 
 
+def test_unrecovered_spans_carry_their_timings_to_the_report() -> None:
+    """The count says "listen to this video", the spans say WHERE — without them the flag names a
+    20-minute video and no position in it, and the timings cannot be recovered later: they are
+    defined against VAD segments that never reach the disk."""
+    with tempfile.TemporaryDirectory() as d:
+        work = _mkwork(d, report=_clean_report(),
+                       translation=[{"id": i, "status": "ok"} for i in range(4)],
+                       timings={"stages": {"transcribe": 10.0},
+                                "detail": {"transcribe": {
+                                    "asr_repair_windows": 2, "hole_sec": 55.0,
+                                    "hole_words_recovered": 130,
+                                    "holes_unrecovered": 2, "hole_sec_unrecovered": 20.1,
+                                    "hole_spans_unrecovered": [[803.8, 818.7], [895.3, 900.5]]}}})
+        run = runreport._build_run_report(work, Config())
+    assert run["asr"]["hole_spans_unrecovered"] == [[803.8, 818.7], [895.3, 900.5]], run["asr"]
+    block = queueview.render_run_report(run, [])
+    # The timecode, not the raw seconds — 803.8 is a number you cannot scrub to. Rounded, like
+    # every other timecode in the reports; the exact length rides beside it for the 0.5 s the
+    # rounding can cost either edge.
+    assert "13:24-13:39 (14.9s)" in block, block
+    assert "14:55-15:00 (5.2s)" in block, block
+
+
+def test_a_run_without_stamped_spans_says_so_instead_of_showing_none() -> None:
+    """A Parakeet run from before the span stamp has the COUNT and not the timings. Rendering an
+    empty span list would read as "checked, nothing uncovered" directly beside a count saying two
+    stretches ship with no dub — the clean-looking-empty-report failure this project forbids."""
+    with tempfile.TemporaryDirectory() as d:
+        work = _mkwork(d, report=_clean_report(),
+                       translation=[{"id": i, "status": "ok"} for i in range(4)],
+                       timings={"stages": {"transcribe": 10.0},
+                                "detail": {"transcribe": {
+                                    "asr_repair_windows": 2, "hole_sec": 55.0,
+                                    "hole_words_recovered": 130,
+                                    "holes_unrecovered": 2, "hole_sec_unrecovered": 20.1}}})
+        run = runreport._build_run_report(work, Config())
+    assert "hole_spans_unrecovered" not in run["asr"], run["asr"]
+    block = queueview.render_run_report(run, [])
+    assert "timings not recorded" in block, block
+    # ...and the video still says it needs an ear, on the count alone.
+    assert run["needs_triage"] is True, run
+
+
+def test_a_clean_video_prints_no_uncovered_speech_line() -> None:
+    # The line is actionable and must stay rare — a "0 spans" line on every clean video is how a
+    # signal becomes wallpaper.
+    with tempfile.TemporaryDirectory() as d:
+        work = _mkwork(d, report=_clean_report(),
+                       translation=[{"id": i, "status": "ok"} for i in range(4)],
+                       timings={"stages": {"transcribe": 10.0},
+                                "detail": {"transcribe": {
+                                    "asr_repair_windows": 1, "hole_sec": 41.0,
+                                    "hole_words_recovered": 173,
+                                    "holes_unrecovered": 0, "hole_sec_unrecovered": 0.0,
+                                    "hole_spans_unrecovered": []}}})
+        run = runreport._build_run_report(work, Config())
+    assert "uncovered speech" not in queueview.render_run_report(run, [])
+
+
 def test_a_repaired_hole_alone_does_not_force_triage() -> None:
     # Every hole measured on 2026-08-06 was recovered on the second read. If a successful repair
     # tripped the flag, the flag would fire on ordinary runs and stop meaning anything — the way

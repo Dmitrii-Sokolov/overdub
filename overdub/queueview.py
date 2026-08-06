@@ -302,6 +302,18 @@ def batch_row(run) -> dict:
 _FLOOR_CHAIN_HINT = 40
 
 
+def _span_clock(sec: float) -> str:
+    """H:MM:SS / M:SS for a POSITION inside the video — a timecode you scrub to, never a
+    quantity (that is format_dur's job, and mixing the two is what its docstring forbids).
+
+    Local and unguarded on purpose: unlike scout_report.clock and cli's, this one only ever
+    formats a VAD span boundary, which is a measured float by construction — there is no unknown
+    case to render, so it needs no '—' contract of its own to keep in sync with theirs."""
+    t = int(round(sec))
+    h, m, s = t // 3600, (t // 60) % 60, t % 60
+    return f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
+
+
 def format_dur(sec, *, ru: bool = False) -> str:
     """Seconds → the LARGEST fitting unit with one decimal: "3.3h" / «3.3 ч», "47.3m", "18.4s".
 
@@ -427,6 +439,20 @@ def render_run_report(run, offenders, summary=None):
                 f"(longest chain {a.get('floor_longest_run')}){hint}"
                 if fr is not None else "- asr: no words.json")
 
+    # Uncovered speech, printed only when a span survived the second read. This is the ONE
+    # actionable ASR line — it sets needs_triage by itself — and until the timings reached here it
+    # named no position, so acting on it meant scrubbing a 20-minute video by ear. `gap` in the
+    # batch table carries the total; this carries where to listen.
+    n_unrec = a.get("holes_unrecovered") or 0
+    spans = a.get("hole_spans_unrecovered")
+    gap_line = None
+    if n_unrec:
+        head_txt = (f"- uncovered speech ({n_unrec}, "
+                    f"{format_dur(a.get('hole_sec_unrecovered') or 0)} with no dub under it): ")
+        gap_line = head_txt + (
+            " · ".join(f"{_span_clock(s)}-{_span_clock(e)} ({e - s:.1f}s)" for s, e in spans)
+            if spans else "timings not recorded (this run predates the span stamp)")
+
     tr = run.get("translate", {}) or {}
     v = run.get("verify", {}) or {}
     c = run.get("completeness", {}) or {}
@@ -471,7 +497,10 @@ def render_run_report(run, offenders, summary=None):
     lines = [head, timings_line]
     if stages_line:
         lines.append(stages_line)
-    lines += [asr_line, flags_line]
+    lines.append(asr_line)
+    if gap_line:
+        lines.append(gap_line)
+    lines.append(flags_line)
     if fill_line:
         lines.append(fill_line)
     if pron_line:

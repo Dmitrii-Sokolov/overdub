@@ -230,6 +230,26 @@ def test_the_stage_stamps_the_parakeet_key_and_the_hole_count() -> None:
         assert detail["hole_words_recovered"] == 42, detail
 
 
+def test_the_stage_stamps_where_the_unrecovered_speech_is() -> None:
+    """The worker knows the spans and its meta dies with the process — this stamp is the only
+    record. Without it the report can say a video needs an ear but not where to put it, and the
+    spans cannot be rebuilt later: they are defined against VAD segments that never hit the disk.
+    """
+    meta = {"holes": [[10.0, 20.0], [30.0, 41.0]], "hole_words_recovered": 42,
+            "holes_unrecovered": [[30.0, 41.0]], "hole_sec_unrecovered": 11.0,
+            "vad_blocks": 2, "vad_speech_sec": 100.0}
+    words = [{"text": "One.", "start": 0.0, "end": 0.4, "seg_end": True}]
+    with tempfile.TemporaryDirectory() as d:
+        ctx = _ctx(Path(d), _FakeWorker(words, meta))
+        TranscribeStage().run(ctx)
+        detail = json.loads((ctx.work.root / "timings.json").read_text(
+            encoding="utf-8"))["detail"]["transcribe"]
+        assert detail["hole_spans_unrecovered"] == [[30.0, 41.0]], detail
+        # The count stays beside them: it is what needs_triage reads, and a run predating the
+        # spans still has to be tellable from one that was checked and came back clean.
+        assert detail["holes_unrecovered"] == 1, detail
+
+
 def test_the_stage_collapses_a_repetition_loop() -> None:
     # _dehallucinate is NOT whisper-only: Parakeet produced "That's the seven three" fifteen times
     # over a silent file (2026-08-06). Same defect shape, different engine.

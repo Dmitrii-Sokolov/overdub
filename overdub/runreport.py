@@ -404,6 +404,13 @@ def _build_run_report(work, cfg):
         asr_block["hole_words_recovered"] = int(tdetail.get("hole_words_recovered") or 0)
         asr_block["holes_unrecovered"] = int(tdetail.get("holes_unrecovered") or 0)
         asr_block["hole_sec_unrecovered"] = float(tdetail.get("hole_sec_unrecovered") or 0.0)
+        # The spans themselves, and ONLY when the stage stamped them. A run from before that
+        # stamp has the count and not the timings, and defaulting to [] here would render as
+        # "checked, nothing uncovered" over a count that says otherwise — absence is UNKNOWN,
+        # the same contract floor_ratio and the source block already hold to.
+        spans = tdetail.get("hole_spans_unrecovered")
+        if isinstance(spans, list):
+            asr_block["hole_spans_unrecovered"] = [[float(a), float(b)] for a, b in spans]
 
     # --- translate -----------------------------------------------------------
     tr_by_type = {k: 0 for k in _TRANSLATE_FLAGS}
