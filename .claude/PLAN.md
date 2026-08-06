@@ -72,41 +72,108 @@ next measurement is allowed to overturn it.
 **Slugs, not numbers** (DECISIONS 2026-07-22 — the numbering had crept back in and is removed
 again). Retired aliases are noted once per item so an old reference resolves; do not reuse them.
 
-### Pipeline the batch instead of running it stage by stage *(added 2026-08-06)*
+### Pipeline the batch instead of running it stage by stage *(added and re-scoped 2026-08-06)*
 
-Stop waiting for the whole batch to finish transcribing before translation starts: launch a
-translator sub-agent for a video the moment ITS transcript exists, and push each video onward
-through synthesize → assemble → separate → mux the moment ITS translation lands.
+**The objective is a LATENCY, not a stage speed-up** (user, 2026-08-06): shorten the time until the
+FIRST video reaches its post-translate tail, so that tail overlaps the translation of the next
+video. No stage on this list is being optimized — translate is the longest and is deliberately out
+of scope, and the rest are near their practical ceilings.
 
-**What the measurement says.** On the 2026-08-06 batch (6 videos, 1.68 h of source): the batch took
-1537 s wall. All six translator agents started within 7 seconds of each other and their union was
-664 s — they are already parallel WITH EACH OTHER, and the serial part is the barrier around them.
-transcribe was 85 s total and download 93 s, while the post-translate tail (synthesize 159 +
-separate 161 + mux 221 + assemble 24 = 565 s) is a bigger block than transcribe by far. Overlapping
-the tail of one video with the translation of the next is where the win is — a rough ceiling is
-`first video's download+transcribe + the slowest agent + one tail`, order of 900 s against 1537,
-so ~1.7×. Cheap to sanity-check before building anything: the numbers above come from
-`work/<id>/timings.json` plus `translate.started` / `translation.draft.json` mtimes.
+**The instrument exists and the baseline is measured** (2026-08-06, DECISIONS carries the numbers
+and the method). `timings.json` now has `spans[<stage>]` with three absolute stamps and
+`work/runs.jsonl` one row per pipeline invocation, so a wait can be told from work and two videos
+can be shown overlapping. Read the DECISIONS entry before quoting anything below.
 
-**The catch that makes this more than a scheduler change:** `stages.translate` is written by
-`build_translation.py`, not by the pipeline, and it measures the SUB-AGENT's wall clock. Those
-intervals overlap, so summing them across videos counts the same seconds up to 4.41× (measured
-2026-08-06). Any scheduling work here MUST report a union or an elapsed window, never a sum, or it
-will "prove" a speedup that is an artefact of double-counting. This is also why the digest's
-translate share reads 79.7% when the honest figure is 43.2%.
+**~1.7× is WITHDRAWN. The measured ceiling is ×1.50, or ×1.85 with the `separate` move.** The old
+figure came off a 6-video batch where the tail (565 s) fitted inside the wave (664 s). On the
+10-video baseline the inequality runs the OTHER way — tail 1145.6 s against a 787.9 s wave, ×1.45
+too big — so the tail cannot hide behind the wave and the machine must still do head 475.2 +
+tail 1145.6 = 1620 s against today's 2438.6 s. **Tail-to-wave is a property of the QUEUE, not of the
+pipeline**, so neither number is a population value; what carries across both batches is the shape
+of the win, not its size.
+
+**Never sum an overlapping stage, and do not carry a coefficient for it.** `stages.translate` is
+written by `build_translation.py` and measures the SUB-AGENT's wall clock, so the intervals overlap:
+summing them read 4.41× on 6 videos and **6.20× on 10**, because the overlap grows with the width of
+the fan-out. Report a union or an elapsed window. The pipeline's own digest still prints the summed
+share — `translate 75.1%` against an honest 32.3% on the baseline run — so the digest is not a
+source for this and a fix to it is not this item.
+
+**Where the machine time actually goes** (share of 2438.6 s, union not sum): translate 32.3% ·
+**mux 19.3%** · download 13.3% · synthesize 13.1% · separate 12.4% · transcribe 6.2% ·
+assemble 2.1% · verify 0.0%. Two consequences. `mux` is the biggest machine stage after the seam —
+bigger than download and transcribe together, pure ffmpeg and disk — so it is what binds once the
+overlap is taken, and nothing has ever profiled it. And `transcribe`, the stage this item was
+originally framed around, is 6.2%: the head of the critical path is **download**, which is serial,
+network-bound and holds no GPU.
+
+**Machine time and session span are different quantities.** The baseline run measured 2438.6 s of
+machine against a 5700.6 s attended session; the 3262 s difference is the orchestrator's own
+analysis between steps. Only the first is what a scheduler can move, and a "batch took N" figure
+that does not say which one it is means nothing.
+
+**The GPU set is smaller than it looks.** Silero is CPU (`tts/silero.py`, `device="cpu"`), assemble
+and mux are ffmpeg, download is network, and `verify_roundtrip` is off by default since 2026-08-06.
+Exactly TWO stages hold the card: `transcribe` (the Parakeet `--serve` worker) and `separate`
+(demucs `-d cuda`, `stages/separate.py`). So synthesize — 13.1% of machine time on the baseline —
+needs no coordination at all and can run beside anything. **The primitive is a GPU mutex with priority to transcribe, NOT a phase barrier**: a
+barrier ("no tail until every video is transcribed") buys the same safety and adds a failure mode,
+since one long video would then hold every short one. The one real argument for a barrier is VRAM,
+not compute — the Parakeet worker holds the card for the whole sweep, so if htdemucs does not fit
+beside it in 12 GB the worker must be killed first. That is an `nvidia-smi` reading during one run,
+not a design debate, and it now gates two decisions (see the next paragraph).
+
+**Order the queue LONGEST first.** Shortest-first is the intuitive choice and it is backwards. On
+the baseline, transcribe runs at RTF 0.0103 against a tail at 0.0777 — **7.5× apart** — so a long
+video costs its own transcribe in head-of-line blocking at the mutex but leaves a tail 7.5× that
+size unoverlappable if it lands last. Long pole first, so there is something left to overlap it
+with. No pre-pass needed: duration is free from `source.info.json`, so a greedy "take the longest
+READY video" approximates it online while downloads run concurrently. Two things to check rather
+than assume: that the tail really is proportional to duration (only its aggregate shape was
+measured, never that scaling per video), and that a long video's CHUNKED translation is not itself
+the slowest agent — the argument rests on the tail, not on the agent.
+
+**Run `separate` INSIDE the translate wave — the biggest single lever, and now measured** (user,
+2026-08-06). demucs needs only `source.wav` and nothing from the translation, while the card sits
+idle for the whole wave. On the baseline that is 301.5 s of GPU work moved into an 811.6 s hole:
+tail 1145.6 → 844.1 s, ceiling ×1.50 → **×1.85**, i.e. **12.4% of the entire batch from this one
+change** — more than every other overlap combined. Not "right after transcribe": demucs is the
+BIGGER GPU consumer of the two, so running it beside transcription delays the transcripts and
+therefore the first agent, which is the objective. Guard it on a non-empty transcript so a
+no-speech video does not pay for a bed it will not use (the transcript exists by then, so the check
+is free) — that preserves today's skip. **This is also what settles the barrier question**: a
+barrier would forbid exactly this dispatch, and it makes the VRAM co-residency reading load-bearing
+rather than avoidable. **Do this one first** — it is self-contained, it does not touch the seam, and
+it is worth more than the reordering work around it.
 
 **What has to move.** `run_pipeline` is stage-major with `--video-major` already available as a
 flag, but the seam is the hard part: route B's translation is produced OUTSIDE the pipeline by
 sub-agents that the skill orchestrates in waves (`.claude/skills/overdub-sonnet-batch/SKILL.md`
 step 2, `.claude/workflows/translate-batch.js`). A per-video trigger means the orchestrator must
 watch for `sentences.json` appearing and dispatch on it, rather than fanning out once over a
-finished list. `Session` holds one model per sweep, so a naive per-video loop reloads Parakeet and
-Silero repeatedly — the worker's `--serve` process already survives a sweep, but that lifetime is
-tied to the session and needs checking before anything reorders stages.
+finished list. `Session` holds one model per sweep — but in the TAIL it amortises only Silero:
+demucs and ffmpeg are per-video subprocesses already. So measure Silero's load cost before assuming
+new architecture is needed; if it is small, "the skill calls `--only synthesize,assemble,separate,
+mux` per video as translations land" may be the whole change, and `run_pipeline` never moves.
+`download` is network-bound and belongs on its own concurrency, separate from the GPU queue — it
+sits at the head of the critical path the objective names. And if `verify_roundtrip` is ever turned
+back on (the docs require it after any engine or voice change) it is a THIRD GPU consumer: the
+queue must cover it by construction, not be retrofitted.
 
-**Do not start with code.** Establish the honest baseline first (elapsed wall for the whole batch,
-not summed stage times), then decide whether the win comes from overlapping the tail, from starting
-agents earlier, or from both — the two have different costs and only one of them touches the seam.
+**Order of work: the first two are DONE** — the instrument shipped and one ordinary stage-major
+batch produced the baseline, both 2026-08-06. What is left is the scheduler, and its order inside
+this item is `separate`-into-the-wave first (self-contained, biggest lever, does not touch the
+seam), then concurrent `download`, then the per-video trigger that does.
+
+**Acceptance: the artifacts must not move.** This ranks above the quality items because it is a
+PROCESS change that cannot reach the output (user, 2026-08-06) — but that is a property to CHECK,
+not to assume, and this pipeline can check it exactly, because Parakeet and Silero are both
+deterministic. Hold `translation.json` fixed (the resume key already keeps it) and re-run the tail
+under both schedulers: everything downstream must come back identical. Establish first WHICH
+artifacts are bit-stable by running the same batch twice under today's stage-major — demucs's
+`source_bed.wav` has never been shown to be, and without that baseline its own nondeterminism will
+read as a scheduler regression. Whatever turns out not to be bit-stable gets a different comparison,
+not a pass.
 
 ### Name list at ASR — the proper-noun class
 
@@ -150,20 +217,6 @@ C-then-B on one video, so neither half is observed. Confirming it costs one smal
 videos, dub the same 2, then read their `run.json` — `timings.stages.transcribe` near zero and
 `download` clearly non-zero is the pass. It is this high because both daily routes already depend
 on it working and nobody has looked.
-
-### Sonnet budget per batch
-
-Route B spends 2 sub-agents per video (translator + summarizer), route C one, route E one per
-CHUNK, and the price is visible NOWHERE — not in `run.json`, not in the digest, not in the report.
-**This is the scarce resource now that disk is not**: machine time is not the bound either (3 h 16 m
-of work for 24 videos), and the 2026-07-27 disk re-measurement removed the only other stated ceiling.
-An estimate per video (agents × tokens) and a share of the weekly limit per batch would make "does a
-100-video queue fit in a week" arithmetic instead of a surprise at #60.
-
-No route has a recorded per-video token figure. The one that did — route D, measured at ~200k per
-video on 2026-07-30 — was deleted with the route on 2026-08-03, and that number describes nothing
-that still exists. The gap this item is about is that nothing in the pipeline WRITES such a figure
-down: the route-D one came from reading task notifications by hand.
 
 ### Slot fit — size the translation to the slot *(was item 1(a))*
 
@@ -317,6 +370,20 @@ about to change.
   curve?" in a 1.06 s slot — one sentence cut in half by the rebuild, and `rate_implausible` does
   not fire (36 ch/s against a 40 bound). Repair cannot help either by construction; only re-joining
   at rebuild can. Distinct from the 143 `garbled` / 60 `dup_neighbour`, which really are whisper's.
+- **Sonnet cost per batch is unrecorded — an observability gap, NOT a ceiling** *(demoted from
+  Open and re-framed 2026-08-06)*. Route B spends 2 sub-agents per video (translator +
+  summarizer), route C one, route E one per CHUNK, and the price appears nowhere: not in
+  `run.json`, not in the digest, not in the report. It used to be ranked in Open as **"the scarce
+  resource now that disk is not"** — that framing is retracted. The user's own operating estimate
+  (2026-08-06) is ~1% of the weekly limit per 2-5 h of translated audio, i.e. tens of hours run
+  without approaching a limit, so nothing is gated on this and a 100-video queue is not the
+  surprise the old text feared. Treat that as an ESTIMATE with a named source, not a measurement —
+  it is exactly the kind of figure this file requires a date and a provenance for, and it does not
+  become a measurement by being quoted again. What survives unchanged is the gap itself: no route
+  has a recorded per-video token figure, and nothing in the pipeline WRITES one. The only route
+  that ever had one (route D, ~200k per video, 2026-07-30) came from reading task notifications by
+  hand and was deleted with the route on 2026-08-03, so that number describes nothing that still
+  exists. Cheap to close if a batch ever wants it; nothing waits on it.
 - **Persist the batch capacity measurement — it currently survives only in a chat message.**
   Step 4 computes audio ÷ machine time from the per-step stamps (route-B skill, "Capacity",
   added 2026-08-02: 2 videos, digest said ×4.13, the machine did ×2.56), but nothing writes it
@@ -460,10 +527,13 @@ the seam wall is orchestrator time, not machine time: it includes the sub-agents
 queueing behind the concurrency cap, which is exactly what makes it the right input for the
 overlap question and the wrong input for a GPU-utilisation one.
 
-**What it is FOR:** sizing the pipelining decision — the batch is stage-major
-(`for st in stages: for j in jobs`, `cli.py`), so the translate wave is a full barrier during which
-the GPU idles, and nothing has ever measured what that barrier costs. Collect one batch, then
-decide. Note the stage-major rationale (DECISIONS 2026-07-19) is partly EXPIRED: its core argument
+**The barrier it was collected to size is now MEASURED and this sub-item is spent** (2026-08-06).
+The batch is stage-major (`for st in stages: for j in jobs`, `cli.py`), so the translate wave is a
+full barrier during which the GPU idles; the baseline puts that idle at 811.6 s of an 2438.6 s run
+and the first video's own wait at 313 s inside step 1 alone. Numbers and method: DECISIONS
+2026-08-06. `total_wall_s` remains what this entry says it is — a per-video SUM — and the batch
+window now lives in `work/runs.jsonl` instead of nowhere, so the two must not be mixed.
+Note the stage-major rationale (DECISIONS 2026-07-19) is partly EXPIRED: its core argument
 was that a model's lifetime is one stage sweep so peak VRAM is the max over models rather than
 their sum, and it was sized around the local ~8-9 GB Gemma translator that no longer exists.
 
