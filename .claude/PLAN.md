@@ -411,6 +411,32 @@ about to change.
   that ever had one (route D, ~200k per video, 2026-07-30) came from reading task notifications by
   hand and was deleted with the route on 2026-08-03, so that number describes nothing that still
   exists. Cheap to close if a batch ever wants it; nothing waits on it.
+- **`host_guard` decides on the wrong instrument — move it to the SM CLOCK** *(2026-08-07,
+  DECISIONS)*. It gates on `utilization.gpu` (bar 40) and memory (bar 2500 MiB), and
+  `utilization.gpu` measures the fraction of sample windows containing any kernel at all, not load
+  — desktop compositing keeps it in the tens of percent on a card sitting at its idle clock. It
+  printed `35% util, 815 MiB, 57 C, 210 MHz — idle` and that ONE line misled in both directions
+  at once: the verdict said idle, the percentage said busy, and only the 210 MHz was true. Measured
+  the same session: **210 MHz / 13.5 W at rest vs 2445 MHz / 45 W under load** — an order of
+  magnitude, against a utilisation figure that cannot separate the two. The fix is to gate on the
+  clock (idle-clocked is idle whatever the percentage), keep memory as the second signal, and
+  demote utilisation to something printed rather than decided on. Do NOT just lower
+  `BUSY_UTIL_PCT`: that keeps the wrong instrument and would start refusing to run on a normally
+  composited desktop, which is the hardware this project targets.
+- **Transcribe's wall varies 35× on IDENTICAL work, and nothing explains it** *(2026-08-07)*.
+  `IOMCDpzpNaQ` (617 s of audio) recorded `work_sec` of **6.8 s** (as the 10th video of a warm
+  10-video sweep), then **238.2 s**, **32.7 s** and **22.4 s** on three later decodes of the same
+  file. At batch level the same day: transcribe summed 151.2 s on the baseline and 539.3 s on a
+  re-run of the same ten videos. Ruled OUT: a busy card (clocks and power measured healthy under
+  load, DECISIONS 2026-08-07) and a changed input (`vad_speech_sec` identical to 0.1 s on all ten,
+  so the VAD saw the same audio). Partial candidate: first-use CUDA kernel compilation, which a
+  warm sweep amortises and an isolated run pays in full — but it does not explain the FIRST video
+  of the re-run being slow too. This is 5-6% of machine time so it changes no decision, but it
+  makes any transcribe figure unquotable until understood, and it is why the 2026-08-07
+  end-to-end comparison was scoped to the wave and the tail. **Do not re-measure transcribe speed
+  against the closed 2026-07-24 axis until this is resolved** — that closure assumed a stable wall.
+  Note the spans for these videos are themselves contaminated by the two diagnostic `--force`
+  re-runs, so a clean series has to start from a fresh workdir.
 - **Persist the batch capacity measurement — it currently survives only in a chat message.**
   Step 4 computes audio ÷ machine time from the per-step stamps (route-B skill, "Capacity",
   added 2026-08-02: 2 videos, digest said ×4.13, the machine did ×2.56), but nothing writes it

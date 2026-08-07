@@ -88,6 +88,7 @@ divider. Look things up through this index, not by scrolling.
 - `07-15` pipeline tail design panel
 
 **Measurement & method** — the entries most likely to save you a day
+- `08-07` `utilization.gpu` is not a load signal; quote the SM CLOCK
 - `08-06` **the batch gets an absolute clock**; the first honest baseline retires the ~1.7× estimate
 - `07-25` retrospective: three times the arithmetic was right and the SHAPE was wrong
 - `07-22` measuring ASR inverts the sweep's premise; and the HOST DRIFTS
@@ -106,6 +107,34 @@ divider. Look things up through this index, not by scrolling.
 † carries a `SUPERSEDED` header — the code it describes is gone or changed. Read the header first.
 
 ---
+
+## 2026-08-07 — `utilization.gpu` is not a load signal; the SM CLOCK is the one that decides
+
+`host_guard` reported `GPU 35% util, 815/12282 MiB, 57 C, 210 MHz — idle`, and on the strength of
+that 35% the orchestrator told the operator the card was busy and refused to measure. The operator
+pushed back with Task Manager at 0%, 52 C and everything suspended. **The operator was right, and
+the refutation was already inside the guard's own line: 210 MHz is the idle clock.**
+
+NVIDIA's `utilization.gpu` is "the fraction of sample windows in which at least one kernel was
+executing" — an occupancy-of-time figure, not a share of the machine. Periodic one-shot kernels
+from the desktop compositor and suspended apps keep it in the tens of percent while the card does
+no work at all and never leaves its idle clock. Measured the same session, under a real transcribe:
+**210 MHz / 13.5 W at rest against 2445 MHz / 45 W under load.** The clock moves by an order of
+magnitude; the utilisation number does not distinguish the two states.
+
+**So the guard's thresholds are looking at the wrong instrument.** `BUSY_UTIL_PCT = 40` was
+calibrated against a game holding the card at 98% and 8.6 GB, and it is fine for that. It cannot
+see the case that actually corrupts a measurement here, and — worse — it printed the word `idle`
+beside a number the reader then over-trusted in the opposite direction. Both failure directions in
+one line.
+
+What follows for anyone reading a host figure in this repo: **quote the SM clock, not the
+utilisation.** An idle-clocked card is idle whatever the percentage says, and a card at its boost
+clock is busy whatever the percentage says. Memory remains the second-best signal and is why the
+guard catches a loaded model at all.
+
+The guard is UNCHANGED as of this entry — the fix is a PLAN item, because changing a shipped
+threshold deserves its own measurement rather than a same-session reflex.
 
 ## 2026-08-06 — the per-video trigger is a WATCHER beside the wave, and the pipeline did not move
 
