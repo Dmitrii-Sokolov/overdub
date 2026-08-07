@@ -38,6 +38,7 @@ video runs both, in the right order, so the two cannot race on that video's timi
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import subprocess
 import sys
@@ -66,18 +67,31 @@ def queue_urls(path: Path) -> list[str]:
 
 
 def draft_ready(work: WorkDir) -> bool:
-    """Is the draft on disk AND parseable?
+    """Is the draft on disk, parseable, AND covering every sentence in the transcript?
 
-    The parse is the settle check, not tidiness: the file is written by a sub-agent through a
-    shell redirect, so a poll can catch it half-written. Treating a torn read as "not yet" costs
-    one more poll; treating it as ready costs a build against a truncated draft, and
-    build_translation.py would then exit non-zero on the missing ids and burn the video's turn.
+    COVERAGE, not parseability, is the readiness test, and the difference is not academic — it
+    cost two videos on the first real run (2026-08-07). A sub-agent builds the draft in batches
+    and REWRITES the whole file each time, so every intermediate state is perfectly valid JSON
+    holding a prefix of the records. A parse-only check waves those through, the build then exits
+    on the missing ids, and the video is reported failed while its agent was still working.
+
+    Reading it as "not yet" costs one more poll. Reading it as ready costs the video: nothing
+    re-queues it, because from the drain's side a build failure is a real failure.
+
+    A draft that never completes (the INCOMPLETE case the route-B skill documents) simply stays
+    unready until the deadline and is reported `pending`, which is the honest answer — the step-3
+    resume still owes it.
     """
-    p = work.root / "translation.draft.json"
     try:
-        return bool(json.loads(p.read_text(encoding="utf-8")))
+        draft = json.loads((work.root / "translation.draft.json").read_text(encoding="utf-8"))
+        sents = json.loads(work.sentences.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return False
+    if not isinstance(draft, list) or not isinstance(sents, list) or not sents:
+        return False
+    want = {s.get("id") for s in sents if isinstance(s, dict)}
+    got = {r.get("id") for r in draft if isinstance(r, dict)}
+    return want <= got
 
 
 def already_built(work: WorkDir) -> bool:
@@ -123,6 +137,13 @@ def main(argv: list[str] | None = None) -> int:
                    help="give up waiting for the remaining drafts after this many seconds")
     p.add_argument("--poll", type=float, default=_POLL_S)
     args = p.parse_args(argv)
+
+    # Line-buffer stdout. This runs in the BACKGROUND beside a wave, so its output is always
+    # redirected, and Python block-buffers a redirected stream: on the first real run the log
+    # stayed empty for 20 minutes while the drain was working normally. For a scheduler nobody
+    # watches interactively, the log is the only evidence it is alive.
+    with contextlib.suppress(Exception):                  # not worth failing a run over
+        sys.stdout.reconfigure(line_buffering=True)
 
     cfg = Config.load(args.config) if args.config.exists() else Config()
     urls = queue_urls(args.queue)

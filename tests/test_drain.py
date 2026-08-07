@@ -50,6 +50,18 @@ def _draft(work: WorkDir, text: str) -> None:
     (work.root / "translation.draft.json").write_text(text, encoding="utf-8")
 
 
+def _sentences(work: WorkDir, n: int) -> None:
+    work.sentences.write_text(
+        json.dumps([{"id": i, "text": "Hi.", "start": i, "end": i + 1} for i in range(n)]),
+        encoding="utf-8")
+
+
+def _full_draft(work: WorkDir, n: int) -> None:
+    """A draft covering every id — what readiness actually requires."""
+    _sentences(work, n)
+    _draft(work, json.dumps([{"id": i, "text_ru": "Привет."} for i in range(n)]))
+
+
 def _run(q: Path, c: Path, *extra: str) -> tuple[int, str]:
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
@@ -58,12 +70,25 @@ def _run(q: Path, c: Path, *extra: str) -> tuple[int, str]:
     return code, buf.getvalue()
 
 
-# --- the settle check ---------------------------------------------------------
-def test_a_half_written_draft_is_not_ready() -> None:
-    # The draft is written by a sub-agent through a shell redirect, so a poll can land mid-write.
-    # Reading a torn file as ready costs a build against a truncated draft and burns the video.
+# --- readiness is COVERAGE, not parseability ----------------------------------
+def test_a_VALID_but_PARTIAL_draft_is_not_ready() -> None:
+    # The regression this exists for, measured 2026-08-07: a sub-agent builds the draft in
+    # batches and rewrites the whole file each time, so every intermediate state is well-formed
+    # JSON holding a prefix. A parse-only check waved two of ten videos through, the build then
+    # exited on the missing ids, and both were reported failed while their agents still worked.
     with tempfile.TemporaryDirectory() as d:
         w = _work(Path(d), VIDS[0])
+        _sentences(w, 165)
+        _draft(w, json.dumps([{"id": i, "text_ru": "Привет."} for i in range(100)]))
+        assert drain.draft_ready(w) is False
+        _full_draft(w, 165)
+        assert drain.draft_ready(w) is True
+
+
+def test_a_half_written_draft_is_not_ready() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        w = _work(Path(d), VIDS[0])
+        _sentences(w, 3)
         _draft(w, '[{"id": 0, "text_ru": "Прив')
         assert drain.draft_ready(w) is False
 
@@ -71,16 +96,19 @@ def test_a_half_written_draft_is_not_ready() -> None:
 def test_an_absent_or_empty_draft_is_not_ready() -> None:
     with tempfile.TemporaryDirectory() as d:
         w = _work(Path(d), VIDS[0])
+        _sentences(w, 3)
         assert drain.draft_ready(w) is False              # absent
         _draft(w, "[]")
         assert drain.draft_ready(w) is False              # present but carries nothing
 
 
-def test_a_complete_draft_is_ready() -> None:
+def test_a_draft_without_a_transcript_to_check_against_is_not_ready() -> None:
+    # Nothing to compare coverage to is UNKNOWN, never "complete" — the same missing-vs-empty
+    # discipline the rest of the repo keeps.
     with tempfile.TemporaryDirectory() as d:
         w = _work(Path(d), VIDS[0])
         _draft(w, json.dumps([{"id": 0, "text_ru": "Привет."}]))
-        assert drain.draft_ready(w) is True
+        assert drain.draft_ready(w) is False
 
 
 # --- already_built ------------------------------------------------------------
@@ -107,7 +135,7 @@ def test_a_video_with_a_draft_is_drained_and_one_without_stays_pending() -> None
     with tempfile.TemporaryDirectory() as d:
         tmp = Path(d)
         q, c = _setup(tmp)
-        _draft(_work(tmp, VIDS[0]), json.dumps([{"id": 0, "text_ru": "Привет."}]))
+        _full_draft(_work(tmp, VIDS[0]), 3)
         real = drain.drain_one
         drain.drain_one = lambda url, work: (seen.append(work.root.name), (True, "drained"))[1]
         try:
@@ -125,7 +153,7 @@ def test_a_failed_drain_is_reported_and_never_silently_dropped() -> None:
         tmp = Path(d)
         q, c = _setup(tmp)
         for v in VIDS:
-            _draft(_work(tmp, v), json.dumps([{"id": 0, "text_ru": "Привет."}]))
+            _full_draft(_work(tmp, v), 3)
         real = drain.drain_one
         drain.drain_one = lambda url, work: (False, "pipeline exit 1: boom")
         try:
