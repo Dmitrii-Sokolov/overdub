@@ -79,128 +79,54 @@ FIRST video reaches its post-translate tail, so that tail overlaps the translati
 video. No stage on this list is being optimized — translate is the longest and is deliberately out
 of scope, and the rest are near their practical ceilings.
 
-**The instrument exists and the baseline is measured** (2026-08-06, DECISIONS carries the numbers
-and the method). `timings.json` now has `spans[<stage>]` with three absolute stamps and
-`work/runs.jsonl` one row per pipeline invocation, so a wait can be told from work and two videos
-can be shown overlapping. Read the DECISIONS entry before quoting anything below.
+**WHAT IS LEFT, in order:**
 
-**~1.7× is WITHDRAWN. The measured ceiling is ×1.50, or ×1.85 with the `separate` move.** The old
-figure came off a 6-video batch where the tail (565 s) fitted inside the wave (664 s). On the
-10-video baseline the inequality runs the OTHER way — tail 1145.6 s against a 787.9 s wave, ×1.45
-too big — so the tail cannot hide behind the wave and the machine must still do head 475.2 +
-tail 1145.6 = 1620 s against today's 2438.6 s. **Tail-to-wave is a property of the QUEUE, not of the
-pipeline**, so neither number is a population value; what carries across both batches is the shape
-of the win, not its size.
+1. **`mux` — the next lever, and nobody has ever looked at it.** 19.3% of machine time on the
+   baseline, more than download and transcribe together, pure ffmpeg and disk. Now that the
+   overlap is taken it is what binds. Profile before optimising: nothing is known about where its
+   time goes.
+2. **A clean end-to-end batch figure.** Every phase has been measured on its own; the batch total
+   has not, because transcribe's wall varies 35× on identical work (see "Also open") and pollutes
+   any total it appears in. That item gates this one.
+3. **Acceptance — the artifacts must not move.** Never run, and its original phrasing is now
+   broken: it assumed Parakeet was deterministic, and it is not (INBOX 2026-08-07). Re-phrase
+   before running it. Bit-stability has to be established per artifact first — `source_bed.wav`
+   has never been shown to be stable either — or the comparison reads noise as a regression.
+4. **Per-video dispatch of the TRANSLATORS** — the trigger's other half, deliberately not built.
+   The wave ends on its slowest agent, which starts when ITS transcript exists either way, so the
+   win is bounded by the spread of the transcribe phase (151.4 s over 10 videos) and not by the
+   wave. It also cannot use `Workflow` as it stands: the whole queue goes in one call by contract
+   (queue-contract §6). Do the arithmetic on a real batch before building it.
+5. **A GPU mutex and LONGEST-first ordering — PARTS of a future scheduler, not steps toward one.**
+   No two GPU stages can meet inside one process today, so a mutex would guard nothing; the live
+   hazard is two PROCESSES, which an in-process lock cannot see. Ordering is inert for the same
+   structural reason: every sweep stage is a full barrier. When a scheduler does arrive, the
+   ordering argument is transcribe at RTF 0.0103 against a tail at 0.0777 — **7.5× apart** — so
+   the long pole goes first. Check rather than assume that the tail scales with duration per
+   video, and that a long video's CHUNKED translation is not itself the slowest agent.
 
-**Never sum an overlapping stage, and do not carry a coefficient for it.** `stages.translate` is
-written by `build_translation.py` and measures the SUB-AGENT's wall clock, so the intervals overlap:
-summing them read 4.41× on 6 videos and **6.20× on 10**, because the overlap grows with the width of
-the fan-out. Report a union or an elapsed window. The pipeline's own digest still prints the summed
-share — `translate 75.1%` against an honest 32.3% on the baseline run — so the digest is not a
-source for this and a fix to it is not this item.
+**Standing constraints for any work above.** Two stages hold the card — `transcribe` (the Parakeet
+worker) and `separate` — and they DO co-reside (9930 MiB of 12282, no OOM, DECISIONS 2026-08-06),
+so nothing forces a phase barrier; 19% headroom on one pair of videos is not a licence for
+arbitrary lengths. Silero is CPU, assemble and mux are ffmpeg, download is network. If
+`verify_roundtrip` is ever turned back on it is a THIRD GPU consumer and the queue must cover it by
+construction. The `separate` sweep must finish before `build_translation.py`: both read-modify-write
+`timings.json` and a real overlap drops one stage entry silently — if that becomes awkward to hold
+by hand, the fix is a lock in `overdub/timings.py`, not a rule in a fifth place.
 
-**Where the machine time actually goes** (share of 2438.6 s, union not sum): translate 32.3% ·
-**mux 19.3%** · download 13.3% · synthesize 13.1% · separate 12.4% · transcribe 6.2% ·
-assemble 2.1% · verify 0.0%. Two consequences. `mux` is the biggest machine stage after the seam —
-bigger than download and transcribe together, pure ffmpeg and disk — so it is what binds once the
-overlap is taken, and nothing has ever profiled it. And `transcribe`, the stage this item was
-originally framed around, is 6.2%: the head of the critical path is **download**, which is serial,
-network-bound and holds no GPU.
+**Two rules about the numbers, both learned the hard way.** Never sum an overlapping stage: the
+translate spans are sub-agent wall clocks and summing them read 4.41× on 6 videos and 6.20× on 10,
+growing with fan-out width — report a union or an elapsed window. And tail-to-wave is a property
+of the QUEUE, not of the pipeline, so no single ×N generalises; quote the phase and the queue with
+it, and keep machine time apart from the attended session span (2438.6 s against 5700.6 s on the
+baseline — the difference is the orchestrator thinking).
 
-**Machine time and session span are different quantities.** The baseline run measured 2438.6 s of
-machine against a 5700.6 s attended session; the 3262 s difference is the orchestrator's own
-analysis between steps. Only the first is what a scheduler can move, and a "batch took N" figure
-that does not say which one it is means nothing.
-
-**The GPU set is smaller than it looks.** Silero is CPU (`tts/silero.py`, `device="cpu"`), assemble
-and mux are ffmpeg, download is network, and `verify_roundtrip` is off by default since 2026-08-06.
-Exactly TWO stages hold the card: `transcribe` (the Parakeet `--serve` worker) and `separate`
-(demucs `-d cuda`, `stages/separate.py`). So synthesize — 13.1% of machine time on the baseline —
-needs no coordination at all and can run beside anything. **The VRAM argument for a phase barrier
-is MEASURED AND DEAD** (2026-08-06, DECISIONS): Parakeet and htdemucs ran as two concurrent
-processes at a peak of 9930 MiB of 12282 with no OOM, so nothing forces the worker to be killed
-before demucs starts. Two caveats travel with that number — 19% headroom is thin, and it is ONE
-pair of videos (10 and 12 min) where Parakeet holds the length-dependent half. An unattended night
-over arbitrary lengths has not been shown to fit.
-
-**A GPU mutex and LONGEST-first ordering are PARTS of the scheduler below, not steps toward it**
-(established 2026-08-06 before building either). No two GPU stages can meet inside one process
-today — the only concurrency is the download prefetch pool and download holds no GPU — so a mutex
-would guard nothing, and the live hazard is two PROCESSES, which an in-process lock cannot see.
-Ordering is inert for the same structural reason: every stage in the sweep is a full barrier and
-the wave is fanned out once over the finished list, so the first translation cannot start before
-the LAST transcript exists and no ordering of the sweep moves it. Sorting the download pool would
-help, but on a first run no duration exists yet — `source.info.json` is written BY download.
-
-When the scheduler does arrive, the ordering argument is: transcribe runs at RTF 0.0103 against a
-tail at 0.0777 — **7.5× apart** — so a long video costs its own transcribe in head-of-line blocking
-but leaves a tail 7.5× that size unoverlappable if it lands last. Long pole first. Two things to
-check rather than assume: that the tail really is proportional to duration (only its aggregate
-shape was measured, never that scaling per video), and that a long video's CHUNKED translation is
-not itself the slowest agent — the argument rests on the tail, not on the agent.
-
-**`separate` INSIDE the translate wave — BUILT 2026-08-06, not yet exercised on a batch.** The
-gate moved (`SeparateStage.done` now runs on a dub OR a non-empty transcript, DECISIONS) and the
-route-B runbook starts the sweep right after the Workflow call. **CONFIRMED on real media
-2026-08-06** (3 videos, 0.46 h): the sweep ran to completion inside the wave — 99 s of demucs
-against a 327 s wave, finishing 228 s before it closed — the resume then skipped all three beds,
-and the wave cost not one extra second. 17.1% of that batch's 479 s of machine time.
-**The MECHANISM is confirmed; the SIZE is not.** 17.1% here against 12.4% projected on the
-10-video baseline is not a sharpened estimate, it is a different queue: on three videos the seam is
-347 s of 479, so tail-to-wave sits somewhere else entirely. Expect the share to move with the
-queue and never quote one of the two numbers as the figure.
-
-Two things that must not drift while it is unexercised. It is NOT "right after transcribe" —
-demucs is the bigger of the two GPU consumers, so beside transcription it delays the transcripts
-and therefore the first agent, which is the objective. And the sweep must finish before
-`build_translation.py` runs: both read-modify-write `timings.json`, so a real overlap drops one
-stage entry silently. If that ordering ever becomes awkward to hold by hand, the fix is a lock in
-`overdub/timings.py`, not a rule in a fifth place.
-
-**The per-video trigger is BUILT 2026-08-06 — `scripts/drain.py`, and `run_pipeline` never moved.**
-The guess above was right: nothing in the pipeline had to change, because `TranslateStage.done()`
-is "translation.json exists", so a plain per-video `-m overdub <url>` fast-skips everything
-upstream and runs exactly the tail. What was missing was only something to WAIT for a draft, which
-no pipeline stage can be — the drafts are written by sub-agents the orchestrator dispatches, so the
-filesystem is the only thing that knows. The drain watches, builds and runs each video's tail one
-at a time (serial on purpose: the tail still contains `separate`, and serializing there is what
-keeps this from needing a GPU queue of its own). Unmeasured on a real batch; the runbook step
-replaces both the `separate` sweep and the per-video build loop.
-
-**What is still open in the trigger's OTHER half.** Dispatching the translator agents themselves
-per video — as each `sentences.json` lands, rather than one fan-out over the finished list — is
-NOT built and is worth much less than it looks: the wave ends on its slowest AGENT, and that agent
-starts when ITS transcript exists either way, so the win is bounded by the spread of the
-transcribe phase (151.4 s over 10 videos on the baseline) and not by the wave. It also cannot use
-`Workflow` as it stands — the whole queue goes in one call by contract (queue-contract §6). Do the
-arithmetic on a real batch before building it.
-`download` **SHIPPED 2026-08-06** as a concurrent pre-pass before the sweep
-(`cli._prefetch_downloads`, `download_concurrency` = 3), deliberately outside the sweep's loop so
-the batch's STOP, status-machine and isolation guarantees were not put on the line for one stage's
-wall clock. **CONFIRMED on real media 2026-08-06**: three fetches started in the same second,
-33.3 s of transfer completed in 20.1 s of wall clock (×1.65), bounded by the longest single fetch
-exactly as predicted, and the sweep then skipped all three. Do NOT compare that 20.1 s against the
-42.5 s the same three took serially on an earlier day — the network was faster this time and the
-honest pair is 33.3 → 20.1. It carries a risk the others do not — a queue
-already reaches YouTube as one burst, and 2026-07-20 lost two videos of twelve to transient
-403 / "unavailable". If a batch starts showing those, the knob is the first thing to turn down.
-And if `verify_roundtrip` is ever turned back on (the docs require it after any engine or voice
-change) it is a THIRD GPU consumer: the queue must cover it by construction, not be retrofitted.
-
-**Order of work: the first two are DONE** — the instrument shipped and one ordinary stage-major
-batch produced the baseline, both 2026-08-06. What is left is the scheduler, and its order inside
-this item is `separate`-into-the-wave first (self-contained, biggest lever, does not touch the
-seam), then concurrent `download`, then the per-video trigger that does.
-
-**Acceptance: the artifacts must not move.** This ranks above the quality items because it is a
-PROCESS change that cannot reach the output (user, 2026-08-06) — but that is a property to CHECK,
-not to assume, and this pipeline can check it exactly, because Parakeet and Silero are both
-deterministic. Hold `translation.json` fixed (the resume key already keeps it) and re-run the tail
-under both schedulers: everything downstream must come back identical. Establish first WHICH
-artifacts are bit-stable by running the same batch twice under today's stage-major — demucs's
-`source_bed.wav` has never been shown to be, and without that baseline its own nondeterminism will
-read as a scheduler regression. Whatever turns out not to be bit-stable gets a different comparison,
-not a pass.
+**What shipped** (git history + DECISIONS 2026-08-06/07 carry the numbers). The instrument (`spans[<stage>]`, `work/runs.jsonl`), the baseline, the concurrent download
+pre-pass, `separate` moved into the translate wave, and `scripts/drain.py` — the per-video trigger,
+which needed no pipeline change at all. All confirmed on real media; the drain measured ×1.40 on
+the wave+tail phase (10 videos, 2026-08-07) with 10 drained, 0 failed, 0 pending. **The ~1.7×
+projection this item opened with is withdrawn** — it came off a batch where the tail fitted inside
+the wave, and on the 10-video baseline the inequality runs the other way.
 
 ### Name list at ASR — the proper-noun class
 
