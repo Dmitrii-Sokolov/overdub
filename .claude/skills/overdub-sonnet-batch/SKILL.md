@@ -375,6 +375,26 @@ parallel. Then join and build in one command — same helper, same contract, sam
 .venv-asr\Scripts\python.exe -X utf8 scripts\build_translation.py "work\<id>" --join
 ```
 
+**Join each video the moment ITS OWN chain completes — do not wait for the workflow to return**
+(added 2026-08-09). One call covers every chunked video and reports once, at the end, so an
+orchestrator that waits for that notification parks every video's tail behind the SLOWEST chain.
+Chains are chained by construction, so their lengths diverge hard: on the 7-video queue of
+2026-08-09 (5 chunked videos, 35 chunks) `h7PMmsUb5w0` ran 12 links over 3.11 h while four other
+chains landed 0.6-2.5 h earlier. Joining each as it appeared moved **4886 s (1.36 h)** of tail work
+under the wave — the drain does the rest by itself, because a joined draft covers every id and
+`draft_ready` then passes.
+
+**A chunk FILE is not a finished chunk, so the join's exit code is the readiness test.** The agent
+writes incrementally, so the file exists from its first batch; `--join` exits non-zero naming the
+missing ids and writes nothing, which makes it safe to call on a loop and retry until it passes:
+
+```powershell
+$have = @($cut | Where-Object { Test-Path "work\$v\translate\$_.json" })   # $cut = the --plan names
+if ($have.Count -eq $cut.Count) {
+  .venv-asr\Scripts\python.exe -X utf8 scripts\build_translation.py "work\$v" --join   # retry on non-zero
+}
+```
+
 Three things that bite:
 
 - **`--chunk N` must match between `--plan` and `--join`**, or the join looks for file names nobody
