@@ -21,6 +21,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import re
 import sys
 from pathlib import Path
 
@@ -78,6 +79,14 @@ def main(argv: list[str]) -> int:
         _write_json(dst / "segments" / "manifest.json", man)
 
     records = json.loads((src / "translation.json").read_text(encoding="utf-8"))
+    # Since 2026-08-11 text_ru is the WRITTEN side of a [[written|spoken]] draft, and the spoken
+    # side is not recoverable from it — re-deriving text_tts here hands every marked name back to
+    # the rule fallback that invents pronunciations, which is the exact loss the markup removed.
+    # Rebuild from the draft instead: scripts/build_translation.py work/<id>.
+    if any(re.search(r"[A-Za-z0-9]", r.get("text_ru", "")) for r in records):
+        print("[warn] text_ru carries latin/digits — this translation came from a dual-form "
+              "draft and re-normalizing it DOWNGRADES text_tts. Re-run build_translation.py "
+              "on the draft rather than this tool.", file=sys.stderr)
     out, changed = [], []
     for r in records:
         new_tts = normalize_for_tts(r["text_ru"])

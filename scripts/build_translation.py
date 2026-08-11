@@ -5,9 +5,14 @@ part -- {id, text_ru} per sentence. THIS script owns the deterministic, error-pr
 the translate-seam contract never rides on an LLM's discipline:
 
   - src_en / start / end   copied from sentences.json (join on id)
-  - text_tts               overdub.normalize.normalize_for_tts(text_ru) -- the SAME function
-                           the verify stage applies, so the ASR round-trip is exact by
-                           construction (never let the LLM spell text_tts, DECISIONS)
+  - text_ru / text_tts     the draft's ONE string carries both forms inline as
+                           [[written|spoken]]; written_form() resolves the subtitle side and
+                           spoken_form() the synthesis side, which then goes through
+                           overdub.normalize.normalize_for_tts -- the SAME function the verify
+                           stage applies, so the ASR round-trip is exact by construction. The
+                           markup does not weaken the "never let the LLM spell text_tts" rule
+                           (DECISIONS): text_tts is still DERIVED here, from a richer input,
+                           and normalize_for_tts still nets whatever went unmarked.
   - status / flag          overdub.stages.translate._is_bad(...) gate -- the same reasons the
                            gate flags (empty / no_cyrillic / english_echo / runaway / refusal)
   - id-contiguity          enforced (exit, never a silent drop) exactly like TranslateStage.run
@@ -53,6 +58,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -61,7 +67,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from overdub import pronounce                            # noqa: E402
 from overdub.config import Config                       # noqa: E402
-from overdub.normalize import normalize_for_tts         # noqa: E402
+from overdub.normalize import (                          # noqa: E402
+    normalize_for_tts, spoken_form, written_form)
 from overdub.timings import (                            # noqa: E402
     iso_from_epoch, record_stage_span, record_stage_timing)
 from overdub.stages.translate import _is_bad            # noqa: E402
@@ -87,6 +94,11 @@ DEFAULT_CHUNK = 400
 _SRC_KINDS = ("ok", "garbled", "truncated", "dup_neighbour", "enum_repeat",
               "context_contradiction")
 _SRC_NOTE_MAX = 200          # visible cap, same discipline as runreport._SUMMARY_MAX_CHARS
+_DUAL_COUNT = re.compile(r"\[\[[^\[\]|]*\|[^\[\]|]*\]\]")
+# Latin or a digit that reached the SPOKEN side unmarked. Advisory only: normalize_for_tts
+# still voices it, so this counts how often the translator left the reading to the rule
+# fallback -- the class that invents pronunciations -- not how often the dub broke.
+_UNMARKED = re.compile(r"[A-Za-z0-9]")
 
 
 def _load_draft(path: Path) -> dict[int, tuple[str, str | None, str]]:
@@ -260,18 +272,36 @@ def build(work: WorkDir, draft_path: Path, cfg: Config
     out: list[dict] = []
     n_fail = 0
     n_scanned = n_anom = 0
+    n_dual = n_unmarked = 0
+    audit_src: list[dict] = []
     anom_rows: list[tuple[int, str, str, str]] = []
     for s in sentences:                                  # sentence order is the source of truth
         sid = s["id"]
         src_en = s["text"]
-        text_ru, src, note = draft[sid]
-        text_ru = text_ru.strip()
-        reason = _is_bad(text_ru, src_en, cfg)           # the pipeline's own gate
-        rec = {
+        raw_ru, src, note = draft[sid]
+        # The draft carries BOTH forms inline; translation.json carries neither markup nor a
+        # choice — text_ru is the written side, text_tts the spoken one. Resolving here rather
+        # than downstream is what keeps every consumer unchanged: assemble still reads text_ru
+        # for the SRT, verify still reads text_tts, and neither has to know markup exists.
+        raw_ru = raw_ru.strip()
+        text_ru = written_form(raw_ru)
+        spoken = spoken_form(raw_ru)
+        reason = _is_bad(text_ru, src_en, cfg)           # the pipeline's own gate, on the
+        rec = {                                          # subtitle side, exactly as before
             "id": sid, "start": s["start"], "end": s["end"], "src_en": src_en,
-            "text_ru": text_ru, "text_tts": normalize_for_tts(text_ru),
+            "text_ru": text_ru, "text_tts": normalize_for_tts(spoken),
             "status": "ok" if reason is None else "failed", "attempts": 1,
         }
+        # The audit must see the string that BECOMES the dub, not the one the subtitle shows.
+        # audit_summary reads a record's text_ru, and since 2026-08-11 that field is the WRITTEN
+        # side, where Latin is legitimate and never reaches the pronounce chain at all. Auditing
+        # it would report every marked name as an invented reading (measured: 75 of them on
+        # L0nBN6ME7VQ, none real) while going blind to the unmarked tokens that ARE guessed --
+        # noise up, signal down, on the only detector this silent-loss class has.
+        audit_src.append({"id": sid, "text_ru": spoken})
+        n_dual += len(_DUAL_COUNT.findall(raw_ru))
+        if _UNMARKED.search(spoken):
+            n_unmarked += 1                              # normalize_for_tts still nets these
         if reason is not None:
             rec["flag"] = reason                         # flagged, never hidden, never blocking
             n_fail += 1
@@ -308,10 +338,16 @@ def build(work: WorkDir, draft_path: Path, cfg: Config
 
     # pronounce audit -- same audit-only artifact as TranslateStage.run (written, never
     # read back): operator triage of what the pipeline invented for Latin tokens
-    audit = pronounce.audit_summary(work.root.name, out)
+    audit = pronounce.audit_summary(work.root.name, audit_src)
     atmp = work.pronounce_audit.with_suffix(".json.tmp")
     atmp.write_text(json.dumps(audit, ensure_ascii=False, indent=2), encoding="utf-8")
     os.replace(atmp, work.pronounce_audit)
+    if n_dual or n_unmarked:
+        print(f"[ok] dual-form: {n_dual} marked span(s); {n_unmarked}/{len(out)} line(s) still "
+              f"carry unmarked latin/digits (voiced by the rule fallback)")
+    elif len(out):
+        print(f"[warn] not one [[written|spoken]] span in {len(out)} lines -- the translator "
+              "ignored contract rules 5-6, so every name and number is left to the fallback")
     return len(out), n_fail, n_anom, n_scanned, anom_rows
 
 

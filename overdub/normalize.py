@@ -166,6 +166,41 @@ _GROUP_SEP = re.compile(r"(?<=\d)[    ](?=\d{3}(?!\d))")
 _GROUP_COMMA = re.compile(r"(?<=\d),(?=\d{3}(?!\d))")
 
 
+# --- dual-form markup ---------------------------------------------------------
+# A translator writes ONE string carrying both forms of anything that is written differently
+# from how it is said: [[RTX 4080|эр-ти-экс четыре тысячи восемьдесят]]. The two readers below
+# collapse it in opposite directions, and that is the whole mechanism — subtitles keep the
+# WRITTEN form, synthesis gets the SPOKEN one.
+#
+# It exists because the two consumers genuinely want different text and the pipeline used to
+# have only one source for both. Spelling the reading into text_ru made the subtitles unreadable;
+# leaving Latin in handed the token to the pronounce chain's SPELLING-based fallback, which
+# invents a reading — 756 of them over 261 distinct tokens on one video of the 2026-08-10 batch
+# ("буттон" for button), a wrongness verify cannot hear. Silero's outright deletion of Latin is
+# real (measured 2026-08-11) but never fires: normalize_for_tts is Cyrillic-only by contract, so
+# the engine never sees a Latin character. The translator has the sentence and the rolling
+# terminology; a letter table has neither.
+#
+# Non-greedy on both sides so two spans in one sentence do not merge into one. A `|`-less or
+# unterminated `[[` is left ALONE rather than repaired: it then shows up as literal brackets in
+# a subtitle, which is visible and cheap, where a guess would be silent.
+_DUAL = re.compile(r"\[\[([^\[\]|]*)\|([^\[\]|]*)\]\]")
+
+
+def written_form(text: str) -> str:
+    """Subtitle side: keep what it LOOKS like, drop the reading."""
+    return _DUAL.sub(lambda m: m.group(1), text)
+
+
+def spoken_form(text: str) -> str:
+    """Synthesis side: keep what it SOUNDS like, drop the spelling.
+
+    Feed the result to normalize_for_tts as usual — it stays the net for everything the
+    translator did not mark, so an unmarked number is still voiced rather than read as digits.
+    """
+    return _DUAL.sub(lambda m: m.group(2), text)
+
+
 # --- ordered passes -----------------------------------------------------------
 def normalize_for_tts(text: str) -> str:
     """Expand digits/units/acronyms/Latin/symbols to spoken Russian words.

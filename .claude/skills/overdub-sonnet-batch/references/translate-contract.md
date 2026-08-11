@@ -33,7 +33,8 @@ The unit of translation is the sentence (`text`). Translate in `id` order.
 A JSON list, one entry per sentence, covering **every** id in `sentences.json`:
 
 ```json
-[ {"id": 0,  "text_ru": "Итак, сегодня мы смотрим на RTX 4080.", "src": "ok"},
+[ {"id": 0,  "text_ru": "Итак, сегодня мы смотрим на [[RTX 4080|эр-ти-экс четыре тысячи восемьдесят]].",
+   "src": "ok"},
   {"id": 19, "text_ru": "Описание выходит за рамки различия.",
    "src": "truncated",
    "src_note": "ends mid-thought; id 20 reads as its continuation"} ]
@@ -56,12 +57,24 @@ are filled deterministically by the helper. One `text_ru` = one natural spoken-R
    in id order with a rolling memory of the earlier sentences and your Russian for them).
 4. Preserve meaning, tone and register. Write common acronyms the way they are normally written
    in Russian.
-5. Keep every proper **name of a game, brand, platform or company in LATIN script**, capitalised
-   the standard way, even when the English is lowercase (`runescape` → `RuneScape`, `minecraft` →
-   `Minecraft`). **Never respell such a name in Cyrillic** — pronunciation is handled by a later
-   step. Personal names may be written the usual Russian way.
-6. Keep **numbers as digits** (`4080`, `50%`, `24/7`). Do **NOT** spell numbers out in words —
-   that is handled later by the normalizer.
+5. **Anything written differently from how it is said carries BOTH forms:
+   `[[written|spoken]]`.** The left side is what a reader should SEE, the right side is what the
+   narrator SAYS, in Cyrillic. This covers names of games, brands, platforms and companies, plus
+   code identifiers and file names:
+   `[[Unity|Юнити]]`, `[[Minecraft|Майнкрафт]]`, `[[half-edge|хаф-эдж]]`,
+   `[[GetComponent|гет-компонент]]`. Use the established Russian spelling where one exists;
+   otherwise transliterate by how it SOUNDS, never letter by letter. A word that is already
+   ordinary Russian needs no markup — mark only what changes between eye and ear.
+6. **Numbers take the same shape**: `[[4080|четыре тысячи восемьдесят]]`,
+   `[[50%|пятьдесят процентов]]`, `[[24/7|двадцать четыре на семь]]`. Inflect the spoken side to
+   fit the sentence — it has to read as speech, not as a caption. Leave the written side exactly
+   as a reader expects to see it.
+
+   Nesting, and a `|` or a bracket INSIDE either side, are not supported: the span ends at the
+   first `]]`. Say it in plain words instead. Everything outside the markup is ordinary Russian
+   prose and must contain no Latin and no digits of its own — an unmarked token still gets
+   voiced, but by a rule-based fallback that guesses, and that guess is what rules 5-6 exist to
+   replace.
 7. Each `text_ru` is a **single line** — no quotes, no English, no labels, no notes, no
    explanations, no `[RU]` prefix.
 8. If a source sentence is **garbled, self-contradictory, truncated mid-thought, duplicative of
@@ -73,6 +86,27 @@ are filled deterministically by the helper. One `text_ru` = one natural spoken-R
    enumerated clauses: an item that repeats another item's head, or that contradicts the rolling
    context, is `enum_repeat` / `context_contradiction` even when each sentence reads fine alone.
    Every record gets a `src` — `"ok"` when the English is sound.
+
+### Why rules 5-6 ask for BOTH forms (2026-08-11)
+
+Until this date the rules said: keep Latin, keep digits, the normalizer handles the rest. It
+cannot do it well enough — for one specific reason, worth stating precisely because the obvious
+guess is wrong.
+
+Silero does delete Latin script (measured 2026-08-11: with and without a Latin word, the audio is
+byte-identical). That deletion has never fired here — `text_tts` comes out of `normalize_for_tts`,
+which is Cyrillic-only by contract — so it is a trap for hand-written `text_tts`, not the defect.
+The defect is the pronounce chain's fallback: a SPELLING-based scanner that INVENTS a reading for
+every out-of-dict token, 756 of them over 261 distinct Latin tokens on one video of the
+2026-08-10 batch, none of which `verify` can hear. The dub was not dropping those words, it was
+mispronouncing them — «буттон» for `button`, «чанджс» for `changes`. You have the sentence, the
+rolling terminology and the speaker's intent; the fallback has a letter table.
+
+The first attempt at fixing it went too far the other way: `text_ru` was made Cyrillic-only, and
+because `ru.srt` is built from `text_ru`, the SUBTITLES inherited spelled-out numbers and
+transliterated names. Both consumers were being served one string, so improving one had to damage
+the other. The markup ends that — you write one line, the helper resolves it in two directions,
+and the subtitle keeps `RTX 4080` while the dub says «эр-ти-экс четыре тысячи восемьдесят».
 
 ## Source anomalies — REPORT, never repair
 
@@ -118,8 +152,12 @@ text finds it. Mark id 19 `truncated` ("ends mid-thought; id 20 reads as its con
 ```
 
 - `src_en`, `start`, `end` — copied from `sentences.json` (join on id). The resume/congruence key.
-- `text_tts` — `overdub.normalize.normalize_for_tts(text_ru)`, the **same** function verify uses.
-  Never hand-written.
+- `text_ru` — the draft line with every `[[written|spoken]]` span collapsed to its **written**
+  side. This is what `ru.srt` shows, so it keeps `RTX 4080` and `Unity`.
+- `text_tts` — the same line collapsed to its **spoken** side, then
+  `overdub.normalize.normalize_for_tts(...)`, the **same** function verify uses. Never
+  hand-written: the markup gives the helper better input, it does not move authorship of this
+  field. The normalizer stays the net for anything the draft left unmarked.
 - `status` — `"ok"`, or `"failed"` with an extra `"flag"` field when `_is_bad` rejects the line.
 - `attempts` — always `1` on this route (no reseed loop; Sonnet translated once).
 
@@ -137,7 +175,7 @@ Reasons (`flag` value), so you know what to fix in the draft:
 |---|---|---|
 | `empty` | blank `text_ru` | the sentence has no translation — add one |
 | `no_cyrillic` | no Russian even after normalization (pure punctuation/garbage) | translate it for real |
-| `english_echo` | too many all-lowercase Latin runs (untranslated English left in) | actually translate; only game/brand NAMES stay Latin |
+| `english_echo` | too many all-lowercase Latin runs (untranslated English left in) | actually translate. Runs on the RESOLVED written side, so a marked name is Latin and legitimate; what still flags is lowercase English prose you did not translate |
 | `runaway` | `text_ru` > 3× the source length | over-translation/rambling — tighten it |
 | `refusal` | contains an "I cannot / как модель / не могу перевести" phrase | remove the meta-text, give the translation |
 

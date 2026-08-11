@@ -98,7 +98,15 @@ them so terminology, names and pronouns stay consistent across the whole video. 
 COMPLETE transcript — use it: this route exists precisely because the translator can see the whole
 video at once instead of a sliding window.
 
-Follow the contract file's rules exactly. Two of them decide most of the outcome:
+Follow the contract file's rules exactly. Three of them decide most of the outcome:
+  - BOTH FORMS, inline: [[written|spoken]]. Every brand, product, code identifier, file name and
+    number is written twice in one string — the left side as a reader should SEE it, the right
+    side in Cyrillic as the narrator SAYS it: [[Unity|Юнити]], [[4080|четыре тысячи восемьдесят]].
+    Outside those spans use no Latin and no digits at all. Subtitles are built from the left
+    sides and the dub from the right, so a span you skip costs the DUB: an unmarked Latin token
+    falls to a spelling-based fallback that INVENTS a reading ("буттон" for button, "чанджс" for
+    changes) and nothing downstream can hear that it did.
+    Contract rules 5-6 carry the spellings and the limits.
   - Keep the Russian CLOSE IN LENGTH to the English. This is dubbing; the line has to fit the same
     on-screen slot. Do not pad, do not over-compress.
   - Judge the ENGLISH source of every sentence and REPORT what looks wrong instead of repairing it.
