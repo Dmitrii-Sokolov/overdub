@@ -236,6 +236,20 @@ class Config:
                                      # not comfortably below Nyquist — a 24 kHz track has
                                      # nothing up there to cut (see assemble.effective_lowpass).
     demucs_python: Path = Path(".venv-demucs/Scripts/python.exe")  # bed mode only
+    separate_chunk_sec: int = 3600   # 0 = never chunk. htdemucs allocates its OUTPUT tensor for
+                                     # all FOUR stems over the whole track even under
+                                     # --two-stems, i.e. duration * 44100 * 2ch * 4src * 4B =
+                                     # 1.41 MB per second of source, plus the input tensor and
+                                     # the copies around it. Measured 2026-08-11: 7.90 h asked
+                                     # for 37.4 GiB in one allocation and died on a 63.7 GB
+                                     # host; 6.95 h went through. An hour caps that term at
+                                     # 5.1 GB no matter how long the video is, which is the
+                                     # point — the ceiling stops being a function of duration.
+    separate_overlap_sec: float = 5.0  # extracted on BOTH sides of every cut and blended back.
+                                     # Two independently separated chunks do not agree exactly
+                                     # at a hard seam, so butt-joining them clicks. The blend is
+                                     # a weighted average, never a shortening crossfade: the bed
+                                     # has to stay sample-aligned with the picture.
 
     # verification — whisper-small round-trip
     verify_roundtrip: bool = False  # OFF since 2026-08-06 (DECISIONS). Measured over 123 videos /

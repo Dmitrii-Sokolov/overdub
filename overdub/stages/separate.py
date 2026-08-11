@@ -30,6 +30,100 @@ from ..pipeline import Context
 from ..workdir import replace_retry
 
 
+SR = 44100                                                 # htdemucs's rate; the bed matches it
+
+
+def _probe_duration(src: Path) -> float:
+    """Source duration in seconds, off ffprobe. Raises — the chunk plan cannot be guessed."""
+    out = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+         "-of", "default=nw=1:nk=1", str(src)],
+        check=True, capture_output=True, text=True,
+    ).stdout.strip()
+    return float(out)
+
+
+def _plan_chunks(duration: float, chunk_s: int, overlap_s: float) -> list[tuple[float, float]]:
+    """(start, end) of every extraction window, in seconds, in order.
+
+    Each window carries its core [i*chunk_s, (i+1)*chunk_s) plus overlap_s of context on both
+    sides, clamped to the track. The cores tile the track exactly once — the overlap is extra
+    material for the blend and never moves a boundary — so the stitched bed is the length of
+    the source whatever the chunking is.
+    """
+    out = []
+    i = 0
+    while i * chunk_s < duration:
+        core_a = i * chunk_s
+        core_b = min((i + 1) * chunk_s, duration)
+        out.append((max(0.0, core_a - overlap_s), min(duration, core_b + overlap_s)))
+        i += 1
+    return out
+
+
+def _extract_chunks(src: Path, dst_dir: Path, plan: list[tuple[float, float]]) -> list[Path]:
+    """Decode one 44.1k stereo wav per window. Seeks before -i, so each is a cheap partial read."""
+    dst_dir.mkdir(parents=True, exist_ok=True)
+    paths = []
+    for n, (a, b) in enumerate(plan):
+        p = dst_dir / f"part_{n:03d}.wav"
+        subprocess.run(
+            ["ffmpeg", "-y", "-loglevel", "error", "-ss", f"{a:.6f}", "-t", f"{b - a:.6f}",
+             "-i", str(src), "-vn", "-ac", "2", "-ar", str(SR), "-c:a", "pcm_s16le", str(p)],
+            check=True,
+        )
+        paths.append(p)
+    return paths
+
+
+def _stitch_bed(stems: list[tuple[Path, float]], dest: Path, duration: float,
+                overlap_s: float) -> None:
+    """Blend the per-chunk no-vocals stems back into one bed of the ORIGINAL length.
+
+    Streamed, and that is not a style choice: an accumulator for the whole track would rebuild
+    the very allocation chunking exists to avoid (7.9 h of float32 stereo is 10 GB before the
+    weight array). Only the window being written is ever resident.
+
+    The blend is a WEIGHTED AVERAGE under a linear ramp, not an equal-power crossfade. Both
+    chunks are separations of the same seconds of audio, so their overlap is correlated and a
+    sqrt law would push the seam ~3 dB loud; averaging is also self-normalising, which keeps the
+    ramps from having to be exactly complementary at the clamped first and last windows.
+    """
+    import numpy as np
+    import soundfile as sf
+
+    total = int(round(duration * SR))
+    span = int(round(2 * overlap_s * SR))                  # a blend zone is overlap on both sides
+    with sf.SoundFile(dest, "w", samplerate=SR, channels=2, subtype="PCM_16") as out:
+        pos = 0                                            # frames of the bed already written
+        for i, (stem, start) in enumerate(stems):
+            head = int(round(start * SR))                  # where this stem sits on the timeline
+            last = i + 1 == len(stems)
+            # The blend zone opens where the NEXT window opens and runs one overlap past the cut.
+            blend_a = total if last else int(round(stems[i + 1][1] * SR))
+            blend_b = total if last else min(total, blend_a + span)
+            with sf.SoundFile(stem) as f:
+                if blend_a > pos:                          # this stem alone owns [pos, blend_a)
+                    f.seek(min(max(0, pos - head), len(f)))
+                    solo = f.read(blend_a - pos, dtype="float32", always_2d=True)
+                    out.write(solo)
+                    pos += len(solo)
+                if last or blend_b <= blend_a:
+                    continue
+                f.seek(min(max(0, blend_a - head), len(f)))
+                fading = f.read(blend_b - blend_a, dtype="float32", always_2d=True)
+            with sf.SoundFile(stems[i + 1][0]) as nxt:
+                rising = nxt.read(len(fading), dtype="float32", always_2d=True)
+            n = min(len(fading), len(rising))
+            if not n:
+                continue
+            w = np.linspace(1.0, 0.0, n, dtype=np.float32)[:, None]
+            out.write(fading[:n] * w + rising[:n] * (1.0 - w))
+            pos += n
+        if pos < total:            # short by a rounding frame or a truncated stem: pad, never clip
+            out.write(np.zeros((total - pos, 2), dtype=np.float32))
+
+
 def _has_speech(work) -> bool:
     """Does sentences.json hold at least one sentence? Never raises.
 
@@ -75,9 +169,10 @@ class SeparateStage:
 
     def run(self, ctx: Context) -> None:
         cfg = ctx.cfg
-        if shutil.which("ffmpeg") is None:
-            raise RuntimeError("ffmpeg not found on PATH — required for separate. "
-                               "Install ffmpeg; overdub does not auto-install.")
+        for tool in ("ffmpeg", "ffprobe"):                 # ffprobe reads the duration the plan
+            if shutil.which(tool) is None:                 # is cut from; same package as ffmpeg
+                raise RuntimeError(f"{tool} not found on PATH — required for separate. "
+                                   "Install ffmpeg; overdub does not auto-install.")
         if not Path(cfg.demucs_python).exists():
             raise RuntimeError(
                 f"demucs venv missing: {cfg.demucs_python} — create .venv-demucs per SETUP.md; "
@@ -87,29 +182,55 @@ class SeparateStage:
 
         full = ctx.work.root / "source_full.wav"           # 44.1k stereo, temp
         out_dir = ctx.work.root / "_demucs"
+        part_dir = ctx.work.root / "_parts"
         try:
             t0 = time.perf_counter()
-            subprocess.run(
-                ["ffmpeg", "-y", "-loglevel", "error", "-i", str(ctx.work.source_video),
-                 "-vn", "-ac", "2", "-ar", "44100", "-c:a", "pcm_s16le", str(full)],
-                check=True,
-            )
+            duration = _probe_duration(ctx.work.source_video)
+            chunk_s = cfg.separate_chunk_sec
+            if chunk_s and duration > chunk_s:
+                plan = _plan_chunks(duration, chunk_s, cfg.separate_overlap_sec)
+                parts = _extract_chunks(ctx.work.source_video, part_dir, plan)
+                starts = [a for a, _ in plan]
+                print(f"       {duration / 3600:.2f}h → {len(parts)} chunk(s) "
+                      f"of {chunk_s}s (+{cfg.separate_overlap_sec:g}s overlap)")
+            else:
+                # -rf64 auto: WAV stores its size in a 32-bit field, so at 176400 B/s (44.1k
+                # stereo s16) anything past 6h46m overflows it. Unreachable while chunking is
+                # on — it is the net for cfg.separate_chunk_sec = 0.
+                subprocess.run(
+                    ["ffmpeg", "-y", "-loglevel", "error", "-i", str(ctx.work.source_video),
+                     "-vn", "-ac", "2", "-ar", str(SR), "-c:a", "pcm_s16le",
+                     "-rf64", "auto", str(full)],
+                    check=True,
+                )
+                parts, starts = [full], [0.0]
             extract_s = time.perf_counter() - t0
             t0 = time.perf_counter()
+            # Every chunk in ONE invocation: htdemucs is load-dominated (~13 s, DECISIONS
+            # 2026-07-19) and processes its tracks one at a time, so this pays that load once
+            # instead of per chunk while keeping the peak allocation at a single chunk's.
             subprocess.run(
                 [str(cfg.demucs_python), "-m", "demucs.separate", "--two-stems", "vocals",
-                 "-n", "htdemucs", "-d", "cuda", "-o", str(out_dir), str(full)],
+                 "-n", "htdemucs", "-d", "cuda", "-o", str(out_dir), *[str(p) for p in parts]],
                 check=True,
                 env={**os.environ, "PYTHONUTF8": "1"},
             )
             demucs_s = time.perf_counter() - t0
-            bed = out_dir / "htdemucs" / full.stem / "no_vocals.wav"
-            if not bed.exists():
-                raise RuntimeError(f"demucs produced no bed at {bed}")
-            replace_retry(bed, ctx.work.source_bed)        # atomic: a bed that exists is complete
+            stems = [(out_dir / "htdemucs" / p.stem / "no_vocals.wav", s)
+                     for p, s in zip(parts, starts)]
+            missing = [str(s) for s, _ in stems if not s.exists()]
+            if missing:
+                raise RuntimeError(f"demucs produced no bed at {', '.join(missing)}")
+            if len(stems) == 1:
+                replace_retry(stems[0][0], ctx.work.source_bed)   # atomic: a bed that exists is
+            else:                                                 # complete
+                tmp = ctx.work.root / "_bed.wav"
+                _stitch_bed(stems, tmp, duration, cfg.separate_overlap_sec)
+                replace_retry(tmp, ctx.work.source_bed)
         finally:
             full.unlink(missing_ok=True)
             shutil.rmtree(out_dir, ignore_errors=True)
+            shutil.rmtree(part_dir, ignore_errors=True)
         # detail.separate: work_sec is the ffmpeg EXTRACT — the one part that scales with audio
         # length (decode source.mkv → 44.1k stereo wav). The demucs subprocess is recorded beside it
         # but bills as OVERHEAD, not work: htdemucs load and inference are inseparable inside the CLI
