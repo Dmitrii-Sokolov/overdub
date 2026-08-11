@@ -270,6 +270,19 @@ open-class residue the ~55-rule ceiling made awkward: `execute → эксекю�
 `ex-`/`ie`/`-ute` is ambiguous in English ("exit" wants экс, "execute" wants эгз) — hence the
 dictionary, not another rule. Needs an ear check either way.
 
+**Confirmed from a third angle 2026-08-11, and partly DEFUSED the same day.** Four more spelling
+failures off `L0nBN6ME7VQ`: `button → буттон`, `changes → чанджс`, `breaking → брикинг`, and
+`alchemy → алчеми` where the `ch` is /k/ — the last one being the clean argument that no rule over
+letters can reach this class. Compounds are the sharper case: `AlchemySerializeField` came out
+as one glued «алчемисериалайзфиелд». What defuses it is the dual-form markup shipped that day
+(DECISIONS `08-11`): the translator now supplies the reading, so the fallback saw 2 tokens on that
+video instead of 90. This item is therefore no longer about the DUB being wrong — it is about how
+much the translator has to mark, i.e. about the seam's cost. Fixing it makes the markup optional
+for ordinary words. **Do not reach for espeak-ng for this** (it was proposed on 08-11 and is the
+worse option): `data/cmudict.dict` is already in-repo and covers the measured class, while espeak
+would be a third external binary against the two the stack rule allows, and it answers only the
+brand/neologism tail the letter rules already own.
+
 ### Stress audit of the dictionary *(was item 4)* — gated on the item above
 
 Using `stress_index`/`apply_stress`; English stress wins on disagreement (user call). Of the top 60
@@ -426,6 +439,25 @@ about to change.
 ## Numbers to re-measure
 
 Three groups, three different reasons. **Do not quote across a group boundary.**
+
+**(F2) The dual-form seam is ON TRIAL — measure its cost, and roll back if it is too high.**
+Shipped 2026-08-11 (DECISIONS): the translator writes `[[written|spoken]]`, so it emits both forms
+and the seam's output volume grows. The only reading so far is one 164-sentence video —
+**translate 7.8 min of a 10.5 min run, 154 marked spans, 469 s wave** — which is not a baseline
+for anything: no full batch has run under the rule. Take the seam's wall and its char volume on
+the first real batch and compare against the pre-08-11 runs.
+
+**The decision rule is set in advance, so the measurement cannot be argued with after the fact:
+if translate is noticeably more expensive or slower, try something else, and the FIRST thing to
+try is a rollback.** Reverting is cheap by construction — the markup lives only in the draft and
+`translation.json` never changed shape, so it is one revert of the contract + prompts + the
+resolver, and nothing downstream knows the difference. The other direction is the CMUdict item
+above, which would let the translator mark far less instead of not at all.
+
+Two things this measurement must not conflate. Output VOLUME is what binds the chunked
+translator, not sentence count — so the 2000-sentence chunking threshold is also stale until this
+is read. And the 08-11 seam figures were taken with `translate.started` present; a video whose
+wave was not timed reports the OLD meaning of `total_wall_s` and is not comparable.
 
 **(A) `8zJlKmgMT44` — the current reading.** Shipped grouping 1.2/20/600, measured 2026-07-25 with
 the new metric: **fill median 0.7104, slot silence 283.1 s** of a 1058.8 s dub (`in_span_silence`

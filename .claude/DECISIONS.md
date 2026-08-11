@@ -33,6 +33,7 @@ divider. Look things up through this index, not by scrolling.
 - `07-30` separate route, separate page, grades nothing
 
 **Translate**
+- `08-11` the draft carries BOTH forms — subtitles get the spelling, the dub gets the reading
 - `08-05` route B gets a chunked translator, as an escape hatch (chained chunks, not parallel)
 - `07-28` route B step 2 fans out through a Workflow
 - `07-18` Sonnet semi-automatic is the PRIMARY route
@@ -74,6 +75,7 @@ divider. Look things up through this index, not by scrolling.
 - `07-16` dead-air elimination BUILD † · `07-16` interim ear verdict
 
 **Pipeline, batch, artifacts**
+- `08-11` `separate` CHUNKS long audio; the length threshold hid a container wall and a memory wall
 - `08-06` the per-video trigger is a WATCHER beside the wave; the pipeline did not move
 - `08-06` Parakeet and htdemucs DO co-reside; a re-download is not transcript-neutral
 - `08-06` the download prefetch is a PRE-PASS, not a parallel branch inside the sweep
@@ -107,6 +109,168 @@ divider. Look things up through this index, not by scrolling.
 † carries a `SUPERSEDED` header — the code it describes is gone or changed. Read the header first.
 
 ---
+
+## 2026-08-11 — the draft carries BOTH forms; one string can serve two consumers
+
+`ru.srt` is built from `text_ru` and the synthesis from `text_tts`, and both were derived from
+one string the translator wrote. The two consumers want different text, so every improvement to
+one was a regression in the other — and this entry exists because that trade was made in BOTH
+directions on a single day before the third option was seen.
+
+Where it started: the translator was told to keep Latin and digits, "the normalizer handles the
+rest". It cannot — though NOT for the reason first written down here, and the difference matters
+enough to state plainly.
+
+Silero does delete Latin script: measured 2026-08-11, three sentences synthesized with and
+without a Latin word render byte-identical audio, same frame count, same hash. But that
+deletion has never once fired in this pipeline. `text_tts = normalize_for_tts(text_ru)` and that
+function is Cyrillic-only by contract — it is what makes it idempotent — so the engine has never
+been handed a Latin character. The deletion is a live trap for anyone who hand-writes `text_tts`,
+and nothing more.
+
+The real defect was always the pronounce chain's fallback: a SPELLING-based scanner that INVENTS
+a reading for every out-of-dict token. 756 invented readings over 261 distinct Latin tokens on
+one video of the 2026-08-10 batch, none of which `verify` can hear. The batch also flagged 765
+`english_echo` lines over 30537 sentences, because the corpus is dev streams and dense with code
+identifiers. So the dub was not silent on those words — it said them wrong.
+
+The first fix made `text_ru` Cyrillic-only. It worked for the dub and wrecked the subtitles, which
+inherited spelled-out numbers and transliterated names. The cost was written down honestly and it
+was still the wrong shape: the problem was never which form to prefer, it was serving two
+consumers from one field.
+
+**Decision: the DRAFT carries both forms inline as `[[written|spoken]]`, and
+`build_translation.py` resolves it in two directions** — `written_form()` for `text_ru`,
+`spoken_form()` then `normalize_for_tts` for `text_tts`. `translation.json` keeps exactly the
+shape it had, so `assemble`, `verify` and every report are untouched; the markup lives only in
+the draft.
+
+REJECTED — letting Silero's Latin deletion do the cutting (write both forms plainly and rely on
+the engine to drop one). It builds the design on an engine DEFECT, and it does not even work
+cleanly: the deletion removes letters and leaves the parentheses, punctuation and digits behind,
+and digits are the other thing the engine reads badly. Both extractions have to be deterministic
+and neither may depend on what the engine happens to do with a script it dislikes.
+
+REJECTED — a third field the agent writes. It would hand authorship of `text_tts` to the LLM, and
+route B's hard guardrail is that `text_tts` is DERIVED: `verify` compares the ASR round-trip
+against it through the same normalizer, so a hand-spelled value silently breaks verification. The
+markup gives the helper better input without moving that boundary.
+
+`[[…]]` and not `{…}` or `[…]`: this corpus is people talking about code, where single braces and
+brackets genuinely occur in the prose.
+
+**An end-to-end check changed the guidance.** An unmarked plain number came out right anyway —
+the subtitle kept `5 минут` and the dub said «пять минут», because `normalize_for_tts` remains the
+net under the markup. So marking is only required where the fallback actually errs: Latin, which
+Silero deletes, and readings that are not mechanical (versions, ratios, `24/7`). Simple numbers
+are better left unmarked — the digit is what a reader wants to see, and the normalizer already
+says it correctly. That materially lowers the extra output volume this scheme costs.
+
+Two side effects worth knowing. `english_echo` becomes meaningful again: it runs on the RESOLVED
+written side, so a marked name is legitimate Latin while untranslated lowercase English prose
+still flags — the Cyrillic-only version had effectively silenced it. And `tools/renorm_workdir.py`
+can no longer re-derive `text_tts` from `text_ru`, because the spoken side is not recoverable from
+the written one; it now warns and points at rebuilding from the draft, since silently re-deriving
+would hand every marked name back to the fallback.
+
+**This ships as a TRIAL, and the exit is named in advance.** The translator now writes both forms,
+which costs output volume and therefore time at the seam. If translate becomes noticeably more
+expensive or slower, look for another way — and the cheapest is to ROLL BACK to the previous
+shape (plain Latin in `text_ru`, the normalizer doing what it can), which is one revert of this
+entry's change and costs nothing else, because the markup lives only in the draft and
+`translation.json` never changed shape. PLAN carries the watch item.
+
+The other way, if a rollback is not wanted: make the fallback pronunciation-based instead of
+spelling-based. Measured 2026-08-11 against espeak-ng, which is already installed on this host —
+`button` → `bˈʌʔn̩` where the scanner says «буттон», `changes` → `tʃˈeɪndʒᵻz` where it says
+«чанджс», `alchemy` → `ˈælkəmi` where it says «алчеми» (the `ch` is /k/, which no spelling rule
+can know), and `AlchemySerializeField` splits into three correctly stressed words where the
+scanner emits «алчемисериалайзфиелд». That would let the translator mark far less. It would NOT
+replace the markup: subtitles need the original spelling regardless, and espeak gives `Odin` the
+English reading «оудин» where the established Russian form for this library's name is «Один» —
+a knowledge problem, not a phonetics one. It also means a third external binary, which the stack
+rule currently forbids.
+
+**NOT established.** What the second form costs in output VOLUME, which is what actually binds the
+chunked translator (PLAN) — the 2000-sentence chunking threshold was calibrated before this and
+has not been re-measured. No full batch has run under the rule yet: the only evidence is one
+164-sentence video, where translate took 7.8 min of a 10.5 min run.
+
+## 2026-08-11 — `separate` chunks long audio; the length threshold hid TWO walls
+
+A route-B batch of 11 videos lost 3 at `separate`, all with demucs exit 1. The three were the
+three longest (6.95, 7.50, 7.90 h) and all eight survivors were 5.89 h or under, so the length
+threshold split the sample with no misclassification. That clean split argued for ONE cause. It
+was two, stacked, and the second only became visible once the first was gone.
+
+**Wall 1 — the container.** The stage extracts `source_full.wav` as pcm_s16le 44.1k stereo =
+176400 B/s, and WAV keeps its size in a 32-bit field. Past 6h46m ffmpeg says
+`Filesize 5016920142 invalid for wav, output file will be broken` and writes a header no reader
+accepts. Fixed with `-rf64 auto`: a plain WAV header until the overflow point, RF64 after it.
+
+Verified rather than assumed, because the reader matters here: an RF64 probe file is REFUSED by
+`sphn` (demucs's fast path — "end of stream") and read correctly by the ffmpeg reader demucs
+falls back to. The path works, through the slower of its two readers.
+
+REJECTED — W64 and FLAC. Both remove the size limit and FLAC would even keep the sphn fast path,
+but both change the container for EVERY video. `-rf64 auto` is byte-identical below the
+threshold, which is the smaller blast radius on a stage that was working for everything shorter.
+
+**Wall 2 — memory, and this is the one that shapes the design.** With the container fixed, 6.95 h
+separated normally and 7.90 h died on `DefaultCPUAllocator: not enough memory: you tried to
+allocate 40135360512 bytes` on a 63.7 GB host. That figure is not opaque:
+28441 s × 44100 × 2 ch × **4 sources** × 4 B = 40 135 357 440. htdemucs allocates its output
+tensor for all four stems across the whole track **even under `--two-stems vocals`**, which only
+discards the other three afterwards. Peak is therefore linear in duration — ~1.41 MB per second
+of source — plus the input tensor and the copies around it.
+
+REJECTED — `--segment`. It bounds the INFERENCE window, and what failed is the output buffer for
+the entire track. It is the obvious first thing to reach for and it does not touch this.
+
+REJECTED — dropping the bed for very long videos (degrade to `replace`). Cheap, but it makes the
+output's character a function of duration, which is the kind of silent inconsistency the
+degrade-vs-raise rule exists to avoid.
+
+**Decision: cut the source into overlapping windows, separate each, blend back.**
+`separate_chunk_sec = 3600` holds the four-stem term at 5.1 GB no matter how long the video is.
+That is the actual property being bought — not headroom, but a ceiling that has stopped being a
+function of duration. A larger chunk would only move the same wall further out.
+
+Three implementation choices worth keeping:
+
+- **One demucs invocation for every chunk, not one per chunk.** htdemucs is load-dominated
+  (~13 s, `07-19`) and processes its tracks sequentially, so this pays the model load once while
+  still peaking at a single chunk's allocation.
+- **The blend is a weighted average under a linear ramp, never a crossfade.** A crossfade
+  shortens the result by its own length at every cut, and the bed is laid under a dub whose
+  timeline came from the transcript: a bed a few thousand frames short slides the music against
+  the picture for the rest of the video, and nothing downstream measures it. Equal-power (sqrt)
+  is wrong for a second reason — the two chunks are separations of the SAME seconds, so their
+  overlap is correlated and a sqrt law bulges ~3 dB at every seam.
+- **The stitch streams.** A whole-track accumulator would rebuild the exact allocation this
+  entry exists to avoid: 7.9 h of float32 stereo is 10 GB before the weight array.
+
+**Method note, because it invalidated the first version of the tests.** The natural fixture is a
+"perfect separator" whose every chunk stem is exactly its slice of the source — and it cannot see
+the blend at all. When both inputs agree, `a·w + b·(1−w)` collapses to `a` for ANY ramp direction
+and ANY zone width. Mutation-checked: a reversed ramp and a halved blend zone both survived it,
+and deleting the length pad survived too because tidy arithmetic never reaches the pad. Closing
+them needed chunks that DISAGREE — a per-chunk DC signature, so the output's offset traces the
+ramp itself — plus a deliberately truncated stem. One test was additionally passing for the wrong
+reason: its "direction" check was per-sample monotonicity, and a reversed ramp slides back by
+5.7e-7 per sample, under any tolerance loose enough to allow PCM_16 quantisation.
+
+**Confirmed on real media the same day**, which is what promotes this from arithmetic to a
+result: all three videos that had failed went through. 7.90 h → 8 chunks → 633.7 s, 7.50 h → 8
+chunks → 646.9 s, 6.95 h → 7 chunks → 588.7 s, and a 4.35 h video that had always worked → 5
+chunks → 341.4 s. That is ~80 s per chunk on every one of them, so the stage's cost is now linear
+in duration with no cliff, where before it was linear up to a wall and infinite past it. Peak
+VRAM held at 4.1 GB against the 37.4 GiB CPU allocation that used to kill the run.
+
+**NOT established.** Whether the seams are inaudible — the tests measure a seam as a numeric
+discontinuity, and in this project the ear is what adjudicates audio. The cuts land on the hour
+marks (1:00:00, 2:00:00, …) of the three long videos, which is where to listen. `-rf64 auto` is
+also unreachable while chunking is on and survives only as the net for `separate_chunk_sec = 0`.
 
 ## 2026-08-07 — `utilization.gpu` is not a load signal; the SM CLOCK is the one that decides
 
