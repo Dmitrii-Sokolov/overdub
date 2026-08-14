@@ -16,10 +16,17 @@ the repo where output and input are the SAME language and the SAME sentence orde
 is detectable by construction: every sentence id must come back, and what came back must still
 contain the source's numbers and names. Route C cannot check any of this (a summary is ~200 words
 against a whole transcript) and the translate seam cannot check names (the prompt PERMITS Russifying
-them -- exactly why completeness.entity_loss was deleted on 2026-08-01, see DECISIONS). EN->EN
-does not carry that objection: a name stays a name, so the substring test is right about its
+them -- exactly why completeness.entity_loss was deleted on 2026-08-01, see DECISIONS). Same-language
+cleaning does not carry that objection: a name stays a name, so the substring test is right about its
 dominant input class. That reasoning does NOT travel back to completeness.py, which compares
 across languages -- do not port these detectors there.
+
+THE ENTITY DETECTOR IS LATIN-ONLY ON PURPOSE, INCLUDING ON RUSSIAN. Measured 2026-08-14 on
+OAu3jkX8dK4 (a Russian talk on Unity, 1832 sentences): the shipped regex found 456 hits / 155
+unique terms -- Addressables, Atlas, Auditor, Android -- because a Russian technical speaker says
+the terms in English. A Cyrillic extension of the same pattern added 26 hits / 23 unique, of which
+roughly half were ASR debris ("Гарбач", "Гиперхаге"). Widening it would trade a precise detector for
+a noisy one, so it stays as it is and simply does not fire on Russian proper nouns.
 
 WHAT IS FATAL AND WHAT IS NOT follows the repo rule (a MISSING artifact degrades, an INCONSISTENT
 one raises, DECISIONS 2026-07-28):
@@ -109,7 +116,48 @@ def _gap_after(sentences: list[dict], i: int) -> float:
     return max(gap, 0.0)
 
 
-# --- loss detectors (EN source vs EN cleaned) ---------------------------------
+# --- language -----------------------------------------------------------------
+# Route E cleans ENGLISH or RUSSIAN, a closed list (user decision 2026-08-14). It is detected from
+# the transcript rather than read from cfg.source_lang, and that is not a shortcut: source_lang means
+# "the language the dubbing pipeline EXPECTS", is "en" by hard constraint, and would force English
+# onto a Russian video -- the same reasoning that made --transcribe-file ask the ASR instead
+# (overdub/transcribefile.py). Detecting per video also lets one queue hold both.
+_CYR_RE = re.compile(r"[а-яёА-ЯЁ]")
+_LAT_RE = re.compile(r"[a-zA-Z]")
+# Measured 2026-08-14 (Parakeet on both sides): a Russian technical talk sits at 96.0% Cyrillic among
+# its alpha characters -- the other 4% is the English terms the speaker says in English -- while the
+# English corpus on disk carries no Cyrillic at all. The wide band between these thresholds is where
+# a transcript is neither, and the planner REFUSES there instead of guessing: an agent handed the
+# wrong language block cleans against the wrong filler list, and nothing in the artifact says so.
+#
+# THE THRESHOLDS ARE ASYMMETRIC ON PURPOSE, and 0.70 is not a rounding of 0.5. Russian technical
+# speech carries Latin script BY DEFAULT (the terms), so the Russian side needs room -- but only as
+# much as the measurement asks for: 0.70 sits 26 points below the one Russian video on disk, and a
+# transcript that is 30% Latin is no longer "Russian with terms", it is bilingual, which has no
+# single filler list and is exactly what should be refused. English speech carries no Cyrillic at
+# all in the corpus, so its side needs no such room.
+_LANG_RU_MIN = 0.70
+_LANG_EN_MAX = 0.05
+LANGS = ("en", "ru")
+
+
+def _cyr_share(text: str) -> float | None:
+    """Cyrillic share of the alpha characters, or None when there are none to judge."""
+    cyr, lat = len(_CYR_RE.findall(text)), len(_LAT_RE.findall(text))
+    return cyr / (cyr + lat) if cyr + lat else None
+
+
+def detect_lang(sentences: list[dict]) -> str | None:
+    """'en' | 'ru' | None. None means "do not guess" and every caller treats it as such."""
+    share = _cyr_share(" ".join(s.get("text", "") for s in sentences if isinstance(s, dict)))
+    if share is None:
+        return None
+    if share >= _LANG_RU_MIN:
+        return "ru"
+    return "en" if share <= _LANG_EN_MAX else None
+
+
+# --- loss detectors (same language in, same language out) ---------------------
 _DIGITS_RE = re.compile(r"\d+")
 # A capitalised token that is NOT sentence-initial: names, products, acronyms. The position filter
 # is the whole precision of this detector -- every sentence starts with a capital, so counting
@@ -122,6 +170,10 @@ _RATIO_WARN_CHUNK = 0.60
 _RATIO_WARN_DOC = 0.65
 # Share of lines cleaned to nothing that stops reading as filler removal.
 _EMPTY_WARN = 0.25
+# How far the Cyrillic share may move between source and cleaned text before the chunk reads as
+# translated rather than cleaned (_script_drift). Wide because the two states it separates are not
+# adjacent: honest cleaning moves it by a couple of points, a translation by ~0.9.
+_DRIFT_MAX = 0.30
 # How many examples a warning prints. Enough to recognise the defect, short of pasting the chunk.
 _EXAMPLES = 5
 
@@ -130,6 +182,25 @@ def _missing_tokens(pattern: re.Pattern, src: str, out: str) -> list[str]:
     """Tokens matched in `src` that are absent from `out`, deduped, source order preserved."""
     have = out.casefold()
     return [t for t in dict.fromkeys(pattern.findall(src)) if t.casefold() not in have]
+
+
+def _script_drift(src: str, out: str) -> bool:
+    """True when a chunk came back in a different SCRIPT than it went in.
+
+    This is the shape a TRANSLATION takes here, and it is the failure route E has to watch for now
+    that both languages are live: the prompt forbids translating, an agent that ignores it produces
+    fluent, complete, correctly-id'd text, and every other detector passes it. Ratio does not fire
+    (a translation is about as long as its source), the id contract does not fire (nothing is
+    missing), and the entity check is Latin-only, so a Russian chunk rendered into English scores
+    BETTER on it.
+
+    Script share is the cheap discriminator: cleaning removes filler in the source's own script, so
+    it moves the share by a couple of points at most -- measured 2026-08-14, the 685 "вот" in
+    OAu3jkX8dK4 are ~2k characters out of 146k -- while a translation inverts it. Symmetric on
+    purpose: a Russian session translating an English transcript is the same defect mirrored.
+    """
+    a, b = _cyr_share(src), _cyr_share(out)
+    return a is not None and b is not None and abs(a - b) >= _DRIFT_MAX
 
 
 def _load_chunk(path: Path) -> dict[int, str]:
@@ -178,7 +249,8 @@ def join(work: WorkDir, chunks: list[dict]) -> tuple[list[dict], dict]:
 
     cleaned: dict[int, str] = {}
     owner: dict[int, str] = {}
-    chunk_rows: list[tuple[str, int, int]] = []          # (name, src_chars, out_chars)
+    chunk_rows: list[dict] = []                          # {name, src, out} -- the texts, not just
+                                                         # their lengths: the script check needs them
     for ch in chunks:
         name = f"{ch['from']}-{ch['to']}.json"
         part = _load_chunk(work.clean_dir / name)
@@ -193,8 +265,10 @@ def join(work: WorkDir, chunks: list[dict]) -> tuple[list[dict], dict]:
             sys.exit(f"[FAIL] chunk {name} carries {len(extra)} id(s) outside its own range "
                      f"{ch['from']}..{ch['to']}: {extra[:20]} -- two agents would be writing one "
                      f"line; re-run this chunk")
-        src_chars = sum(len(s["text"]) for s in sentences if s["id"] in set(expected))
-        chunk_rows.append((name, src_chars, sum(len(part[i]) for i in expected)))
+        ids = set(expected)
+        chunk_rows.append({"name": name,
+                           "src": " ".join(s["text"] for s in sentences if s["id"] in ids),
+                           "out": " ".join(part[i] for i in expected)})
         for i in expected:
             cleaned[i] = part[i]
             owner[i] = name
@@ -219,7 +293,9 @@ def join(work: WorkDir, chunks: list[dict]) -> tuple[list[dict], dict]:
         "ratio": round(len(out_all) / max(len(src_all), 1), 3),
         "missing_numbers": _missing_tokens(_DIGITS_RE, src_all, out_all),
         "missing_entities": _missing_tokens(_ENTITY_RE, src_all, out_all),
-        "chunks": [{"name": n, "ratio": round(o / max(s, 1), 3)} for n, s, o in chunk_rows],
+        "chunks": [{"name": c["name"],
+                    "ratio": round(len(c["out"]) / max(len(c["src"]), 1), 3),
+                    "drift": _script_drift(c["src"], c["out"])} for c in chunk_rows],
         "owner": owner,
     }
     return records, stats
@@ -228,6 +304,12 @@ def join(work: WorkDir, chunks: list[dict]) -> tuple[list[dict], dict]:
 def report(stats: dict) -> None:
     """Print the quality signals. Every one of them is advisory -- see the module docstring."""
     for ch in stats["chunks"]:
+        if ch.get("drift"):
+            # First, and worded harder than the others: this one is not a judgement call. Cleaning
+            # never changes script, so the chunk was translated and the text on the page is not the
+            # text in the audio.
+            print(f"[warn] chunk {ch['name']} came back in a DIFFERENT SCRIPT than its source -- "
+                  f"that is a translation, not a cleaning pass; re-run this chunk alone")
         if ch["ratio"] < _RATIO_WARN_CHUNK:
             print(f"[warn] chunk {ch['name']} kept {ch['ratio']:.0%} of its source -- that is "
                   f"summarising, not cleaning; re-run this chunk alone")
@@ -365,6 +447,11 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--chunk", type=int, default=DEFAULT_CHUNK, metavar="N",
                    help=f"sentences per chunk (default {DEFAULT_CHUNK}). The same value must be "
                         f"used for --plan and for the join, or the chunk file names will not match.")
+    p.add_argument("--lang", choices=LANGS,
+                   help="override the detected transcript language. Needed only when the detector "
+                        "refuses (a transcript that is neither clearly English nor clearly "
+                        "Russian); it does not change the chunk cut, only which cleaning rules the "
+                        "sub-agents are given.")
     args = p.parse_args(argv)
     if not args.workdir.is_dir():
         p.error(f"work dir not found: {args.workdir}")
@@ -375,10 +462,18 @@ def main(argv: list[str] | None = None) -> int:
         sys.exit(f"[FAIL] {work.sentences} is missing or unreadable -- this workdir has no "
                  f"transcript; run the E1 command first")
     chunks = plan_chunks(sentences, args.chunk)
+    lang = args.lang or detect_lang(sentences)
 
     if args.plan:
+        # An unknown language is FATAL here and only here. The plan is what the sub-agents are
+        # driven from, and a cleaner with no language block would fall back to its own judgement
+        # about what a filler is -- the one decision this route never delegates to a model.
+        if lang is None:
+            sys.exit(f"[FAIL] {work.sentences} is neither clearly English nor clearly Russian "
+                     f"(route E cleans those two) -- if you know what it is, re-run with "
+                     f"--lang en|ru; otherwise this transcript is not for this route")
         print(json.dumps({"video_id": work.root.name, "n_sentences": len(sentences),
-                          "chunks": chunks}, ensure_ascii=False))
+                          "lang": lang, "chunks": chunks}, ensure_ascii=False))
         return 0
 
     records, stats = join(work, chunks)
@@ -386,6 +481,10 @@ def main(argv: list[str] | None = None) -> int:
     info = info if isinstance(info, dict) else {}
     doc = {
         "video_id": work.root.name,
+        # DEGRADES rather than raises, unlike --plan above: by join time the agents have already
+        # run, and refusing here would discard finished work over a signal that only decides which
+        # advisory checks are worth printing (a MISSING artifact degrades, DECISIONS 2026-07-28).
+        "lang": lang,
         "title": info.get("title") if isinstance(info.get("title"), str) else None,
         "channel": next((info[k] for k in ("channel", "uploader")
                          if isinstance(info.get(k), str) and info[k].strip()), None),
@@ -400,7 +499,7 @@ def main(argv: list[str] | None = None) -> int:
     _write(work.clean_md, render_md(doc))
 
     report(stats)
-    print(f"[clean] {work.clean_md}  {stats['n_sentences']} sentences -> "
+    print(f"[clean] {work.clean_md}  {lang or 'lang?'}  {stats['n_sentences']} sentences -> "
           f"{len(doc['paragraphs'])} paragraphs  {stats['out_chars']} chars "
           f"({stats['ratio']:.0%} of source, {stats['n_empty']} emptied)")
     return 0

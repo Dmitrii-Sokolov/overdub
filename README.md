@@ -295,12 +295,22 @@ text digest.
 [`docs/queue-contract.md`](docs/queue-contract.md) §4 —
 the same block for every route, kept in one place.
 
-### E. Clean a queue into readable English text — no summary, no dub
+### E. Clean a queue into readable text — no summary, no dub
 
 The question is **"let me read this instead of watching it"**. Route C
 compresses an hour into ~200 words; this one does not: the output is the video's
-own English, roughly as long as the source, cleaned enough to read. Deliverable:
+own words, roughly as long as the source, cleaned enough to read. Deliverable:
 `work/<id>/clean.md`.
+
+**English or Russian, and the route detects which** (2026-08-14). This is the
+second place in the repo that is not EN→RU, for the same reason as
+`--transcribe-file`: nothing is translated here, so the source language is
+whatever the video is. `build_clean.py --plan` reads the transcript's script
+share and stamps `lang` into the plan; `cfg.source_lang` is deliberately not
+consulted, since it means "what the dubbing pipeline expects" and is `en` by hard
+constraint. A transcript that is neither clearly one nor the other is **refused**
+rather than guessed at — `--lang en|ru` is the override, and the language decides
+only which cleaning rules the agents get, never the chunk cut.
 
 E1 is the same transcript command as C and D (`--scout`), so a queue that has
 been through either costs seconds here. Then, and **before anything is cleaned**:
@@ -309,18 +319,25 @@ been through either costs seconds here. Then, and **before anything is cleaned**
 .venv-asr\Scripts\python.exe -X utf8 -m overdub --batch queue.txt --repair-asr auto
 ```
 
-The order is enforced by the code, not by discipline: a repair renumbers every
-id, so `invalidate_downstream` deletes `clean/`, `clean.json` and `clean.md`
-along with the translate artifacts. Repair matters more here than on the dubbing
-routes — a repetition loop passes the ear in half a second, but sits on the page
-as a repeated paragraph.
+**Whisper only.** `--repair-asr` refuses when `asr_engine` is `parakeet` (the
+shipped default) — its accept gate is "two readings agree", which is vacuously
+true on a deterministic decoder. On the Parakeet path this step is skipped, not
+worked around: the worker re-reads its own uncovered spans during transcribe.
+When it does run, the order is enforced by the code rather than by discipline: a
+repair renumbers every id, so `invalidate_downstream` deletes `clean/`,
+`clean.json` and `clean.md` along with the translate artifacts. Repair matters
+more here than on the dubbing routes — a repetition loop passes the ear in half a
+second, but sits on the page as a repeated paragraph.
 
 **Then one Sonnet sub-agent per CHUNK**, orchestrated by the `overdub-clean`
 skill (`.claude/workflows/clean-transcript.js`). Per chunk, not per video,
 because this is the one route whose output is as long as its input: a per-video
 agent cleans the opening faithfully and compresses harder the further it goes,
 and nothing in the artifact says which half you are reading. ~80 sentences is
-~7k characters of output, where the task stays mechanical.
+~7k characters of output, where the task stays mechanical — and that holds for
+both languages: Russian sentences average 79 characters against an English
+median of 80 (measured 2026-08-14, Parakeet on both sides), so the language
+moves the filler list, never the cut.
 
 `scripts/build_clean.py --plan` owns the cut (target 80, slid to the longest
 pause nearby) and the same function re-derives it at join time, so a plan and its
@@ -334,13 +351,20 @@ an absent id fails the build, because the two are indistinguishable in a text
 file afterwards. `build_clean.py` then joins, exits on any missing / foreign /
 duplicated id, and warns — never blocks — on the quality signals: per-chunk and
 whole-document length ratio (a chunk that summarised instead of cleaning shows up
-as its own number), dropped digit runs, dropped capitalised terms, and the share
-of emptied lines.
+as its own number), dropped digit runs, dropped capitalised terms, the share of
+emptied lines, and a chunk whose **script changed** between source and output.
+That last one is what catches a translation, and it is the only check that can:
+a translated chunk is complete, correctly numbered and about the right length, so
+every other signal here passes it.
 
-The entity check is precise here for a reason that does **not** generalise: EN→EN
-keeps a name a name, so a substring test is right about its dominant input class.
-That is exactly the objection that deleted `completeness.entity_loss` on the
-translate seam (DECISIONS 2026-08-01) — do not port these detectors there.
+The entity check is precise here for a reason that does **not** generalise:
+same-language cleaning keeps a name a name, so a substring test is right about
+its dominant input class. That is exactly the objection that deleted
+`completeness.entity_loss` on the translate seam (DECISIONS 2026-08-01) — do not
+port these detectors there. It stays **Latin-only even on Russian**, which is a
+measurement and not an oversight: on a Russian technical talk (2026-08-14) the
+shipped pattern found 155 unique real terms, because the speaker says them in
+English, while a Cyrillic extension added 23 of which about half were ASR debris.
 
 `clean.md` carries a metadata header and timecoded paragraphs broken on the
 speaker's own pauses (≥1.0 s, or ~900 chars without one; a stamp every ~2 min).

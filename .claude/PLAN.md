@@ -665,7 +665,11 @@ field. What is new:
   hardcoded `language="en"` and detect; the translator is prompt-driven, so source language is a
   prompt variable. Quality degradation on rare languages ACCEPTED — coverage, not parity. Touches
   `cfg.source_lang`, the transcribe call, both routes' prompts, the `en.srt` label, and the
-  Latin-punctuation-shaped resegmentation `TERMINATORS`/`_ABBREV`)
+  Latin-punctuation-shaped resegmentation `TERMINATORS`/`_ABBREV`. Two of those are now MEASURED
+  rather than suspected, on the Russian side at least: route E went EN-or-RU on 2026-08-14 and
+  `resegment` needed nothing — dotted abbreviations appear once in 1832 sentences and Russian
+  sentence length matches English, so `TERMINATORS`/`_ABBREV` are not the obstacle this line
+  assumes for RU. Says nothing about a language that does not end sentences with `.!?`)
 - tail: translation completeness check (EN↔RU content-word ratio / back-translation on outliers —
   evidence: Gemma dropped 1 of 3 adverbs in `DmgujoZ1mmk` id1, unflagged — DECISIONS 2026-07-18,
   i.e. measured on the retired local translator: the failure CLASS carries to any route, the rate

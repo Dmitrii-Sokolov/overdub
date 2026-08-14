@@ -127,7 +127,10 @@ it — and unlike a lost video, nothing reports it.**
 
 - **A video that looks wrong for this route is still an ordinary queue entry.** A music video, an
   instrumental cut, a live set, a talk with almost no speech, a two-minute clip, something that
-  turns out not to be in English: process it like the rest. Do not stop to ask about one.
+  turns out not to be in English: process it like the rest. Do not stop to ask about one. (Route E
+  is the exception to the last of those, and only to that one: since 2026-08-14 it CLEANS Russian as
+  Russian rather than coping with it, detecting the language per video. It still translates nothing,
+  so B/C/D are unchanged — a non-English video there is processed, reported and left to the human.)
   Measured 2026-07-26 on `VHRhSDawKVA` ("… (Instrumental)"): whisper returned a single hallucinated
   "Thank you." over the music, the translator sub-agent flagged it `src=garbled` with exactly that
   reason, and the video muxed clean in 11 s with `needs_triage: false` — the pipeline's own report

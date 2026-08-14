@@ -1,12 +1,17 @@
 ---
 name: overdub-clean
-description: "Produce a readable ENGLISH text of each queued video (README route E) — transcribe, repair the ASR defects, then clean the transcript chunk by chunk with Sonnet sub-agents and save it as work/<id>/clean.md. Minimal processing by contract: filler and false starts out, wording and sentence order untouched, nothing summarised and nothing translated. Fixed order: transcribe the queue (audio only), run --repair-asr auto, plan the chunk cut with scripts/build_clean.py --plan, fan the chunks out through the clean-transcript workflow, join with build_clean.py, then hand the user a short Russian rundown. Trigger when the user wants to READ a video instead of watching it: 'текстовая версия', 'вычищенный транскрипт', 'сделай текст по видео', 'расшифровка', 'clean transcript', 'readable transcript', 'text of the video'. NOT a short summary (that is overdub-scout, route C), NOT dubbing (overdub-sonnet-batch, route B)."
+description: "Produce a readable text of each queued video in ITS OWN language, English or Russian (README route E) — transcribe, repair the ASR defects where the engine allows it, then clean the transcript chunk by chunk with Sonnet sub-agents and save it as work/<id>/clean.md. Minimal processing by contract: filler and false starts out, wording and sentence order untouched, nothing summarised and nothing translated. Fixed order: transcribe the queue (audio only), run --repair-asr auto when asr_engine is whisper, plan the chunk cut with scripts/build_clean.py --plan (which also detects the language), fan the chunks out through the clean-transcript workflow, join with build_clean.py, then hand the user a short Russian rundown. Trigger when the user wants to READ a video instead of watching it: 'текстовая версия', 'вычищенный транскрипт', 'сделай текст по видео', 'расшифровка', 'clean transcript', 'readable transcript', 'text of the video'. NOT a short summary (that is overdub-scout, route C), NOT dubbing (overdub-sonnet-batch, route B), and NOT a translation — a Russian video comes back as Russian text."
 ---
 
 # overdub — clean transcript (route E)
 
 Route E answers **"let me read this instead of watching it"**. The deliverable is the video's own
-English text, cleaned enough to read: `work/<id>/clean.md`.
+text — English or Russian, whichever the video is — cleaned enough to read: `work/<id>/clean.md`.
+
+**Nothing here is translated, in either direction.** A Russian video produces Russian text; the
+language is detected per video by `build_clean.py --plan` and carried to the sub-agents, which get a
+different filler list for each. If the user wants a Russian video turned into English (or the
+reverse), that is not this route and not any route in this repo today — say so rather than improvising.
 
 **download (audio only) → transcribe → repair → clean → stop.** No translation, no TTS, no MKV,
 no `source.mkv` on disk.
@@ -65,13 +70,34 @@ line mentions `summary pending|ok` — that is route C's artifact and says nothi
 $ids | Where-Object { -not (Test-Path "work\$_\sentences.json") }   # must print nothing
 ```
 
-## E2 — Repair the ASR defects, BEFORE anything is cleaned
+## E2 — Repair the ASR defects, BEFORE anything is cleaned — whisper only
+
+**Check the engine first. On the shipped default this step does not run at all:**
+
+```powershell
+.venv-asr\Scripts\python.exe -X utf8 -c "from overdub.config import Config; from pathlib import Path; print(Config.load(Path('overdub.toml')).asr_engine)"
+```
+
+- `parakeet` (the default) → **skip E2 and go to E3.** `--repair-asr` raises on any engine but
+  whisper, by design: its accept gate is "two readings of the clip agree", which is vacuously true
+  on a deterministic decoder, so it would splice unverified text while reporting it as verified
+  (DECISIONS 2026-08-06). Parakeet re-reads its own uncovered spans inside the worker, before the
+  transcript is written. Running the command anyway costs the batch a `RuntimeError`, not a repair.
+  Say in the E4 rundown that the pass was skipped and why — a reader must not take a Parakeet
+  transcript for a repaired one.
+- `whisper` → run it:
 
 ```powershell
 .venv-asr\Scripts\python.exe -X utf8 -m overdub --batch queue.txt --repair-asr auto
 ```
 
-**The order is not negotiable, and it is enforced by the code rather than by discipline.** A repair
+  One caveat that matters for a **Russian** queue: repair decodes its windows with
+  `language=cfg.source_lang`, which is `en`. On a Russian video that produces garbage, so do not
+  run whisper repair over a Russian queue — the config key means "what the dubbing pipeline
+  expects", not "what this video is" (`.claude/INBOX.md` carries the open item).
+
+**When it does run, the order is not negotiable, and it is enforced by the code rather than by
+discipline.** A repair
 splices new sentences into `sentences.json` and RENUMBERS every later id, so `invalidate_downstream`
 deletes `clean/`, `clean.json` and `clean.md` along with the translate artifacts — a clean pass run
 first is thrown away, silently and correctly. Repair first, clean second.
@@ -94,19 +120,28 @@ the page; that is a note for the rundown in E4, not a reason to hand-edit anythi
 $jobs = @()
 foreach ($id in $ids) {
   $plan = .venv-asr\Scripts\python.exe -X utf8 scripts\build_clean.py "work\$id" --plan | ConvertFrom-Json
+  if (-not $plan) { "[FAIL] $id — no plan (see the message above); skipped"; continue }
   foreach ($c in $plan.chunks) {
     $f = "work\$id\clean\$($c.from)-$($c.to).json"
     # resume filter: a draft newer than the transcript is done work
     if ((Test-Path $f) -and (Get-Item $f).LastWriteTime -gt (Get-Item "work\$id\sentences.json").LastWriteTime) { continue }
-    $jobs += @{ video = $id; from = [int]$c.from; to = [int]$c.to }
+    $jobs += @{ video = $id; from = [int]$c.from; to = [int]$c.to; lang = $plan.lang }
   }
 }
-"$($jobs.Count) chunk(s) to clean"
+"$($jobs.Count) chunk(s) to clean · " + (($jobs.lang | Sort-Object -Unique) -join '+')
 ```
 
 `build_clean.py` cuts on the longest pause near its target and the SAME function re-derives the cut
 at join time, so a hand-written range would fail the join with ids belonging to no chunk. Use
-`--chunk N` on both calls or on neither.
+`--chunk N` on both calls or on neither. The cut is the same for both languages — Russian sentences
+average 79 characters against an English median of 80 (measured 2026-08-14), so 80 sentences lands
+in the same place on either.
+
+**`lang` comes from the plan and is never typed by hand.** It is `en` or `ru`, detected from the
+transcript, and the workflow refuses a job without it. A video whose plan FAILED with "neither
+clearly English nor clearly Russian" is a real decision to make, not a glitch: look at
+`sentences.json` yourself, and if you can say what it is, re-run that video's plan with
+`--lang en|ru`. If you cannot, leave it out of the wave and report it in E4.
 
 **This step needs a session that has the `Workflow` tool, and never a hand fan-out** — both rules
 and their measurements are [`docs/queue-contract.md`](../../../docs/queue-contract.md) §6. If you
@@ -149,6 +184,10 @@ last one usually means a stale plan against a repaired transcript: re-run E3 for
 
 Read its warnings — all of them are QUALITY signals and none block the build:
 
+- `chunk N-M came back in a DIFFERENT SCRIPT` — that agent translated instead of cleaning. Re-run
+  that chunk, and read the result before joining again: this is the one warning that is not a
+  judgement call, because a translated chunk passes every other check here (complete, correctly
+  numbered, right length). Expect it to be the failure mode of a mixed-language queue.
 - `chunk N-M kept 43% of its source` — that agent summarised instead of cleaning. Re-run **that
   chunk**, not the video. This is the route's characteristic failure and the reason the ratio is
   measured per chunk.
@@ -156,12 +195,18 @@ Read its warnings — all of them are QUALITY signals and none block the build:
   filler-heavy speaker. Check one chunk against `sentences.json` before deciding which.
 - `N lines were emptied` — filler removal does not reach a quarter of the lines; a high share means
   an agent dropped content it judged uninteresting.
-- `N number(s) ... absent` — a dropped figure. Precise on EN→EN: numbers survive cleaning verbatim.
+- `N number(s) ... absent` — a dropped figure. Precise in either language: cleaning leaves numbers
+  verbatim.
 - `N capitalised term(s) dropped` — noisier by design, because a name the agent CORRECTED lands here
-  too. Triage hint, never a verdict.
+  too. Triage hint, never a verdict. It is **Latin-only on Russian as well**, and that is measured,
+  not forgotten (README route E) — so on a Russian video it reports the English terms and stays
+  silent about Cyrillic names. On the `ru` path it doubles as the check on term restoration: a
+  Cyrillic term the agent turned into `JSON` shows up here as a "dropped" Latin term only when the
+  agent invented one, never when it corrected a spelling.
 
 Then write the user a short **Russian** rundown: where the files are, how many videos and
-paragraphs, and anything the files cannot say for themselves — a repair window that was rejected, a
+paragraphs, which language each came out in, and anything the files cannot say for themselves — a
+repair pass that was SKIPPED because the engine is Parakeet, a repair window that was rejected, a
 chunk you re-ran, a video whose transcript was too thin to be worth reading. Offer the files with
 `SendUserFile` if the user wants them in hand rather than on disk.
 
@@ -181,7 +226,13 @@ E1 costs seconds.
 The queue rules — never shorten or lengthen it, never hand-write a draft from your own reading of
 the transcript, a derived artifact is not evidence — are
 [`docs/queue-contract.md`](../../../docs/queue-contract.md) §3 and §5; under §5 the evidence here
-is the per-chunk drafts under `clean/`, never `clean.json` or `clean.md`. Route E adds five:
+is the per-chunk drafts under `clean/`, never `clean.json` or `clean.md`. Route E adds six:
+
+- **The language is detected, never assumed and never asked of the agents.** It comes from
+  `build_clean.py --plan`, travels in the job, and picks the filler list the cleaner works against.
+  A transcript the detector refuses is a video you look at yourself and then pass `--lang`, or leave
+  out of the wave — the one thing that must not happen is a chunk cleaned against the wrong
+  language's rules, because nothing in the finished document shows it.
 
 - **Minimal processing is the contract, not a preference.** Filler and false starts out; wording,
   register, sentence order and sentence boundaries untouched. The moment this route starts

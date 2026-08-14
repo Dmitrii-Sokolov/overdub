@@ -8,6 +8,8 @@ or duplicated fails LOUD instead of shipping a transcript quietly missing a para
 
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import sys
 import tempfile
@@ -194,12 +196,123 @@ def test_dropped_entity_is_reported() -> None:
     assert stats["missing_entities"] == ["Redis"]
 
 
+def test_entity_detector_is_latin_only_by_design() -> None:
+    # Not an oversight, a measurement (2026-08-14, OAu3jkX8dK4): on Russian technical speech the
+    # Latin pattern found 155 unique real terms because the speaker says them in English, while a
+    # Cyrillic extension added 23, half of them ASR debris. A dropped Cyrillic name is invisible
+    # here on purpose — this test exists so nobody "fixes" that without re-measuring first.
+    _, stats = _join([_sent(0, "Мы сравнили Постгрес и Редис сегодня.")],
+                     {"0-0.json": [{"id": 0, "text": "Мы сравнили Постгрес сегодня."}]})
+    assert stats["missing_entities"] == []
+
+
 def test_sentence_initial_capital_is_not_an_entity() -> None:
     # Every sentence starts with a capital, so counting those would drown the real names.
     _, stats = _join([_sent(0, "Testing is useful."), _sent(1, "Really it is.")],
                      {"0-1.json": [{"id": 0, "text": "Testing is useful."},
                                    {"id": 1, "text": "Indeed it is."}]})
     assert stats["missing_entities"] == []
+
+
+# --- language: detection, override, and the translation detector --------------
+# Route E cleans English or Russian (2026-08-14). The language decides which filler list the
+# sub-agents are given, so getting it wrong is not cosmetic: the cleaner would delete against the
+# wrong vocabulary and nothing in the artifact would say so.
+_RU = "Ну вот, мы это дважды протестировали, и оба раза упало."
+_EN = "So we tested it twice and it failed twice."
+
+
+def test_detect_lang_reads_each_language() -> None:
+    assert build_clean.detect_lang([_sent(0, _RU)]) == "ru"
+    assert build_clean.detect_lang([_sent(0, _EN)]) == "en"
+
+
+def test_detect_lang_keeps_russian_technical_speech_russian() -> None:
+    # THE case that sites the threshold: a Russian developer says the terms in English, so the
+    # transcript carries real Latin text. The MIX here is what matters, and it is taken from the
+    # measurement rather than invented — OAu3jkX8dK4 came out at 4.0% Latin among its alpha
+    # characters over 1832 sentences. Individual sentences run far more Latin than that; the
+    # detector reads the whole transcript, which is why this test is a transcript and not two
+    # term-dense lines. A detector that called this "mixed" would refuse the very videos the route
+    # was extended for.
+    sents = [_sent(0, "Мы включили GPU Instancing и посмотрели на Addressables в Profiler."),
+             _sent(1, "Дальше JSON парсится через Newtonsoft и уходит в ECS.")]
+    sents += [_sent(i, "Дальше мы смотрим на то, сколько времени занимает отрисовка кадра "
+                       "и почему она вообще столько занимает.") for i in range(2, 12)]
+    assert build_clean.detect_lang(sents) == "ru"
+
+
+def test_detect_lang_refuses_rather_than_guesses() -> None:
+    # Half and half is not a language, and an empty or digits-only transcript has nothing to judge.
+    assert build_clean.detect_lang([_sent(0, "Мы протестировали"), _sent(1, "we tested it")]) is None
+    assert build_clean.detect_lang([_sent(0, "42 300 1000")]) is None
+    assert build_clean.detect_lang([]) is None
+
+
+def test_script_drift_flags_a_translation_and_ignores_cleaning() -> None:
+    # A translated chunk passes every other check in this file — complete, correctly numbered, about
+    # the right length — so this is the only detector that can see it.
+    assert build_clean._script_drift(_RU, "So we tested it twice and it failed twice.") is True
+    assert build_clean._script_drift(_RU, "Мы это дважды протестировали, и оба раза упало.") is False
+    # Symmetric: a Russian session translating an English transcript is the same defect mirrored.
+    assert build_clean._script_drift(_EN, "Мы протестировали это дважды.") is True
+
+
+def test_join_reports_drift_per_chunk() -> None:
+    _, stats = _join([_sent(0, _RU)], {"0-0.json": [{"id": 0, "text": "We tested it twice."}]})
+    assert stats["chunks"][0]["drift"] is True
+    build_clean.report(stats)                              # advisory, like every other signal here
+
+
+def _plan(workdir: Path, argv: list[str]) -> tuple[int, str]:
+    """Run main() with stdout captured. redirect_stdout rather than pytest's capsys: this file must
+    also run standalone (`python tests/test_build_clean.py`), where no fixture exists."""
+    buf = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(buf):
+            code = build_clean.main([str(workdir), *argv])
+    except SystemExit as e:
+        return (e.code if isinstance(e.code, int) else 1), buf.getvalue()
+    return code, buf.getvalue()
+
+
+def _workdir_with(sentences: list[dict], d: str) -> Path:
+    work = WorkDir(root=Path(d))
+    work.sentences.write_text(json.dumps(sentences, ensure_ascii=False), encoding="utf-8")
+    return work.root
+
+
+def test_plan_carries_the_detected_language() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        root = _workdir_with([_sent(i, _RU) for i in range(5)], d)
+        code, out = _plan(root, ["--plan"])
+        assert code == 0 and json.loads(out)["lang"] == "ru"
+
+
+def test_plan_refuses_an_undetectable_language() -> None:
+    # Fatal HERE and only here: the plan is what drives the sub-agents, and a cleaner with no
+    # language block falls back to its own idea of what a filler is.
+    with tempfile.TemporaryDirectory() as d:
+        root = _workdir_with([_sent(0, "Мы протестировали"), _sent(1, "we tested it")], d)
+        code, _ = _plan(root, ["--plan"])
+        assert code != 0
+
+
+def test_lang_override_beats_detection() -> None:
+    # The escape hatch the refusal above points at.
+    with tempfile.TemporaryDirectory() as d:
+        root = _workdir_with([_sent(0, "Мы протестировали"), _sent(1, "we tested it")], d)
+        code, out = _plan(root, ["--plan", "--lang", "ru"])
+        assert code == 0 and json.loads(out)["lang"] == "ru"
+
+
+def test_language_does_not_move_the_chunk_cut() -> None:
+    # Measured 2026-08-14: Russian sentences average 79 characters against an English median of 80,
+    # so the 80-sentence chunk holds for both. If that ever stops being true it is the CHUNK that
+    # changes, not the plan's shape — this pins the two languages to one cut.
+    ru = build_clean.plan_chunks([_sent(i, _RU) for i in range(200)])
+    en = build_clean.plan_chunks([_sent(i, _EN) for i in range(200)])
+    assert ru == en
 
 
 # --- rendering ----------------------------------------------------------------
