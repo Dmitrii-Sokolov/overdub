@@ -58,6 +58,25 @@ _RETRY_ARGV = [
     "--retry-sleep", "exp=2:60",
 ]
 
+# WHICH YouTube player client yt-dlp asks for the stream URLs.
+#
+# Measured 2026-08-14 on yt-dlp 2026.07.04 (the current stable): the default client chain lands on
+# `android_vr`, which HAPPILY LISTS format 251 and then serves 403 on the URL it just handed over.
+# `ios`/`mweb` skip their formats outright wanting a GVS PO token; `web`/`web_safari` return only
+# storyboards. `web_embedded` fetched both a 403-ing archived livestream (MiJa5axnw1g) and a
+# control video that the default chain downloads fine (OAu3jkX8dK4), so this is a strict widening,
+# not a trade.
+#
+# Do NOT "improve" this into `default,web_embedded` expecting a fallback. Measured the same day:
+# the combined form fails BOTH of those videos. Multiple clients make yt-dlp pool their formats
+# and rank them together — it does not retry a second client after a download 403 — so the pool
+# just reintroduces the poisoned URL as the best-ranked pick. One client, chosen, is the fix.
+#
+# The other thing this is NOT: DRM. The `tv` client reports "this video is drm protected" for the
+# control video too, i.e. for a video that downloads — it is YouTube's session-wide tv-client
+# experiment (yt-dlp issue #12563) and says nothing about the video in front of you.
+_CLIENT_ARGV = ["--extractor-args", "youtube:player_client=web_embedded"]
+
 
 class DownloadStage:
     """Fetches the source and produces the two artifacts every later stage keys on.
@@ -100,6 +119,7 @@ class DownloadStage:
             [
                 _tool_exe("yt-dlp"),
                 *_RETRY_ARGV,
+                *_CLIENT_ARGV,
                 "-f", "bv*[ext=mp4]+ba[ext=m4a]/bv*+ba/b",
                 "--merge-output-format", "mkv",
                 "--write-info-json",
@@ -147,6 +167,7 @@ class DownloadStage:
             [
                 _tool_exe("yt-dlp"),
                 *_RETRY_ARGV,
+                *_CLIENT_ARGV,
                 "-f", "bestaudio",
                 "--write-info-json",
                 # the scout report shows a preview beside each title; grabbing it while we are
