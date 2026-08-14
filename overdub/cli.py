@@ -27,6 +27,13 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("url", nargs="?", help="YouTube video URL")
     p.add_argument("--batch", type=Path, metavar="FILE",
                    help="queue file: one URL per line, '#' comments and blank lines skipped")
+    p.add_argument("--transcribe-file", type=Path, metavar="PATH",
+                   help="transcribe a LOCAL media file to a readable markdown transcript and "
+                        "stop: no download, no translate, no dub, no workdir. The one route "
+                        "that is not EN→RU — the source language is auto-detected. Writes "
+                        "<file>.transcript.md unless --out says otherwise")
+    p.add_argument("--out", type=Path, metavar="PATH",
+                   help="--transcribe-file only: where to write the transcript")
     p.add_argument("--config", type=Path, default=Path("overdub.toml"), help="TOML config path")
     p.add_argument("--force", action="store_true", help="re-run stages even if artifacts exist")
     p.add_argument("--only", nargs="+", metavar="STAGE", help="run only these stages")
@@ -47,8 +54,21 @@ def main(argv: list[str] | None = None) -> None:
                         "the pipeline has no summarize stage. Not composable with --only. With "
                         "--force this also re-runs the large-v3 transcribe, not just the fetch.")
     args = p.parse_args(argv)
-    if (args.url is None) == (args.batch is None):
-        p.error("give exactly one of: URL or --batch FILE")
+    if sum(x is not None for x in (args.url, args.batch, args.transcribe_file)) != 1:
+        p.error("give exactly one of: URL, --batch FILE or --transcribe-file PATH")
+    if args.transcribe_file is None:
+        if args.out is not None:
+            p.error("--out applies to --transcribe-file only")
+    else:
+        # Same shape as the --repair-asr exclusions below, and for the same reason: this mode runs
+        # no stages and owns no workdir, so every stage-selecting flag is a request it cannot
+        # honor. --video-major needs no entry here — its own "--batch only" check fires first.
+        for flag, name in ((args.force, "--force"), (args.only, "--only"),
+                           (args.scout, "--scout"), (args.repair_asr, "--repair-asr")):
+            if flag:
+                p.error(f"{name} does not apply to --transcribe-file (it runs no stages)")
+        if not args.transcribe_file.is_file():   # before any side effect, like the queue check
+            p.error(f"file not found: {args.transcribe_file}")
     if args.video_major and args.batch is None:
         p.error("--video-major applies to --batch only (a single video has nothing to amortise)")
     if args.scout and args.only:
@@ -84,6 +104,11 @@ def main(argv: list[str] | None = None) -> None:
             p.error(f"queue file has no URLs: {args.batch}")
 
     cfg = Config.load(args.config)
+    if args.transcribe_file is not None:
+        # BEFORE the stale-STOP sweep, deliberately: check_stop CONSUMES the file, and this mode
+        # touches no workdir, so letting it eat the STOP an operator just wrote for a running
+        # batch would silently un-halt that batch.
+        sys.exit(_run_transcribe_file(args.transcribe_file, cfg, out=args.out))
     try:                                            # a stale STOP must never no-op this run
         check_stop(cfg.work_root, "startup")
     except StopRequested:
@@ -311,6 +336,25 @@ def _run_repair(urls: list[str], cfg: Config, *, ids: list[int] | None,
     # keep meaning "nothing broken, resume later", so a stop must never mask a video that needs
     # eyes.
     return 1 if fails else (3 if halted else 0)
+
+
+def _run_transcribe_file(src: Path, cfg: Config, *, out: Path | None) -> int:
+    """Drive `--transcribe-file`: one file in, one markdown transcript out (transcribefile.py).
+
+    ONE Session, cleared in a finally, for the reason _run_repair has one: the Parakeet worker is
+    an OS process, and dropping the reference without closing it leaks it. No _run_window row —
+    runs.jsonl is the pipeline's per-video series, and a mode that produces no video would put a
+    row in it that no report can read.
+    """
+    from . import transcribefile
+
+    session = Session()
+    try:
+        dst = transcribefile.transcribe_file(src, cfg, out=out, session=session)
+    finally:
+        session.clear()
+    print(f"[out ] → {dst}")
+    return 0
 
 
 def _rollup_and_print(work: WorkDir, cfg: Config) -> None:

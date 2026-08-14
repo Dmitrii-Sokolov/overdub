@@ -355,6 +355,32 @@ ran.
 half-translated. It enters route B at the top or route C at S2
 ([`docs/queue-contract.md`](docs/queue-contract.md) §4).
 
+### Transcribing a local file (any language)
+
+The question is **"I have this file on disk, give me its text"** — no URL, no
+queue, no dub. One file in, one markdown document out:
+
+```powershell
+.venv-asr\Scripts\python.exe -X utf8 -m overdub --transcribe-file "D:\In\clip.mp4"
+```
+
+Writes `D:\In\clip.transcript.md` (override with `--out`): a header carrying the
+runtime and the `asr_key` that decoded it, then one timecoded line per sentence.
+A file with no speech gets a document that says so, never an empty one.
+
+This is the **one route that is not EN→RU**. There is no translation here, so the
+source language is whatever the file happens to be: Parakeet detects it and
+cannot be told otherwise, and on `asr_engine = "whisper"` the decode asks for
+whisper's own detector rather than `source_lang`, which means "what the dubbing
+pipeline expects" and would force English onto a file that is not.
+
+It runs no stages and owns no workdir — every stage-selecting flag (`--force`,
+`--only`, `--scout`, `--repair-asr`) is refused rather than ignored, and nothing
+is left behind but the document. Sentence splitting is the transcribe stage's own
+`resegment`, so a sentence here is a sentence there. The engine comes from
+`asr_engine` like everywhere else; audio is converted to the pipeline's 16 kHz
+mono wav unless the input already is one.
+
 ### Repairing an ASR defect
 
 **Whisper-only since 2026-08-06.** `--repair-asr` refuses when `asr_engine` is

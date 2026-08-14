@@ -371,7 +371,7 @@ def resegment(flat: list[W]) -> list[dict]:
     return out
 
 
-def transcribe_words(model, audio_path, *, language: str, beam_size: int,
+def transcribe_words(model, audio_path, *, language: "str | None", beam_size: int,
                      condition_on_previous: bool) -> list[W]:
     """faster-whisper → clean, monotone word list. Body verbatim from the old run() closure.
 
@@ -393,6 +393,10 @@ def transcribe_words(model, audio_path, *, language: str, beam_size: int,
     Timestamps are relative to the audio PASSED IN (flatten starts prev_end at 0.0), so a
     caller transcribing a clip must offset them itself. That is deliberately not done here:
     this function knows nothing about ctx, windows or _guard.
+
+    `language=None` hands whisper its own detector. Both pipeline callers pass cfg.source_lang and
+    always will — the third caller is --transcribe-file, whose input is a local file in no
+    guaranteed language (transcribefile.py).
     """
     segments, _info = model.transcribe(
         str(audio_path),
