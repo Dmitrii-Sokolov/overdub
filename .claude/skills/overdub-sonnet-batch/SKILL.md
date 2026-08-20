@@ -1,6 +1,6 @@
 ---
 name: overdub-sonnet-batch
-description: "Run the overdub pipeline with Claude Sonnet as the translator (README route B, the primary translate route). Fixed order: transcribe the batch, translate and summarize each video with Sonnet sub-agents at the translate seam (writes translation.json via scripts/build_translation.py), resume the full pipeline, then produce a human-readable Russian triage report from scripts/run_report.py. Trigger when the user wants to dub a batch/video with Sonnet translation, 'прогони батч через Sonnet', 'переведи Sonnet-ом', 'route B', 'semi-auto translate', or asks how to run overdub with the cloud translator. NOT for deciding WHAT to dub — that is the overdub-scout skill (route C)."
+description: "Run the overdub pipeline with Claude Sonnet as the translator (README route B, the primary translate route). Fixed order: transcribe the batch, translate each video with a Sonnet sub-agent at the translate seam (writes translation.json via scripts/build_translation.py), resume the full pipeline, then produce a human-readable Russian triage report from scripts/run_report.py. Trigger when the user wants to dub a batch/video with Sonnet translation, 'прогони батч через Sonnet', 'переведи Sonnet-ом', 'route B', 'semi-auto translate', or asks how to run overdub with the cloud translator. NOT for deciding WHAT to dub — that is the overdub-scout skill (route C)."
 ---
 
 # overdub — Sonnet translation batch (route B)
@@ -120,25 +120,22 @@ carries the correction; do not restate a population number here until a Silero b
 Skip it only for a queue you have already repaired (`sentences.json` newer than the repair stamp).
 A video whose digest `- asr:` line says `alignment collapse suspected` is never a skip.
 
-## Step 2 — Translate each video with a Sonnet sub-agent (+ summarize it)
+## Step 2 — Translate each video with a Sonnet sub-agent
 
 **Resume filters first** — a prior interrupted step-2 run may have finished some videos, and the
-mtime clauses also catch artifacts gone stale via a re-transcribe or a `--repair-asr` pass. Two
-filters, each keyed on its OWN artifact, because the two agents fail independently:
+mtime clauses also catch artifacts gone stale via a re-transcribe or a `--repair-asr` pass. One
+filter, because route B asks for one artifact: the summarizer is OFF here since 2026-08-20
+(DECISIONS) — it cost 42% of a translator for a file that gates nothing.
 
 ```powershell
 $todo = @($ids | Where-Object {
   $t = "work\$_\translation.json"
   -not (Test-Path $t) -or
     (Get-Item "work\$_\sentences.json").LastWriteTime -gt (Get-Item $t).LastWriteTime })
-$sumTodo = @($ids | Where-Object {
-  $s = "work\$_\summary.md"
-  -not (Test-Path $s) -or
-    (Get-Item "work\$_\sentences.json").LastWriteTime -gt (Get-Item $s).LastWriteTime })
 ```
 
-**Then drop the videos with NO SPEECH from both lists — they need no agent at all** (2026-08-06).
-The ASR returned an empty transcript, so there is nothing to translate and nothing to summarize,
+**Then drop the videos with NO SPEECH — they need no agent at all** (2026-08-06).
+The ASR returned an empty transcript, so there is nothing to translate,
 and since that date the pipeline writes their empty `translation.json` itself and ships them
 without a dub. Skipping them is pure saving: measured on the 2026-08-04 batch, **32 of 52
 sub-agents translated and summarized nothing** because 16 of 26 transcripts were empty.
@@ -149,7 +146,6 @@ for i in sys.argv[1:]:
     p = pathlib.Path('work')/i/'sentences.json'
     if p.exists() and not json.loads(p.read_text(encoding='utf-8')): print(i)" @ids)
 $todo    = @($todo    | Where-Object { $_ -notin $noSpeech })
-$sumTodo = @($sumTodo | Where-Object { $_ -notin $noSpeech })
 "no speech, skipped: $($noSpeech.Count)"
 ```
 
@@ -166,14 +162,16 @@ the derived file.
 below pairs a fresh run with the previous attempt's timestamps:
 
 ```powershell
-@($todo + $sumTodo) | Select-Object -Unique |
-  ForEach-Object { Remove-Item "work\$_\translate.started" -ErrorAction SilentlyContinue }
+$todo | ForEach-Object { Remove-Item "work\$_\translate.started" -ErrorAction SilentlyContinue }
 ```
 
 ### DO NOT spawn the sub-agents yourself. Run the workflow.
 
+`sumIds` stays EMPTY — that is what turns the summarizer off, and the workflow already defaults it
+to empty, so the pair below is the whole switch. Pass a list there only to summarize deliberately.
+
 ```
-Workflow: {name: "translate-batch", args: {ids: [...$todo], sumIds: [...$sumTodo], root: "D:\\code\\overdub"}}
+Workflow: {name: "translate-batch", args: {ids: [...$todo], sumIds: [], root: "D:\\code\\overdub"}}
 ```
 
 Why never by hand, why the arrays must be real JSON, why the whole queue goes in ONE call, and what
@@ -269,10 +267,9 @@ Contract §7 — the rule and what a missing marker does and does not mean. The 
 
 ```powershell
 # 1. every spawned video got a marker — its absence means that agent never started
-@($todo + $sumTodo) | Select-Object -Unique |
-  Where-Object { -not (Test-Path "work\$_\translate.started") }     # must print nothing
+$todo | Where-Object { -not (Test-Path "work\$_\translate.started") }     # must print nothing
 # 2. the markers are SECONDS apart, not ~100 s — gaps near 100 s mean the fan-out did not happen
-@($todo + $sumTodo) | Select-Object -Unique | Where-Object { Test-Path "work\$_\translate.started" } |
+$todo | Where-Object { Test-Path "work\$_\translate.started" } |
   ForEach-Object { (Get-Item "work\$_\translate.started").LastWriteTime } | Sort-Object |
   Select-Object -First 5
 ```
@@ -409,15 +406,30 @@ Three things that bite:
 This is the escape hatch, not the default: the per-video agent sees the whole video at once, which
 is this route's stated advantage, and chunking trades some of it for coverage.
 
-### The summary half
+### The summary half — OFF on this route since 2026-08-20
 
-Same wave, same workflow, own resume filter, own artifact. It is INFORMATIONAL — it gates nothing,
-skips nothing, and no code reads a verdict out of it (decided 2026-07-19). **There is NO helper
-script for it, deliberately**: it derives no machine-consumed field, so there is no contract for a
-helper to own — unlike `text_tts` / `src_en` / id-contiguity, which is exactly why
-`build_translation.py` is not optional. The digest and the queue page (`scout_report`) read
-`summary.md` directly and sanitize it on read (heading markers stripped, runaway text truncated,
-empty treated as absent), so a malformed summary can never break either surface.
+Route B no longer summarizes. The workflow still CAN (pass a non-empty `sumIds`), and route C still
+does, but a dubbing batch does not: measured 2026-08-20 over five runs, a summarizer cost $0.64
+against a translator's $1.52 — 42% — for the one artifact on this route that gates nothing, skips
+nothing, and has no code reading a verdict out of it (decided 2026-07-19). Rationale: DECISIONS.
+
+Consequence, and it is the whole cost of the decision: the digest's `- summary (N words):` block and
+the queue page's «самое интересное» column are EMPTY for a route-B batch. Both already treat an
+absent summary as normal and render nothing, so nothing breaks — but the report loses its content
+half and keeps only its quality half. To get it back for one batch, pass `sumIds` and nothing else
+changes.
+
+**There is NO helper script for the summary, deliberately**: it derives no machine-consumed field,
+so there is no contract for a helper to own — unlike `text_tts` / `src_en` / id-contiguity, which is
+exactly why `build_translation.py` is not optional. The digest and the queue page (`scout_report`)
+read `summary.md` directly and sanitize it on read (heading markers stripped, runaway text
+truncated, empty treated as absent), so a malformed summary can never break either surface.
+
+**The summarizer prompt is currently BLOCKED and re-enabling `sumIds` will not work until it is
+fixed.** It instructs the sub-agent to write `summary.md` through PowerShell because a harness hook
+denies subagent `Write` on that path; the safety classifier reads that as routing around a
+permission gate and kills the agent. Six of them died that way on 2026-08-20. The fix is to write
+with `Write` and lift the hook, not to word the workaround more carefully.
 
 The prose half of that prompt is **identical to the summarizer in
 `.claude/workflows/scout-summarize.js`** (route C / S2) — if you change one, change the other, or
@@ -504,12 +516,14 @@ Then summarize for the user in Russian, grounded ONLY in that output (do not inv
 - **Per video:** clean vs needs-a-look (the `[TRIAGE]`/`[clean]` marker); RTF + wall time; the
   flag headline (translate / verify / completeness counts); and any speed offenders ≥ 1.8×
   (`n>1.8`, and the offender ids/reasons the block lists).
-- **The summary, when present:** the digest prints it as a `- summary (N words):` section per video
-  and the queue page (scout_report) shows it on the card above the audio units. Use it as the
-  *content* half of your narrative
-  (what the video is about, is it worth the user's time) alongside the *quality* half the flags
-  give you — quote or paraphrase it instead of re-deriving one, say nothing about a video that has
-  none, and never let it soften a `TRIAGE` marker.
+- **The summary — normally ABSENT on this route** since 2026-08-20 (see "The summary half"), so a
+  route-B narrative is the quality half only. Say nothing about what a video is ABOUT rather than
+  inventing it from the flags: the transcript is right there and summarizing it yourself is exactly
+  the cost the decision removed. When a summary IS present (a batch that passed `sumIds`, or a video
+  promoted from route C, which keeps its `summary.md`), the digest prints it as a
+  `- summary (N words):` section and the queue page shows it on the card above the audio units — use
+  it as the *content* half, quote or paraphrase it instead of re-deriving one, and never let it
+  soften a `TRIAGE` marker.
 - **Source anomalies, when present:** name the video and the ids, quote the notes, and say the
   next action out loud — `--repair-asr <ids>` on that single video, then re-run step 2 for it
   (`explicit_seeds` range-checks the ids; a repair renumbers every later id and
@@ -606,12 +620,13 @@ hand-spawn a fan-out (§6). Route-B's own:
   queue, never from `work/`.
 - If `sentences.json` is re-transcribed (e.g. `--force transcribe`), the drafts are stale —
   re-run step 2 for that video (the `$todo` mtime clause catches this automatically).
-- **A missing `summary.md` is never a reason not to resume.** Do NOT add a `summary.md` clause to
-  the step-3 gate: the summary is informational in v1 (decided 2026-07-19) — it gates
-  nothing and skips nothing, and a gate here would be exactly the model-decides-what-to-drop
-  behaviour that decision rejected. That gate exists to catch a missing translation; widening
-  it would let a failed summarizer block a dub that has everything it needs. Both report surfaces
-  treat an absent summary as normal and render nothing.
+- **A missing `summary.md` is never a reason not to resume** — and since 2026-08-20 it is the
+  NORMAL state on this route, not an incident. Do NOT add a `summary.md` clause to the step-3 gate:
+  the summary is informational in v1 (decided 2026-07-19) — it gates nothing and skips nothing, and
+  a gate here would be exactly the model-decides-what-to-drop behaviour that decision rejected. That
+  gate exists to catch a missing translation; widening it would let a failed summarizer block a dub
+  that has everything it needs. Both report surfaces treat an absent summary as normal and render
+  nothing. Equally: do not "repair" the absence by writing one yourself at report time.
 - **Never let a sub-agent silently repair a garbled source.** DECISIONS 2026-07-19: on
   `RyvXxApfHkk` id11 Sonnet turned ASR garbage into plausible Russian on the first pass, hiding
   it from everything downstream — `rate_implausible` and `dup_adjacent` are blind to a semantic

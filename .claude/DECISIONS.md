@@ -33,6 +33,7 @@ divider. Look things up through this index, not by scrolling.
 - `07-30` separate route, separate page, grades nothing
 
 **Translate**
+- `08-20` route B stops summarizing; the summarizer cost 42% of a translator and gated nothing
 - `08-11` the draft carries BOTH forms — subtitles get the spelling, the dub gets the reading
 - `08-05` route B gets a chunked translator, as an escape hatch (chained chunks, not parallel)
 - `07-28` route B step 2 fans out through a Workflow
@@ -109,6 +110,47 @@ divider. Look things up through this index, not by scrolling.
 † carries a `SUPERSEDED` header — the code it describes is gone or changed. Read the header first.
 
 ---
+
+## 2026-08-20 — route B stops summarizing; the cheapest agent is the one not spawned
+
+Route B spawned two sub-agents per video: a translator and a summarizer. The summarizer now runs
+only when `sumIds` is passed explicitly, and the skill passes an empty list.
+
+**What it cost, measured 2026-08-20** over five route-B runs (08-05, 08-06, 08-07 and both waves of
+08-20), reading `usage` per turn out of the agent transcripts. Per-agent medians, all runs on
+`claude-sonnet-5`, priced at list ($3/$15 per MTok, 1 h cache write ×2, cache read ×0.1):
+
+```
+translator  $1.52   output 25 366   cache write 124 527   cache read 775 972   11 turns
+summarizer  $0.64   output  4 417   cache write  86 215   cache read 197 620    5-7 turns
+```
+
+42%, for the ONE artifact on this route that gates nothing, skips nothing and has no code reading a
+verdict out of it (2026-07-19). On the 307-video queue that is ~$187 of summaries against ~$232 for
+all the translation still outstanding.
+
+**Why the summarizer is so expensive for a 200-word output.** Its output is 17% of a translator's,
+but its cache WRITE is 69% of one — because cost tracks turns × context, not the text produced. Any
+agent that reads a whole transcript pays for that transcript on every turn. This is the general
+lesson and it outlives this decision: **the length of what an agent writes is nearly irrelevant to
+what it costs.**
+
+**What it costs us, stated plainly.** The digest's `- summary (N words):` block and the queue page's
+«самое интересное» column are empty for a route-B batch. Both already render an absent summary as
+nothing, so no surface breaks — the report simply loses its content half and keeps the quality half.
+A video promoted from route C keeps the `summary.md` route C wrote (queue-contract §4).
+
+**Rejected: keeping summaries on a cheaper model.** Haiku would cut the per-summary cost, but the
+summary is read by a human deciding what to watch, and a worse one is worse at the only job it has.
+Off is honest; cheap-and-degraded pretends the column still means something.
+
+**NOT the reason, and it must not be read as one:** the summarizer prompt is currently killed by the
+safety classifier — it routes `summary.md` through PowerShell because a harness hook denies subagent
+`Write` on that path, and six agents died that way on 2026-08-20. That is a defect to fix on its own
+merits. Had the prompt been healthy, this decision would be identical.
+
+**The exit.** Pass `sumIds` and everything works as before — the workflow kept the capability, and
+route C is untouched. Revisit if a report surface ever needs the content half enough to pay 42%.
 
 ## 2026-08-11 — the draft carries BOTH forms; one string can serve two consumers
 
