@@ -33,6 +33,7 @@ divider. Look things up through this index, not by scrolling.
 - `07-30` separate route, separate page, grades nothing
 
 **Translate**
+- `08-20` the translator writes in one pass, and the marker names the TOOL — 43 of 47 paid a blocked retry
 - `08-20` route B stops summarizing; the summarizer cost 42% of a translator and gated nothing
 - `08-11` the draft carries BOTH forms — subtitles get the spelling, the dub gets the reading
 - `08-05` route B gets a chunked translator, as an escape hatch (chained chunks, not parallel)
@@ -110,6 +111,45 @@ divider. Look things up through this index, not by scrolling.
 † carries a `SUPERSEDED` header — the code it describes is gone or changed. Read the header first.
 
 ---
+
+## 2026-08-20 — fewer turns per translator; the batching knob was not the one that mattered
+
+An agent's cost tracks **turns × context**, not the text it produces: measured 2026-08-20 on 47
+translators, cache traffic is 78% of a translator's tokens and output is 2.5%. So the target is the
+turn count — median 11. This entry records what was actually in those 11, because the obvious answer
+was wrong.
+
+**What the turns were.** Mean tool calls per agent: Read 2.8 (contract, transcript, verify
+read-back), PowerShell 1.0, Bash 1.0, Write 0.6, Edit 0.6 — about 6 tool turns, so ~5 turns carried
+no tool call at all and were pure reasoning.
+
+**The defect: 43 of 47 agents wasted two turns on a blocked call.** The marker instruction read
+`Use PowerShell: New-Item ...`, and a shell NAME reads as a binary to invoke — so the agent called
+Bash with `powershell -NoProfile -Command "New-Item ..."`, `hooks/block-shell-search.ps1` refused
+the cross-wrap, and the agent recovered by using the PowerShell tool. That is 91% of agents paying
+for one wrong word. The prompt now names the TOOL and says the wrapped form is blocked. General
+lesson: **in a sub-agent prompt, name the tool, never the shell** — the agent has both a Bash tool
+and a PowerShell tool, and a shell name does not select between them.
+
+**Rejected as the lever: the batching instruction**, which is what the change set out to fix. It
+said "for a long video (300+ sentences) write in batches of ~50", and it was not firing at all on
+this queue — Write+Edit measured 1.2 calls per agent, median payload 7080 chars, because a typical
+video here is ~130 sentences and never crossed the threshold. Changing it would have bought nothing
+on the videos actually being run. It is still raised — one pass by default, split only above ~400
+sentences and then into ~200 — but for LONG videos only, and the honest expected saving on a normal
+batch is zero.
+
+**What the batching change costs, accepted deliberately.** A draft written in one pass is lost
+entirely when the agent dies mid-run, where batches left a partial file that parses — on 2026-08-20
+that is exactly what preserved 230 sentences across three videos when a session limit killed the
+wave. The user accepted that trade: the loss is one respawn for one video, against turns paid on
+every video. The ~400-sentence split survives for a different reason — a single write that long
+risks truncation, and a truncated array is invalid JSON, which is worse than a short one.
+
+**NOT established:** what the ~5 reasoning turns cost or whether `effort: 'low'` would cut them.
+The workflow does not set `effort`, so agents inherit the session's. Output is only 2.5% of tokens,
+so the ceiling on that lever looks low, but thinking also lengthens the turn chain and that was not
+measured. PLAN carries it.
 
 ## 2026-08-20 — route B stops summarizing; the cheapest agent is the one not spawned
 

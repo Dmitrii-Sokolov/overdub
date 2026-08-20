@@ -68,7 +68,11 @@ function translatorPrompt(id) {
   return `Your FIRST action, before reading anything: create the empty marker file
 ${dir}\\translate.started
 
-Use PowerShell: New-Item -ItemType File -Force "${dir}\\translate.started" | Out-Null
+Use the PowerShell TOOL for it — not Bash, and never powershell wrapped inside Bash:
+  New-Item -ItemType File -Force "${dir}\\translate.started" | Out-Null
+A hook blocks the wrapped form and the recovery costs you two turns. Measured 2026-08-20: 43 of 47
+translators paid that, because this line used to name the shell ("Use PowerShell:") and a shell name
+reads as a binary to invoke.
 Its timestamp is how the pipeline checks that the fan-out actually happened in parallel. Do not
 write a timestamp INTO the file and never report your own runtime — the filesystem stamps it, you
 only touch it.
@@ -123,8 +127,13 @@ text_ru, src and (when src is not "ok") src_note. Do NOT add text_tts, do NOT re
 NOT touch timings, do NOT copy the English text back — all of that is filled deterministically by
 scripts/build_translation.py, and a hand-spelled text_tts silently breaks ASR verification.
 
-For a long video (300+ sentences) write the file incrementally — batches of ~50 entries per edit,
-never one giant single-shot write.
+Write the draft in ONE pass. Every extra write is a turn, and a turn re-reads the whole transcript
+through the cache: measured 2026-08-20, cache traffic is 78% of a translator's tokens and tracks
+turns, not the text produced. Only above ~400 sentences split the write, and then into batches of
+~200 — not to protect the work but because one write that long risks being cut off, and a truncated
+array is INVALID JSON, whereas each finished batch leaves a file that still parses. Losing a partial
+draft when an agent dies is accepted (decided 2026-08-20): it costs that one video a respawn, which
+is cheaper than paying the extra turns on every video.
 
 THEN VERIFY YOUR OWN OUTPUT BEFORE ANSWERING. Read the draft you just wrote back from disk and
 check three things: the record count equals the sentence count; the ids are contiguous from 0 to

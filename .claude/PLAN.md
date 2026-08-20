@@ -308,6 +308,14 @@ about to change.
 
 ## Also open — independent, none of them ordered against the list above
 
+- **Does `effort: 'low'` cut a translator's turn chain, and what does it cost the Russian?**
+  `translate-batch.js` sets `model` and `agentType` but not `effort`, so sub-agents inherit the
+  session's. Measured 2026-08-20 (DECISIONS): of a translator's median 11 turns only ~6 carried a
+  tool call, so ~5 were pure reasoning — yet output is just 2.5% of the agent's tokens against 78%
+  for cache traffic, so the direct saving looks small. The reason to measure anyway is INDIRECT:
+  fewer reasoning turns is a shorter chain, and the chain is what the cost tracks. Do it as an A/B
+  on a handful of videos with the ear on the Russian, not as a blind switch — translation quality is
+  the product, and this route exists because Sonnet translates better than the local model did.
 - **Uncovered speech is now reported and triaged — what is left is a POPULATION.** The worker
   stamps `holes` / `hole_words_recovered` / `holes_unrecovered`, `run.json` carries them, the batch
   digest has a `gap` column and an unrecovered span sets `needs_triage` (2026-08-06). What no one
