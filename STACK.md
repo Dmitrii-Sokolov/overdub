@@ -37,6 +37,14 @@ never re-encoded).
   default flag is copied otherwise). Specifier is `-metadata:s:a:1` (leading `s` = stream-level).
   `default` is a player hint — mpv/VLC/Plex usually honor it but may override by language preference.
 - yt-dlp needs BOTH `ffmpeg.exe` AND `ffprobe.exe` on PATH.
+- **The default YouTube player client serves 403 on URLs it just listed.** Measured 2026-08-14 on
+  yt-dlp 2026.07.04: the default chain lands on `android_vr`, which lists format 251 and then 403s
+  it; `ios`/`mweb` want a GVS PO token, `web`/`web_safari` return storyboards only. The stage pins
+  `--extractor-args youtube:player_client=web_embedded` (`_CLIENT_ARGV`, `stages/download.py`). Two
+  traps around it: `default,web_embedded` is NOT a fallback and fails MORE videos than either alone
+  (multiple clients pool and re-rank their formats, and yt-dlp does not retry a second client after
+  a 403 — the poisoned URL just wins the ranking again); and the `tv` client's "this video is drm
+  protected" is a session-wide yt-dlp experiment (issue #12563), not a fact about your video.
 
 ---
 
@@ -179,6 +187,23 @@ validates a draft is `overdub/stages/translate._is_bad`.
   Per-call text bounded ~1000 chars.
   Normalization (GPU→джи-пи-ю, x2→в два раза) still mandatory before synth. Runs at 48000 (24000 is
   audibly "plastic"). Guide: `docs/russian-tts-guide.md`.
+
+---
+
+## Stage 4 — Separation: htdemucs (the `bed` mix)
+
+**Code:** `overdub/stages/separate.py`, driven as a `.venv-demucs` CLI subprocess. ~3 GB VRAM,
+standalone between assemble and mux.
+
+**The wall here is HOST RAM, not VRAM, and it scales with DURATION.** htdemucs allocates its output
+tensor for all FOUR stems over the whole track even under `--two-stems` — `duration × 44100 × 2ch ×
+4src × 4B` = 1.41 MB per second of source, plus the input tensor and the copies around it. Measured
+2026-08-11: a 7.90 h source asked for **37.4 GiB in one allocation** and died on a 63.7 GB host,
+while 6.95 h went through. Hence `separate_chunk_sec = 3600`, which caps that term at ~5.1 GB
+regardless of length — the point is that the ceiling stops being a function of duration.
+`separate_overlap_sec = 5.0` is extracted on both sides of every cut and blended back as a weighted
+average, never a shortening crossfade: two independently separated chunks disagree slightly at a
+hard seam and butt-joining them clicks, but the bed must stay sample-aligned with the picture.
 
 ---
 

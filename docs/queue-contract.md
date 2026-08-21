@@ -13,7 +13,7 @@ real run lost videos without it.
 
 The route skills own what differs: the pipeline command, the artifacts, the gates, the report.
 
-**Section numbers are a join key.** The four skills, README and `.claude/PLAN.md` cite this file by
+**Section numbers are a join key.** The three route skills, README and `.claude/PLAN.md` cite this file by
 number, and renumbering breaks none of those references visibly — it just points them somewhere
 else. Numbering is therefore APPEND-ONLY: a new section goes at the end. Renaming a heading is free.
 
@@ -130,7 +130,7 @@ it — and unlike a lost video, nothing reports it.**
   turns out not to be in English: process it like the rest. Do not stop to ask about one. (Route E
   is the exception to the last of those, and only to that one: since 2026-08-14 it CLEANS Russian as
   Russian rather than coping with it, detecting the language per video. It still translates nothing,
-  so B/C/D are unchanged — a non-English video there is processed, reported and left to the human.)
+  so B and C are unchanged — a non-English video there is processed, reported and left to the human.)
   Measured 2026-07-26 on `VHRhSDawKVA` ("… (Instrumental)"): whisper returned a single hallucinated
   "Thank you." over the music, the translator sub-agent flagged it `src=garbled` with exactly that
   reason, and the video muxed clean in 11 s with `needs_triage: false` — the pipeline's own report

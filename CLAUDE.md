@@ -36,8 +36,15 @@ themselves. Rationale: DECISIONS 2026-07-25.
 - the PRIMARY translate route is Sonnet in
   semi-automatic mode (sub-agents write translation.json at the translate seam;
   runbook: README "Running").
-- **EN→RU only.** Source audio is always English, the dub is always Russian.
-  No language detection, no multi-language handling.
+- **The DUBBING routes are EN→RU only.** Source audio is English, the dub is
+  Russian; nothing detects a language on the way to an MKV. Two shipped routes
+  are deliberately outside that constraint because they translate nothing, so
+  the source language is whatever the material is: `--transcribe-file` asks the
+  ASR (`transcribefile.py`, `language=None`) and route E detects per video
+  (`build_clean.detect_lang`, `--lang en|ru` to override). Neither may be
+  "fixed" by feeding it `cfg.source_lang` — that key means "what the dubbing
+  pipeline expects" and forcing it onto a Russian source is already an open bug
+  on the whisper repair path (INBOX).
 - **Single-speaker assumption.** No diarization in v1.
 - **No tempo cap upward; a floor downward.** `atempo` speeds a segment up as
   much as its slot requires — uncapped, by design. Since 2026-07-25 it also
@@ -63,8 +70,12 @@ pipeline's. Three facts about it shape everything downstream:
 transcript rather than invented words (measured: 110, 32 and 6 invented words on three silent
 videos without the gate); **it drops stretches of real speech** at window boundaries, so the worker
 detects uncovered speech spans and re-reads them before writing anything (20 spans over 146 videos,
-the largest 41 s); and **it is deterministic**, which kills `--repair-asr`'s accept gate ("two
-readings agree" is vacuously true) — that mode now refuses on any engine but whisper.
+the largest 41 s); and **it was believed deterministic**, which is why `--repair-asr` refuses on
+any engine but whisper — its accept gate is "two readings agree", vacuously true on a decoder that
+cannot disagree with itself. **That premise is contested and the refusal rests on it**: two INBOX
+measurements (2026-08-07, 2026-08-11) got differing word counts from one byte-identical wav. The
+mode stays refused until the rate is measured — do not re-enable it, and do not restate
+determinism as settled anywhere.
 faster-whisper stays installed in `.venv-asr`: it is the verify round-trip's engine either way, and
 `asr_engine = "whisper"` remains a supported fallback. That fallback is why the whisper-only
 machinery still exists — but none of it runs on the Parakeet path, and that must stay explicit
@@ -168,9 +179,9 @@ diverge from it.
 
 ## Reference
 
-`docs/queue-contract.md` — what routes B/C/D/E do IDENTICALLY: `queue.txt` ownership, the `$ids`
+`docs/queue-contract.md` — what routes B/C/E do IDENTICALLY: `queue.txt` ownership, the `$ids`
 block and its three guards, the `# playlist:` freshness diff, promotion between routes, the
-derived-artifact-is-not-evidence rule, `Workflow` fan-out and marker verification (B/C/D — route E
+derived-artifact-is-not-evidence rule, `Workflow` fan-out and marker verification (B and C — route E
 has no marker). A MANDATORY READ before driving any route, and the place to EDIT any of those
 rules — it exists because each of them used to live in four skills at once, and a rule copied four
 times drifts three ways.
