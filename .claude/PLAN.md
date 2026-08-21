@@ -213,8 +213,13 @@ while missing the one that actually reaches the translator:
 | `translate.py` `SYSTEM` | the stated source of truth — and NOT imported by anything: `build_translation.py` imports `_is_bad` from this module, never `SYSTEM`, so nothing enforces the other four against it |
 | `skills/overdub-sonnet-batch/references/translate-contract.md` rule 2 | what the route-B sub-agent reads off disk |
 | **`.claude/workflows/translate-batch.js`** | the route-B prompt itself — **the copy that decides the output**, and the one the old inventory missed |
-| `README.md` (pipeline description + route B) | prose |
-| `CLAUDE.md` (Design rules) | prose |
+| `CLAUDE.md` (Design rules) | prose — states WHY the prompt must carry the rule, not the rule's text |
+
+~~`README.md` (pipeline description + route B)~~ — **removed 2026-08-21**: it had drifted to the
+pre-08-11 wording ("brand names stay Latin, numbers stay digits", i.e. the inverse of the shipped
+dual-form rule) while this very table listed it as a synced copy. README now points at
+`translate-contract.md` instead of restating anything, so the count is FOUR. Do not re-add a fifth
+by summarising the rules there again.
 
 Route B's prompt is a STATIC template in that script, not assembled by an agent at runtime (it was,
 before 2026-07-28) — which helps: the script can carry a rule change without a model in the loop.
