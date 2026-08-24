@@ -15,7 +15,7 @@ from collections import Counter
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-DECISIONS = ROOT / ".claude" / "DECISIONS.md"
+DECISIONS = ROOT / "DECISIONS.md"
 
 LINES = DECISIONS.read_text(encoding="utf-8").splitlines()
 

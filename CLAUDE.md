@@ -237,8 +237,8 @@ so inline, ours wins; and `<break>` is NOT an unpulled lever, it was built and R
 
 ## Artifacts
 
-Planning lives in `.claude/PLAN.md`, rationale in `.claude/DECISIONS.md`,
-raw ideas in `.claude/INBOX.md`. Shipped work is recoverable from git history —
+Planning lives in `.claude/PLAN.md`, rationale in `DECISIONS.md`,
+raw ideas in `INBOX.md`. Shipped work is recoverable from git history —
 there is no CHANGELOG file.
 
 **A measured number in prose carries its date, or it is not written.** Figures

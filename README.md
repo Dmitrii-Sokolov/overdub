@@ -8,7 +8,7 @@ translation, which left the host at the seam and is written by Claude Sonnet sub
 Built for batch processing of hundreds of hours of single-speaker content.
 
 **This file is the MAP and the commands.** Rationale and measurements live in
-`.claude/DECISIONS.md`, open work in `.claude/PLAN.md`, host findings in `STACK.md`, install in
+`DECISIONS.md`, open work in `.claude/PLAN.md`, host findings in `STACK.md`, install in
 `SETUP.md`, and the step-by-step for each route in that route's skill under `.claude/skills/`.
 Nothing here restates any of them — a number or a procedure copied into this file is a number or
 a procedure that will be wrong here first.
@@ -399,5 +399,5 @@ this pipeline is already building toward. See PLAN, "Publication rights".
 ## Status
 
 Polishing — the pipeline runs on real videos, batch mode included, with translation supplied at the
-seam. Current roadmap: `.claude/PLAN.md`; rationale history: `.claude/DECISIONS.md`; raw capture:
-`.claude/INBOX.md`. Setup: `SETUP.md`; verified host facts: `STACK.md`.
+seam. Current roadmap: `.claude/PLAN.md`; rationale history: `DECISIONS.md`; raw capture:
+`INBOX.md`. Setup: `SETUP.md`; verified host facts: `STACK.md`.

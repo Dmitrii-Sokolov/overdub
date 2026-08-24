@@ -94,7 +94,7 @@ $ids | Where-Object { -not (Test-Path "work\$_\sentences.json") }   # must print
   One caveat that matters for a **Russian** queue: repair decodes its windows with
   `language=cfg.source_lang`, which is `en`. On a Russian video that produces garbage, so do not
   run whisper repair over a Russian queue — the config key means "what the dubbing pipeline
-  expects", not "what this video is" (`.claude/INBOX.md` carries the open item).
+  expects", not "what this video is" (`INBOX.md` carries the open item).
 
 **When it does run, the order is not negotiable, and it is enforced by the code rather than by
 discipline.** A repair
