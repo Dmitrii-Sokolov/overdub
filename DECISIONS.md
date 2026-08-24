@@ -19,7 +19,6 @@ what makes the index scannable, and the labels carry the reasons (rationale: DEC
 
 **Digest — route D**
 - `07-30` digests in TWO passes (a composing agent cannot be given a length)
-- `07-30` separate route, separate page, grades nothing
 
 **Translate**
 - `08-20` the translator writes in one pass, and the marker names the TOOL — 43 of 47 paid a blocked retry
@@ -28,16 +27,15 @@ what makes the index scannable, and the labels carry the reasons (rationale: DEC
 - `08-05` route B gets a chunked translator, as an escape hatch (chained chunks, not parallel)
 - `07-28` route B step 2 fans out through a Workflow
 - `07-18` Sonnet semi-automatic is the PRIMARY route
-- `07-19` 4-way bake-off † · `07-18` Gemma replaces Qwen3 † · `07-15` translate stage BUILD †
+- `07-19` 4-way bake-off † · `07-15` translate stage BUILD †
 
 **TTS / synthesize**
 - `07-25` **Silero is the ONLY engine** — the entry that supersedes the whole F5 cluster
 - `07-25` ear-confirmed on finished videos (and what it does NOT close)
 - `07-25` `atempo_floor = 0.75`
-- `07-19` Silero v5 audition · `07-18` Silero v5 acknowledged
+- `07-19` Silero v5 audition
 - `07-15` day-1 bake-off: Chatterbox rejected
-- `07-19` F5 speed ledger † · `07-19` `f5_nfe` 48→16 † · `07-16` F5Engine BUILD † ·
-  `07-16` ESpeech bake-off † · `07-16` ESpeech narrator voice †
+- `07-16` F5Engine BUILD † · `07-16` ESpeech bake-off †
 
 **ASR / transcribe**
 - `08-06` **Parakeet-TDT replaces whisper as the transcriber** — and what the switch costs
@@ -63,9 +61,10 @@ what makes the index scannable, and the labels carry the reasons (rationale: DEC
 - `08-06` the passthrough seam is inaudible by ear (and what that verdict does NOT cover)
 - `08-06` uncovered speech plays the ORIGINAL; the seam is mux, not assemble
 - `07-17` dead air CLOSED by ear (final) · `07-17` compression back to atempo, bed is the mode
-- `07-16` dead-air elimination BUILD † · `07-16` interim ear verdict
+- `07-16` dead-air elimination BUILD †
 
 **Pipeline, batch, artifacts**
+- `08-24` the log is PRUNED: dead-engine and dead-route entries deleted or trimmed
 - `08-24` DECISIONS splits: the index stays at the root, the entries move to docs/decisions-log.md
 - `08-24` agent-docs replaces the 4-file framework; PLAN dissolves into BACKLOG + tasks/
 - `08-11` `separate` CHUNKS long audio; the length threshold hid a container wall and a memory wall
@@ -96,7 +95,7 @@ what makes the index scannable, and the labels carry the reasons (rationale: DEC
 
 **Scope & founding constraints**
 - `07-25` what this repo produces is a TOOL; a video is never the deliverable
-- `07-15` founding decisions · `07-15` PoC reframe · `07-15` stack verification
+- `07-15` founding decisions · `07-15` PoC reframe
 - `07-17` proper nouns: pronunciation chain
 - `07-16` local-only constraint amended †
 

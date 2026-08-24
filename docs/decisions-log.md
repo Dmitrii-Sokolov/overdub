@@ -5,13 +5,15 @@ index; this file holds the dated entries it points at. Cite as "DECISIONS YYYY-M
 the repo and resolve the date HERE. Newest first — **append new entries directly below the `---`
 that closes this header.** Entries are not rewritten to match today's code: when the code moves
 out from under one it gets a `> SUPERSEDED <date>` line and stays, because the rejected
-alternative is the part worth keeping. Content is cut in exactly three cases — pure scheduling
+alternative is the part worth keeping. Content is cut in exactly four cases — pure scheduling
 that already lives in `BACKLOG.md` or a task file; a generalised lesson promoted to
 `~/.claude/knowledge/`, where the entry keeps what it decided HERE and points at the file instead
-of restating it; and prose that decides nothing that still applies, i.e. a verdict on a retired
-component or a roadmap ordering both overtaken. The third is the narrow one: a REJECTED
-alternative is never dead — it is the part worth keeping — so only the verdict-on-what-shipped
-half goes. Every cut is stamped in place (`Trimmed <date>: …`) rather than made silently.
+of restating it; prose that decides nothing that still applies, i.e. a verdict on a retired
+component or a roadmap ordering both overtaken; and — since 2026-08-24, the prune entry — a WHOLE
+entry, when the code it describes is gone AND every lesson it holds is restated in a surviving
+entry. The third is the narrow one: a REJECTED alternative is never dead — it is the part worth
+keeping — so only the verdict-on-what-shipped half goes. Trims are stamped in place
+(`Trimmed <date>: …`) and deletions are listed in the prune entry — neither is made silently.
 
 **An appended entry is two edits: the entry here and its line in `DECISIONS.md`.** Both are
 written at triage only; `tests/test_decisions_index.py` keeps the two files in sync.
@@ -20,6 +22,26 @@ The bottom third of the file is a forward-ordered archive of the founding week �
 divider. Look things up through the index, not by scrolling.
 
 ---
+
+## 2026-08-24 — the log is PRUNED: dead-engine and dead-route entries deleted or trimmed
+
+First deliberate deletion pass over this file, user-driven. The header's cut policy gains a
+fourth case: a WHOLE entry may be deleted when the code it describes is gone AND every lesson it
+holds is restated in a surviving entry. Deleted under that rule (~490 of ~3700 lines): the F5
+speed ledger + `f5_nfe` pair (levers of an engine closed by user decision 2026-07-25 — it is not
+coming back, so "would be re-investigated from scratch" no longer paid for the pages), the
+ESpeech narrator voice, Gemma-replaces-Qwen3 and Silero-v5-acknowledged (the local-LLM translate
+era), the dead-air interim ear verdict (its final verdict is 2026-07-17), route D's
+separate-page entry (the route died 2026-08-03), and the 2026-07-15 stack verification
+(Chatterbox/Qwen/Ollama — none in the stack; the cuDNN-DLL gotcha lives in STACK.md). Trimmed to
+their living organs: the ESpeech bake-off (EN-clone dropped by GOAL + "supports Russian is
+marketing"), F5Engine BUILD (fd-dup capture, single-writer manifest, `synth_key`), the translate
+design panel (the normalizer half), route D's two-pass entry (the composing/compressing split),
+and dead-air BUILD's L1 paragraph. Deliberately KEPT despite dead surroundings: the day-1
+Chatterbox/XTTS rejection (negative knowledge), the v5 audition (home of the voice ear-ranking
+CLAUDE.md cites against `aidar`), and the local-only amendment (a founding-constraint change
+never vanishes from this file). Every "DECISIONS YYYY-MM-DD" citation in the repo was checked to
+still resolve after the cut.
 
 ## 2026-08-24 — DECISIONS splits: the index stays at the root, the entries move here
 
@@ -958,129 +980,28 @@ Suite: 633 → 627 (8 entity tests removed, 2 added).
 
 ## 2026-07-30 — route D digests in TWO passes, because a composing agent cannot be given a length
 
-Three runs over one video (`fGKNUvivvnc`, 59 min, 691 sentences, the source of the reference digest
-the format was taken from). Same transcript every time; the only variable was how brevity was asked
-for. Document size counts the five prose fields:
+> **PARTLY SUPERSEDED 2026-08-03** — route D and the digest code are gone. Trimmed 2026-08-24:
+> kept because the finding is about sub-agents, not digests — it applies to every route that asks
+> a composing agent for short output (route C summaries, clean-transcript chunks).
 
-```
-pass structure          brevity instruction        chars   points   cap truncations
-single                  "1-3 sentences"           11,266     7            10
-single                  "up to ~450 characters"   11,591     9            12
-read + compress         "cut to a third of this"   4,041     5             0
-```
-
+Three runs over one 59-minute video, same transcript, only the brevity instruction varied.
 **A character budget in a composing prompt does not bind: +3% against a predicted −70%.** The
 mechanism is mechanical, not motivational — a model cannot count characters in output it has not
-produced yet, and the budget line sits beside a concrete, actionable instruction in the same prompt
-("put the mechanism, the number, the example, the counter-argument in each point"). The actionable
-one wins. Replacing sentence counts with character budgets swapped one weak lever for another and
-made the count worse (7 → 9 points).
+produced yet, and the budget line sits beside a concrete, actionable instruction in the same
+prompt; the actionable one wins. And a hard cap is not a style guard: it deletes content, and
+because the concrete anchor usually sits at the END of a sentence, it deletes the marginal
+finding first — any "shave every field to fit" scheme has this property.
 
-**Then the caps did exactly the damage the length fight was supposed to prevent.** On the second run
-a truncation deleted the «plan A / plan B» framing out of the tail of one point — the one finding of
-the reference digest that the first run had missed entirely. A cap is not a style guard: it deletes
-content, and because the concrete anchor usually sits at the END of a sentence, it deletes the
-marginal finding first. Any "shave every field to fit" scheme has this property.
+**What IS obeyed literally is the COUNTABLE STRUCTURAL instruction.** A point ceiling was obeyed
+exactly in five runs out of five, while "cut to a third" and "cut to a fifth" both landed on
+~2.9× — the edit task's own natural compression rate, which merely coincided with the one-third
+ask and so looked like control. Size is governed by structure; per-field character numbers are
+aspirations that push in the right direction and settle nothing.
 
-**Adopted: pass 1 optimises coverage with no length pressure, pass 2 owns the fit.** Compression is a
-different task from composition — the editor HOLDS the text, so "cut this to a third" is arithmetic it
-can perform rather than a guess about unwritten output. Measured on three videos of 8, 59 and 59
-minutes: **2.87× / 2.88× / 2.89×**, spread 0.02, every field inside its cap, zero truncations, points
-9→5 / 6→4 / 7→4 (all inside the duration ceiling), every surviving timestamp preserved — and the
-«plan A / plan B» anchor kept in a point compressed 953 → 431 chars, i.e. exactly what the blind cap
-had thrown away.
-
-**The compressor is denied the transcript on purpose.** It reads only `digest.long.json`, so it can
-lose material but cannot introduce any — a property that is checkable rather than merely instructed.
-The cut ORDER is the load-bearing half of its prompt: whole overlapping points first, then framing and
-hedging, then prose inside a point, and the concrete anchor last.
-
-**Costs, named.** ~2× tokens per video (measured: ~100k read + ~107k compress on the 59-minute
-reference). The read pass and the compress pass are cached SEPARATELY (`digest.long.json` /
-`digest.draft.json`, two resume lists, `ids` vs `compressOnly`) precisely because the expensive half
-must never be re-paid for a compressor tweak — on this pilot all three videos were re-compressed
-against existing long drafts, with zero re-reads. `digest.long.json` is never deleted: diffing it
-against the draft is the only way to see what compression cost, and it is what made this measurement
-possible at all.
-
-**The ratio is NOT a knob either, and the point count is.** Second round of measurement, same day,
-after the read pass was freed of length pressure and started producing 19.6k chars for a 90-minute
-video:
-
-```
-instruction to the compressor        result
-"cut to one third"                   2.78x  2.85x  2.87x  2.88x  2.89x   (five videos, 5.7k-11.6k in)
-"cut to one fifth"                   2.99x                               (same video, same 19.6k in)
-point ceiling (4 / 6 / 8 by runtime) 11->6  9->5  7->4  6->4  5->3       (obeyed exactly, every run)
-```
-
-~2.9× is this edit task's own compression rate; the one-third instruction coincided with it, which is
-why it looked like control. Ask for a fifth and you get a third. **What is obeyed literally is the
-COUNTABLE STRUCTURAL instruction — the number of points — in five runs out of five.** So the size of
-the page is governed by the ladder, and per-field character numbers are aspirations that push in the
-right direction and settle nothing.
-
-**Consequence, adopted: `_POINT_TEXT_MAX` is 900, above what the model writes, not at what we asked
-for (450).** A cap set at the aspiration enforces style by DELETING CONTENT — that is the «plan A /
-plan B» loss above, and it is not a trade worth making at any density. The cap goes back to catching a
-runaway (a 3000-char "point"). The false tier ("over 12k input → cut to a fifth") was removed from the
-compressor prompt rather than left in as decoration: an instruction that does not bind teaches the
-next reader that it does.
-
-**Where that leaves the sizes** (five videos, 2.9 to 90 minutes): 2,042 / 2,374 / 3,393 / 4,041 /
-6,551 chars, i.e. 1.5-5 minutes of reading against 3-90 minutes of video, and monotone in runtime. The
-reference document's ~2,000 for an hour is NOT reachable this way and is not being chased further: it
-was written as a chat message, while this is a card on a page, and a 200-char bullet cannot answer
-"did I miss anything" about an hour of material. **The one remaining lever that would work is lowering
-the ladder for long videos (6 → 4 above an hour), and it costs coverage** — 11 real topics into 4
-points. That is a user decision, one constant wide (`_POINTS_LADDER`), deliberately not taken here.
-
-## 2026-07-30 — the digest is a SEPARATE route with a separate page, and it grades nothing
-
-Route C's grade answers "does this earn an evening". A digest answers "what is in it" — and the two
-were briefly one idea, so here is why they are not.
-
-**A verdict and a retelling cannot share a page.** Put them side by side and every row asks the
-reader which question they came for; worse, a grade next to a retelling reads as the retelling's
-verdict, so the digest inherits an authority it did not earn. The scout page is scanned (six columns,
-one row per video, a chip to sort your evening by); the digest page is READ (a document per video).
-Merging them would also have forced one order to serve both jobs. So: `work/digest-report.html`,
-its own fields, and route C untouched.
-
-**No verdict field anywhere in route D, on purpose.** Not `quality`, not watch/skip, no ranking, and
-the page never sorts. The one field that looks like advice — «Стоит смотреть, если» — is deliberately
-an INVENTORY of what stayed in the video (the argument between two positions, a demo, code on screen,
-tone) rather than a recommendation. The moment it becomes advice this route is a worse copy of route
-C: it would be a personal verdict again, which is the thing 2026-07-20 already reversed once, and it
-would collapse toward "no" for the same reason.
-
-**Opus, where route C uses Sonnet.** A grade is a short judgement over a transcript and Sonnet is
-measured as sufficient for it. A digest has to hold an hour of argument at once, decide what the
-shape of it is, and choose which four to eight things earn a line — a harder job, and the one place
-in this pipeline where the model choice shows up directly in the deliverable rather than in a number.
-Set explicitly in the workflow: an inherited session model makes two runs of one queue incomparable.
-
-**Points scale with the material (3-4 / 5-6 / 6-8 by runtime), and the band only warns.** A fixed
-length was the alternative and it is worse in both directions: on a 20-minute tutorial it pads, and
-on a three-hour panel it silently drops topics — which is the exact failure "did I miss anything" is
-asked to protect against, made invisible. Since the count is editorial, `build_digest` warns outside
-the band and refuses only at 20 (a transcript pasted back as bullets).
-
-**Timestamps are collected because they can be CHECKED.** `at` is optional navigation, but it also
-turns two failures into measurements the build script can catch: a marker past the end of the video
-is a fabrication (dropped and said out loud), and a last marker inside the first 60% of the runtime
-says the agent read the opening and stopped. Nothing else on the page can detect a front-loaded
-digest — it looks complete, because it is complete about the part it read.
-
-**Accepted costs, named rather than dismissed.** (1) `digest.draft.json` / `digest.json` / `digest.md`
-are NOT in `invalidate_downstream`, exactly like `scout.json`: the staleness mechanism is D2's mtime
-filter, which means a transcript repaired on the local Gemma route leaves a stale digest on disk until
-the next D2 pass over that queue. Adding them to the target list would make the pipeline own a route-D
-artifact and is a separate change with its own rationale. (2) The digest page reuses
-`queueview.collect_entries`, so a queue of dubbed videos builds run rollups this page ignores — one
-queue walk with one drop policy was worth more than saving that work. (3) `digest.md` duplicates the
-page's content by construction; it is DERIVED from the same JSON in one deterministic function, which
-is what keeps it from being a second version rather than a second format.
+**Adopted: pass 1 composes with no length pressure, pass 2 owns the fit.** Compression is a
+different task from composition — the editor HOLDS the text, so "cut this to a third" is
+arithmetic it can perform rather than a guess about unwritten output. The expensive read pass is
+cached separately from the compress pass, so it is never re-paid for a compressor tweak.
 
 ## 2026-07-28 — route B step 2 fans out through a Workflow: hand fan-out spends the orchestrator's context TWICE per video
 
@@ -2188,37 +2109,6 @@ are byte-identical in text AND timestamps to the pre-repair file, so it was neve
 Both numbers above are computed from what is on disk. **Treat the recall figure as approximate and
 the 246 ch/s record as suspect until someone reconciles them.**
 
-## 2026-07-19 — F5 speedup: the full lever ledger, including the ones that do NOT exist
-
-> **SUPERSEDED 2026-07-25** — the F5/ESpeech engine was removed (see "Silero becomes the ONLY
-> engine"); every lever below is unreachable. Kept for the levers proven NOT to exist, which is
-> the half that would otherwise be re-investigated from scratch.
-
-Roadmap item 1 named four levers. Two of them were already done by somebody else and one cannot
-run on this host — findings that cost a day to establish and would cost another day to re-derive.
-This table is the point of the entry: **half the value of this work is knowing what not to try.**
-
-| Lever | Verdict | Why |
-|---|---|---|
-| `f5_nfe` 48 → 16 | **ADOPTED**, 2.16× per unit | Cost is exactly linear in nfe (Euler, one DiT forward per step). 16 is EPSS-tuned; 48 and 32 both fall through to naive `linspace`, so the once-planned 48→32 was the one step down the library gives no help with. Ear-checked on a full video. |
-| stage-major batch | **ADOPTED**, ~72 s/video → ~72 s/batch | Model loading was a quarter of those stages' wall clock. Byte-identity verified 39/39. |
-| half precision (fp16) | **ALREADY ON** — no lever | `f5_tts` casts the model itself for vocos on sm≥7 (`utils_infer.py:191-198`); the fp32 checkpoint is cast down at load. The vocoder deliberately stays fp32 (`utils_infer.py:507` lifts the mel back). Nothing to enable; bf16 pointless since fp16 has run in production for 13 workdirs. |
-| `torch.compile` | **UNAVAILABLE on this host** | No Triton in `.venv-f5tts`, and `torch/utils/_triton.py` returns False on ImportError, so inductor cannot build CUDA kernels. Not a tuning problem — do not design around it. Would need a Triton-on-Windows story first. |
-| cross-unit batching | **MIRAGE** | `infer_batch_process` builds a batch of ONE per text (`utils_infer.py:483`) and merely threads them onto one CUDA stream. Real batching needs `attn_mask_enabled=True`, which our `MODEL_CFG` leaves False (`dit.py:189`) — short units would attend over the longest unit's padding, which is WRONG OUTPUT, not a numerical delta. Enabling it materialises a b×heads×n×n mask the library itself warns against without `flash_attn`, which is not installed. |
-| TF32 | placebo | Only affects fp32 matmuls; the DiT is fp16. |
-| `cudnn.benchmark` | likely harmful | Input shape changes almost every unit (duration is derived from text bytes), so it would re-search algorithms per shape. |
-| SDPA / `no_grad` / `inference_mode` | already in use | `no_grad` is doubled (`cfm.py:83` decorator + `utils_infer.py:496` context). At batch=1 the mask is None, so the fast kernel already applies. |
-| VRAM parking (model→CPU between videos) | **NOT NEEDED** | Solved more generally by stage-major, which makes peak VRAM the MAX over models rather than their sum. Kept as a concept only for a future route that needs Gemma co-resident. |
-| shorter reference clip | **DEFERRED**, bundled with the narrator swap | Real: F5 denoises `ref + gen` and discards the ref part (`utils_infer.py:508`); ref is 9.164 s against a ~7 s mean unit, so over half the compute is thrown away. But it MULTIPLIES with nfe — after 16 it is worth ~158 s/batch instead of ~477 — and it changes speaker conditioning, i.e. the voice, so it needs an ear session that the rights-clear narrator replacement already owes. |
-| demucs multi-file invocation | **DEFERRED** with reason | Worth ~13.2 s × N (the stage is nothing but model loading — slope against audio length is R²=0.000). Its CLI takes several files per call, but that needs the batch known upfront, which fights per-video resume. Needs a `Stage` protocol change; not worth it inside this change. |
-
-**Meta-lesson, the one worth carrying to the next optimization.** Four levers were named from
-reading our own config comments. Investigation showed two were already applied by the library, one
-was impossible, and one was structurally wrong — and it surfaced a fifth (EPSS) that nobody had
-named, which turned out to be the one that mattered. **Read the dependency's source before planning
-against its knobs.** The `~30% faster` note that sat in `overdub.toml` for weeks was both an
-overstatement (23-26% at stage level) and pointed at the wrong step count.
-
 ## 2026-07-19 — Measurement gotchas that cost time and will recur
 
 Recorded because each one silently produces a WRONG number rather than an error.
@@ -2306,57 +2196,6 @@ its slope against audio length is statistically zero (R²=0.000), so the whole w
 — but collecting it needs `run_batch(ctxs)`, i.e. extending the `Stage` protocol for one stage, and
 it fights per-video resume head-on (`done()` gates on a per-video `source_bed.wav`; one call for 12
 files is all-or-nothing inside that window). Ceiling is 13.2 s × (N−1) ≈ 2.4 min on 12 videos.
-
-## 2026-07-19 — `f5_nfe` 48 → 16 ADOPTED; and two of four speed levers were already dead
-
-> **SUPERSEDED 2026-07-25** — F5 was removed; `f5_nfe` no longer exists in the config or the
-> code. Kept for the two levers measured dead, so they are not re-proposed.
-
-**Ear verdict (user, full 5.7-minute video `RyvXxApfHkk`, nfe=48 vs nfe=16 side by side):** the
-only defects heard — noise and odd intonation — are present in the nfe=48 render TOO, so they are
-properties of the engine and the input, not of the step count. Adopted.
-
-**Why 16 and not the 32 the roadmap had planned.** Cost is EXACTLY linear in nfe (Euler solver,
-one DiT forward per step — `torchdiffeq/fixed_grid.py`), but `CFM.sample` runs `use_epss=True` by
-default and `get_epss_timesteps` (`model/utils.py:206-218`) carries tuned schedules ONLY for
-n in {5,6,7,10,12,16}; everything else falls through to a naive `linspace`. So **48 and 32 are
-both untuned**, and the planned 48→32 was the one step down that buys no help from the library,
-while 16 is a designed operating point at 3× fewer forwards. Measured over 40 real production
-units × 4 step counts: 48→32 = 1.43×, 48→16 = **2.16×**, 48→12 = 2.29× — 12 adds only 6% over 16
-and sits at the edge of the tuned grid, so 16 is the pick.
-
-**Metrics could not sign this off, and said so up front.** Round-trip similarity is saturated in
-this regime (corpus: median 0.995, min 0.924, zero units under the 0.9 gate, zero reseed retries
-ever fired), so a clean table was the PREDICTED outcome carrying almost no information — the
-harness prints that warning rather than letting green numbers imply a verdict. sim even rose
-slightly at lower nfe, which means nothing: a flatter reading is EASIER for ASR. Same lesson as
-id101 (sim 1.0, judged bad by ear, 2026-07-16).
-
-**What the run did prove objectively:** timing math is untouched. Max combined compression
-identical to 3 dp (1.292 vs 1.292) and the dub track byte-identical in length, exactly as
-predicted — F5's duration canvas and `plan_speed` are both nfe-independent by construction.
-Determinism was also re-verified as a falsifiable premise: 12/12 cells byte-identical on re-render
-across BOTH schedule paths (naive at 48, EPSS at 16), which is what licensed the no-repeat-cells
-design in the first place.
-
-**Two levers PLAN named turned out not to exist.** (a) *Half precision* is already on — f5_tts
-picks fp16 itself for vocos on sm≥7 (`utils_infer.py:191-198`), the checkpoint is fp32 and gets
-cast down at load; the vocoder stays fp32 deliberately. (b) *torch.compile* is unavailable: no
-Triton in `.venv-f5tts`, so inductor cannot build CUDA kernels on this host. Also placebo here:
-TF32 (the DiT is fp16), `cudnn.benchmark` (input shape changes per unit), SDPA/no_grad (already
-used, doubly). (c) *Cross-unit batching* is a mirage — `infer_batch_process` builds a batch of ONE
-per text and merely threads them; real batching needs `attn_mask_enabled=True`, which our
-`MODEL_CFG` leaves False, so short units would attend over the longest unit's padding (wrong
-output, not a numerical delta), and enabling it materialises a b×heads×n×n mask the library itself
-warns against without flash_attn, which is not installed.
-
-**What remains, re-ranked.** The reference clip is the next real lever: F5 denoises `ref + gen`
-and then DISCARDS the ref part (`utils_infer.py:508`), and the ref canvas is 9.164 s against a
-~7 s mean unit — over half the compute is thrown away. But it MULTIPLIES with nfe, so adopting 16
-first cuts its value from ~477 s to ~158 s per 12-video batch, and it changes speaker conditioning
-(i.e. the voice), so it is bundled with the rights-clear narrator replacement rather than run as
-its own ear session. Harness kept at `scripts/exp_nfe_sweep.py` (`--pages-only` regenerates the
-blind A/B pages with no GPU).
 
 ## 2026-07-19 — The VRAM rule is a budget, not a prohibition
 
@@ -2658,47 +2497,6 @@ applies to whisper large-v3 / Qwen3-14B / TTS.
 **EN→RU fixed.** Source is always English, output always Russian. No language
 detection or multi-language handling anywhere in the pipeline.
 
-## 2026-07-15 — Stack verification (pre-code multi-agent research pass)
-
-Verified the whole stack against primary sources before writing pipeline code
-(5 researchers + adversarial refutation of risky claims + synthesis, ~960k
-tokens). Full reference: STACK.md, SETUP.md. Decision-relevant outcomes:
-
-**Chatterbox EN-ref → RU: CONDITIONAL GO, not settled.** Mechanics verified —
-Russian is officially supported, `ChatterboxMultilingualTTS` + `generate()`
-signature confirmed, V3 checkpoint loads, 0.5B fits 12 GB. But the core value
-proposition — an English reference producing natural Russian — is REFUTED in
-its strong form: Resemble AI's own docs state a language-mismatched reference
-inherits its accent *by default*, and `cfg_weight=0.0` only *minimizes*, never
-eliminates, the bleed. Issue #360: even a native RU reference drifts to an
-English accent + broken stress after ~5 generations. No ear-test / round-trip
-evidence for EN-ref→RU exists. Day-1 is therefore a load-bearing A/B ear test
-(EN-ref vs RU-ref × cfg_weight 0.0/0.5), not a formality. Fallback if EN-ref
-fails: fixed RU reference (loses same-voice) or Silero/XTTS behind the adapter.
-The per-segment ASR round-trip is exactly the safety net for this — it's why
-CONDITIONAL and not NO-GO.
-
-**Corrections that change implementation:**
-- Chatterbox 0.1.7 `from_pretrained` takes only `device` — the researched
-  `t3_model="v3"` arg does NOT exist in this version (verified live via
-  inspect.signature; the research over-inferred it). Corrected in code + STACK.
-- Chatterbox hard-pins `torch==2.6.0` / `transformers==5.2.0` → isolated TTS
-  venv (`.venv-tts`); ASR stack in `.venv-asr`. Forced by Chatterbox's pins,
-  not by whisper (faster-whisper + torch can share one venv).
-- Qwen3-14B Q4_K_M in 12 GB is knife-edge: pin `num_ctx` ≤ 8K (4K per segment).
-  Ollama preallocates KV for the *full* num_ctx, and Windows sysmem fallback
-  turns overflow into a silent 5–30× slowdown, not a clean OOM.
-- faster-whisper does NOT "never OOM" — batching can hit 19 GB; keep batch/beam
-  conservative. Windows CTranslate2 needs `os.add_dll_directory` for cuDNN 9.
-
-**Refuted worries (safe to rely on):** Ollama `/v1` honors `seed`; `qwen3:14b`
-carries the think toggle (thinking goes to `message.thinking`, not `content`) —
-keep the regex strip only as a fallback; atempo equal-split keeps exact duration.
-
-**RTF is unmeasured** on the RTX 4080 Mobile for every GPU stage (only
-third-party / different-GPU numbers exist) — measure on host before trusting
-the x5 throughput budget.
-
 ## 2026-07-15 — Day-1 engine bake-off: Chatterbox rejected, Silero adopted
 
 Ran the day-1 ear test on real audio before writing pipeline code. Outcome
@@ -2760,71 +2558,36 @@ own `start`, NEVER butt-join clips, or it destroys sync and the pause budget.
 ## 2026-07-15 — Translate stage: design panel + review (BUILD)
 
 > **PARTLY SUPERSEDED 2026-07-25** — the in-process Ollama/qwen translate path is gone;
-> translation runs through Sonnet sub-agents (route B). Everything below about the endpoint,
-> `think: false` and the sliding context window is archive. The NORMALIZER half is LIVE:
-> `normalize_for_tts`, the same-function-on-both-sides verify symmetry, and the magnitude-bug
-> class it was built to make visible.
+> translation runs through Sonnet sub-agents (route B). Trimmed 2026-08-24: the endpoint /
+> `think: false` / sliding-context-window half was deleted with it. The NORMALIZER half below
+> is LIVE.
 
-Design settled by a 3-approach multi-agent panel (simplicity vs quality vs
-robustness biases) + lens judges + synthesis, then an adversarial review pass.
+**`text_tts` is derived, never model-written: `text_tts = normalize_for_tts(text_ru)` in
+deterministic Python.** Rejected design B (the LLM emits `text_tts` too): a model-spelled
+`text_tts` would diverge from the Python normalizer the verify stage applies to the ASR
+hypothesis, silently depressing similarity on correct numeric dubs — the one silent-failure
+class the project forbids. The normalizer must exist as a pure function for verify regardless;
+reusing it as the sole `text_tts` source makes the round-trip exact *by construction*.
 
-**F1/F2 — LLM returns `text_ru` only; `text_tts = normalize_for_tts(text_ru)` in
-deterministic Python.** Rejected design B (LLM emits `text_tts` too, JSON/delimited):
-qwen's seed is not bit-exact, so an LLM-spelled `text_tts` would diverge from the
-Python normalizer the verify stage applies to the ASR hypothesis, silently depressing
-similarity on correct numeric dubs — the one silent-failure class the project forbids.
-The normalizer must exist as a pure Python function for verify regardless; reusing it
-as the sole `text_tts` source makes the round-trip exact *by construction*.
+**Normalization is SAFETY-CRITICAL, not incidental.** Because verify normalizes both sides with
+the same code, a magnitude bug (a number voiced with the wrong value) is architecturally
+invisible to the round-trip — it self-agrees and passes unflagged. So the normalizer gets its
+own direct ground-truth tests, not only round-trip coverage. The review caught three real
+magnitude/mangling bugs, fixed + regression-tested: grouped thousands read as decimals
+(`$1,999` → 1.999, ~1000× low; `10 000` → "десять ноль"), decimal ranges shredded (`3.5-4.5` →
+"три.от пять…"), and Cyrillic `х`/`с` in the multiplier/Celsius classes mangling ordinary
+Russian ("ось х 5", "90° севернее").
 
-**F3 — inlined CONTEXT block in a single user message, only `status=="ok"` pairs**
-(a failed English fallback never poisons the next sentence's context). Ollama `/v1`
-is stateless per request, so multi-turn buys no server cache for a sliding window;
-inlining gives exact, snapshot-testable control. One call per sentence, id order —
-NO batching (batching risks a silent sentence merge/drop).
+**num2words (ru locale) approved as a dependency** for Russian cardinal/ordinal spelling
+(fiddly to hand-roll correctly); a stdlib 0..10⁹ speller stays as the import-fallback. Accepted
+loss: num2words yields nominative case, so oblique numerals are occasionally voiced in the
+wrong case — self-consistent for verify, so never false-flagged; audibly-rough-but-not-silent.
 
-**F4 — validate → reseed+temp-bump retry → flagged English fallback, never drop.**
-Append-only `translation.jsonl` (flush+fsync) for crash resume; contiguity enforced
-(`raise`, not `assert` — a never-drop invariant must survive `python -O`); atomic
-`os.replace`. Each record carries `src_en` so a re-tuned `sentences.json` (same id,
-changed text) forces re-translation instead of reusing the stale RU.
-
-**Endpoint correction — native Ollama `/api/chat` with `think: false`, NOT OpenAI
-`/v1` + `/no_think`.** Empirically on the host: qwen3:14b ignores an in-prompt
-`/no_think` on many samples, and its reasoning (routed to a `reasoning` field) is
-truncated by `num_predict`, leaving `message.content` EMPTY (finish_reason=length).
-The native `think: false` toggle reliably disables thinking — ~3× faster (5s vs 16s
-per sentence, no wasted reasoning tokens) and cleaner output. This drops the `openai`
-dependency; the stage is now stdlib-only (urllib). STACK.md's `/v1` sketch is
-superseded for this stage.
-
-**Normalization is SAFETY-CRITICAL, not incidental.** Because verify normalizes both
-sides with the same code, a magnitude bug (a number voiced with the wrong value) is
-architecturally invisible to the round-trip — it self-agrees and passes unflagged. So
-the normalizer gets its own direct ground-truth tests, not only round-trip coverage.
-The review caught three real magnitude/mangling bugs, now fixed + regression-tested:
-grouped thousands read as decimals (`$1,999` → 1.999, ~1000× low; `10 000` → "десять
-ноль"), decimal ranges shredded (`3.5-4.5` → "три.от пять…"), and Cyrillic `х`/`с` in
-the multiplier/Celsius classes mangling ordinary Russian ("ось х 5", "90° севернее").
-
-**num2words (ru locale) approved as a dependency** for Russian cardinal/ordinal
-spelling (fiddly to hand-roll correctly); a stdlib 0..10⁹ speller stays as the
-import-fallback. Accepted PoC loss: num2words yields nominative case, so oblique
-numerals are occasionally voiced in the wrong case — self-consistent for verify, so
-never false-flagged; audibly-rough-but-not-silent.
-
-**Contract for downstream stages (synthesize / verify — for whoever builds them next):**
-`translation.json` is a list of `{id, start, end, src_en, text_ru, text_tts,
-status ("ok"|"failed"), attempts, flag?}`, id-contiguous with `sentences.json`.
-- **synthesize** feeds `text_tts` (NEVER `text_ru`) to Silero — one wav per id, on RAW
-  audio before any atempo. `en.srt`/`ru.srt` come from `src_en`/`text_ru`.
-- **verify** MUST `from ..normalize import normalize_for_compare` and compare it applied to
-  `text_tts` vs the whisper-small RU hypothesis — the SAME function on both sides, or numeric
-  dubs false-flag. Silero is deterministic, so a failed round-trip is flagged, not reseeded.
-- `status:"failed"` records are already flagged by translate (bad/echoed translation, EN
-  fallback in `text_ru`); verify adds its own low-similarity flag on top, never overwrites.
-- The 245 s/50-sentence throughput (~0.8× realtime, translate alone) is the batch-scale
-  bottleneck created by the deliberate one-call-per-sentence (no-batching) safety choice —
-  revisit batching FIRST if overnight runs get time-bound, not the normalizer or context scheme.
+**Never-drop invariant (still the translate contract):** validate → retry → flagged English
+fallback, never drop a sentence; id-contiguity enforced with `raise`, not `assert` (must
+survive `python -O`); each record carries `src_en` so a re-tuned `sentences.json` (same id,
+changed text) forces re-translation instead of reusing the stale RU — that equality is also
+the resume key both routes rely on.
 
 ## 2026-07-15 — Pipeline tail (synthesize / verify / assemble / mux): design panel + review
 
@@ -2884,174 +2647,37 @@ the file extension, so any caller passing a temp/suffixless path must pass `form
 
 ## 2026-07-16 — TTS bake-off #2: ESpeech (F5-TTS RU) wins by ear; voice cloning explored, EN-clone dropped
 
-> **SUPERSEDED 2026-07-25** — ESpeech/F5 was removed in favour of Silero v5_5_ru. Kept for the
-> EN-clone rejection, which is a result about the technique rather than about this engine.
+> **SUPERSEDED 2026-07-25** — ESpeech/F5 was removed in favour of Silero v5_5_ru. Trimmed
+> 2026-08-24 to the two results that outlive the engine.
 
-**Ear verdict (user, real pipeline output on 4szRHy_CT7s):** ESpeech-TTS-1_RL-V2 with the
-author's demo reference is the unambiguous leader over Silero v4 (current), Silero v5, Misha
-F5-RU v2 and every cloning variant. Objective metrics agree: mean sim 0.992, 0 verify flags,
-mean atempo ×1.03, 0 segments over ×1.8 — timing at Silero-v4 level with far better voice.
-Research trail: bakeoff/tts-research-2026-07.md — **deleted 2026-08-03 with the rest of
-`bakeoff/`; what survived it is the licence table in README, "Voices, cloning and the law"**
-(multi-agent sweep of ~20 engines + adversarial
-verification; only Silero/ESpeech/Misha credibly speak Russian — "supports Russian" in a language
-list is marketing, the Chatterbox lesson generalizes). Engine switch is finalized by the F5Engine
-adapter integration + a full-length control run (PLAN Phase 3).
+**EN-reference cloning (the founding "same-voice" premise) was made to WORK — and DROPPED by
+goal, not by failure.** The round-1 babble was a byte-ratio canvas artifact, both predicted fixes
+verified on a full video (exact Latin ref transcript + speed set by byte-rate ratio → sim 0.980);
+the approach is workable and could be polished further. **Decision (user): the project goal is a
+quality Russian dub, not speaker identity — the direction is dropped.** Any revival argues with
+that decision, not with the technique.
 
-**Russian voice cloning WORKS and becomes the narrator mechanism.** F5 is a zero-shot cloner:
-the fixed narrator is now a config-level reference-clip choice, decoupled from the engine. A
-9.7 s phone-video clip of the user's own voice scored best-of-day similarity (0.994, 0 flags);
-timbre close but not identity-level — the expected zero-shot ceiling from a compressed 10 s
-reference. Reference recipe: fast, clear, neutral-prosody diction in a quiet room — the
-reference's pace transfers to the synthesis, so a brisk speaker buys free atempo headroom
-(this is exactly why the fast-talking ESpeech demo reference got mean ×1.03).
-
-**EN-reference cloning (the founding "same-voice" premise): possible, fixable — DROPPED by goal.**
-- Round-1 failure was NOT accent. F5 sizes its generation canvas by UTF-8 *byte* ratio
-  (`utils_infer.py`: `len(text.encode("utf-8"))`); a Latin reference (1 B/char) against Cyrillic
-  gen text (2 B/char) doubles the canvas and the model fills the surplus with babble that
-  whisper ignores (a verify blind spot) while atempo compresses ×2.11 (36/50 segments broken).
-- Both predicted fixes verified on the full video: exact Latin transcript + `speed≈1.7`
-  (byte-rate ratio) → mean sim 0.980, ×1.28, 1/50 over threshold; Cyrillic phonetic ref
-  transcript → 0.950 (hand-written phonetics add alignment noise — the speed fix is better).
-  Formula if ever revived: exact Latin ref transcript + `speed = ref_byte_rate / 0.045 s/B`
-  (measured RU rate), or per-segment `fix_duration`.
-- Residual defects by ear: end-of-sentence babble ("эр" at nearly every period — per-sentence
-  canvas slack lands at the tail), one mid-sentence artifact on a long sentence, and a
-  "1930s-recording" character: degraded-mic timbre + slightly off Russian pronunciation
-  inherited from the EN reference.
-- **Decision (user): the approach is workable and could be polished further, but the project
-  goal is a quality Russian dub, not speaker identity — the direction is dropped.**
-
-**Engine-integration note regardless of cloning:** ultra-short sentences garble/echo the
-reference tail (id43 "Решениям.", 0.6 s → "Together"); known F5 short-text class. Mitigate by
-merging ultra-short sentences upstream or reseed-retry when the F5Engine lands.
-
-## 2026-07-16 — Narrator voice: ESpeech demo reference adopted; voice experiments closed
-
-> **SUPERSEDED 2026-07-25** — the ESpeech reference voice went with the engine. The narrator is
-> now Silero v5_5_ru, which takes no reference sample at all.
-
-**Decision (user, ear, full-video runs):** the fixed narrator is the ESpeech author's demo
-reference (HF Space `Den4ikAI/ESpeech-TTS`, `ref/example.mp3`) — best across every audition round:
-mean sim 0.992, 0 flags, mean atempo ×1.03 on the sample video. Rights unclarified (a real
-person's voice, unknown provenance) → the clip is NOT committed; fetched from the Space at setup;
-outputs stay personal-use only (README "Voices, cloning and the law").
-
-**PD fallbacks, re-creatable with `scripts/lv_pick_refs.py` (refs deleted from disk, sources
-recorded here):** LibriVox readers, all Public Domain Mark — tovarisch
-(`obyknovennayaistorya_1912_librivox`; best PD result: 0.985 / 0 flags), Kazbek
-(`vekhi_2011_librivox`; bass ~109 Hz), Mark Chulsky (`carousel_2511_librivox`; 826 sections
-available via librivox.org/reader/8086).
-
-**Speed calibration validated as a config mechanism.** Slow narrators (Chulsky ×1.8 natural pace)
-compensated via F5 `speed` to mean atempo ×1.03–1.08 at ≤0.022 sim cost — reference pace is no
-longer a disqualifier; `speed` goes into the F5Engine config.
-
-**Celebrity-voice references (personal-use experiment) closed by the user — "сложно добиться
-качества".** Round-1 YouTube interview refs → artifacts/stutter across ALL ten voices: noise,
-room reverb, conversational fillers and garbled whisper transcripts of noisy speech all clone
-straight into the synthesis. Round-2 studio narrations improved but still under the bar.
-Repo policy unchanged: PD samples only, person-agnostic docs.
-
-**id43 confirmed a third time** (ultra-short "Решениям.", 0.6 s → hallucinated round-trips in 2 of
-4 narrator runs) — merge-ultra-short-sentences upstream + reseed-retry are REQUIRED F5Engine
-integration items, not nice-to-haves.
+**Research lesson:** "supports Russian" in an engine's language list is marketing — of ~20 engines
+swept with adversarial verification, only Silero/ESpeech/Misha credibly spoke Russian (the
+Chatterbox lesson generalizes). The research trail (`bakeoff/`) was deleted 2026-08-03; what
+survived it is the licence table in README, "Voices, cloning and the law".
 
 ## 2026-07-16 — F5Engine integration: design panel + adversarial review (BUILD)
 
-> **SUPERSEDED 2026-07-25** — this engine was removed; nothing below describes code that exists,
-> and `.venv-f5tts` is not a live dependency. Kept for three mechanics that outlived it: the
-> fd-level `os.dup(1)`/`os.dup2(2,1)` before heavy imports, the single-writer manifest invariant
-> (a second writer means silent timing desync), and `synth_key`, which is still what gates all
-> wav reuse.
+> **SUPERSEDED 2026-07-25** — this engine was removed; `.venv-f5tts` is not a live dependency.
+> Trimmed 2026-08-24 down to the three mechanics that outlived it:
 
-Settled by a 3-bias design panel (minimalist / operability / quality) + 3 lens judges
-(contracts / windows-ops / scope), synthesis by the main session; then a 4-lens adversarial
-review with per-finding refutation (16 findings kept, 0 refuted, all fixed). Load-bearing calls:
-
-**Worker process in `.venv-f5tts`, never f5-tts into `.venv-asr` (unanimous).** pip dry-run
-evidence: resolver keeps torch 2.11 but downgrades numpy 2.5.1→2.4.6 under working
-ctranslate2/onnxruntime, adds ~110 packages (gradio, wandb, datasets), and pulls torchcodec
-0.15 built against torch 2.8 — an ABI gamble inside the venv every stage depends on.
-Worker mechanics: JSONL over stdio; the worker's FIRST act is fd-level
-`os.dup(1)` + `os.dup2(2,1)` BEFORE heavy imports (Python-level sys.stdout rebinding does not
-survive native fd-1 writers); stderr inherited (live progress, no pipe deadlock class); config
-via argv (Task-Manager-visible); reader-thread + Queue timeouts (the only sane Windows pipe
-timeout; constants in f5.py, not config); per-request id echo (protocol corruption == crash);
-respawn+resend once per request; EVERY consecutive failure — transport, respawn handshake, or
-an ok:false reply (sticky CUDA context dies per-request while the process lives — review
-finding) — counts toward a 3-strike TtsFatalError that escapes the per-segment catch. Startup
-~30 s measured (imports 17 s + RUAccent 6 s + model 3 s); warm synth ~×1.1 of audio duration;
-0.7 GiB VRAM.
-
-**Reseed-retry lives in SYNTHESIZE, not verify (2 of 3 judges, over the scope judge's
-objection).** Deciding invariant: segments/manifest.json stays single-writer — assemble derives
-atempo factors from manifest `samples`, so a verify-side wav replacement with a stale manifest
-is silent timing desync, the forbidden class; ordering discipline can only narrow that window,
-single-writer eliminates it. Every fresh F5 segment gets an in-stage whisper-small round-trip
-via `asr.roundtrip_similarity` (ONE function shared with verify — same-transform-both-sides,
-the normalize.py precedent); < threshold → seeds tts_seed+1..+3, keep-best by similarity.
-Accepted costs: double ASR round-trip (~+90 s / 39-min video), whisper-small coupled into
-synthesize (loud failure, co-residency pre-blessed). Verify stays a pure judge — sole
-similarity-flagging authority, byte-identical Silero path. Proven mechanics (micro-test,
-threshold 0.9 / seed 7): id43 retried 4 attempts, best 0.875 kept (seed 9), honestly flagged.
-
-**synth_key gates all wav reuse.** Everything that changes rendered audio enters one canonical
-string: engine | ref-stem:content-sha1[:8] (the narrator ref is fetched-at-setup and mutable at
-a stable path — stems lie) | ckpt+vocab name:size (review catch: a checkpoint swap must not
-serve stale wavs) | sr | nfe | speed | base seed. Legacy Silero manifests reconstruct their key
-read-side (zero migration). Manifest v2 adds per-segment seed/attempts/synth_sim and a
-"complete" marker: the manifest is downgraded to complete:false BEFORE any wav mutates and
-flushed every 25 fresh segments (review catch: a crash mid-resynthesis must not leave a
-complete:true manifest over divergent wavs; F5 makes the stage ~20× longer than Silero, so
-mid-stage interruption is now a real overnight event).
-
-**Ultra-short mitigation = merge upstream in transcribe (char-criterion) + reseed as the net.**
-MIN_SENT_CHARS=15 on EN chars — the failure mechanism is F5's UTF-8-byte duration canvas, so
-chars, not seconds, are causal; MERGE_GAP_MAX=0.6 s; cumulative absorption of a merge chain
-capped at 1.5 s (review catch); merged range must pass the existing _too_long. Pure pass
-between _split_overlong and id assignment; unit-tested with synthetic word lists. Existing
-workdirs keep their segmentation (done() gates on sentences.json); a --force transcribe on an
-old workdir shifts ids after the first merge → src_en mismatches cascade into near-full Qwen
-re-translation (~23 min on a 39-min video) — correct (stale RU must die) but expensive, don't
---force transcribe casually.
-
-**Config surface minimal.** Engine-agnostic tts_seed/tts_max_retries + 7 f5_* keys; no
-device/timeout knobs; the retry gate reuses similarity_threshold (no second threshold to
-drift). `tts_engine` default stays "silero" until the Phase-3 control run + user ear check
-pass; the flip is its own commit.
-
-**Control-run gates fixed by the judges' fact-check (all three designers were wrong twice).**
-The ultra-short "Решениям." is id43 of the SAMPLE video (4szRHy_CT7s), not the control video
-(its ultra-short is id101 "Хорошо.", 0.22 s); and the Silero baseline's single flag is id189 —
-a proper-noun-class failure whose text_tts is identical under F5, so it will likely flag again
-regardless of engine. Gates are therefore ABSOLUTE (flag rate ≤ 2% of 315 after retries, id189
-pre-registered as expected-to-flag; baseline comparison advisory), plus mean sim ≥ 0.985,
-mean atempo ≤ 1.10, synth+verify RTF ≤ 0.5×, and the binding user ear check.
-
-## 2026-07-16 — Dead-air ear verdict (user): noticeably better overall; mix modes iterate
-
-**Overall: ощутимо лучше** — the dead-air mechanism (slot-fill + units) is validated by ear.
-id101 ("Хорошо.", the ultra-short that failed as a lone segment) is now PERFECT inside its
-group — L2 grouping confirmed as the structural fix for the ultra-short class.
-
-**Defect found (17:02, unit [135,136,137]):** three short sentences in a 2.76 s EN span,
-RU needed ~4 s → native compression ×1.327 → mid-word cutoff (first phrase truncated, next
-begins). synth_sim 0.8361 scraped past the 0.8 threshold — no retry, no flag. LESSON:
-post-hoc atempo compresses uniformly and never drops words; F5 NATIVE compression at
-≥~1.3 does drop them, and char-similarity on long joined strings under-penalizes the loss.
-Fix direction: native speed stays for STRETCHING only (safe direction, ear-validated);
-compression returns to atempo (f5_speed_ceil → ~1.0–1.15), plus a stricter sim gate for
-any compressed unit. The ×1.6-at-≤0.022-sim bake-off number measured ASR similarity, not
-word survival — it over-promised for compression.
-
-**Duck: mechanism right, depth wrong** — −15 dB leaves the EN original too audible. Retest
-at −22..−25 dB (module constant). **Bed: content-dependent, inapplicable here** — this
-video is nearly music-free, so the no-vocals stem is near-silence and the dead-air feel
-returns. Re-check on a music-heavy source before judging the mechanism; a bed-RMS census
-with automatic duck-fallback is the likely production shape. dub_mix default stays
-"replace" until the duck depth retest.
+- **fd-level stdout capture in subprocess workers.** The worker's FIRST act is `os.dup(1)` +
+  `os.dup2(2,1)` BEFORE heavy imports — Python-level `sys.stdout` rebinding does not survive
+  native fd-1 writers, and a stray print into the JSONL protocol channel is a crash.
+- **`segments/manifest.json` is single-writer (synthesize only).** assemble derives atempo
+  factors from manifest `samples`, so a wav replaced by any other stage against a stale manifest
+  is silent timing desync — the forbidden class. Ordering discipline can only narrow that
+  window; single-writer eliminates it.
+- **`synth_key` gates all wav reuse.** Everything that changes rendered audio enters one
+  canonical string, with the INVARIANT that every new audio-affecting knob joins it — content
+  hashes over mutable-path inputs, because stems lie. Still what protects against silently
+  stale segment wavs (the v5 audition's `silero_model`-into-`synth_key` case is the proof).
 
 ## 2026-07-16 — Dead-air elimination: design panel + review (BUILD)
 
@@ -3064,15 +2690,9 @@ Panel (minimalist/contracts/audio + 3 judges) + 4-lens adversarial review (20 fi
 figure whose decomposition was trimmed 2026-08-03; the live Silero baseline is 283 s of slot
 silence on `8zJlKmgMT44`, in `2026-07-25 — atempo_floor = 0.75`):
 
-**L1 slot-fill native speed — parent-side pure `plan_speed()` (2/3 judges).** F5's duration
-canvas is deterministic (`out ≈ ref_sec·gen_bytes/ref_bytes/speed`, raw pre-accent bytes both
-sides — stress-mark inflation cancels; bench: |err| ≤ 1.5% even on group-shaped 300-char
-texts). Three branches: stretch to the SPAN (never the slot — real pauses stay pauses),
-neutral when the free gap absorbs the spill (the DECISIONS gap-headroom principle), native
-compress ≤ ceil before atempo tops up. Caps are MULTIPLIERS of f5_speed (narrator-pace
-recalibration shifts the window); floor 0.75 by the pre-registered bench rule (0.7 passed
-sims down to 0.95+, ship +0.05 margin). Retries reuse the same speed — keep-best compares
-identical canvases. Worker reports EFFECTIVE speed (F5 forces 0.3 under 10 UTF-8 bytes).
+**L1 slot-fill native speed — died with F5** (detail deleted 2026-08-24: it planned per-unit
+`speed` off F5's deterministic duration canvas, stretch-to-SPAN-never-slot). Silero slot
+behaviour became its own line of work: `atempo_floor` (2026-07-25) and `tasks/slot-fit.md`.
 
 **L2 render units — group at SYNTHESIS, not transcribe (unanimous rejection of widening the
 transcribe merge: per-sentence subtitles are binding, and re-segmentation would cascade into
@@ -3329,48 +2949,6 @@ VAD-pause cuts were objectively worse and other videos will have real >15 s sent
 priority lesson stands: Measure surfaced the 206 s blocks and they were filed to backlog instead
 of tested first — the one-line flag outperformed the whole cluster. Test the root before
 polishing the symptom.
-
-## 2026-07-18 — Gemma-3-12B replaces Qwen3-14B as the translation model
-
-> **SUPERSEDED 2026-07-25** — neither model is in the pipeline; the local-LLM translate path was
-> removed entirely. Kept for the comparison method, not for the winner.
-
-**Decision: Gemma-3-12B is the default translator; Qwen3-14B is removed entirely — not kept even
-as an option.** The user's standing observation ("Qwen местами сыпется") was confirmed and fixed.
-
-**Evidence: an 8-video A/B on identical segmentation.** Both models were fed the SAME
-`sentences.json` (the 8 videos the Qwen stats batch had finished), so the only variable is the
-translator — the demucs bed and everything downstream are byte-identical. 508 sentences. Objective:
-RU/EN length ratio (dubbing fit) median 1.062 vs 1.086 (Gemma tighter → less atempo stretch);
-translate flags 4 vs 6; verify round-trip sim ~0.991 vs ~0.988 (≈); lower mean max speed-factor.
-Qualitative (user read ~100 phrases, all better on Gemma; + a divergence scan): Qwen's real
-defects were absent in Gemma — "эффективное/эффективное" duplicated on "effectively, efficiently"
-(twice), an untranslated "fluent" left in Latin, "Интеллектуальная грамотность" for "AI fluency".
-
-**Cost accepted: ~16% slower.** Same 508 sentences: 5.30 vs 4.58 s/sentence (1.08–1.21× per
-video). translate is the pipeline bottleneck, so end-to-end ≈ +8–10%. At 100-hour batch scale that
-is real (+~1–1.5 h/overnight) but the quality jump dominates. (Counter-intuitive for 12B<14B;
-thinking is not the cause — Qwen ran think:false, Gemma has none — it is Gemma-3 arch/tokenisation.)
-
-**Gemma-3 API differences forced a code change, not a config swap.** Gemma 3 has no thinking mode
-(Ollama HTTP-400s if a "think" key reaches it) and its chat template rejects a system role. The
-translate stage now folds SYSTEM into the single user turn and sends no "think" key — replacing
-Qwen's native `think:false` + separate system message. It was built first as two config flags
-(`ollama_system_role`/`ollama_send_think`) for a clean A/B that kept the Qwen wire-request
-byte-identical (proven); once Gemma won, the flags AND the Qwen branch were removed (YAGNI). Default
-`ollama_model` qwen3:14b → gemma3:12b (~7.5 GB VRAM loaded, was ~8.6 GB).
-
-## 2026-07-18 — Silero v5 acknowledged: the good no-sample TTS option
-
-**User verdict:** Silero v5 is also good as TTS — quality slightly below F5/ESpeech, but it
-needs NO narrator reference clip: zero voice-sample setup, zero rights questions (the F5
-narrator carries the README rights caveat). Recorded as a first-class alternative, not just
-a legacy fallback; the engine choice is now: F5/ESpeech = best quality + needs a reference,
-Silero = slightly lower quality + no sample. The in-code adapter still loads v4_ru — bumping
-to v5 (`v5_5_ru` via torch.hub) is a small change with one caveat: v5 rejects Latin script
-(text_tts is Cyrillic-only by the normalize contract already; add an out-of-alphabet filter
-per the bake-off note). → INBOX chore. Bake-off history unchanged: ESpeech led v5 by ear
-(2026-07-16); this verdict upgrades v5's standing as the no-sample option.
 
 ## 2026-07-18 — Sonnet verdict (user read-through): both translation routes stay; Sonnet semi-automatic is the PRIMARY route
 
