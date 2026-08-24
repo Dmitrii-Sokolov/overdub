@@ -14,7 +14,7 @@ The failure classes this pins:
     this route must NOT pass that key to whisper, or a Russian file comes back as English mush.
   * A NO-SPEECH FILE PRODUCES AN EMPTY DOCUMENT. "No speech" is a result and has to read as one —
     an empty file is indistinguishable from a run that broke.
-  * A STAGE FLAG IS ACCEPTED AND IGNORED. --force/--only/--scout/--repair-asr select stages; this
+  * A STAGE FLAG IS ACCEPTED AND IGNORED. --force/--only/--transcribe-only/--repair-asr select stages; this
     mode runs none, so accepting one would promise work that never happens.
 """
 
@@ -257,7 +257,7 @@ def test_no_input_at_all_is_still_a_usage_error() -> None:
 def test_stage_flags_are_refused_rather_than_ignored() -> None:
     with tempfile.TemporaryDirectory() as d:
         src = _wav(Path(d) / "clip.wav")
-        for flag in (["--force"], ["--only", "transcribe"], ["--scout"],
+        for flag in (["--force"], ["--only", "transcribe"], ["--transcribe-only"],
                      ["--repair-asr", "auto"]):
             err = _usage_error(cli.main, ["--transcribe-file", str(src), *flag])
             assert "does not apply to --transcribe-file" in err, (flag, err)

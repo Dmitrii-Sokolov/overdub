@@ -371,14 +371,9 @@ def test_splice_refuses_overlapping_replacements() -> None:
 
 # --- write / invalidate / mode behaviour ----------------------------------------------
 
-_DOWNSTREAM = ["summary.md", "translation.json", "translation.jsonl", "pronounce_audit.json",
+_DOWNSTREAM = ["translation.json", "translation.jsonl", "pronounce_audit.json",
                "translation.draft.json", "report.json", "dub_ru.wav", "en.srt", "ru.srt",
                "output.mkv", "run.json"]
-# summary.md is DOWNSTREAM by decision (2026-07-20), not an oversight: its only input is
-# sentences.json, nothing in the Python code refreshes it, and both run_report.py and
-# scout_report.py render it unconditionally with no staleness marker. Listing it here — in
-# EITHER list — is what makes the choice visible to a future edit; before this it appeared in
-# neither, so a change in either direction would have gone unnoticed by this file.
 _SURVIVORS = ["words.json", "sentences.json", "source.wav", "source.mkv",
               "source.info.json", "source_bed.wav", "timings.json"]
 
@@ -704,11 +699,10 @@ def test_accepted_repair_invalidates_the_downstream_artifacts() -> None:
     with tempfile.TemporaryDirectory() as d:
         tmp = Path(d)
         work = _work(tmp, _even(9, dur=4.0),
-                     **{"translation.json": "[]", "report.json": "[]", "output.mkv": "x",
-                        "summary.md": "Видео про GPU."})
+                     **{"translation.json": "[]", "report.json": "[]", "output.mkv": "x"})
         _quiet(repair.repair_video, _ctx(work), ids=[4], dry_run=False,
                window_asr=_fake_asr("A genuinely different reading of this window."))
-        for name in ("translation.json", "report.json", "output.mkv", "summary.md"):
+        for name in ("translation.json", "report.json", "output.mkv"):
             assert not (tmp / name).exists(), name
         assert work.sentences.exists() and work.pre_repair_sentences.exists()
 

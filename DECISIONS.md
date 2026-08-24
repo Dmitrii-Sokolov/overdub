@@ -9,20 +9,8 @@ shape: grouped by topic, newest first inside a group — at 100+ entries the the
 what makes the index scannable, and the labels carry the reasons (rationale: DECISIONS
 2026-08-24, the split entry).
 
-**Scout — route C**
-- `08-03` route D deleted; scout answers "what is in it", and grades nothing
-- `08-03` viewer profile removed; nothing personalizes the grade
-- `07-21` one queue page: scout report is the base, triage merged in
-- `07-21` scout preview: 160px, inlined once, no 2x source
-- `07-20` grades the MATERIAL, not the reader
-- `07-20` scout mode: audio-only fetch, no local summarizer, own flag
-
-**Digest — route D**
-- `07-30` digests in TWO passes (a composing agent cannot be given a length)
-
 **Translate**
 - `08-20` the translator writes in one pass, and the marker names the TOOL — 43 of 47 paid a blocked retry
-- `08-20` route B stops summarizing; the summarizer cost 42% of a translator and gated nothing
 - `08-11` the draft carries BOTH forms — subtitles get the spelling, the dub gets the reading
 - `08-05` route B gets a chunked translator, as an escape hatch (chained chunks, not parallel)
 - `07-28` route B step 2 fans out through a Workflow
@@ -30,12 +18,10 @@ what makes the index scannable, and the labels carry the reasons (rationale: DEC
 - `07-19` 4-way bake-off † · `07-15` translate stage BUILD †
 
 **TTS / synthesize**
-- `07-25` **Silero is the ONLY engine** — the entry that supersedes the whole F5 cluster
-- `07-25` ear-confirmed on finished videos (and what it does NOT close)
-- `07-25` `atempo_floor = 0.75`
-- `07-19` Silero v5 audition
-- `07-15` day-1 bake-off: Chatterbox rejected
-- `07-16` F5Engine BUILD † · `07-16` ESpeech bake-off †
+- `07-25` **Silero v5_5_ru is the ONLY engine** — user call on speed and hardware, ear-confirmed on finished videos
+- `07-19` v5 audition: v4 was tested by mistake; the voice ear-ranking (eugene/kseniya, avoid aidar/baya)
+- `07-16` the F5/ESpeech era † — cloning worked and was dropped by GOAL; fd-dup capture, single-writer manifest and `synth_key` outlive it
+- `07-15` day-1 bake-off: Chatterbox rejected, XTTS rejected untested, Silero adopted
 
 **ASR / transcribe**
 - `08-06` **Parakeet-TDT replaces whisper as the transcriber** — and what the switch costs
@@ -64,6 +50,7 @@ what makes the index scannable, and the labels carry the reasons (rationale: DEC
 - `07-16` dead-air elimination BUILD †
 
 **Pipeline, batch, artifacts**
+- `08-24` routes C and D LEAVE the project; the audio-only fetch (`--transcribe-only`) and the queue page survive them
 - `08-24` the log is PRUNED: dead-engine and dead-route entries deleted or trimmed
 - `08-24` DECISIONS splits: the index stays at the root, the entries move to docs/decisions-log.md
 - `08-24` agent-docs replaces the 4-file framework; PLAN dissolves into BACKLOG + tasks/
@@ -77,6 +64,9 @@ what makes the index scannable, and the labels carry the reasons (rationale: DEC
 - `08-06` verify round-trip ships OFF (2 real defects in 24 flags); completeness stays
 - `08-03` CHANGELOG.md retired; measurements retire to DECISIONS
 - `07-28` the tail DEGRADES instead of failing: a miss costs a track, not the artifact
+- `07-25` `atempo_floor = 0.75` — under-filled units stretch toward their slot, the floor is an ear number
+- `07-21` one queue page: triage merged onto one surface · `07-21` preview: 160px, inlined once, no 2x source
+- `07-20` audio-only fetch mode: its own flag; a promoted video re-downloads
 - `07-19` stage-major is the default batch order · `07-19` the VRAM rule is a budget
 - `07-17` batch queue + stop switch · `07-19` run report: two non-obvious `run.json` choices
 - `07-15` pipeline tail design panel
@@ -94,7 +84,6 @@ what makes the index scannable, and the labels carry the reasons (rationale: DEC
 - `07-19` measurement gotchas that will recur · `07-19` `no_repeat_ngram_size` REJECTED
 
 **Scope & founding constraints**
-- `07-25` what this repo produces is a TOOL; a video is never the deliverable
 - `07-15` founding decisions · `07-15` PoC reframe
 - `07-17` proper nouns: pronunciation chain
 - `07-16` local-only constraint amended †

@@ -9,9 +9,9 @@ Read-only, and thin by design: queue parsing, workdir classification and the bat
 all come from overdub.runreport's shared data layer (collect_entries / batch_row /
 batch_totals), so this script and the triage HTML can never again disagree about the same bytes
 on disk (the queue-page merge). What is left here is the per-medium rendering: a dubbed video gets the
-full block, a scouted or promoted-but-untranslated workdir gets an honest state header instead
-of the old misleading "run the pipeline first" note, and an argv path with nothing to report is
-a named skip, never a crash. The only non-zero exit is a usage error.
+full block, a transcript-only or promoted-but-untranslated workdir gets an honest state header
+instead of the old misleading "run the pipeline first" note, and an argv path with nothing to
+report is a named skip, never a crash. The only non-zero exit is a usage error.
 
 Run with the .venv-asr python from the repo root:
 
@@ -33,9 +33,9 @@ from overdub.config import Config                          # noqa: E402
 
 
 def _transcript_line(e: dict) -> str:
-    """The one data line under a scout/pending header: sentence count + duration. The duration
-    clause is DROPPED when unknown — never rendered as "None" — and a sub-minute video reads
-    "<1 min", mirroring the triage scout card. Cost is the point of both numbers: whether a
+    """The one data line under a transcribed/pending header: sentence count + duration. The
+    duration clause is DROPPED when unknown — never rendered as "None" — and a sub-minute video
+    reads "<1 min", mirroring the queue-page card. Cost is the point of both numbers: whether a
     video earns a dub is a question about length."""
     bits = [f"{e.get('n_sentences', 0)} sentences"]
     dur = e.get("duration_sec")
@@ -80,35 +80,26 @@ def main(argv: list[str] | None = None) -> int:
     blocks: list[str] = []
     runs: list[dict] = []
     for e in entries:
-        kind, summary = e["kind"], e["summary"]
+        kind = e["kind"]
         if kind == "run" and e["run"] is not None:
-            blocks.append(queueview.render_run_report(e["run"], e["offenders"], summary))
+            blocks.append(queueview.render_run_report(e["run"], e["offenders"]))
             runs.append(e["run"])
-        elif kind == "scout":
+        elif kind == "transcribed":
             # An honest state header instead of the old "run the pipeline first" note, which
-            # told the operator to dub a video they had only asked to scout (the third
-            # divergence the queue-page merge names). The summary IS the scout deliverable — attach it.
-            block = (f"### {e['vid']}  [scouted — transcript only, no dub]\n"
-                     + _transcript_line(e))
-            if summary:
-                block += "\n" + queueview.render_summary_block(summary)
-            blocks.append(block)
+            # told the operator to dub a video they had only asked to transcribe (the third
+            # divergence the queue-page merge names).
+            blocks.append(f"### {e['vid']}  [transcribed — transcript only, no dub]\n"
+                          + _transcript_line(e))
         elif kind == "pending":
-            block = (f"### {e['vid']}  [promoted — downloaded in full, "
-                     f"translate has not started]\n" + _transcript_line(e))
-            if summary:
-                block += "\n" + queueview.render_summary_block(summary)
-            blocks.append(block)
+            blocks.append(f"### {e['vid']}  [promoted — downloaded in full, "
+                          f"translate has not started]\n" + _transcript_line(e))
         else:
             # kind "run" whose rollup degraded to None (torn artifacts), or a queued id that
             # never downloaded — from_queue entries are never dropped, the queue is the
             # deliverable. Same block this script always printed for that shape.
-            block = (f"### {e['vid']}  [no run.json — skipped]\n"
-                     f"- no report.json / translation.json in {e['work'].root} "
-                     f"(run the pipeline first)")
-            if summary:
-                block += "\n" + queueview.render_summary_block(summary)
-            blocks.append(block)
+            blocks.append(f"### {e['vid']}  [no run.json — skipped]\n"
+                          f"- no report.json / translation.json in {e['work'].root} "
+                          f"(run the pipeline first)")
 
     if blocks:
         print("\n\n".join(blocks))

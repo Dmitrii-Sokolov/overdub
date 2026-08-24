@@ -163,7 +163,7 @@ def test_join_unparseable_chunk_is_fatal() -> None:
 
 
 def test_join_object_instead_of_list_is_fatal() -> None:
-    # The shape a scout-trained agent produces: route C's draft is an object, this one is a list.
+    # A plausible wrong shape: an OBJECT where this route's draft is a per-chunk LIST.
     assert _exits([_sent(0)], {"0-0.json": {"id": 0, "text": "a"}})
 
 

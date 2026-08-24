@@ -17,7 +17,7 @@ from pathlib import Path
 from . import queueview, repair, runreport, timings
 from .config import Config
 from .pipeline import Context, STOP_NAME, Session, StopRequested, check_stop, run_pipeline
-from .stages import all_stages, scout_stages
+from .stages import all_stages, transcribe_only_stages
 from .stages.download import _tool_exe
 from .workdir import WorkDir, replace_retry, safe_filename, video_id
 
@@ -47,12 +47,11 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--repair-dry-run", action="store_true",
                    help="--repair-asr only: decide and report, write nothing (the re-ASR still "
                         "runs — that IS the decision, and it costs the same GPU time)")
-    p.add_argument("--scout", action="store_true",
-                   help="scout: download (AUDIO ONLY) → transcribe, then stop. No source.mkv, no "
-                        "translate, no TTS. The ~200-word summary.md is written afterwards by a "
-                        "Sonnet sub-agent at the seam (overdub-scout skill, step S2) — "
-                        "the pipeline has no summarize stage. Not composable with --only. With "
-                        "--force this also re-runs the large-v3 transcribe, not just the fetch.")
+    p.add_argument("--transcribe-only", action="store_true",
+                   help="download (AUDIO ONLY) → transcribe, then stop. No source.mkv, no "
+                        "translate, no TTS — the transcript pass route E starts from. Not "
+                        "composable with --only. With --force this also re-runs the "
+                        "transcribe, not just the fetch.")
     args = p.parse_args(argv)
     if sum(x is not None for x in (args.url, args.batch, args.transcribe_file)) != 1:
         p.error("give exactly one of: URL, --batch FILE or --transcribe-file PATH")
@@ -64,16 +63,17 @@ def main(argv: list[str] | None = None) -> None:
         # no stages and owns no workdir, so every stage-selecting flag is a request it cannot
         # honor. --video-major needs no entry here — its own "--batch only" check fires first.
         for flag, name in ((args.force, "--force"), (args.only, "--only"),
-                           (args.scout, "--scout"), (args.repair_asr, "--repair-asr")):
+                           (args.transcribe_only, "--transcribe-only"),
+                           (args.repair_asr, "--repair-asr")):
             if flag:
                 p.error(f"{name} does not apply to --transcribe-file (it runs no stages)")
         if not args.transcribe_file.is_file():   # before any side effect, like the queue check
             p.error(f"file not found: {args.transcribe_file}")
     if args.video_major and args.batch is None:
         p.error("--video-major applies to --batch only (a single video has nothing to amortise)")
-    if args.scout and args.only:
-        p.error("--only does not apply to --scout (--scout IS a stage list: download, transcribe — "
-                "and its download is audio-only, which --only cannot express)")
+    if args.transcribe_only and args.only:
+        p.error("--only does not apply to --transcribe-only (it IS a stage list: download, "
+                "transcribe — and its download is audio-only, which --only cannot express)")
 
     # usage errors before any side effects. Erroring rather than ignoring matches the --only
     # typo validation below: a silent no-op at 2am is the failure mode this repo prevents.
@@ -83,7 +83,8 @@ def main(argv: list[str] | None = None) -> None:
             p.error("--repair-dry-run applies to --repair-asr only")
     else:
         for flag, name in ((args.force, "--force"), (args.only, "--only"),
-                           (args.video_major, "--video-major"), (args.scout, "--scout")):
+                           (args.video_major, "--video-major"),
+                           (args.transcribe_only, "--transcribe-only")):
             if flag:
                 p.error(f"{name} does not apply to --repair-asr (repair runs no stages)")
         if args.repair_asr != "auto":
@@ -134,11 +135,13 @@ def main(argv: list[str] | None = None) -> None:
         run = _run_batch_video_major if args.video_major else _run_batch_stage_major
         order = "video-major" if args.video_major else "stage-major"
         with _run_window(cfg, [video_id(u) for u in urls], order):
-            code = run(urls, cfg, force=args.force, only=only, scout=args.scout)
+            code = run(urls, cfg, force=args.force, only=only,
+                       transcribe_only=args.transcribe_only)
         sys.exit(code)
     with _run_window(cfg, [video_id(args.url)], "single"):
         try:
-            _run_one(args.url, cfg, force=args.force, only=only, scout=args.scout)
+            _run_one(args.url, cfg, force=args.force, only=only,
+                     transcribe_only=args.transcribe_only)
         except StopRequested as e:
             print(f"[stop] STOP file honored — halted {e}; re-run the same command to resume")
             sys.exit(3)
@@ -191,14 +194,15 @@ def _run_window(cfg, ids, order):
 
 
 def _run_one(url: str, cfg: Config, *, force: bool, only: set[str] | None,
-             scout: bool = False) -> str | None:
+             transcribe_only: bool = False) -> str | None:
     work = WorkDir.for_url(url, cfg.work_root)
     ctx = Context(url=url, cfg=cfg, work=work)
     print(f"overdub: {url}")
     print(f"work dir: {work.root}")
-    run_pipeline(ctx, scout_stages(cfg) if scout else all_stages(cfg), force=force, only=only)
+    run_pipeline(ctx, transcribe_only_stages(cfg) if transcribe_only else all_stages(cfg),
+                 force=force, only=only)
     _rollup_and_print(work, cfg)
-    return _scout_status(ctx) if scout else _export_output(ctx)
+    return _transcript_status(ctx) if transcribe_only else _export_output(ctx)
 
 
 def _parse_repair_ids(spec: str, p) -> list[int]:
@@ -462,20 +466,17 @@ def _export_output(ctx: Context) -> str | None:
     return name
 
 
-def _scout_status(ctx: Context) -> str:
-    """The batch-summary detail for a scout video — what is ON DISK, not what ran.
+def _transcript_status(ctx: Context) -> str:
+    """The batch-summary detail for a --transcribe-only video — what is ON DISK, not what ran.
 
     Deliberately not _export_output: "(no output.mkv)" is the same string a broken full run
-    prints, so a clean scout batch would read as a wall of defects for a mode whose entire
+    prints, so a clean transcript batch would read as a wall of defects for a mode whose entire
     contract is that there is no output.mkv. It also never fires _title_of's networked fallback
     (30 s x N videos on a queue that exists to be cheap).
 
-    `summary pending|ok` is the point of the line: the Sonnet summarizer runs AFTER this process
-    exits, so re-running the identical --scout command (both stages fast-skip, takes seconds) is
-    the operator's completion check for the whole scout pass, for free.
-
     Never raises — this runs as the stage-major driver's `finalize`, where an exception turns a
-    perfectly scouted video into a FAIL row. An unreadable transcript is REPORTED, not thrown.
+    perfectly transcribed video into a FAIL row. An unreadable transcript is REPORTED, not
+    thrown.
     """
     def clock(sec) -> str:
         if sec is None:
@@ -490,25 +491,18 @@ def _scout_status(ctx: Context) -> str:
         # Loud, and specifically NOT "0 sentences": transcribe claimed to be done (its done() is
         # a bare existence check), so a file that will not parse is a defect the operator must
         # see, not an empty video.
-        return "scouted · no readable sentences.json"
+        return "transcribed · no readable sentences.json"
     info = _load_json(w.info_json)
     dur = info.get("duration") if isinstance(info, dict) else None
     if not isinstance(dur, (int, float)) or isinstance(dur, bool) or dur <= 0:
         ends = [s.get("end") for s in sents
                 if isinstance(s, dict) and isinstance(s.get("end"), (int, float))]
         dur = max(ends) if ends else None
-    # exists() is not the boundary: a summarizer interrupted at the seam leaves a zero-byte (or
-    # heading-only) summary.md that read_summary strips back to None. Going through read_summary
-    # keeps this line and the triage page's scout card telling the operator the SAME story —
-    # two reporters disagreeing about completion is the silent failure this mode exists to
-    # avoid, and this line is the operator's completion check for the whole pass. read_summary
-    # never raises, so the never-raises contract above survives.
-    state = "ok" if runreport.read_summary(w) else "pending"
-    return f"scouted · {clock(dur)} · {len(sents)} sentences · summary {state}"
+    return f"transcribed · {clock(dur)} · {len(sents)} sentences"
 
 
 def _run_batch_video_major(urls: list[str], cfg: Config, *, force: bool,
-                           only: set[str] | None, scout: bool = False) -> int:
+                           only: set[str] | None, transcribe_only: bool = False) -> int:
     """Videos outer, stages inner — the pre-2026-07-19 order, kept behind --video-major.
 
     Every video reloads every model, which is why it is no longer the default. (The ~72 s/video
@@ -528,7 +522,7 @@ def _run_batch_video_major(urls: list[str], cfg: Config, *, force: bool,
         # for THIS order only — stage-major has no mux→download gap to cover.
         print(f"\n=== [{i}/{len(urls)}] {vid}  {url}")
         try:
-            name = _run_one(url, cfg, force=force, only=only, scout=scout)
+            name = _run_one(url, cfg, force=force, only=only, transcribe_only=transcribe_only)
             results.append((vid, "ok  ", name or "(no output.mkv)"))
         except StopRequested as e:                  # from run_pipeline, between stages —
             results.append((vid, "stop", str(e)))   # MUST precede `except Exception`
@@ -615,18 +609,20 @@ class _Job:
 
 
 def _run_batch_stage_major(urls: list[str], cfg: Config, *, force: bool,
-                           only: set[str] | None, scout: bool = False,
+                           only: set[str] | None, transcribe_only: bool = False,
                            stages=None, finalize=None) -> int:
     """Stages outer, videos inner — the default. Each model loads ONCE PER BATCH instead
     of once per video, because a model's lifetime is one stage sweep (pipeline.Session).
 
     `stages`/`finalize` are injectable so the traversal order, the status machine and the
-    finish sweep are testable without a GPU, ffmpeg or yt-dlp. `stages` is also how --scout
-    truncates the pipeline (cli.main); an explicit injection outranks it, so the tests keep
-    driving both modes through the same seam.
+    finish sweep are testable without a GPU, ffmpeg or yt-dlp. `stages` is also how
+    --transcribe-only truncates the pipeline (cli.main); an explicit injection outranks it, so
+    the tests keep driving both modes through the same seam.
     """
-    stages = (scout_stages(cfg) if scout else all_stages(cfg)) if stages is None else stages
-    finalize = (_scout_status if scout else _export_output) if finalize is None else finalize
+    stages = ((transcribe_only_stages(cfg) if transcribe_only else all_stages(cfg))
+              if stages is None else stages)
+    finalize = ((_transcript_status if transcribe_only else _export_output)
+                if finalize is None else finalize)
     session = Session()                              # one cache for the whole batch; cleared
                                                      # after EVERY stage sweep (see below)
     jobs = [_Job(url=u, vid=video_id(u),
@@ -769,8 +765,8 @@ def _summarize(results: list[tuple[str, str, str]], not_run: list[str], halted: 
 
 def _load_json(path: Path):
     """Tolerant JSON read: None on missing/torn. Shared by the batch sweep (run.json) and
-    _scout_status (sentences.json / source.info.json) — same "an unreadable optional artifact
-    degrades, never crashes" contract runreport and both scripts/ reporters use."""
+    _transcript_status (sentences.json / source.info.json) — same "an unreadable optional
+    artifact degrades, never crashes" contract runreport and both scripts/ reporters use."""
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):

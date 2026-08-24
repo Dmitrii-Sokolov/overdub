@@ -7,7 +7,7 @@ there. The two halves answer different questions and have different consumers:
     caller is the pipeline, per video, during a run.
   - this module resolves a QUEUE — many workdirs, in the operator's order — into what the two
     report surfaces render. Its callers are `scripts/run_report.py` and
-    `scripts/scout_report.py`, after a run, never during one.
+    `scripts/queue_report.py`, after a run, never during one.
 
 The dependency is one-way and must stay that way: this imports runreport, runreport imports
 nothing from here. A back-import would put the queue walk inside the per-video rollup, which is
@@ -26,14 +26,12 @@ from __future__ import annotations
 
 import os
 import re
-import textwrap
 from pathlib import Path
 
 from .runreport import (
     _load_json,
     build_run_report,
     flagged_units,
-    read_summary,
     summarize_offenders,
 )
 from .workdir import WorkDir
@@ -87,7 +85,8 @@ def queue_ids(path: Path) -> list[str]:
 
 
 def classify_workdir(work) -> str:
-    """The report shape a workdir has earned: "run" | "pending" | "scout" | "fetched" | "missing".
+    """The report shape a workdir has earned: "run" | "pending" | "transcribed" | "fetched" |
+    "missing".
 
     One classifier for every report surface — the text digest and the triage HTML used to make
     this call separately and drifted (the "third divergence" the queue-page merge names).
@@ -101,24 +100,25 @@ def classify_workdir(work) -> str:
                    like this until Sonnet writes translation.json; a workdir between --repair-asr
                    and its re-run has the same shape). Until this kind existed the state was
                    invisible on the triage page — a known gap.
-      - "scout":   sentences.json parses to a list AND no source.mkv — --scout ran and stopped
-                   there. An EMPTY list is still "scout": it parses, so transcribe ran and
-                   produced nothing, and "0 sentences" is a louder report than a dropped row.
+      - "transcribed": sentences.json parses to a list AND no source.mkv — --transcribe-only ran
+                   and stopped there (route E's input state). An EMPTY list is still
+                   "transcribed": it parses, so transcribe ran and produced nothing, and
+                   "0 sentences" is a louder report than a dropped row.
       - "fetched": source.wav exists — downloaded but never transcribed (or sentences.json is
                    unreadable, a defect to surface, not a transcript).
       - "missing": everything else — a typo'd path or an empty dir.
 
-    source.mkv is the scout/pending discriminator, and the only fact on disk that settles it:
-    scout writes audio only and never a container (DownloadStage._fetch_audio — the video-ready
+    source.mkv is the transcribed/pending discriminator, and the only fact on disk that settles
+    it: the audio-only fetch writes no container (DownloadStage._fetch_audio — the video-ready
     gate depends on it staying absent), and nothing in the pipeline ever deletes source.mkv
     (invalidate_downstream keeps it as a named survivor). Its presence is therefore a permanent
-    record that the FULL download ran — the workdir is a parked dub, not a scout, and reporting
-    it as a scout would present a video that needs RE-RUNNING as one that needs SUMMARIZING."""
+    record that the FULL download ran — the workdir is a parked dub, and reporting it as
+    transcript-only would present a video that needs RE-RUNNING as one that is merely undubbed."""
     if work.report.exists() or work.translation.exists():
         return "run"
     sents = _load_json(work.sentences)
     if isinstance(sents, list):
-        return "pending" if work.source_video.exists() else "scout"
+        return "pending" if work.source_video.exists() else "transcribed"
     if work.source_audio.exists():
         return "fetched"
     return "missing"
@@ -134,16 +134,14 @@ def collect_entries(queue, workdirs, work_root, *, limit=500, rebuild=False, cfg
 
     Drop policy: a from_queue entry is NEVER dropped whatever its kind — silently shortening the
     deliverable to the videos that happened to work is the exact failure this layer exists to
-    prevent (scout_report's rule). An argv workdir of kind "missing"/"fetched" has nothing to
+    prevent (queue_report's rule). An argv workdir of kind "missing"/"fetched" has nothing to
     render and goes to skipped_names instead ("skipped" semantics: a typo'd path
     is printed and honest, never a fabricated card).
 
     Per entry: kind/n/vid/work/from_queue always; `run` + `units`/`offenders` for kind "run";
-    `summary` for EVERY kind (a scout card needs it too); `scout` (parsed scout.json) for ANY
-    kind — a dubbed video that was scouted keeps its grade next to its dub metrics;
-    `n_sentences` + `duration_sec` for scout/pending kinds (info.json duration, fallback max
-    sentence end — the same ladder the triage scout card used; deliberately NO ffprobe reach
-    here, that stays build_run_report's fallback).
+    `n_sentences` + `duration_sec` for transcribed/pending kinds (info.json duration, fallback
+    max sentence end; deliberately NO ffprobe reach here, that stays build_run_report's
+    fallback).
 
     `rebuild=True` forces build_run_report over the run.json load. Threaded here as a flag
     rather than handled by the caller because the only caller-side alternative is deleting
@@ -171,13 +169,7 @@ def collect_entries(queue, workdirs, work_root, *, limit=500, rebuild=False, cfg
         entry = {
             "kind": kind, "n": len(entries) + 1, "vid": path.name, "work": work,
             "from_queue": from_queue, "run": None, "units": [], "offenders": [],
-            "summary": read_summary(work),
-            # scout.json read via root — build_scout writes it the same way (no WorkDir property)
-            "scout": None,
         }
-        scout_doc = _load_json(work.root / "scout.json")
-        if isinstance(scout_doc, dict):
-            entry["scout"] = scout_doc
         if kind == "run":
             run = None if rebuild else _load_json(work.root / "run.json")
             if run is None:
@@ -195,7 +187,7 @@ def collect_entries(queue, workdirs, work_root, *, limit=500, rebuild=False, cfg
         # knows it would return None, and a collector that deletes files (the stale-run.json
         # unlink) as a side effect of READING a report is a trap. The batch sweep owns the
         # self-clear.
-        if kind in ("scout", "pending"):
+        if kind in ("transcribed", "pending"):
             sents = _load_json(work.sentences)
             sents = sents if isinstance(sents, list) else []
             entry["n_sentences"] = len(sents)
@@ -203,17 +195,9 @@ def collect_entries(queue, workdirs, work_root, *, limit=500, rebuild=False, cfg
             info = info if isinstance(info, dict) else {}
             dur = info.get("duration")
             if not isinstance(dur, (int, float)) or isinstance(dur, bool) or dur <= 0:
-                # scout.json recorded this SAME ladder at scan time (build_scout: info → ends), so
-                # when it is already parsed and carries a positive number it outranks a fresh
-                # re-derivation from ends — which is exactly what the scout card reads (_views
-                # prefers scout.json duration_sec), so both surfaces show one duration, not two.
-                sd = entry["scout"].get("duration_sec") if isinstance(entry["scout"], dict) else None
-                if isinstance(sd, (int, float)) and not isinstance(sd, bool) and sd > 0:
-                    dur = sd
-                else:
-                    ends = [s.get("end") for s in sents
-                            if isinstance(s, dict) and isinstance(s.get("end"), (int, float))]
-                    dur = max(ends) if ends else None
+                ends = [s.get("end") for s in sents
+                        if isinstance(s, dict) and isinstance(s.get("end"), (int, float))]
+                dur = max(ends) if ends else None
             entry["duration_sec"] = dur
         entries.append(entry)
     return entries, skipped
@@ -306,7 +290,7 @@ def _span_clock(sec: float) -> str:
     """H:MM:SS / M:SS for a POSITION inside the video — a timecode you scrub to, never a
     quantity (that is format_dur's job, and mixing the two is what its docstring forbids).
 
-    Local and unguarded on purpose: unlike scout_report.clock and cli's, this one only ever
+    Local and unguarded on purpose: unlike queue_report.clock and cli's, this one only ever
     formats a VAD span boundary, which is a measured float by construction — there is no unknown
     case to render, so it needs no '—' contract of its own to keep in sync with theirs."""
     t = int(round(sec))
@@ -323,7 +307,7 @@ def format_dur(sec, *, ru: bool = False) -> str:
     11778.0s was the only form three batch footers had for a night's work.
 
     Returns "—" for a non-number: a measured zero prints "0.0s", an unknown never gets to look
-    like one (same contract as scout_report.clock, which stays H:MM:SS — a video's RUNTIME is a
+    like one (same contract as queue_report.clock, which stays H:MM:SS — a video's RUNTIME is a
     timecode you scrub to, not a quantity you compare)."""
     if not isinstance(sec, (int, float)) or isinstance(sec, bool) or sec < 0:
         return "—"
@@ -344,9 +328,8 @@ def batch_totals(runs) -> dict:
     `total_wall` printed raw seconds. NAMING, read before reusing it: this is the SUM of per-video
     stage walls, NOT the elapsed time of the batch — on route B the Sonnet translate wave sits
     between transcribe and synthesize with no stage timer over it, so the 2026-07-25 batch summed
-    3.3h inside a ~5.2 h night. Every caller must label it as work summed per video; `totals_of`
-    in scout_report refuses to add a work sum to a wall clock for the same reason, and this must
-    not become the back door that does it.
+    3.3h inside a ~5.2 h night. Every caller must label it as work summed per video, and this
+    must never be added to a wall clock.
 
     `stages` is [(name, sec, pct), ...] descending — the batch-level stage split, which is the
     number an optimisation decision actually needs. Per-video `breakdown_pct` already existed but
@@ -368,26 +351,10 @@ def batch_totals(runs) -> dict:
             "throughput": thru, "n_triage": n_triage, "stages": stages}
 
 
-def render_summary_block(summary):
-    """The digest's summary section: a '- summary (N words):' header plus the prose wrapped to the
-    digest width and indented two spaces, matching the offender bullets' continuation shape.
-
-    DELIBERATE EXCEPTION to render_run_report's English-artifact norm below: this text is REQUIRED
-    to be Russian (the video summary) — do not 'fix' it. Paragraph breaks are flattened to single
-    newlines (a blank line would terminate the digest's bullet list); the triage HTML keeps them.
-    Heading markers are already gone — read_summary strips them — so no line here can start a new
-    block."""
-    paras = [p for p in summary.split("\n\n") if p.strip()]
-    body = [textwrap.fill(" ".join(p.split()), width=94,
-                          initial_indent="  ", subsequent_indent="  ") for p in paras]
-    return f"- summary ({len(summary.split())} words):\n" + "\n".join(body)
-
-
-def render_run_report(run, offenders, summary=None):
+def render_run_report(run, offenders):
     """Compact ENGLISH Markdown block for ONE video (the codebase artifact norm is English; the
-    Russian human narrative is the skill agent's job). Header + timings line + flags line, an
-    optional Russian summary section, plus an offenders bullet list only when non-empty. Pure, no
-    I/O — the caller reads the sidecar."""
+    Russian human narrative is the skill agent's job). Header + timings line + flags line, plus
+    an offenders bullet list only when non-empty. Pure, no I/O."""
     vid = run.get("video_id")
     title = run.get("title")
     marker = "TRIAGE" if run.get("needs_triage") else "clean"
@@ -536,8 +503,6 @@ def render_run_report(run, offenders, summary=None):
             lines.append(f"    EN: {en}")
     elif "source" in run and isinstance(n_sent, int) and n_sent and not s.get("scanned"):
         lines.append("- source anomalies: not scanned (the src pass did not run)")
-    if summary:
-        lines.append(render_summary_block(summary))
     if offenders:
         lines.append(f"- offenders ({len(offenders)}):")
         for o in offenders:

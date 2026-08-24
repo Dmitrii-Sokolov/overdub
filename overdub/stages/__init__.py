@@ -27,8 +27,8 @@ def all_stages(cfg: Config) -> list[Stage]:
     ]
 
 
-def scout_stages(cfg: Config) -> list[Stage]:
-    """The scout list: fetch audio, transcribe, stop (DECISIONS 2026-07-20).
+def transcribe_only_stages(cfg: Config) -> list[Stage]:
+    """The --transcribe-only list: fetch audio, transcribe, stop (DECISIONS 2026-07-20).
 
     A LIST, not `only={"download","transcribe"}`. run_pipeline checks STOP BEFORE the
     only/done filters, so an --only composition would still sweep 8 stages per video and grid
@@ -39,11 +39,11 @@ def scout_stages(cfg: Config) -> list[Stage]:
 
     The audio-only DownloadStage and the truncation are constructed HERE, together, in one
     expression. That is the point: the two facts can never desynchronize into "truncated list
-    + full download" (100 GB for a triage pass) or "full list + audio-only download" (mux
+    + full download" (100 GB for a transcript pass) or "full list + audio-only download" (mux
     fails at the end of an eight-hour run).
 
     Must stay a strict PREFIX of all_stages: a promoted video re-enters the full pipeline on
-    the artifacts these two produced. Pinned by tests/test_scout.py.
+    the artifacts these two produced. Pinned by tests/test_transcribe_only.py.
 
     Under stage-major ONE DownloadStage instance serves every video of the batch. Safe: stages
     carry no per-instance state beyond `audio_only`, which is a constant for the whole run.

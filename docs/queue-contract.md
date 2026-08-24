@@ -1,6 +1,6 @@
 # The queue contract — shared by every route
 
-Everything routes B, C and E do **identically**: resolving the queue into an id list, deciding
+Everything routes B and E do **identically**: resolving the queue into an id list, deciding
 whether that queue is still current, promoting a queue from one route to another, and fanning
 sub-agents out. It lives here once because it used to live in four skills at once, and a rule
 copied four times is a rule that drifts three ways: on 2026-07-28 the translate contract was
@@ -13,7 +13,7 @@ real run lost videos without it.
 
 The route skills own what differs: the pipeline command, the artifacts, the gates, the report.
 
-**Section numbers are a join key.** The three route skills, README and `tasks/*.md` cite this file by
+**Section numbers are a join key.** The route skills, README and `tasks/*.md` cite this file by
 number, and renumbering breaks none of those references visibly — it just points them somewhere
 else. Numbering is therefore APPEND-ONLY: a new section goes at the end. Renaming a heading is free.
 
@@ -130,7 +130,7 @@ it — and unlike a lost video, nothing reports it.**
   turns out not to be in English: process it like the rest. Do not stop to ask about one. (Route E
   is the exception to the last of those, and only to that one: since 2026-08-14 it CLEANS Russian as
   Russian rather than coping with it, detecting the language per video. It still translates nothing,
-  so B and C are unchanged — a non-English video there is processed, reported and left to the human.)
+  so route B is unchanged — a non-English video there is processed, reported and left to the human.)
   Measured 2026-07-26 on `VHRhSDawKVA` ("… (Instrumental)"): whisper returned a single hallucinated
   "Thank you." over the music, the translator sub-agent flagged it `src=garbled` with exactly that
   reason, and the video muxed clean in 11 s with `needs_triage: false` — the pipeline's own report
@@ -138,7 +138,7 @@ it — and unlike a lost video, nothing reports it.**
   instead of in chat.
 - What goes IN the queue is the human's decision, and no route takes it for them. The reports
   describe what the videos are; nothing in this repo ranks them or drops one.
-- **Never hand-write a completion artifact** (`summary.md`, a draft, a chunk) to clear a "pending"
+- **Never hand-write a completion artifact** (a draft, a chunk) to clear a "pending"
   line. That line is the pass's only completion signal, and forging it is the silent failure in
   miniature.
 
@@ -146,18 +146,17 @@ it — and unlike a lost video, nothing reports it.**
 
 ## 4. Promotion — one route's queue entering another
 
-No cleanup, ever. Nothing outside route B writes `translation.json`, so a scouted or cleaned
+No cleanup, ever. Nothing outside route B writes `translation.json`, so a transcribed or cleaned
 video is **untranslated, not half-translated**.
 
-- `transcribe` **fast-skips** on the existing `sentences.json` — the large-v3 pass is not repeated,
-  which is the whole economic point of a cheap pre-pass.
+- `transcribe` **fast-skips** on the existing `sentences.json` — the transcription pass is not
+  repeated, which is the whole economic point of a cheap pre-pass.
 - `translate` has nothing yet, so route B's Step 2 runs normally.
-- `summary.md` survives and is reused — the transcript it describes did not change.
 - `download` **does re-run** for the dubbing routes: the full contract needs `source.mkv` and no
-  audio-only route ever wrote one, so the audio bytes are re-fetched inside the merged container.
+  audio-only pass ever wrote one, so the audio bytes are re-fetched inside the merged container.
   ~5% extra traffic, accepted deliberately (DECISIONS 2026-07-20). **Do NOT try to save it by
   hand-assembling an MKV from `source.wav`.**
-- Artifacts of the route being left behind (scout, clean) survive untouched. They are also
+- Artifacts of the route being left behind (clean) survive untouched. They are also
   not refreshed by a `--repair-asr` pass — that is what each route's mtime cache check is for.
 
 Videos the user dropped keep their artifacts in `work/<id>/` — a few MB each, and they make a
@@ -175,7 +174,6 @@ why a well-formed built file proves nothing about whether the agent ran.
 |---|---|---|
 | B | `translation.draft.json` | `translation.json` |
 | B, chunked | `translate/<from>-<to>.json` | `translation.draft.json`, `translation.json` |
-| C | `scout.draft.json` | `scout.json` |
 | E | `clean/<from>-<to>.json` | `clean.json`, `clean.md` |
 
 **Route B's draft changes sides depending on which translator ran** — it is the evidence when one
@@ -188,13 +186,12 @@ the contradiction by opening the built file and finding it consistent — it wil
 consistent. Re-run the agent. The built artifacts are also NOT in `invalidate_downstream`'s target
 list, so nothing upstream clears them for you.
 
-MEASURED 2026-07-21, and this is why the rule is written this hard: a scout run was set up for a
-controlled re-measurement by deleting `summary.md`, `scout.draft.json` and `scout.started` while
-leaving `scout.json` in place. S1 correctly reported `summary pending` ×6. The orchestrator noticed
-the contradiction, investigated `build_scout.py` and the invalidation logic, concluded the
-`scout.json` files were "консистентны и полны", skipped the summarizer step entirely, rebuilt the
-report from the stale artifacts and **published a flawless-looking six-video report representing
-zero work**. No "не отсканировано" row anywhere — the one signal a reader would have caught. The
+MEASURED 2026-07-21, on the since-deleted scout route, and this is why the rule is written this
+hard: a run was set up for a controlled re-measurement by deleting the agents' draft files and
+markers while leaving the derived artifact in place. The orchestrator noticed the contradiction,
+investigated the builder and the invalidation logic, concluded the derived files were
+"консистентны и полны", skipped the agent step entirely, rebuilt the report from the stale
+artifacts and **published a flawless-looking six-video report representing zero work**. The
 diligence was real; the tie-break was the only thing missing.
 
 ---
@@ -204,8 +201,8 @@ diligence was real; the tie-break was the only thing missing.
 **Hand fan-out is not a slower alternative, it is the failure mode the workflows exist to remove.**
 Two independent measurements, from opposite ends:
 
-Route C, three runs over one 6-video queue on 2026-07-21 — six `Agent` calls in six separate
-messages every time:
+The since-deleted scout route, three runs over one 6-video queue on 2026-07-21 — six `Agent`
+calls in six separate messages every time:
 
 ```
 run 1  prompt 21,507 chars   spawn gap 103 s   spawn total 514 s   wave 842 s
@@ -250,8 +247,8 @@ regardless, because the guard is a net and not a contract. Always pass the RESUM
 never the whole queue.
 
 The whole queue goes in ONE call — the runtime caps concurrency (~16 agents) and queues the rest,
-so per-wave barriers only add idle time. Route B spawns two agents per VIDEO, so a queue past
-~450 videos would approach the 1000-agent-per-workflow backstop; split it there, not before. Route E
+so per-wave barriers only add idle time. Route B spawns one agent per VIDEO, so a queue past
+~900 videos would approach the 1000-agent-per-workflow backstop; split it there, not before. Route E
 spawns per CHUNK — count chunks, not videos, and the ceiling arrives far sooner.
 
 **The prompts live in `.claude/workflows/*.js`, not in the skills.** Edit the script — two copies
@@ -261,10 +258,10 @@ of one prompt drift, and re-typing a prompt per video is exactly the cost the wo
 
 ## 7. Verify from disk, not from the run's account
 
-On routes B and C the fan-out sub-agents touch an empty marker file as their **first action**
-(`translate.started`, `scout.started`). **Route E has none and needs none** — its
+On route B the fan-out sub-agents touch an empty marker file as their **first action**
+(`translate.started`). **Route E has none and needs none** — its
 drafts are per-chunk already, so E3 verifies the chunk file itself and collects no per-video
-timing, and everything below is about the other two. Two checks, the first of which goes missing
+timing, and everything below is about route B. Two checks, the first of which goes missing
 quietly:
 
 ```powershell
@@ -286,7 +283,7 @@ status line: run the helper and let the artifact answer.
 
 **A missing marker is not a failure to re-run.** The agent wrote the real artifacts and skipped its
 first instruction; the work is good and only that video's timing is gone. The `build_*` helper
-warns per video and the report marks the wave with a `+` to say it is a floor — but nothing re-runs
+warns per video — but nothing re-runs
 an agent for a timing, and doing so by hand would discard valid work to recover a number. Measured
 2026-07-21: 1 of 6 agents did this.
 

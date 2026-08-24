@@ -27,11 +27,11 @@ def replace_retry(src, dst) -> None:
 def jpeg_size(path: Path) -> tuple[int, int] | None:
     """(width, height) out of a JPEG's frame header, or None for anything unreadable.
 
-    Lives here rather than in either script because BOTH ends of the scout preview need it and
-    both already import this module: build_scout asks "is the thumb.jpg on disk wider than the
-    width I now produce" before deciding to re-scale it, and scout_report needs the real ratio to
-    give the preview's box an aspect-ratio -- it is painted as a CSS background so one copy of
-    the bytes can serve both lists, and a background never sizes its own box.
+    Lives here rather than in the report script because BOTH ends of the preview need it:
+    ensure_thumb_local below asks "is the thumb.jpg on disk wider than the width I produce"
+    before deciding to re-scale it, and queue_report needs the real ratio to give the preview's
+    box an aspect-ratio -- it is painted as a CSS background so one copy of the bytes can serve
+    the page, and a background never sizes its own box.
 
     A PARSE, not an assumption: previews are scaled to a fixed width with a derived height, so
     the ratio follows the SOURCE. 16:9 covers nearly every YouTube preview and is a fine caller's
@@ -75,16 +75,12 @@ THUMB_W = 160
 """Width every preview is normalized to, in pixels — the ONE number that governs thumb.jpg.
 
 Lives here, beside `jpeg_size`, for the same reason that function does: both ENDS of the preview
-need it and neither owns the other. The download stage produces the file; `scripts/build_scout.py`
-re-normalizes older workdirs and owns the network fallback; `scripts/scout_report.py` renders it.
-It used to live in build_scout alone, which made the width a property of the SUMMARIZER step —
-so a video that was dubbed without ever being scouted had no preview at all, because nothing on
-that path ever ran the summarizer (INBOX 2026-07-22).
+need it and neither owns the other. The download stage produces the file;
+`scripts/queue_report.py` renders it.
 
-HARD RULE, unchanged by the move: this must stay >= the width scout_report renders at, or the
-scan table upscales the file into a wider slot and the result is soft. Everything else about the
-number is page weight — the rationale for 160 specifically (and for rejecting a 2x hi-DPI source)
-is DECISIONS 2026-07-21."""
+HARD RULE: this must stay >= the width queue_report renders at, or the page upscales the file
+into a wider slot and the result is soft. Everything else about the number is page weight — the
+rationale for 160 specifically (and for rejecting a 2x hi-DPI source) is DECISIONS 2026-07-21."""
 
 
 def scale_thumb(src: Path, dst: Path) -> bool:
@@ -96,7 +92,7 @@ def scale_thumb(src: Path, dst: Path) -> bool:
 
     The output always goes through a temp beside `dst`, because ffmpeg cannot read and write one
     path and the re-scale case passes src == dst (a wider preview is its own best source — see
-    build_scout._ensure_thumb)."""
+    ensure_thumb_local below)."""
     out = dst.with_suffix(".out.jpg")
     try:
         subprocess.run(
@@ -125,15 +121,14 @@ def ensure_thumb_local(work: "WorkDir") -> bool:
     scaled into place.
 
     The glob is `source*.jpg`, not `source.audio*.jpg`: the sidecar's name follows the -o
-    template, so a scout fetch lands `source.audio.jpg` and a full video fetch lands `source.jpg`.
-    Matching only the first shape is why a dubbed-without-scout video had no preview. Nothing else
-    in a workdir is named `source*.jpg` — thumb.src.jpg / thumb.out.jpg are build_scout's and this
-    function's own temporaries and deliberately do not start with `source`.
+    template, so an audio-only fetch lands `source.audio.jpg` and a full video fetch lands
+    `source.jpg`. Matching only the first shape once cost every fully-fetched video its preview.
+    Nothing else in a workdir is named `source*.jpg` — thumb.out.jpg is this function's own
+    temporary and deliberately does not start with `source`.
 
-    NO NETWORK, by design. This is called from the download stage (where a fetch just happened
-    anyway) and from build_scout, which keeps the one networked fallback for pre-2026-07-22
-    workdirs that have no sidecar at all. Splitting it that way means the pipeline never grows a
-    second reason to talk to YouTube, and the report surfaces stay network-free."""
+    NO NETWORK, by design. This is called from the download stage, where a fetch just happened
+    anyway — the pipeline never grows a second reason to talk to YouTube, and the report
+    surfaces stay network-free. A pre-sidecar workdir simply renders without a preview."""
     if work.thumb.exists():
         wh = jpeg_size(work.thumb)
         # unreadable header -> leave it alone. The bytes may still decode in a browser, and
@@ -202,9 +197,6 @@ class WorkDir:
     def sentences(self) -> Path: return self.root / "sentences.json"      # transcribe
 
     @property
-    def summary(self) -> Path: return self.root / "summary.md"            # sonnet seam (informational)
-
-    @property
     def translate_dir(self) -> Path: return self.root / "translate"       # route B chunked: per-chunk agent drafts
 
     @property
@@ -217,7 +209,7 @@ class WorkDir:
     def clean_md(self) -> Path: return self.root / "clean.md"             # route E: the deliverable
 
     @property
-    def thumb(self) -> Path: return self.root / "thumb.jpg"               # scout report: 160px preview, data-URI'd into the page
+    def thumb(self) -> Path: return self.root / "thumb.jpg"               # queue report: 160px preview, data-URI'd into the page
 
     @property
     def translation(self) -> Path: return self.root / "translation.json"  # translate (final)
@@ -292,17 +284,8 @@ class WorkDir:
         report.json AND translation.json must BOTH go: runreport._build_run_report self-clears
         run.json only when both are absent.
 
-        summary.md is DOWNSTREAM, not a survivor (added 2026-07-20): the summarizer's only input
-        is sentences.json, so a repair makes the prose describe a transcript that no longer
-        exists. Nothing in the Python code refreshes it — the only staleness check that exists is
-        the mtime filter in the route-B skill, which does not run on every path, while
-        scripts/run_report.py and scripts/scout_report.py both render it unconditionally and with
-        no staleness marker. D2 makes the summary informational, so deleting it costs nothing a
-        re-run cannot rebuild; keeping it would let the operator triage a repaired dub against a
-        description of the hallucination that was repaired out.
         """
         targets = [
-            self.summary,                                # sonnet seam (derived from sentences)
             self.translation,                            # translate
             self.translation_partial,
             self.pronounce_audit,

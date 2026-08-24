@@ -1,7 +1,7 @@
 """Route E: cut a transcript into chunks, then join the sub-agents' cleaned chunks back into
 work/<id>/clean.json + clean.md.
 
-Same division of labour as build_translation.py / build_scout.py, for the same reason: the
+Same division of labour as build_translation.py, for the same reason: the
 sub-agent writes ONLY the fragile part -- the cleaned text of its own id range -- and this script
 owns every deterministic decision, so the deliverable never rides on an LLM's discipline.
 
@@ -14,8 +14,7 @@ owns every deterministic decision, so the deliverable never rides on an LLM's di
 WHY THE LOSS DETECTORS EXIST AT ALL, and why they are cheap here. This route is the one place in
 the repo where output and input are the SAME language and the SAME sentence order, so a lost line
 is detectable by construction: every sentence id must come back, and what came back must still
-contain the source's numbers and names. Route C cannot check any of this (a summary is ~200 words
-against a whole transcript) and the translate seam cannot check names (the prompt PERMITS Russifying
+contain the source's numbers and names. The translate seam cannot check names (the prompt PERMITS Russifying
 them -- exactly why completeness.entity_loss was deleted on 2026-08-01, see DECISIONS). Same-language
 cleaning does not carry that objection: a name stays a name, so the substring test is right about its
 dominant input class. That reasoning does NOT travel back to completeness.py, which compares
@@ -66,7 +65,7 @@ from overdub.workdir import WorkDir, replace_retry              # noqa: E402
 # cleaning agent rewrites roughly as much as it reads, so ~80 transcript sentences land near 7k
 # characters of output -- well inside the range where a model stays faithful, and far from the
 # length where it starts summarising instead of cleaning. Smaller chunks would be safer still and
-# cost proportionally more spawns (~8.5 s of latency each, measured on route C).
+# cost proportionally more spawns (~8.5 s of latency each, measured 2026-07-21).
 DEFAULT_CHUNK = 80
 # How far the cut may slide from the target to land on a pause. A boundary inside a running
 # sentence gives the next agent an opening it cannot parse, and gives the previous one a dangling
@@ -420,7 +419,7 @@ def _iso(yyyymmdd: str | None) -> str | None:
 
 def _load_json(path: Path):
     """Tolerant read: None on missing/torn -- the contract every optional-artifact reader here
-    uses (runreport._load_json, build_scout._load_json)."""
+    uses (runreport._load_json)."""
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):

@@ -40,7 +40,7 @@ def _tool_exe(name: str) -> str:
 # yt-dlp's OWN retry knobs, not a loop of our own: it already distinguishes an extractor
 # failure from a fragment failure from an HTTP error, and retries each at the right layer.
 #
-# Measured 2026-07-20: a 12-video scout batch lost two videos to `HTTP Error 403: Forbidden`
+# Measured 2026-07-20: a 12-video audio-only batch lost two videos to `HTTP Error 403: Forbidden`
 # and `Video unavailable`, and BOTH downloaded on the next run of the same command, with the
 # same yt-dlp binary and the same URLs — transient, not a property of those videos (their
 # audio-only formats were verified present afterwards). Stage-major hoists every download into
@@ -81,17 +81,15 @@ _CLIENT_ARGV = ["--extractor-args", "youtube:player_client=web_embedded"]
 class DownloadStage:
     """Fetches the source and produces the two artifacts every later stage keys on.
 
-    TWO GATES, one stage (scout mode, DECISIONS 2026-07-20):
+    TWO GATES, one stage (audio-only mode, DECISIONS 2026-07-20):
       video-ready = source.mkv AND source.wav  — the unchanged full contract
-      audio-ready = source.wav                 — enough for transcribe, and all scout needs
+      audio-ready = source.wav                 — enough for transcribe, all a transcript pass needs
 
-    `audio_only` is an INSTANCE flag, set by stages.scout_stages, because the scout stage LIST
-    already differs from the full one: keeping the download variant in the same place means
-    "what scout is" has exactly one definition instead of two that can drift.
+    `audio_only` is an INSTANCE flag, set by stages.transcribe_only_stages, because that stage
+    LIST already differs from the full one: keeping the download variant in the same place means
+    "what the mode is" has exactly one definition instead of two that can drift.
 
-    This stage MUST NEVER write sentences.json. summary.md survives a promotion only because
-    the transcript does not change — the route-B mtime filter keys on it, and nothing else
-    enforces that dependency.
+    This stage MUST NEVER write sentences.json.
     """
 
     name = "download"
@@ -100,11 +98,11 @@ class DownloadStage:
         self.audio_only = audio_only
 
     def done(self, ctx: Context) -> bool:
-        """Consequence, deliberate (DECISIONS 2026-07-20): a PROMOTED video (scouted, then run
-        without --scout) fails the video gate and re-downloads, re-fetching the audio bytes
-        inside the merged MKV — ~5% extra traffic in exchange for zero new machinery. Do NOT
-        "fix" this by letting the video gate accept source.wav: mux would then get a container
-        with no video stream."""
+        """Consequence, deliberate (DECISIONS 2026-07-20): a PROMOTED video (fetched audio-only,
+        then run without --transcribe-only) fails the video gate and re-downloads, re-fetching
+        the audio bytes inside the merged MKV — ~5% extra traffic in exchange for zero new
+        machinery. Do NOT "fix" this by letting the video gate accept source.wav: mux would then
+        get a container with no video stream."""
         if self.audio_only:
             return ctx.work.source_audio.exists()
         return ctx.work.source_video.exists() and ctx.work.source_audio.exists()
@@ -123,14 +121,13 @@ class DownloadStage:
                 "-f", "bv*[ext=mp4]+ba[ext=m4a]/bv*+ba/b",
                 "--merge-output-format", "mkv",
                 "--write-info-json",
-                # Same one-request preview the scout fetch takes, for the same reason and with
-                # the same tolerance for failure. It is here because a video dubbed WITHOUT a
-                # scout pass had no preview anywhere: the flags lived only on the audio branch,
-                # so the queue page rendered those rows pictureless and the only cure on disk was
-                # a networked backfill inside the summarizer step, which that route never runs
-                # (INBOX 2026-07-22). The -o template is source.mkv, so the sidecar lands as
-                # `source.jpg` — matched by ensure_thumb_local's `source*.jpg` glob, which is
-                # deliberately wider than the old audio-only one.
+                # Same one-request preview the audio-only fetch takes, for the same reason and
+                # with the same tolerance for failure. It is here because a video fetched in full
+                # once had no preview anywhere: the flags lived only on the audio branch, so the
+                # queue page rendered those rows pictureless (INBOX 2026-07-22). The -o template
+                # is source.mkv, so the sidecar lands as `source.jpg` — matched by
+                # ensure_thumb_local's `source*.jpg` glob, which is deliberately wider than the
+                # old audio-only one.
                 "--write-thumbnail", "--convert-thumbnails", "jpg",
                 "-o", str(w.source_video),
                 ctx.url,
@@ -146,16 +143,17 @@ class DownloadStage:
         that gate and hand mux a video-less file.
 
         `-f bestaudio` with NO '/best' tail, unlike the video branch's '/b'. The fallback would
-        pull a full progressive VIDEO stream on a source with no audio-only format — scout
+        pull a full progressive VIDEO stream on a source with no audio-only format — the mode
         silently doing the exact thing it exists to prevent, at ~20x the bytes. A hard failure
-        there is correct and loud: the video drops out of the scout batch with a FAIL and the
+        there is correct and loud: the video drops out of the batch with a FAIL and the
         operator runs it in full mode deliberately. YouTube always has audio-only formats.
 
-        Provenance note, so nobody "fixes" the rewrite later: the scout wav is decoded from
+        Provenance note, so nobody "fixes" the rewrite later: this wav is decoded from
         bestaudio (typically opus/webm), a promoted video's wav from the ba[ext=m4a] inside the
         MKV. Same YouTube master, same timeline, so sentences.json timestamps — computed on the
-        scout wav and never recomputed — stay valid and --repair-asr still clips correct windows.
-        A repair run performed on the scout workdir clipped from bytes that no longer exist.
+        audio-only wav and never recomputed — stay valid and --repair-asr still clips correct
+        windows. A repair run performed on the audio-only workdir clipped from bytes that no
+        longer exist.
         Rejected alternative: skip the extraction when source.wav already exists. It saves the
         rewrite but leaves a wav from a DIFFERENT fetch as the permanent input to a full run —
         a stale artifact served as current.
@@ -170,11 +168,10 @@ class DownloadStage:
                 *_CLIENT_ARGV,
                 "-f", "bestaudio",
                 "--write-info-json",
-                # the scout report shows a preview beside each title; grabbing it while we are
-                # already talking to YouTube costs one request and keeps build_scout offline for
-                # every workdir scouted from here on (it self-heals older ones over the network).
-                # Failure to fetch it must never fail the video: --no-abort-on-error would be too
-                # broad, so the file's absence is simply tolerated downstream.
+                # the queue report shows a preview beside each title; grabbing it while we are
+                # already talking to YouTube costs one request and keeps the report surfaces
+                # offline. Failure to fetch it must never fail the video: --no-abort-on-error
+                # would be too broad, so the file's absence is simply tolerated downstream.
                 "--write-thumbnail", "--convert-thumbnails", "jpg",
                 "-o", str(w.root / "source.audio.%(ext)s"),
                 ctx.url,
@@ -183,16 +180,16 @@ class DownloadStage:
         )
         self._normalize_info_json(w)
         media = [p for p in sorted(w.root.glob("source.audio.*"))
-                 # .jpg is the --write-thumbnail/--convert-thumbnails sidecar (see build_scout.py's
-                 # _ensure_thumb, which globs source.audio*.jpg for exactly this file) — a preview,
-                 # never the fetched media, so it must not count toward the one-file invariant.
+                 # .jpg is the --write-thumbnail/--convert-thumbnails sidecar (ensure_thumb_local
+                 # globs source*.jpg for exactly this file) — a preview, never the fetched media,
+                 # so it must not count toward the one-file invariant.
                  if not p.name.endswith(".info.json") and p.suffix.lower() != ".jpg"]
         if len(media) != 1:
             # Picking the first would silently transcribe whichever container sorted lowest —
             # and on a two-file glob one of them is by definition not what yt-dlp just fetched.
-            raise RuntimeError(f"scout download: expected exactly one source.audio.* in {w.root}, "
+            raise RuntimeError(f"audio download: expected exactly one source.audio.* in {w.root}, "
                                f"got {[p.name for p in media]} — yt-dlp output template changed?")
-        print(f"       [scout] audio {media[0].stat().st_size / 1e6:.1f} MB "
+        print(f"       [audio] {media[0].stat().st_size / 1e6:.1f} MB "
               f"({media[0].suffix or 'n/a'}) → source.wav")
         ensure_thumb_local(w)                          # cosmetic, never fatal, never networked
         _extract_wav(media[0], w.source_audio)
@@ -202,7 +199,7 @@ class DownloadStage:
         """--write-info-json derives the sidecar from the -o template AND the real container ext,
         so an audio fetch lands it as source.audio.<ext>.info.json — a name that NEITHER
         cli._title_of (which probes source.info.json and source.mkv.info.json) NOR
-        runreport._build_run_report look at. Left alone, every scout workdir pays a 30 s networked
+        runreport._build_run_report look at. Left alone, every audio-only workdir pays a 30 s networked
         `yt-dlp --print title` at report time (~50 minutes across a 100-video queue) AND a promoted
         video's run.json silently downgrades video_sec_source from "info_json" to
         "ffprobe"/"sentences". Two silent degradations.
@@ -212,8 +209,8 @@ class DownloadStage:
         is version-independent.
 
         The rename is UNCONDITIONAL when a sidecar exists, deliberately clobbering any
-        source.info.json already on disk. The only things that can have written one for a scout
-        workdir are an earlier scout fetch (identical content) and _title_of's backfill, which
+        source.info.json already on disk. The only things that can have written one for such a
+        workdir are an earlier audio-only fetch (identical content) and _title_of's backfill, which
         writes `{"title": ...}` and NOTHING ELSE — keeping that one would drop `duration` and
         re-introduce exactly the video_sec_source downgrade this method exists to prevent. The
         fresh sidecar is always the superset.
@@ -224,8 +221,8 @@ class DownloadStage:
             replace_retry(cand, w.info_json)
             return
         if not w.info_json.exists():
-            print(f"[warn] scout: no info.json sidecar for {w.root.name} — title and duration "
-                  f"will need a network lookup at report time")
+            print(f"[warn] audio download: no info.json sidecar for {w.root.name} — title and "
+                  f"duration will need a network lookup at report time")
 
 
 def _extract_wav(src: Path, dst: Path) -> None:
@@ -234,9 +231,10 @@ def _extract_wav(src: Path, dst: Path) -> None:
     tmp + replace_retry, not `ffmpeg -y` straight onto dst: BOTH done() gates are existence
     checks with no checksum, so a run killed mid-extraction (thermals, a 2am reboot) leaves a
     TRUNCATED source.wav that every later resume accepts as complete — transcribe reads it,
-    sentences.json comes out short, and nothing ever says so. Scout is what makes this
-    load-bearing: its gate is the first in the pipeline with NO sibling artifact to contradict
-    a torn file. Every other large artifact in this repo already goes through replace_retry."""
+    sentences.json comes out short, and nothing ever says so. The audio-only mode is what makes
+    this load-bearing: its gate is the first in the pipeline with NO sibling artifact to
+    contradict a torn file. Every other large artifact in this repo already goes through
+    replace_retry."""
     tmp = dst.parent / (dst.name + ".tmp")
     tmp.unlink(missing_ok=True)                        # orphan from a prior crash
     subprocess.run(
@@ -248,7 +246,7 @@ def _extract_wav(src: Path, dst: Path) -> None:
             # atomic tmp above ends in ".tmp", which matches no muxer — without this the call
             # dies with "Unable to choose an output format" before writing a byte and takes
             # BOTH branches down (_fetch_video and _fetch_audio land here), i.e. the whole
-            # pipeline, not just scout. Verified against ffmpeg 7.1.1: exit 127 without it.
+            # pipeline. Verified against ffmpeg 7.1.1: exit 127 without it.
             # Same hazard the repo already paid for once with soundfile on .../NNNNN.wav.tmp
             # (tts/silero.py passes format="WAV") and already guards at
             # mux.py's "-f matroska" for .mkv.tmp. Do NOT "simplify" by renaming the tmp to

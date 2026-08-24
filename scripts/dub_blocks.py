@@ -1,13 +1,13 @@
 """The dub layer's HTML blocks: flagged-unit players, the source-anomaly list, the batch table.
 
-Split out of scripts/scout_report.py on 2026-07-22. These six functions came in as a group when
-the retired triage page was merged into the scout report (2026-07-21) and they still are one:
+Split out of the queue-report script on 2026-07-22. These six functions came in as a group when
+the retired triage page was merged into the queue page (2026-07-21) and they still are one:
 everything here renders what a DUBBED video earned — its flagged units with audio, the anomalies
 found in its English source, its row in the batch table. Nothing here knows about grades,
 previews, cards or page assembly, which is what stayed behind.
 
-The dependency is one-way and must stay so: scout_report imports this, this imports nothing from
-scout_report. The temptation to reach back is `_title_link` — do not; `_dub_table` links by video
+The dependency is one-way and must stay so: queue_report imports this, this imports nothing from
+queue_report. The temptation to reach back is `_title_link` — do not; `_dub_table` links by video
 id on purpose, since the batch table's first column IS the id (the digest prints the same one).
 
 `queueview.BATCH_COLUMNS` / `batch_row` are imported directly rather than passed in: they are the
@@ -22,7 +22,7 @@ import html
 import os
 from pathlib import Path
 
-# `overdub` resolves because the importing script (scout_report.py) puts the repo root on
+# `overdub` resolves because the importing script (queue_report.py) puts the repo root on
 # sys.path before importing this module — the same preamble every script in this directory has.
 from overdub import queueview
 

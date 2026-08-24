@@ -10,7 +10,7 @@ did not read-modify-write the whole document is exactly how `detail` got eaten t
 Pure stdlib, no package imports, so importing this from pipeline/stages/runreport can never create
 a cycle — the same property runreport states about itself and the reason the JSON helpers below are
 a private copy rather than an import (five modules in this repo carry that same six-line reader on
-purpose; see build_scout._load_json).
+purpose; see runreport._load_json).
 
 Never raises. A timing is observability: losing one costs a number in a report, and it must never
 cost a stage. Every public function here swallows its own failure into a [warn].

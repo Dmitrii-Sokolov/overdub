@@ -3,8 +3,8 @@
 ## Goal + AC
 
 Hygiene, NOT a queue-size lever: after a successful mux, delete BINARIES only (`source.mkv`,
-`source.wav`, `source_bed.wav`, `dub_ru.wav`, `segments/`); json/md are pennies. Transcript,
-translation and summary survive; the cost is re-synthesis of everything downstream. `out/` holds
+`source.wav`, `source_bed.wav`, `dub_ru.wav`, `segments/`); json/md are pennies. Transcript and
+translation survive; the cost is re-synthesis of everything downstream. `out/` holds
 a second hardlink so the result survives on its own.
 AC: not frozen — task imported from PLAN.md (2026-08-24), fix AC at pickup.
 

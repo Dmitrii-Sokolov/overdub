@@ -61,7 +61,7 @@ class Config:
                                                  # AND --repair-asr, which share transcribe_words
                                                  # on purpose). Candidate speed lever for the
                                                  # "Transcribe speed" roadmap item: 907 s per pass
-                                                 # over the 6-video queue is 79% of a scout pass.
+                                                 # over the 6-video queue is 79% of a transcript pass.
                                                  # NOT a free dial — beam width is what buys the
                                                  # transcript its second opinion on ambiguous
                                                  # audio, and this repo has already watched a

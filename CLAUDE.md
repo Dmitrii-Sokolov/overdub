@@ -6,17 +6,22 @@ Current stage: polishing. The pipeline must run turn-key
 (URL in → final MKV out) with acceptable speed and quality; occasional broken
 segments are tolerated.
 
-**The deliverable is the TOOL, never a particular video.** Every MKV in `work/`
+**The deliverable is the TOOL, never a particular video.** A founding framing,
+older than the repo itself. Every MKV in `work/`
 and `out/` is a test fixture that happens to be watchable. So a defect in a
 shipped video is an input signal about the pipeline, not a repair ticket:
 fix the CLASS and let the next batch come out right. Do not re-run, re-repair,
 re-translate or re-synthesize an individual video to make that video better —
 the only thing that justifies touching a finished one is a MEASUREMENT that
 generalizes (a number, an ear verdict, a fixture), and then the artifact is a
-by-product, not the point. Same rule reversed: intermediate artifacts are
+by-product, not the point. The check: ask what a run RETURNED — a number, a
+flag distribution, a verdict, a fixture; a run that returned only watchable
+artifacts was a production run, and this repo does not do production runs yet.
+Same rule reversed: intermediate artifacts are
 consumables, so anything that persists a generalizable finding (the golden
 fixture, `_pre-repair-*.json` pairs, `work-exp/` baselines) outranks the videos
-themselves. Rationale: DECISIONS 2026-07-25.
+themselves — `work-exp/` has already lost baselines to a cleanup while the
+videos survived, which is exactly the wrong direction.
 
 ## Host environment
 
@@ -179,9 +184,9 @@ diverge from it.
 
 ## Reference
 
-`docs/queue-contract.md` — what routes B/C/E do IDENTICALLY: `queue.txt` ownership, the `$ids`
+`docs/queue-contract.md` — what routes B and E do IDENTICALLY: `queue.txt` ownership, the `$ids`
 block and its three guards, the `# playlist:` freshness diff, promotion between routes, the
-derived-artifact-is-not-evidence rule, `Workflow` fan-out and marker verification (B and C — route E
+derived-artifact-is-not-evidence rule, `Workflow` fan-out and marker verification (route B — route E
 has no marker). A MANDATORY READ before driving any route, and the place to EDIT any of those
 rules — it exists because each of them used to live in four skills at once, and a rule copied four
 times drifts three ways.

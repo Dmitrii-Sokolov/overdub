@@ -93,7 +93,7 @@ DEFAULT_CHUNK = 400
 # other the reader. See references/translate-contract.md for what each kind means.
 _SRC_KINDS = ("ok", "garbled", "truncated", "dup_neighbour", "enum_repeat",
               "context_contradiction")
-_SRC_NOTE_MAX = 200          # visible cap, same discipline as runreport._SUMMARY_MAX_CHARS
+_SRC_NOTE_MAX = 200          # visible cap: truncation is marked, never silent
 _DUAL_COUNT = re.compile(r"\[\[[^\[\]|]*\|[^\[\]|]*\]\]")
 # Latin or a digit that reached the SPOKEN side unmarked. Advisory only: normalize_for_tts
 # still voices it, so this counts how often the translator left the reading to the rule
@@ -309,8 +309,8 @@ def build(work: WorkDir, draft_path: Path, cfg: Config
             n_scanned += 1
             if src not in _SRC_KINDS:
                 # clamp, never drop: an unknown kind must not vanish, and must not fail the
-                # build either -- a report never gates a dub (the source-anomaly pass and the
-                # video summary are both informational, DECISIONS 2026-07-20 D2).
+                # build either -- a report never gates a dub (the source-anomaly pass is
+                # informational, DECISIONS 2026-07-20 D2).
                 print(f"[warn] id {sid}: unknown src {src!r} -> unknown")
                 note = f"[raw src={src!r}] {note}".strip()
                 src = "unknown"

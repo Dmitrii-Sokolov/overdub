@@ -42,7 +42,6 @@ from __future__ import annotations
 import json
 import math
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -95,19 +94,6 @@ _ADVISORY_TRANSLATE = frozenset({"english_echo"})
 _SOURCE_KINDS = ("garbled", "truncated", "dup_neighbour", "enum_repeat",
                  "context_contradiction", "unknown")
 _SOURCE_LIMIT = 40      # mirrors summarize_offenders(limit=40) — keeps run.json small + diffable
-
-# The summary is free-form Russian prose an LLM wrote (the video summary — INFORMATIONAL, it gates
-# nothing). Two renderers consume it, so the sanitizing happens ONCE here at the read boundary and
-# not in either renderer: a markdown heading inside the text would collide with the digest's own
-# "### <vid>" block header and silently break block boundaries for the agent that parses the
-# digest, and a runaway blob would wreck the digest's line flow and bloat the triage page. There is
-# deliberately NO build_summary.py operator step — an operator step can be skipped, a read boundary
-# both renderers go through cannot (same "centralize the shared transform" precedent report.py
-# cites for normalize.py).
-# 4000 chars is ~3x what a ~200-word Russian summary occupies — headroom, not a quality bar.
-_SUMMARY_MAX_CHARS = 4000
-_HEADING = re.compile(r"^\s{0,3}#{1,6}\s*")     # atx heading marker: strip the marker, keep the text
-
 
 # --- small pure helpers -------------------------------------------------------
 def _load_json(path):
@@ -240,30 +226,6 @@ def _stage_overhead(stages, detail):
             continue
         out[stage] = round(gap, 3)
     return out, sum(out.values())
-
-
-def read_summary(work):
-    """work/<id>/summary.md → sanitized prose, or None when absent/empty/unreadable.
-
-    A SIDECAR, deliberately not folded into run.json: run.json is derived and self-clears when
-    report.json + translation.json are both gone (a scout-mode workdir), so routing the
-    summary through the rollup would make it invisible in the one mode it was designed for. Keeping
-    the rollup small and diffable is load-bearing besides.
-
-    Never raises: a missing summary is NORMAL (it gates nothing — the v1 summary is informational)
-    and an unreadable one degrades to None, the same contract _load_json gives every other optional
-    artifact this module reads."""
-    try:
-        raw = work.summary.read_text(encoding="utf-8")
-    except (OSError, ValueError):                 # ValueError: torn UTF-8, mirrors _load_json
-        return None
-    lines = [_HEADING.sub("", ln).rstrip() for ln in raw.replace("\r\n", "\n").split("\n")]
-    text = re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
-    if not text:
-        return None
-    if len(text) > _SUMMARY_MAX_CHARS:            # visible truncation, never a silent drop
-        text = text[:_SUMMARY_MAX_CHARS].rstrip() + " …[truncated]"
-    return text
 
 
 def build_run_report(work, cfg):
@@ -820,7 +782,7 @@ def flagged_units(report, translation=None, limit=500):
 
 # --- the queue layer moved out (2026-07-22) ------------------------------------
 # `queue_ids`, `queue_playlist`, `classify_workdir`, `collect_entries`, `BATCH_COLUMNS`,
-# `batch_row`, `batch_totals`, `render_summary_block` and `render_run_report` now live in
+# `batch_row`, `batch_totals` and `render_run_report` now live in
 # `overdub/queueview.py`. The seam is the one this section marker already drew: everything above
 # reads ONE workdir during a run, everything moved resolves a QUEUE after one. queueview imports
 # this module; nothing here may import queueview, or the queue walk lands back inside the

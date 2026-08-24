@@ -1,6 +1,6 @@
 ---
 name: overdub-clean
-description: "Produce a readable text of each queued video in ITS OWN language, English or Russian (README route E) — transcribe, repair the ASR defects where the engine allows it, then clean the transcript chunk by chunk with Sonnet sub-agents and save it as work/<id>/clean.md. Minimal processing by contract: filler and false starts out, wording and sentence order untouched, nothing summarised and nothing translated. Fixed order: transcribe the queue (audio only), run --repair-asr auto when asr_engine is whisper, plan the chunk cut with scripts/build_clean.py --plan (which also detects the language), fan the chunks out through the clean-transcript workflow, join with build_clean.py, then hand the user a short Russian rundown. Trigger when the user wants to READ a video instead of watching it: 'текстовая версия', 'вычищенный транскрипт', 'сделай текст по видео', 'расшифровка', 'clean transcript', 'readable transcript', 'text of the video'. NOT a short summary (that is overdub-scout, route C), NOT dubbing (overdub-sonnet-batch, route B), and NOT a translation — a Russian video comes back as Russian text."
+description: "Produce a readable text of each queued video in ITS OWN language, English or Russian (README route E) — transcribe, repair the ASR defects where the engine allows it, then clean the transcript chunk by chunk with Sonnet sub-agents and save it as work/<id>/clean.md. Minimal processing by contract: filler and false starts out, wording and sentence order untouched, nothing summarised and nothing translated. Fixed order: transcribe the queue (audio only), run --repair-asr auto when asr_engine is whisper, plan the chunk cut with scripts/build_clean.py --plan (which also detects the language), fan the chunks out through the clean-transcript workflow, join with build_clean.py, then hand the user a short Russian rundown. Trigger when the user wants to READ a video instead of watching it: 'текстовая версия', 'вычищенный транскрипт', 'сделай текст по видео', 'расшифровка', 'clean transcript', 'readable transcript', 'text of the video'. NOT a short summary, NOT dubbing (overdub-sonnet-batch, route B), and NOT a translation — a Russian video comes back as Russian text."
 ---
 
 # overdub — clean transcript (route E)
@@ -17,12 +17,10 @@ reverse), that is not this route and not any route in this repo today — say so
 no `source.mkv` on disk.
 
 This route is defined by what it does NOT do. It is the only route whose output is roughly as long
-as its input, and that is the point: a reader who wanted the short version would be reading a
-scout summary. Every instruction below that looks pedantic about length is protecting exactly that.
+as its input, and that is the point: a reader who wanted the short version did not want this
+route. Every instruction below that looks pedantic about length is protecting exactly that.
 
 **When NOT to use this skill.**
-- The user wants to know **what is in** a video, briefly → `overdub-scout` (route C), ~200 words
-  per video instead of the whole text.
 - The user wants the videos **dubbed** → `overdub-sonnet-batch` (route B), the only route that ends
   in a dub.
 - The user asks about **one** video that already has `work/<id>/clean.md` → read that file and
@@ -33,8 +31,8 @@ scout summary. Every instruction below that looks pedantic about length is prote
 Two layers, and together they make a re-run over an already-processed queue cost seconds:
 
 1. **The transcript** — the pipeline's own fast-skip. `download` and `transcribe` are done when
-   `source.wav` and `sentences.json` exist, so E1 over a queue that was scouted or dubbed
-   re-reads what is on disk and stops.
+   `source.wav` and `sentences.json` exist, so E1 over a queue that was already transcribed or
+   dubbed re-reads what is on disk and stops.
 2. **The chunk drafts** — `work/<id>/clean/<from>-<to>.json`, one file per chunk, keyed on mtime
    against `sentences.json`. A chunk whose file is fresh is not re-spawned, so a failed wave costs
    only its failures.
@@ -57,12 +55,11 @@ worst form of that collision in the repo — hence `-Unique`.
 Then run:
 
 ```powershell
-.venv-asr\Scripts\python.exe -X utf8 -m overdub --batch queue.txt --scout
+.venv-asr\Scripts\python.exe -X utf8 -m overdub --batch queue.txt --transcribe-only
 ```
 
-Single video: the URL instead of `--batch queue.txt`. `--scout` **is** "fetch audio, transcribe,
-stop", which is exactly this route's input; route E has no mode of its own on purpose. Its per-video
-line mentions `summary pending|ok` — that is route C's artifact and says nothing here.
+Single video: the URL instead of `--batch queue.txt`. `--transcribe-only` **is** "fetch audio,
+transcribe, stop", which is exactly this route's input; route E has no mode of its own on purpose.
 
 **Gate before E2:**
 
@@ -215,11 +212,8 @@ chunk you re-ran, a video whose transcript was too thin to be worth reading. Off
 ## Promotion — a cleaned queue entering another route
 
 Nothing to clean up, and nothing here writes `translation.json`, so a cleaned video is untranslated
-rather than half-translated. It enters route B at its Step 1 or route C at S2; the mechanics are
+rather than half-translated. It enters route B at its Step 1; the mechanics are
 [`docs/queue-contract.md`](../../../docs/queue-contract.md) §4.
-
-Going the other way, a queue that was scouted arrives here with its transcript already on disk, so
-E1 costs seconds.
 
 ## Rules that are not negotiable
 

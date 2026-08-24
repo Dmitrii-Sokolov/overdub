@@ -15,8 +15,8 @@ a procedure that will be wrong here first.
 
 ## Pipeline
 
-1. **Download** — `yt-dlp` fetches the video (audio-only in scout mode). A thumbnail rides along
-   with the fetch and is scaled to `work/<id>/thumb.jpg` for the report pages.
+1. **Download** — `yt-dlp` fetches the video (audio-only under `--transcribe-only`). A thumbnail
+   rides along with the fetch and is scaled to `work/<id>/thumb.jpg` for the report pages.
 2. **Transcribe** — Parakeet-TDT 0.6b v3 (NVIDIA NeMo) produces the English transcript with word
    timestamps; words are re-assembled into sentences with `[start, end]`. The sentence is the unit
    of translation, synthesis and sync. It runs in `.venv-parakeet` as a subprocess worker and
@@ -60,12 +60,11 @@ reading it. The reason the EN side is deliberately not re-timed is in `assemble.
 | | question it answers | ends in | driven by |
 |---|---|---|---|
 | **B** — dub | "voice this over in Russian" | MKV in `out/` | [`overdub-sonnet-batch`](.claude/skills/overdub-sonnet-batch/SKILL.md) |
-| **C** — scout | "what is in this queue?" | `work/scout-report.html` | [`overdub-scout`](.claude/skills/overdub-scout/SKILL.md) |
 | **E** — clean | "let me read it instead of watching" | `work/<id>/clean.md` | [`overdub-clean`](.claude/skills/overdub-clean/SKILL.md) |
 | `--transcribe-file` | "I have a file, give me its text" | one `.md` beside the file | nothing; it is one command |
 
-Route B is the only route that ends in a dub. C and E leave a video **untranslated, not
-half-translated**, so any of them promotes into any other with no cleanup.
+Route B is the only route that ends in a dub. E leaves a video **untranslated, not
+half-translated**, so it promotes into B with no cleanup.
 
 ## Running
 
@@ -75,7 +74,7 @@ resolved from `.venv-asr\Scripts` first, PATH second; both tools are preflighted
 error instead of a raw WinError 2.
 
 **Two documents own everything a route does not own itself.**
-[`docs/queue-contract.md`](docs/queue-contract.md) is what routes B, C and E do IDENTICALLY —
+[`docs/queue-contract.md`](docs/queue-contract.md) is what routes B and E do IDENTICALLY —
 resolving `queue.txt` into an id list, deciding whether that queue is still current, promoting it
 between routes, fanning sub-agents out — and it is a mandatory read for whoever drives a route.
 Each route's own skill owns its gates, resume filters and reports. The sections below carry the
@@ -110,14 +109,14 @@ COMMANDS and the artifact contract; they are deliberately not a second copy of e
 
 ```powershell
 .venv-asr\Scripts\python.exe -X utf8 scripts\run_report.py --queue queue.txt    # text digest
-.venv-asr\Scripts\python.exe -X utf8 scripts\scout_report.py --queue queue.txt  # the queue page
+.venv-asr\Scripts\python.exe -X utf8 scripts\queue_report.py --queue queue.txt  # the queue page
 ```
 
 - `work/<id>/run.json` is the per-run rollup (timings/RTF, flag counts by type, speed distribution,
   `needs_triage`); `work/<id>/report.json` is the raw record behind it. For a batch the CLI also
   prints a sweep after the summary.
-- `scout_report.py` writes **one page per queue**, `work/scout-report.html`: the scan table, a card
-  per video, and — once a queue is (partly) dubbed — the batch-table rows, the flagged units with
+- `queue_report.py` writes **one page per queue**, `work/queue-report.html`: a card per video, and —
+  once a queue is (partly) dubbed — the batch-table rows, the flagged units with
   an inline audio player each (expected vs whisper-heard, click to listen) and the source-anomaly
   block. Row order is the queue's, never sorted. Audio is base64-embedded by default; `--link`
   keeps the page small but ties it to this machine. **A published copy built with `--link` shows
@@ -163,38 +162,10 @@ function), gates each line, and enforces id-contiguity so a malformed draft fail
 reaching synthesize. Full schemas and the `src` vocabulary:
 [`translate-contract.md`](.claude/skills/overdub-sonnet-batch/references/translate-contract.md).
 
-Route B **does not write `summary.md`** — the summarizer was turned off on 2026-08-20 (DECISIONS);
-the workflow keeps the capability behind a `sumIds` argument. A video promoted from route C keeps
-the summary route C wrote.
-
-### C. Scout a queue before dubbing it (audio only)
-
-A cheap pass over an unread queue — **download → transcribe → stop.** No translation, no TTS, no
-MKV, no `source.mkv` on disk, so a 100-video queue costs a few GB instead of ~100 GB in hour 0.
-
-```powershell
-.venv-asr\Scripts\python.exe -X utf8 -m overdub --batch queue.txt --scout
-```
-
-`--scout` is its own mode, not a composition: `--scout --only …` and `--scout --repair-asr …` are
-usage errors, refused before any side effect. Its fetch is `-f bestaudio` with no `/best`
-fallback on purpose — a source with no audio-only format FAILS out of the pass rather than quietly
-pulling a full video stream.
-
-The summary is written at the seam, not by the pipeline: there is no summarize stage. One Sonnet
-sub-agent per video writes `summary.md` (prose, reused by route B on promotion) and
-`scout.draft.json`, then `scripts/build_scout.py` assembles `scout.json` — the same split of labour
-`build_translation.py` enforces on route B. The skill owns that wave.
-
-**The route assesses nothing.** No grade, no watch/skip, no ranking — not in the artifacts, not on
-the page, not in chat. It reports what each video covers and what is most interesting in it;
-trimming the queue is the reader's call. Two earlier attempts at a verdict are the reason
-(DECISIONS 2026-08-03).
-
 ### E. Clean a queue into readable text — no summary, no dub
 
 The output is the video's own words, roughly as long as the source, cleaned enough to read:
-`work/<id>/clean.md`. A reader who wanted the short version would be reading a scout summary.
+`work/<id>/clean.md`.
 
 **English or Russian, and the route detects which.** Nothing is translated here, so the source
 language is whatever the video is; `build_clean.py --plan` stamps `lang` into the plan and
@@ -203,12 +174,18 @@ rather than guessed at. `cfg.source_lang` is deliberately not consulted — it m
 dubbing pipeline expects".
 
 ```powershell
-# 1. same transcript command as route C, so a scouted queue costs seconds here
-.venv-asr\Scripts\python.exe -X utf8 -m overdub --batch queue.txt --scout
+# 1. transcribe the queue: audio-only download → transcribe → stop
+.venv-asr\Scripts\python.exe -X utf8 -m overdub --batch queue.txt --transcribe-only
 # 2. plan the cut (per video), fan the chunks out through the skill's workflow, then join
 .venv-asr\Scripts\python.exe -X utf8 scripts\build_clean.py "work\<id>" --plan
 .venv-asr\Scripts\python.exe -X utf8 scripts\build_clean.py "work\<id>"
 ```
+
+`--transcribe-only` is its own mode, not a composition: combining it with `--only` or
+`--repair-asr` is a usage error, refused before any side effect. Its fetch is `-f bestaudio` with
+no `/best` fallback on purpose — a source with no audio-only format FAILS out of the pass rather
+than quietly pulling a full video stream, and a 100-video queue costs a few GB instead of ~100 GB
+in hour 0.
 
 One sub-agent per CHUNK, not per video: this is the one route whose output is as long as its input,
 and a per-video agent cleans the opening faithfully and compresses harder the further it goes with
@@ -249,8 +226,9 @@ document that says so, never an empty one.
 be: Parakeet detects it and cannot be told otherwise, and on `asr_engine = "whisper"` the decode
 asks for whisper's own detector rather than `source_lang`.
 
-It runs no stages and owns no workdir — every stage-selecting flag (`--force`, `--only`, `--scout`,
-`--repair-asr`) is refused rather than ignored, and nothing is left behind but the document.
+It runs no stages and owns no workdir — every stage-selecting flag (`--force`, `--only`,
+`--transcribe-only`, `--repair-asr`) is refused rather than ignored, and nothing is left behind
+but the document.
 Sentence splitting is the transcribe stage's own `resegment`, so a sentence here is a sentence
 there.
 
@@ -312,7 +290,7 @@ where what is load-bearing rather than cosmetic is collection scope — `testpat
 **The suite size is not written down anywhere on purpose** (the rule and its rationale are in
 CLAUDE.md, "Tests"). The run is the only answer, and `--collect-only -q` gives it without executing
 anything. Every file also stays directly runnable and prints its own summary
-(`python -X utf8 tests\test_scout_report.py`); both entry points work off the same
+(`python -X utf8 tests\test_queue_report.py`); both entry points work off the same
 `sys.path.insert` preamble inside each test file, and there is deliberately no `pythonpath` in the
 ini, because a second mechanism could silently diverge from the first.
 

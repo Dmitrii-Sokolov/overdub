@@ -25,7 +25,7 @@ queue vs ≈334k/agent on a long-transcript queue — 5.3× apart); triage route
 The old "the scarce resource now that disk is not" framing is **retracted**. The user's operating
 estimate (2026-08-06) is ~1% of the weekly limit per 2-5 h of translated audio, i.e. tens of
 hours run without approaching a limit — an ESTIMATE with a named source, not a measurement, and
-it does not become one by being quoted again. Route B spends sub-agents per video (translator;
-the summarizer was dropped 2026-08-20), route C one, route E one per CHUNK. The only route that
-ever had a recorded figure (route D, ~200k per video, 2026-07-30) was deleted with the route on
-2026-08-03, so that number describes nothing that still exists.
+it does not become one by being quoted again. Route B spends one sub-agent per video (the
+translator), route E one per CHUNK. The only route that
+ever had a recorded figure (the digest route, ~200k per video) was deleted with the route,
+so that number describes nothing that still exists.

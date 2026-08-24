@@ -23,6 +23,43 @@ divider. Look things up through the index, not by scrolling.
 
 ---
 
+## 2026-08-24 — routes C and D leave the project; the second prune follows them through code and record
+
+User decision: scouting a queue (route C) and digesting it (route D) are no longer goals of this
+project, and route B's summarizer goes with them — the approaches themselves are not wanted, so
+they leave the CODE and the RECORD, not just the roadmap.
+
+**Code.** Deleted: `.claude/skills/overdub-scout/`, `.claude/workflows/scout-summarize.js`,
+`scripts/build_scout.py`, `tasks/s2-artifact-route.md`, the summarizer half of
+`translate-batch.js` (`sumIds`), and every `summary.md` / `scout.json` producer and reader
+(`read_summary`, the digest's summary block, the page's scan table and content columns).
+Two things route C was carrying SURVIVE because the remaining routes stand on them: the
+audio-only fetch mode (route E's input) — renamed `--scout` → `--transcribe-only`,
+`scout_stages` → `transcribe_only_stages`, workdir kind `scout` → `transcribed` — and the queue
+page (route B's listen-to-flagged-units surface) — `scripts/scout_report.py` →
+`scripts/queue_report.py`, output `work/queue-report.html`, now dub triage plus state cards and
+nothing else. The 2026-07-21 rejection of that rename ("reference churn… revisit if the name
+starts misleading") reached its named trigger: the route the name pointed at no longer exists.
+
+**Record.** Entries DELETED under the prune rule (code gone AND every surviving lesson restated
+elsewhere): both 2026-08-03 scout entries (route D deleted / viewer profile removed), the
+2026-07-30 two-pass digest entry, the 2026-07-20 grades-the-material entry, and the 2026-08-20
+route-B-summarizer entry (its one general lesson — cost tracks turns × context, not output
+length — lives in the surviving 2026-08-20 entry). The 2026-07-25 TOOL entry moved to
+`CLAUDE.md` at the user's call: it was a founding framing that predates the repo, never a
+decision taken here, and CLAUDE.md is where a standing work-selection rule belongs. TRIMMED, at
+the user's ask to squeeze the TTS cluster down to "engines tried, Silero chosen": the Silero-only
+entry (host_guard story → `scripts/host_guard.py` + CLAUDE.md; stress/CMUdict →
+`tasks/cmudict-transliteration.md` / `tasks/stress-audit.md`), the v5 audition (three ear defects
+→ their successor line items), the two 07-16 F5/ESpeech entries merged into one, and the founding
+entry's named first-pick tools (the day-1 TTS engine, the local translate LLM) cut — the day-1
+bake-off entry remains the record of what was tried. The 2026-07-20 audio-only-mode entry is
+retitled to the mechanism that survives it.
+
+**Deliberately KEPT despite the deletions:** the queue-contract §5/§6 measurements that happened
+on route C (labelled "the since-deleted scout route") — they are the evidence for rules that bind
+routes B and E today, and evidence does not improve by forgetting where it was collected.
+
 ## 2026-08-24 — the log is PRUNED: dead-engine and dead-route entries deleted or trimmed
 
 First deliberate deletion pass over this file, user-driven. The header's cut policy gains a
@@ -136,47 +173,6 @@ risks truncation, and a truncated array is invalid JSON, which is worse than a s
 The workflow does not set `effort`, so agents inherit the session's. Output is only 2.5% of tokens,
 so the ceiling on that lever looks low, but thinking also lengthens the turn chain and that was not
 measured. PLAN carries it.
-
-## 2026-08-20 — route B stops summarizing; the cheapest agent is the one not spawned
-
-Route B spawned two sub-agents per video: a translator and a summarizer. The summarizer now runs
-only when `sumIds` is passed explicitly, and the skill passes an empty list.
-
-**What it cost, measured 2026-08-20** over five route-B runs (08-05, 08-06, 08-07 and both waves of
-08-20), reading `usage` per turn out of the agent transcripts. Per-agent medians, all runs on
-`claude-sonnet-5`, priced at list ($3/$15 per MTok, 1 h cache write ×2, cache read ×0.1):
-
-```
-translator  $1.52   output 25 366   cache write 124 527   cache read 775 972   11 turns
-summarizer  $0.64   output  4 417   cache write  86 215   cache read 197 620    5-7 turns
-```
-
-42%, for the ONE artifact on this route that gates nothing, skips nothing and has no code reading a
-verdict out of it (2026-07-19). On the 307-video queue that is ~$187 of summaries against ~$232 for
-all the translation still outstanding.
-
-**Why the summarizer is so expensive for a 200-word output.** Its output is 17% of a translator's,
-but its cache WRITE is 69% of one — because cost tracks turns × context, not the text produced. Any
-agent that reads a whole transcript pays for that transcript on every turn. This is the general
-lesson and it outlives this decision: **the length of what an agent writes is nearly irrelevant to
-what it costs.**
-
-**What it costs us, stated plainly.** The digest's `- summary (N words):` block and the queue page's
-«самое интересное» column are empty for a route-B batch. Both already render an absent summary as
-nothing, so no surface breaks — the report simply loses its content half and keeps the quality half.
-A video promoted from route C keeps the `summary.md` route C wrote (queue-contract §4).
-
-**Rejected: keeping summaries on a cheaper model.** Haiku would cut the per-summary cost, but the
-summary is read by a human deciding what to watch, and a worse one is worse at the only job it has.
-Off is honest; cheap-and-degraded pretends the column still means something.
-
-**NOT the reason, and it must not be read as one:** the summarizer prompt is currently killed by the
-safety classifier — it routes `summary.md` through PowerShell because a harness hook denies subagent
-`Write` on that path, and six agents died that way on 2026-08-20. That is a defect to fix on its own
-merits. Had the prompt been healthy, this decision would be identical.
-
-**The exit.** Pass `sumIds` and everything works as before — the workflow kept the capability, and
-route C is untouched. Revisit if a report surface ever needs the content half enough to pay 42%.
 
 ## 2026-08-11 — the draft carries BOTH forms; one string can serve two consumers
 
@@ -848,77 +844,6 @@ covers `0..n-1` by construction and `build()` re-validates the assembled draft a
 its one useful sentence (a repair renumbers ids, so the cut moves) folded into the missing-file
 message, which is where that failure actually surfaces.
 
-## 2026-08-03 — route D is DELETED and route C stops assessing; one route answers "what is in it"
-
-Two routes were converging on one question and neither was allowed to answer it plainly. Route C
-asked "does this earn an evening" and answered with a grade; route D asked "what is actually in
-it" and answered with a document, at ~200k tokens per video across two Opus passes. The user's
-call: keep ONE route, make it route C, and have it answer route D's question briefly.
-
-**Route D is gone, not deprecated.** `overdub-digest/SKILL.md`, `digest-videos.js`,
-`build_digest.py`, `digest_report.py`, `test_digest.py` and `docs/digest-reference.md` are
-deleted. The two 07-30 entries below stay: what they RECORD — that a composing agent cannot be
-given a length, and that the caps deleted the marginal finding first — is a lesson about prompting
-under a length target, not a fact about a route. The measurements in them describe a route that no
-longer exists, so nothing in them is a live number.
-
-**Route C assesses nothing.** No `quality`, no closed vocabulary, no grade chip, no colour ladder,
-no "стоит посмотреть" in the artifacts, on the page or in chat. `scout.draft.json` is
-`{one_liner, highlight, paragraph}`, `build_scout.py` validates prose and nothing else, and the
-page's header counts STATES (`отсканировано: N`) instead of verdicts.
-
-**The precedent this closes.** Route C shipped a verdict twice and retired it twice: the personal
-`watch`/`maybe`/`skip` collapsed toward "no" (0/1/9 on the first real queue, 07-20 below), and the
-material grade that replaced it scored videos nobody asked to have scored. The 07-20 entry stays
-as the record of the first retirement; this one records that the second axis went the same way,
-for a related reason — a route that describes can be argued with, a route that ranks decides for
-the reader.
-
-**A finished row now carries no chip.** That is route D's own design rule (07-30 below: "a badge
-on every row would be a column of one value") inherited by the surviving route. Chips are reserved
-for states that demand an action — dub triage, and the unfinished-pipeline states.
-
-**Two things deliberately NOT done.** Route E was not renumbered into the free letter D: "route E"
-is load-bearing in its skill, the queue contract and `build_clean.py`, and a rename buys a
-tidier alphabet for a real risk of drift. And existing `scout.json` files keep their `quality`
-key — nothing migrates them, nothing reads it, a rebuild drops it, exactly as the `author` key
-was handled earlier today.
-
-Tests: `test_digest.py` deleted (-52). `test_unknown_quality_is_fatal` and
-`test_the_grade_is_about_the_material_not_the_reader` are replaced by
-`test_the_route_assesses_nothing` (which keeps the `_AUTHOR` / `_VERDICTS` tombstones and adds
-`_QUALITY` to them) and `test_an_assessment_field_in_the_draft_is_ignored_not_persisted`. The
-entry below names the older test by its old name; that is the file's normal drift, not an error
-in it.
-
-## 2026-08-03 — the viewer profile is REMOVED; scout grades the material and nothing else
-
-`.claude/viewer-profile.md` and everything that read it are gone: the S0 preflight in the
-`overdub-scout` skill, the `viewer-profile-prompt.md` reference that built the file, the
-MANDATORY-FIRST-READ block and `PROFILE-MISSING` abort in `.claude/workflows/scout-summarize.js`,
-and the `.gitignore` rule that kept the file out of the repo.
-
-**What scout loses.** The profile was the only thing that made `highlight` answer "interesting to
-THIS reader" rather than "interesting". Nothing replaces it — that was the decision, not an
-oversight. Scout is now a pure assessment of the material on the three axes it already owned
-(substance, currency, delivery), and the write-up is the same for everyone who runs it.
-
-**The `author` axis died with it.** `trusted`/`new` existed solely to match a channel against the
-profile's trusted-author list. With no list there is nothing to compare against, so `_AUTHOR` and
-its clamp are out of `build_scout.py`, the `a-trust` marker and CSS are out of `scout_report.py`,
-and the key is out of the summarizer prompt. `test_the_grade_is_about_the_material_not_the_reader`
-now asserts `not hasattr(build_scout, "_AUTHOR")` alongside the older tombstones, so a
-reintroduction fails loudly rather than quietly rendering a column of one value.
-
-**Existing `scout.json` files keep their `author` key.** Nothing migrates them and nothing reads
-it — the renderer simply ignores an unknown key. A rebuild drops it.
-
-The 2026-07-20 entry below stays: it records why the verdict vocabulary became a grade, which is
-still the live design and is the reason removing the profile costs as little as it does. Had scout
-still shipped a personal `watch`/`maybe`/`skip`, this removal would have gutted it.
-
-Suite: 641 → 639 (2 author tests removed, 1 assertion added).
-
 ## 2026-08-03 — `.claude/CHANGELOG.md` is RETIRED; measurements retire HERE instead
 
 2204 lines of append-only history in which every entry restated a commit. What the file uniquely
@@ -978,31 +903,6 @@ Do not reintroduce a substring test in `completeness.py`. A future entity detect
 person-vs-brand discriminator or a transliteration-aware match; neither is a threshold change.
 
 Suite: 633 → 627 (8 entity tests removed, 2 added).
-
-## 2026-07-30 — route D digests in TWO passes, because a composing agent cannot be given a length
-
-> **PARTLY SUPERSEDED 2026-08-03** — route D and the digest code are gone. Trimmed 2026-08-24:
-> kept because the finding is about sub-agents, not digests — it applies to every route that asks
-> a composing agent for short output (route C summaries, clean-transcript chunks).
-
-Three runs over one 59-minute video, same transcript, only the brevity instruction varied.
-**A character budget in a composing prompt does not bind: +3% against a predicted −70%.** The
-mechanism is mechanical, not motivational — a model cannot count characters in output it has not
-produced yet, and the budget line sits beside a concrete, actionable instruction in the same
-prompt; the actionable one wins. And a hard cap is not a style guard: it deletes content, and
-because the concrete anchor usually sits at the END of a sentence, it deletes the marginal
-finding first — any "shave every field to fit" scheme has this property.
-
-**What IS obeyed literally is the COUNTABLE STRUCTURAL instruction.** A point ceiling was obeyed
-exactly in five runs out of five, while "cut to a third" and "cut to a fifth" both landed on
-~2.9× — the edit task's own natural compression rate, which merely coincided with the one-third
-ask and so looked like control. Size is governed by structure; per-field character numbers are
-aspirations that push in the right direction and settle nothing.
-
-**Adopted: pass 1 composes with no length pressure, pass 2 owns the fit.** Compression is a
-different task from composition — the editor HOLDS the text, so "cut this to a third" is
-arithmetic it can perform rather than a guess about unwritten output. The expensive read pass is
-cached separately from the compress pass, so it is never re-paid for a compressor tweak.
 
 ## 2026-07-28 — route B step 2 fans out through a Workflow: hand fan-out spends the orchestrator's context TWICE per video
 
@@ -1277,130 +1177,29 @@ answers that shape far better than per-sentence length work does. The same error
 in item 1(b), whose numbers described a different population than the one being fixed: in both
 cases the arithmetic was fine and the SHAPE of the problem was wrong.
 
-## 2026-07-25 — what this repo produces is a TOOL; an individual video is never the deliverable
+## 2026-07-25 — Silero becomes the ONLY engine
 
-User framing, recorded because it is a work-selection criterion and not a mood: the repository is
-building a pipeline, so **fixing a single video has no value in itself.** A defect in a shipped MKV
-is an input signal about the tool — the correct response is to find the CLASS, fix the pipeline, and
-let the next batch come out right. The video that exposed it stays broken, and that is not a debt.
+Trimmed 2026-08-24 (the TTS cluster squeeze, user-driven): the lowpass forensics, the grouping
+re-cut numbers, the host_guard retraction (restated at `scripts/host_guard.py` and in CLAUDE.md)
+and the stress/CMUdict detail (carried by `tasks/cmudict-transliteration.md` /
+`tasks/stress-audit.md`) are gone. What this entry still decides:
 
-**What this rules out**, concretely: re-running, re-repairing, re-translating or re-synthesizing a
-finished video in order to improve THAT video; hand-patching a bad unit; "while I'm here" fixes to
-artifacts in `work/`. What it does NOT rule out is the same operation performed for a MEASUREMENT
-that generalizes. The distinction is not the action, it is what comes back. The 2026-07-25 repair of
-the two worst videos was correct under this rule and would have been wrong under a slightly
-different one: it returned atempo max 12.52 → 2.04 and 5.38 → 2.40, i.e. the evidence that Step 1b
-belongs in the runbook — the two improved MKVs are a by-product nobody needed. Had the same work
-been done because those two videos were the ones being watched, it would have been waste.
+**User decision: F5/ESpeech is replaced by Silero v5_5_ru outright, on speed and hardware cost,
+with the quality difference accepted as a deliberate trade.** Explicitly NOT a parallel-engine
+setup — per-engine knobs were considered and declined; the shipped defaults are tuned for Silero
+and the F5 path comes back out of git history if the switch fails. This reverses the 2026-07-16
+ear verdict that made F5 production and Silero fallback. Later the same day the switch was
+**ear-confirmed on finished MKVs** (quality sufficient where it is actually consumed) — a verdict
+about the VOICE that does not close the slot holes: fill is a TIMING defect and stayed open
+(`atempo_floor`, `tasks/slot-fit.md`).
 
-**Consequences that follow directly and are already in PLAN.** (1) Intermediate artifacts are
-consumables, which is the argument for deleting `work/<id>/` binaries after mux (18.5 of 18.7 GB) —
-re-synthesis is cheap next to disk bounding the queue size. (2) Anything that persists a
-GENERALIZABLE finding outranks the videos: the golden fixture, the six `_pre-repair-*.json` pairs,
-the `work-exp/` baselines. `work-exp/` has already lost three baseline sets to a cleanup while the
-videos survived — exactly the wrong direction, and the reason the disk decision needs making before
-the next cleanup makes it. (3) An ear check is a measurement, so listening is never the thing this
-rule prohibits.
-
-**Where the tension will show up.** A batch is also how the tool is judged, so "the batch shipped 24
-watchable videos" reads like success and can quietly become the goal. The check is to ask what the
-run RETURNED: a number, a flag distribution, a verdict, a fixture. A run that returns only artifacts
-was a production run, and this repo does not do production runs yet.
-
-## 2026-07-25 (later) — the Silero switch is ear-confirmed on finished videos, not just on clips
-
-User verdict after listening to finished MKVs produced on the new engine: **quality is sufficient.**
-This is what the switch was still owed. The engine decision itself was made on speed and hardware
-cost with the quality difference accepted as a deliberate trade (entry below), and every ear check
-supporting it until now was on bake-off clips and A/B arms — not on a shipped video end to end. The
-trade is now verified where it is actually consumed.
-
-What this does NOT close: the slot holes. Silero fills the median slot to 0.73 and leaves 267 s of
-silence on `8zJlKmgMT44` — a TIMING defect, audible as pacing rather than as voice quality, and it
-stays the open blocker (PLAN item 1). "The voice is good enough" and "the dub has holes in it" are
-compatible statements about the same file; do not let this verdict be quoted against that item.
-
-## 2026-07-25 — Silero becomes the ONLY engine; four Silero-shaped fixes land, one is rejected by ear
-
-User decision: F5/ESpeech is replaced by Silero v5_5_ru outright, on speed and hardware cost, with
-the quality difference accepted as a deliberate trade. Explicitly NOT a parallel-engine setup —
-per-engine knobs were considered and declined; the shipped defaults are tuned for Silero and the F5
-path comes back out of git history if the switch fails. This reverses the 2026-07-16 ear verdict
-that made F5 production and Silero fallback.
-
-**Vocoder hiss → `dub_lowpass_hz = 11000`, applied once to the finished track.** The complaint was
-"шипение". Measured on `bakeoff/silero_v5_eugene/id147_long.wav` (the bake-off tree, deleted
-2026-08-03 — cf75c07 has it): the sibilant band sits 19.9 dB
-under the body, *quieter* relative to F5's 15.4 dB — so it was never sibilance, and `deesser` did
-nothing. The spectrogram shows the real thing: a broadband noise carpet across 8-20 kHz, present on
-vowels, without harmonic structure, and *absent in the pauses* — i.e. vocoder noise that tracks the
-speech. That last fact is what rules out `afftdn`/`arnndn`/`anlmdn`: they remove a stationary floor,
-and this is not one. Cutting the top removes it at no intelligibility cost (confirmed by ear, A/B).
-Placement is deliberate: ONE pass over the whole dub in `assemble`, after verify, not folded into
-the per-unit atempo call — that call only runs for units with `factor > 1.0`, so a per-unit filter
-would leave un-sped units unfiltered and put a tembre step at those seams. It is out of `synth_key`
-(post-verify, no resynthesis) but inside the assemble gate, and auto-skips when the cutoff is not
-comfortably below Nyquist, so an F5 run at 24 kHz is never silently recoloured.
-
-**Grouping re-cut 0.4/12/300 → 1.2/20/600 by ear.** `_GROUP_MAX_SPAN`/`_GROUP_MAX_CHARS` were
-constants shaped for F5 ("~10 s ref + gen inside F5's trained ≤30 s regime") and they, not
-`group_gap_max`, were what bound grouping: over 37 videos / 5401 sentences, raising the gap alone
-0.4→1.2 moves 1.40→1.57 sentences per unit because refusals migrate to `span` (1822→2997). Now
-config knobs. The 2.0/30/900 arm was also better than baseline but barely different from 1.2/20/600
-while doubling the sync cost (p90 swallowed silence 2.62 s vs 1.28), so the middle arm won.
-Grouping costs nothing in time — see the measurement note below.
-
-**`<break>` restoration: built, measured, REJECTED (default off).** Grouping deletes inter-sentence
-pauses, so restoring them as SSML `<break>` looked like the fix for the holes in the dub. It is a
-correct mechanism aimed at the wrong problem, and the forensics say so: at the 5:15 hole the SOURCE
-speech is continuous (largest word gap 0.95 s) and the hole is made by ASSEMBLY — unit [61,62] holds
-a 15.76 s slot, speaks for 10.66 s, and the remaining 5.10 s is digital silence. `<break>` put back
-0.44 s of that (8%) while ADDING pauses where the speaker had none; A/B was indistinguishable. Kept
-in the code with the default off — it would earn its place if units with genuinely long pauses
-appear. Coverage, for the record: 51 of 57 grouped units took markup (89%), 6 declined.
-
-**THE open blocker is slot fill, and it is not an assembly-only fix.** Silero has no
-`supports_target`, so nothing stretches speech to its slot and F5's `plan_speed` does not apply.
-On `8zJlKmgMT44`: Silero fills the median slot to **0.73** against F5's **0.90**; 45 of 69 units
-hold a hole >3 s, 21 hold >5 s, 267 s total against F5's 124 s. Closing the median hole needs a
-**1.37×** slowdown — past `atempo`'s comfortable range — so the translation has to come out ~25-35%
-longer (target duration into the translate prompt) with `atempo` <1 taking the remainder. This is
-the price of the switch: the engine is cheaper, but timing fit is now ours to do.
-
-**Measurement discipline: `scripts/host_guard.py`, and a retracted conclusion.** A grouping A/B read
-verify at 347 s and 597 s against a 45 s baseline, and the conclusion "grouping makes Silero slower
-than F5" was drawn from it and stated. Every number was an artifact — a game held the GPU at 98% and
-86 C. Re-measured on an idle card, the arms are synth 22.8/28.2/25.3 s and verify 45.8/58.2/56.3 s,
-i.e. indistinguishable; two identical baseline verify passes read 84.3 and 45.8, so the run-to-run
-noise EXCEEDS the between-arm difference. The methodology was not the weak point: mirrored order
-cancels slow drift, but a process that owns the card for the whole session is not drift, it is a
-different machine, and counterbalancing cannot see it. Hence a pre-flight gate rather than a
-post-hoc correction, wired into both measuring paths of `asr_probe.py`. Three hypotheses for the
-"blow-up" were tested and all three falsified before the real cause was found (temperature
-fallback: 0/8 fired; decoder repetition: hyp/ref 0.99; a stray round-trip in synthesize: only
-created `if engine.supports_seed`, so Silero never had one).
-
-**Stress on borrowed proper nouns: `+` marks, English stress wins, applied by hand for now.** Silero
-honours a manual `+` before the stressed vowel — probed contrastively, `reddit_auto == reddit_I`
-(the model says "редд+ит") while the marked form differs, so the mark works AND the automatic guess
-is wrong there; on "кроссинг" auto already agrees, so a mark would be noise. `normalize_for_compare`
-now deletes `+` before the punctuation pass — without that, "р+еддит" compares as two tokens and a
-CORRECT reading scores as a defect, which is the one silent failure mode of dictionary stress.
-CMUdict (`data/cmudict.dict`, 3.5 MB, in-repo, lazily loaded, feature simply off if absent) gives
-the stressed vowel INDEX, and transfer needs no phoneme-to-letter alignment: mark the Nth Cyrillic
-vowel where N is the index among vowel phonemes. On disagreement with Russian usage, English wins
-(user call: predictable rule + dictionary exceptions beats a per-word judgement). The vowel-count
-guard never fired across the probed corpus. **Deliberately NOT wired into `_resolve`:** of the top
-60 invented tokens, only 10 disagree with Silero's own stress, and half of those would put a mark on
-an already-broken transliteration (`execute → +эксекют`, `update → упд+ейт`) — accenting a defect
-entrenches it. Automatic application waits on the transliteration fix.
-
-**Next lever identified: phoneme-based transliteration.** CMUdict was fetched for stress and turns
-out to answer the older question too — the letter rules guess at spelling what the dictionary knows
-phonetically: `buy → буи` vs `B AY1`, `fields → фиелдс` vs `F IY1 L D Z`, `update → упдейт` vs
-`AH0 P D EY1 T`. Coverage over the corpus's invented tokens is 79% of types and 77% of occurrences;
-the absent tail is brands and neologisms (`mcp`, `anthropic`, `vercel`, `shadcn`, `tmux`), so the
-letter rules stay as fallback rather than being retired.
+Shipped with the switch, each by ear: `dub_lowpass_hz = 11000` (the "шипение" is vocoder noise
+tracking the speech, not sibilance — one pass over the finished dub in `assemble`, post-verify,
+outside `synth_key`); the grouping re-cut to 1.2/20/600 (the old constants were F5-shaped);
+and SSML `<break>` restoration — built, measured, **REJECTED by ear** (it put back 8% of a hole
+made by assembly while adding pauses the speaker never took; ships off at
+`silero_ssml_breaks = False`). The price of the switch, named then and still true: Silero has no
+`supports_target`, so timing fit is the pipeline's job now.
 
 ## 2026-07-24 — The condition_on_previous claim SURVIVES measurement: cond stays operative, guard and hatch upheld
 
@@ -1894,91 +1693,47 @@ Every prior workdir has neither, and neither is backfilled from the wall clock �
 restate the model load as the video's cost, which is the exact confusion this whole entry is
 about. The baseline for measuring any optimization does not exist until the next full pass.
 
-## 2026-07-20 — Scout grades the material, not the reader (a personal verdict cannot be checked)
+## 2026-07-20 — Audio-only fetch mode: its own flag, and a promoted video re-downloads
 
-Scout shipped with a `watch`/`maybe`/`skip` verdict judged against `.claude/viewer-profile.md`.
-The first real queue came back **0 / 1 / 9**, and the second axis (`focus`/`background`) took the
-same value on **28 of 30** videos. Both were replaced the same day.
+Born as the scout route's fetch step; the route was deleted 2026-08-24 and the mode survives as
+route E's input (`--transcribe-only`, née `--scout` — retitled and trimmed in that pass). Each
+choice below is cheap to "fix" later in exactly the direction that undoes the reason it exists.
 
-**The measurement is not the argument — the checkability is.** A 9-of-10 skip rate could mean the
-queue was genuinely poor. What decided it is that there is no way to find out: a verdict about
-whether *this person* should watch *this video* has no referent outside the model's guess, so it
-cannot be argued with, corrected, or regression-tested. "Is this well made, current, and densely
-delivered" can be. That is the whole reason the axis moved onto the material.
-
-**The verdict also collapsed by construction.** The profile's own rule says to prefer `maybe`
-when uncertain and reserve `skip` for a named ground — and the run still produced 9 skips, i.e.
-the model was finding grounds it would not have found for a question about the material. A
-decision taken FOR the reader drifts toward "no", because "no" is the safe answer for an agent
-that cannot know.
-
-**The profile was demoted, not deleted.** It still decides what counts as the interesting part
-and what counts as already-known — the two places where knowing the reader genuinely helps. It
-no longer touches the grade. Rejected alternative: drop the profile entirely and grade purely on
-the material. That loses the "do NOT recommend an introduction to what I already know" section,
-which is the single most valuable thing in the file and cannot be derived from a transcript.
-
-**The cost, paid knowingly:** every `scout.json` and every `scout.draft.json` on disk carries the
-old vocabulary, so the 30 already-scouted videos need their S2 re-run — not a rebuild. Also
-unresolved: nothing has yet confirmed a live sub-agent can hold the distinction between "quality
-of the material" and "useful to me". That confusion is exactly what produced 0/1/9, and the
-mitigation is a calibration pass (PLAN, pre-batch checks), not more prompt text.
-
-## 2026-07-20 — Scout mode: audio-only fetch, no local summarizer, its own flag
-
-Three choices, one per axis. Recorded together because each is cheap to "fix" later in exactly the
-direction that undoes the reason it exists, and because each one's cost is real and named rather
-than argued away.
-
-**1. Scout fetches AUDIO ONLY, and a promoted video re-downloads.** `yt-dlp -f bestaudio` →
+**1. The mode fetches AUDIO ONLY, and a promoted video re-downloads.** `yt-dlp -f bestaudio` →
 `source.wav`; no `source.mkv`, so `DownloadStage.done()` splits into an audio gate and the unchanged
-video gate. The forcing constraint is disk, not time: D: has 81 GB free, and a 100-video queue in
-full mode wants ~100 GB in hour 0 (stage-major hoists all downloads to the front). A triage pass that
-cannot fit on the disk is not a triage pass.
+video gate. The forcing constraint is disk, not time: a 100-video queue in
+full mode wants ~100 GB in hour 0 (stage-major hoists all downloads to the front). A transcript
+pass that cannot fit on the disk is not a transcript pass.
 
 **Cost, named: promotion re-downloads the audio bytes inside the merged MKV — ~5% extra traffic,
 paid on exactly the videos that were worth dubbing.** Accepted for zero new machinery: no cache, no
 container surgery, no third gate. A second, subtler cost rides along — the promoted run OVERWRITES
-`source.wav` with a differently-decoded file (ba[ext=m4a] out of the MKV, vs the scout's opus), while
+`source.wav` with a differently-decoded file (ba[ext=m4a] out of the MKV, vs bestaudio's opus), while
 `sentences.json` was read off the old bytes and `--repair-asr` will clip windows from the new ones.
-Same YouTube master and same timeline, so this is believed benign; it has not been checked, and it is
-in PLAN's backlog rather than dismissed.
+Same YouTube master and same timeline, so this is believed benign; it has not been checked
+(`tasks/reuse-audio-on-promotion.md`).
 
 Rejected, all three for the same class of reason: **letting the video gate accept `source.wav`** —
 mux then gets a container with no video stream, i.e. the failure lands eight hours later at the end
 of a run; **skipping re-extraction when `source.wav` already exists** — saves the rewrite and leaves
 a wav from a DIFFERENT fetch as the permanent input to a full run, which is a stale artifact served
-as current; **a separate scout workdir** — two directories per video and a promotion step that has
+as current; **a separate audio workdir** — two directories per video and a promotion step that has
 to move files, to save a fetch that costs 5%.
 
-**2. No local summarizer. The summary stays a Sonnet sub-agent at the seam.** Rejected: a
-Gemma/Ollama summarize stage inside the pipeline. It would have made scout self-contained, and the
-2026-07-20 summary entry had already established the read-boundary sanitizing that makes an
-LLM-written prose blob safe to render.
-
-**Cost, named: scout is NOT turn-key on the local route, which is the one property route A has that
-route B does not.** Route A is one command; a scout pass is a command plus an agent fan-out, so a
-Gemma-only operator gets `sentences.json` and a page full of `summary pending` and no way to finish.
-Paid because the alternative is worse in a way this project has already measured: the summary's whole
-job is "should a human spend an hour on this", and Gemma-3-12B is the model we A/B'd into second
-place for translation (2026-07-18). A ~200-word judgement call written by the weaker model would be
-read as if written by the stronger one. Adding a Gemma summarizer stays available — it is additive,
-it needs no schema change, and this decision is not a bar on it. It just was not built blind.
-
-**3. A dedicated `--scout` flag, not `--only download transcribe`.** `--scout` selects
-`scout_stages()`, which constructs the truncated list and the audio-only `DownloadStage` in one
+**2. A dedicated flag, not `--only download transcribe`.** The flag selects a stage list that
+constructs the truncation and the audio-only `DownloadStage` in one
 expression. `--only` cannot express the audio-only download at all — that fact lives INSIDE the
 stage — and `run_pipeline` checks STOP before the only/done filters, so an `--only` composition
 would sweep 8 stages and grid 8 STOP checkpoints per video to do 2 stages of work.
 
 **Cost, named: a flag that must be kept in sync with the stage list.** Adding a stage to
-`all_stages` that belongs before transcribe will not appear in `scout_stages`, and nothing enforces
-that scout stays a strict PREFIX of the full pipeline — which it must, because a promoted video
-re-enters the full pipeline on the artifacts these two stages produced. Mitigations, both partial:
-the prefix property is pinned by a test, and the two facts that could actually corrupt a run
-(truncation + download shape) are welded into one expression so they cannot drift apart. The flag
-also has to be excluded by hand from every other mode — `--only` and `--repair-asr` both needed a
-new usage-error clause, and a third mode would need a third.
+`all_stages` that belongs before transcribe will not appear in the truncated list, and nothing
+enforces that it stays a strict PREFIX of the full pipeline — which it must, because a promoted
+video re-enters the full pipeline on the artifacts these two stages produced. Mitigations, both
+partial: the prefix property is pinned by a test, and the two facts that could actually corrupt a
+run (truncation + download shape) are welded into one expression so they cannot drift apart. The
+flag also has to be excluded by hand from every other mode — `--only` and `--repair-asr` both
+needed a usage-error clause, and a third mode would need a third.
 
 ## 2026-07-20 — `--repair-asr` exits 0 when every window was rejected (decided, not defaulted)
 
@@ -2289,9 +2044,13 @@ advisory stream stays available for trends without polluting the decision.
 
 ## 2026-07-19 — Silero v5 audition: v4 was tested BY MISTAKE; v5 is the fast fallback
 
+Trimmed 2026-08-24 (the TTS cluster squeeze): the three ear defects went — hiss closed by the
+2026-07-25 lowpass, slot lag became the slot-fill line of work, expressiveness lives in
+`tasks/input-prosody.md`. What stays decides:
+
 **The 2026-07-15 bake-off tested the wrong release.** `v4_ru` was already superseded when it was
-adopted; the adapter then hardcoded it, so every Silero verdict in this file up to now describes
-an outdated model. `v5_5_ru` is audibly better and is now the default. v4 stays reachable only to
+adopted; the adapter then hardcoded it, so every Silero verdict in this file up to then describes
+an outdated model. `v5_5_ru` is audibly better and became the default; v4 stays reachable only to
 reproduce pre-2026-07-19 runs.
 
 **Ear ranking (user, 5 videos × 5 voices, one voice per video, v5_5_ru):**
@@ -2300,45 +2059,14 @@ reproduce pre-2026-07-19 runs.
 - **aidar, baya** — off-standard accent, sounds harder to follow; phonemes drift from ordinary
   Russian. Avoid.
 
-**Verdict: quality is below F5/ESpeech and the user accepts that trade for speed, for now.**
+**Speed is the headline: synthesis is 12-19× faster than F5 and CPU-only** (measured on the same
+5 videos: synth 11-14 s vs 128-250 s), with round-trip similarity at near parity. This is the
+measurement the 2026-07-25 engine decision then rested on; at the time the verdict was "quality
+below F5, trade accepted for the fallback role, production stays F5".
 
-**Speed is the headline: synthesis is 12-19× faster and CPU-only.** Measured on the same
-translations as the F5 run (5 videos): synth 11-14 s vs F5's 128-250 s; whole-pipeline RTF
-0.14-0.17 vs 0.70-0.92. Synthesis stops being the bottleneck (verify and separate now dominate)
-and the GPU is left free. Objective quality is near parity — mean round-trip similarity
-0.979-0.992 vs F5's 0.985-0.991, zero verify flags, zero segments over ×1.8, `xenia` fully clean.
-The old worry that Silero would trip the 0.9 gate did NOT reproduce: sample min was 0.920. That
-worry was measured on v4 — another consequence of the wrong-release mistake.
-
-**Metrics did not predict the ear here, again.** 0.99 similarity means "the words are present",
-not "it sounds good" — the id101 precedent (sim 1.0, judged bad by ear, 2026-07-16) holds. The
-three defects below are all invisible to every metric the pipeline computes.
-
-**Three defects found by ear, none of them caught by verify:**
-1. **Noise / hiss, "cheap microphone", voices do not ring** like a trained announcer. Candidate
-   fix is post-processing — denoise, compression, EQ — not an engine change.
-2. **No expressiveness.** Tone never varies; sentence after sentence lands on the same contour and
-   the result is soporific. v5_5 is reported to support varied intonation; unexplored.
-3. **Dub lags the subtitles and the English speech.** MEASURED asymmetry against the F5 baseline:
-   clip-duration/source-span median 0.93 and 0.87 (Silero) vs 0.98 and 0.98 (F5), with more units
-   overflowing the slot (7 vs 4, and 7 vs 0). Mechanism: Silero declares `supports_target=False`,
-   so nothing asks the engine to hit the source span — F5 receives `target_sec` = the span and
-   lands on it natively, while Silero renders at its own pace and only assemble's `atempo`
-   intervenes, and only once a clip exceeds the SLOT (span + following pause), never the span
-   itself. Inside a grouped unit the per-sentence offsets then drift both ways. The user's own
-   proposed remedy — tempo-fit the already-rendered chunk — points at exactly this: fit to the
-   SPAN, not only to the slot, for engines without native targeting. NOT yet fixed.
-
-**Migration cost was small, and the code stays.** Two changes: `cfg.silero_model` (release id
-passed to `torch.hub`, replacing the hardcoded `MODEL_ID`) and — load-bearing — that id added to
-`synth_key`. Without the second, v5 would have silently reused v4 wavs under the same voice name:
-the exact silent-staleness class the `synth_key` INVARIANT exists to prevent. The v5 Cyrillic-only
-caveat needed no filter: `text_tts` is Cyrillic by contract and measured clean (0 Latin characters
-across all 12 batch videos), because the pronounce chain transliterates kept-Latin names before
-synthesis. Full suite green.
-
-**Production default stays F5.** This audition changes the fallback's identity and quality, not
-the primary engine.
+**Migration lesson, load-bearing beyond this engine:** `cfg.silero_model` had to enter
+`synth_key` — without it v5 would have silently reused v4 wavs under the same voice name, the
+exact silent-staleness class the `synth_key` INVARIANT exists to prevent.
 
 ## 2026-07-19 — Collapsed ASR alignment: guard the cause, not the harm
 
@@ -2403,22 +2131,21 @@ physical order is not.
 this scale. Local compute is a sunk cost. Trade-off accepted: local Russian TTS
 quality is below ElevenLabs.
 
-**Chatterbox Multilingual as the first TTS engine.** MIT license, actively
-developed (Resemble AI), voice cloning + emotion control, strongest English
-results in blind tests. Known risk: Russian is 6–7/10 with slight accent
-artifacts. Silero (native Russian, flat but bulletproof) and XTTS-v2 (best
-Russian among cloners, but dead project) come later behind a common interface.
-If Chatterbox Russian fails the ear test — switch, don't polish (see PLAN kill
-criteria).
+*(Trimmed 2026-08-24, user-driven: the named first-pick tools — the day-1 TTS engine and the
+local translate LLM — are out of the stack and their paragraphs are gone; the day-1 bake-off
+entry below keeps the record of what was tried and rejected.)*
+
+**A cloning-capable engine as the first TTS engine**, with fallbacks behind a common interface;
+if its Russian fails the ear test — switch, don't polish.
 
 **Timing strategy: per-segment TTS + atempo up to x2.** Russian runs 15–25%
 longer than English; an x2 compression budget covers ~99% of segments. The user
 validated by ear that x2 is acceptable. No smarter time-borrowing logic in v1.
 
-**Local translation (Qwen3-14B via Ollama).** Operationally simpler than cloud
+**Local translation via a local LLM server.** Operationally simpler than cloud
 (no keys, no billing, offline), free at any volume. Quality loss vs frontier
 models is acceptable for a dubbed track; upgrade path is a URL swap since
-Ollama speaks the OpenAI protocol.
+the server speaks the OpenAI protocol.
 
 **ASR round-trip verification for every TTS segment.** Neural TTS hallucinates
 (skips, repeats, mumbles). At hundreds of hours nobody will listen for defects
@@ -2442,7 +2169,7 @@ Neural Dmitry/Svetlana are cloud-only (edge-tts) — violates local-only.
 existing recording, which is literally the final pipeline step.
 
 **Voice cloning first, fixed voice as rollback.** Phase 1 clones the original
-speaker (Chatterbox, short reference clip from source audio). This is the
+speaker (short reference clip from source audio). This is the
 riskiest quality axis — accent artifacts are strongest when cloning from an
 English reference — but the payoff (preserved speaker identity) is highest, and
 the rollback is trivial: one fixed Russian voice for everything. Decide by ear
@@ -2493,7 +2220,7 @@ reorder, not a rewrite.
 
 **VRAM constraint amended.** whisper-small (~0.5 GB) is co-resident with the
 TTS engine during synthesis + verification; the one-heavy-model-at-a-time rule
-applies to whisper large-v3 / Qwen3-14B / TTS.
+applies to the heavy models only (ASR / the local translate LLM / TTS).
 
 **EN→RU fixed.** Source is always English, output always Russian. No language
 detection or multi-language handling anywhere in the pipeline.
@@ -2646,10 +2373,11 @@ atomic `…/NNNNN.wav.tmp` path → every segment failed `synth_error` on the fi
 making SileroEngine write with explicit `format="WAV"`. Lesson: soundfile format inference keys on
 the file extension, so any caller passing a temp/suffixless path must pass `format=` explicitly.
 
-## 2026-07-16 — TTS bake-off #2: ESpeech (F5-TTS RU) wins by ear; voice cloning explored, EN-clone dropped
+## 2026-07-16 — the F5/ESpeech era: bake-off #2 won by ear, EN-clone dropped, three surviving mechanics
 
-> **SUPERSEDED 2026-07-25** — ESpeech/F5 was removed in favour of Silero v5_5_ru. Trimmed
-> 2026-08-24 to the two results that outlive the engine.
+> **SUPERSEDED 2026-07-25** — ESpeech/F5 was removed in favour of Silero v5_5_ru; `.venv-f5tts`
+> is not a live dependency. Two 07-16 entries merged 2026-08-24 (the TTS cluster squeeze) into
+> what outlives the engine.
 
 **EN-reference cloning (the founding "same-voice" premise) was made to WORK — and DROPPED by
 goal, not by failure.** The round-1 babble was a byte-ratio canvas artifact, both predicted fixes
@@ -2663,10 +2391,7 @@ swept with adversarial verification, only Silero/ESpeech/Misha credibly spoke Ru
 Chatterbox lesson generalizes). The research trail (`bakeoff/`) was deleted 2026-08-03; what
 survived it is the licence table in README, "Voices, cloning and the law".
 
-## 2026-07-16 — F5Engine integration: design panel + adversarial review (BUILD)
-
-> **SUPERSEDED 2026-07-25** — this engine was removed; `.venv-f5tts` is not a live dependency.
-> Trimmed 2026-08-24 down to the three mechanics that outlived it:
+Three mechanics from the F5Engine build that outlived it:
 
 - **fd-level stdout capture in subprocess workers.** The worker's FIRST act is `os.dup(1)` +
   `os.dup2(2,1)` BEFORE heavy imports — Python-level `sys.stdout` rebinding does not survive

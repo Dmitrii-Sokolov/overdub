@@ -22,8 +22,7 @@ from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_ROOT))
-sys.path.insert(0, str(_ROOT / "scripts"))   # scripts/run_report.py — its main() is the only
-                                             # live call site of read_summary in that script
+sys.path.insert(0, str(_ROOT / "scripts"))   # scripts/run_report.py — the digest renderer
 
 import run_report  # noqa: E402
 from overdub import queueview, runreport  # noqa: E402
@@ -33,8 +32,7 @@ from overdub.workdir import WorkDir  # noqa: E402
 _CFG = Config()
 
 
-def _mkwork(tmp, *, report=None, translation=None, timings=None, sentences=None, info=None,
-            summary=None):
+def _mkwork(tmp, *, report=None, translation=None, timings=None, sentences=None, info=None):
     """Write the requested synthetic artifacts into a fresh work dir; return its WorkDir."""
     root = Path(tmp)
     (root / "segments").mkdir(parents=True, exist_ok=True)
@@ -48,8 +46,6 @@ def _mkwork(tmp, *, report=None, translation=None, timings=None, sentences=None,
         (root / "sentences.json").write_text(json.dumps(sentences), encoding="utf-8")
     if info is not None:
         (root / "source.info.json").write_text(json.dumps(info), encoding="utf-8")
-    if summary is not None:                # plain text, NOT json.dumps — summary.md is Markdown
-        (root / "summary.md").write_text(summary, encoding="utf-8")
     return WorkDir(root)
 
 
@@ -531,78 +527,10 @@ def test_render_run_report_smoke() -> None:
         assert "TRIAGE" in out                                  # this run needs triage
 
 
-# --- summary sidecar (informational, gates nothing) -------------------------------------------
-def test_read_summary_absent_and_empty() -> None:
-    # A missing summary is NORMAL, not an error: the summary gates nothing, so both renderers must
-    # get None rather than an exception. Whitespace-only degrades to None too — an empty section
-    # header with no prose under it is worse than no section at all.
-    with tempfile.TemporaryDirectory() as d:
-        assert runreport.read_summary(_mkwork(d)) is None
-    with tempfile.TemporaryDirectory() as d:
-        assert runreport.read_summary(_mkwork(d, summary="   \n\n  ")) is None
-
-
-def test_read_summary_strips_headings() -> None:
-    # The digest is Markdown and its own per-video header is "### <vid>". A heading inside the
-    # summary would open a new block and silently break block boundaries for the skill agent that
-    # parses the digest. Strip the marker, KEEP the text — never drop a line.
-    with tempfile.TemporaryDirectory() as d:
-        out = runreport.read_summary(_mkwork(d, summary="## Итог\n\nВидео про GPU."))
-        assert "Итог" in out and "Видео про GPU." in out
-        assert "#" not in out
-
-
-def test_read_summary_truncates_runaway() -> None:
-    # A runaway blob would wreck the digest's line flow and bloat the triage page. Truncation is
-    # VISIBLE (the marker), never a silent drop — the pipeline's standing rule.
-    with tempfile.TemporaryDirectory() as d:
-        out = runreport.read_summary(_mkwork(d, summary="я" * 9000))
-        assert len(out) < runreport._SUMMARY_MAX_CHARS + 40
-        assert out.endswith("…[truncated]")
-
-
-def test_render_run_report_without_summary_unchanged() -> None:
-    # render_run_report has two live call sites that pass two positional args. The summary=None
-    # path must stay BYTE-IDENTICAL to the pre-item-3 output — pinned here, not by inspection,
-    # because an optional section that shifts existing output is a silent regression.
-    with tempfile.TemporaryDirectory() as d:
-        work = _mkwork(d, report=_two_unit_report(),
-                       translation=[{"id": i, "status": "ok", "src_en": f"en {i}"}
-                                    for i in range(4)])
-        run = runreport.build_run_report(work, _CFG)
-        report = json.loads((Path(d) / "report.json").read_text(encoding="utf-8"))
-        offenders = runreport.summarize_offenders(report, None)
-        out = queueview.render_run_report(run, offenders)        # TWO positional args
-        assert out == queueview.render_run_report(run, offenders, None)
-        assert "- summary" not in out
-
-
-def test_render_run_report_with_summary() -> None:
-    # The summary section must not be able to break the digest: every prose line indented two
-    # spaces (the offender bullets' continuation shape), no line opening a Markdown block, and no
-    # line past the file's ~96-column discipline.
-    with tempfile.TemporaryDirectory() as d:
-        work = _mkwork(d, report=_two_unit_report(),
-                       translation=[{"id": i, "status": "ok"} for i in range(4)])
-        run = runreport.build_run_report(work, _CFG)
-        out = queueview.render_run_report(run, [], "Видео про GPU. Стоит смотреть.")
-        assert "- summary (5 words):" in out
-        assert "Стоит смотреть." in out
-        block = out.split("- summary (5 words):\n", 1)[1]
-        assert all(ln.startswith("  ") for ln in block.split("\n") if ln)
-        # the digest's OWN header is "### <vid>", so scope this to the summary block: no line the
-        # summary contributes may open a Markdown block of its own.
-        assert not any(ln.lstrip().startswith("#") for ln in block.split("\n"))
-        # only the summary block is wrapped — the pre-existing timings/flags lines are unwrapped
-        # by design and already run past 96, so the width check belongs to the block alone.
-        assert max(len(ln) for ln in block.split("\n")) <= 96
-
-
-def test_summary_absent_from_run_json() -> None:
-    # The summary is a SIDECAR by decision: run.json self-clears when report+translation are both
-    # gone (a scout-mode workdir), so folding the summary into the rollup would make it invisible
-    # in the one mode it is designed for. run.json's schema must stay untouched.
-    # Same workdir for both builds — video_id is the dir name, so two tmp dirs could never match.
+# --- a leftover summary.md is inert (the artifact's producers were deleted 2026-08-24) --------
+def test_a_leftover_summary_md_changes_nothing() -> None:
+    # Legacy workdirs still carry summary.md files; nothing reads them any more, so a build over
+    # a workdir with one must be byte-identical to a build without.
     tr = [{"id": i, "status": "ok"} for i in range(4)]
     with tempfile.TemporaryDirectory() as d:
         work = _mkwork(d, report=_two_unit_report(), translation=tr)
@@ -611,24 +539,12 @@ def test_summary_absent_from_run_json() -> None:
         (Path(d) / "summary.md").write_text("Видео про GPU.", encoding="utf-8")
         run = runreport.build_run_report(work, _CFG)
         with_summary = (Path(d) / "run.json").read_text(encoding="utf-8")
-    assert "summary" not in run
-    assert with_summary == without                              # byte-identical on disk
-
-
-def test_run_report_main_reads_summary_md_off_the_workdir() -> None:
-    # main() is the only live call site of read_summary in scripts/run_report.py — every test
-    # above hands render_run_report the prose directly. Without this, dropping the third argument
-    # from render_run_report(run, offenders, summary) makes item 3's output vanish from the
-    # digest with the whole suite still green.
-    with tempfile.TemporaryDirectory() as d:
-        work = _mkwork(d, report=_two_unit_report(),
-                       translation=[{"id": i, "status": "ok"} for i in range(4)],
-                       summary="Видео про GPU. Стоит смотреть.")
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
             assert run_report.main([str(work.root)]) == 0
-    assert "- summary (5 words):" in buf.getvalue()
-    assert "Стоит смотреть." in buf.getvalue()
+    assert "summary" not in run
+    assert with_summary == without                              # byte-identical on disk
+    assert "- summary" not in buf.getvalue()                    # and the digest renders none
 
 
 # --- by_type carries the full fixed vocab at 0 (load-bearing diff-without-None-guard) ---------
@@ -981,7 +897,7 @@ def test_flagged_units_empty_when_clean() -> None:
 
 # --- shared report data layer: classify_workdir / collect_entries / batch_* ----
 def _mkkind(root, vid, *, report=None, translation=None, sentences=None, info=None,
-            summary=None, scout=None, run_json=None, mkv=False, wav=False):
+            run_json=None, mkv=False, wav=False):
     """Fabricate work/<vid> with exactly the named artifacts. Unlike _mkwork (one dir = the
     whole tmp root), collect_entries tests need several SIBLING dirs under one work root."""
     d = Path(root) / vid
@@ -994,10 +910,6 @@ def _mkkind(root, vid, *, report=None, translation=None, sentences=None, info=No
         (d / "sentences.json").write_text(json.dumps(sentences), encoding="utf-8")
     if info is not None:
         (d / "source.info.json").write_text(json.dumps(info), encoding="utf-8")
-    if summary is not None:
-        (d / "summary.md").write_text(summary, encoding="utf-8")
-    if scout is not None:
-        (d / "scout.json").write_text(json.dumps(scout), encoding="utf-8")
     if run_json is not None:
         (d / "run.json").write_text(json.dumps(run_json), encoding="utf-8")
     if mkv:
@@ -1014,8 +926,8 @@ def test_classify_workdir_matrix() -> None:
             "run-rep": dict(report={"segments": []}),           # report.json alone is a run
             "run-tr": dict(translation=[]),                     # translation.json alone too
             "pending": dict(sentences=[{"id": 0, "end": 1.0}], mkv=True),
-            "scout": dict(sentences=[{"id": 0, "end": 1.0}]),
-            "scout0": dict(sentences=[]),                       # EMPTY list parses -> still scout
+            "tronly": dict(sentences=[{"id": 0, "end": 1.0}]),
+            "tronly0": dict(sentences=[]),                # EMPTY list parses -> still transcribed
             "fetched": dict(wav=True),
             "missing": dict(),
         }
@@ -1025,18 +937,19 @@ def test_classify_workdir_matrix() -> None:
         torn = _mkkind(root, "torn", wav=True)
         (torn / "sentences.json").write_text("{not json", encoding="utf-8")
         got["torn"] = queueview.classify_workdir(WorkDir(torn))
-    assert got == {"run-rep": "run", "run-tr": "run", "pending": "pending", "scout": "scout",
-                   "scout0": "scout", "fetched": "fetched", "missing": "missing",
-                   "torn": "fetched"}
+    assert got == {"run-rep": "run", "run-tr": "run", "pending": "pending",
+                   "tronly": "transcribed", "tronly0": "transcribed",
+                   "fetched": "fetched", "missing": "missing", "torn": "fetched"}
 
 
-def test_classify_workdir_source_mkv_flips_scout_to_pending() -> None:
+def test_classify_workdir_source_mkv_flips_transcribed_to_pending() -> None:
     # The discriminator itself: same transcript, the container's presence is the ONLY
-    # difference between "scout this" and "a parked full dub" (nothing ever deletes source.mkv).
+    # difference between "transcript only" and "a parked full dub" (nothing ever deletes
+    # source.mkv).
     with tempfile.TemporaryDirectory() as d:
         wd = _mkkind(Path(d), "vidFLIP00000", sentences=[{"id": 0, "end": 5.0}])
         work = WorkDir(wd)
-        assert queueview.classify_workdir(work) == "scout"
+        assert queueview.classify_workdir(work) == "transcribed"
         (wd / "source.mkv").write_bytes(b"\x00")
         assert queueview.classify_workdir(work) == "pending"
 
@@ -1052,7 +965,7 @@ def test_collect_entries_queue_order_survives_a_missing_video() -> None:
             ["vidAAAAAAAAA", "vidBBBBBBBBB", "vidCCCCCCCCC"], [], root, cfg=_CFG)
     assert [e["vid"] for e in entries] == ["vidAAAAAAAAA", "vidBBBBBBBBB", "vidCCCCCCCCC"]
     assert [e["n"] for e in entries] == [1, 2, 3]           # position preserved across the gap
-    assert [e["kind"] for e in entries] == ["run", "missing", "scout"]
+    assert [e["kind"] for e in entries] == ["run", "missing", "transcribed"]
     assert all(e["from_queue"] for e in entries)
     assert skipped == []                        # a queue id is NEVER dropped, whatever its kind
     assert entries[0]["run"] is not None and entries[0]["run"]["video_id"] == "vidAAAAAAAAA"
@@ -1072,19 +985,6 @@ def test_collect_entries_argv_dedup_and_numbering_continue() -> None:
     assert [(e["vid"], e["n"], e["from_queue"]) for e in entries] == [
         ("vidAAAAAAAAA", 1, True), ("vidDDDDDDDDD", 2, False)]
     assert skipped == []
-
-
-def test_collect_entries_scout_json_rides_on_a_run_entry() -> None:
-    # A dubbed video that was scouted first keeps its write-up: scout.json is attached for ANY
-    # kind, not only for scout cards.
-    with tempfile.TemporaryDirectory() as d:
-        root = Path(d)
-        _mkkind(root, "vidAAAAAAAAA", report=_two_unit_report(),
-                translation=[{"id": i, "status": "ok"} for i in range(4)],
-                scout={"one_liner": "x"})
-        entries, _ = queueview.collect_entries(None, [root / "vidAAAAAAAAA"], root, cfg=_CFG)
-    assert entries[0]["kind"] == "run"
-    assert entries[0]["scout"]["one_liner"] == "x"
 
 
 def test_collect_entries_argv_typo_and_fetched_go_to_skipped() -> None:
@@ -1333,7 +1233,7 @@ def test_format_dur_is_one_unit_with_a_decimal() -> None:
     assert queueview.format_dur(60) == "1.0m"
     assert queueview.format_dur(0) == "0.0s"                    # a measured zero is a number
     for bad in (None, "600", True, -1):
-        # same contract as scout_report.clock: unknown must never render as a measured value
+        # same contract as queue_report.clock: unknown must never render as a measured value
         assert queueview.format_dur(bad) == "—"
 
 
@@ -1401,20 +1301,18 @@ def test_batch_columns_is_the_single_header_source() -> None:
     assert header in buf.getvalue()
 
 
-def test_run_report_main_renders_a_scout_block() -> None:
-    # The third divergence the queue-page merge names: a scouted dir used to print "run the pipeline
-    # first" — an instruction to dub a video the operator only asked to scout.
+def test_run_report_main_renders_a_transcribed_block() -> None:
+    # The third divergence the queue-page merge names: a transcript-only dir used to print "run
+    # the pipeline first" — an instruction to dub a video the operator only asked to transcribe.
     with tempfile.TemporaryDirectory() as d:
         work = _mkwork(d, sentences=[{"id": 0, "end": 3.0}, {"id": 1, "end": 9.0}],
-                       info={"title": "Scouted Talk", "duration": 2530.0},
-                       summary="Видео про GPU. Стоит смотреть.")
+                       info={"title": "Transcribed Talk", "duration": 2530.0})
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
             assert run_report.main([str(work.root)]) == 0
     out = buf.getvalue()
-    assert "[scouted — transcript only, no dub]" in out
+    assert "[transcribed — transcript only, no dub]" in out
     assert "- 2 sentences · 42 min" in out
-    assert "- summary (5 words):" in out                    # the scout deliverable is attached
     assert "run the pipeline first" not in out
     assert "── batch" not in out                            # and no fabricated batch row
 

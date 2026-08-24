@@ -128,7 +128,6 @@ def _seed_downstream(work: WorkDir) -> dict[Path, bytes]:
     files = {
         work.translation: b'[{"id": 0}]',
         work.report: b'{"flags": []}',
-        work.summary: "# summary\nRussian blurb\n".encode("utf-8"),
         work.root / "run.json": b'{"video_id": "repaircon1"}',
         work.seg_wav(0): b"RIFFfake",
         # survivors
@@ -388,14 +387,14 @@ def test_words_json_is_never_rewritten() -> None:
 
 def test_accepted_repair_invalidates_exactly_the_downstream_artifacts() -> None:
     """'deletes exactly the artifacts downstream of sentences.json ... It never re-runs a
-    stage itself.' summary.md included (workdir.invalidate_downstream, 2026-07-20)."""
+    stage itself.' (workdir.invalidate_downstream)."""
     with tempfile.TemporaryDirectory() as d:
         ctx = _ctx(Path(d))
         _seed_downstream(ctx.work)
         (results, _, _), _ = _run(ctx, ids=None, asr=FakeASR(CLEAN))
         assert results[0].accepted
 
-        for p in (ctx.work.translation, ctx.work.report, ctx.work.summary,
+        for p in (ctx.work.translation, ctx.work.report,
                   ctx.work.root / "run.json", ctx.work.seg_wav(0)):
             assert not p.exists(), f"{p.name} is downstream of sentences.json and must be deleted"
         assert ctx.work.source_audio.exists(), "source.wav is UPSTREAM and must survive"

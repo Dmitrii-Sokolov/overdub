@@ -11,7 +11,7 @@ Admission rule: an item must change the TOOL (CLAUDE.md) — repairing one video
 
 - [ ] The first video reaches its post-translate tail while the next still translates: mux profiled and taken, a clean end-to-end figure, acceptance re-phrased → tasks/pipeline-batch-latency.md
 - [ ] Proper nouns survive ASR into all three surfaces (dub, EN subs, RU subs) via a name list at the source pass → tasks/asr-name-list.md
-- [ ] Promotion C→B confirmed once on real media (transcribe fast-skips, download re-runs) → tasks/promotion-c-to-b.md
+- [ ] Promotion into route B confirmed once on real media (transcribe fast-skips, download re-runs) → tasks/promotion-to-dub.md
 - [ ] The translation is sized to its slot (target chars = slot ÷ voice rate); the runaway gate re-anchored → tasks/slot-fit.md
 - [ ] The dub stops reading flat: translator punctuation quality + `<p>`/`<s>` SSML → tasks/input-prosody.md
 - [ ] Out-of-dict pronunciation comes from CMUdict phonemes, not spelling → tasks/cmudict-transliteration.md
@@ -32,7 +32,6 @@ Admission rule: an item must change the TOOL (CLAUDE.md) — repairing one video
 - [ ] The sentence rebuild stops cutting unpunctuated sentences in half (166 of 388 truncated are ours) → tasks/rebuild-truncated-endings.md
 - [ ] work/<id>/ binaries cleaned after a successful mux; mux input moves to output.mkv first → tasks/clean-workdir-after-mux.md
 - [ ] work-exp/ classified consumable vs archive, before the next disk cleanup decides → tasks/work-exp-archive-policy.md
-- [ ] S2 artifact delivery settled (caller-writes vs schema vs status quo) → tasks/s2-artifact-route.md
 - [ ] effort:'low' A/B for route-B translators — shorter turn chain vs Russian quality, ear-judged (numbers: DECISIONS 2026-08-20) → tasks/translator-effort-low.md
 - [ ] Decided whether the detector-driven repair half needs a home on Parakeet (completeness-seeded re-reads; that class's rate on Parakeet unmeasured; DECISIONS 2026-08-06) → tasks/parakeet-repair-home.md
 - [ ] The floor CHAIN recalibrated off the accumulated series (`_guard` still gates on the "knowingly unreliable" ratio — config.py's own comment asks; `floor_longest_run ≥ 40` separates the real collapses) → tasks/floor-chain-recalibration.md
@@ -55,7 +54,7 @@ Admission rule: an item must change the TOOL (CLAUDE.md) — repairing one video
 - [ ] Enumeration-head detector (unique head in a run of ≥3 `^(and )?X to …` sentences; 1 fire / 1101 sentences, the true positive, 0 FP, ~15 LOC) → tasks/enumeration-head-detector.md
 - [ ] `--repair id,id --seed N`: point re-synth + remux at the GROUP grain → tasks/point-resynth.md
 - [ ] Normalize polish: range+unit ("3.5-4.5 GHz" voices the unit as "гхз"), "90х" → "девяностох", "10-20%" keeps a literal dash → tasks/normalize-polish.md
-- [ ] Scout audio reused on promotion instead of re-fetching — but first answer WHY a re-fetch changed the transcript (2057→2055 words, DECISIONS 2026-08-06; the two downloads were never compared for format or bytes) → tasks/reuse-scout-audio.md
+- [ ] Audio-only fetch reused on promotion instead of re-fetching — but first answer WHY a re-fetch changed the transcript (2057→2055 words, DECISIONS 2026-08-06; the two downloads were never compared for format or bytes) → tasks/reuse-audio-on-promotion.md
 - [ ] Dub-track polish: `libopus` instead of aac; loudnorm/EQ; singing/music detection → keep original; `--subs-only` fast path → tasks/dub-track-polish.md
 - [ ] out/ export name collision fixed (identical `<title> [<id>].mkv` across models overwrites) → tasks/out-name-collision.md
 - [ ] Cross-video stage pipelining (translate ∥ synth/verify) if nights get tight → tasks/cross-video-pipelining.md
