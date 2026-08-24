@@ -9,7 +9,7 @@ If a fact is derivable by reading the code, it does not belong here.
 
 Pipeline: `yt-dlp → Parakeet-TDT 0.6b v3 → Claude Sonnet (translate seam) → Silero v5_5_ru → whisper-small verify → htdemucs bed → ffmpeg (MKV)`
 
-- **Install:** SETUP.md · **Rationale + history:** `DECISIONS.md` · **Config defaults:** `overdub/config.py`
+- **Install:** SETUP.md · **Rationale + history:** `DECISIONS.md` (index) → `docs/decisions-log.md` · **Config defaults:** `overdub/config.py`
 
 ---
 

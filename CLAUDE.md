@@ -245,10 +245,12 @@ DECISIONS). Two rules bind every session: findings and ideas are APPENDED to `IN
 nothing there is reordered or rewritten; an executor never writes `BACKLOG.md` or `DECISIONS.md`
 — that is `/triage` alone (the one exception: ticking your own BACKLOG line on completion).
 
-**Deliberate deviation:** `DECISIONS.md` is a single file — a hand-maintained one-line Index
-plus dated entries as the detail, guarded by `tests/test_decisions_index.py` — not the bare
-index the format specifies. "DECISIONS YYYY-MM-DD" citations across code and docs resolve by
-grep against the dated entries; keep citing that way.
+**Decisions layout:** `DECISIONS.md` is the one-line index alone — thematic sections, a
+deliberate deviation from the format's flat rows — and the dated entries live in
+`docs/decisions-log.md`; `tests/test_decisions_index.py` keeps the two in sync. "DECISIONS
+YYYY-MM-DD" citations across code and docs resolve by grepping the LOG for the full date; keep
+citing that way. An index line ending in a `→ <path>` link keeps its detail in a module doc or
+task file instead of the log.
 
 **A measured number in prose carries its date, or it is not written.** Figures
 rot silently while still reading as current: the ~72 s/video model-loading
