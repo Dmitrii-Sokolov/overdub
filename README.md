@@ -8,7 +8,7 @@ translation, which left the host at the seam and is written by Claude Sonnet sub
 Built for batch processing of hundreds of hours of single-speaker content.
 
 **This file is the MAP and the commands.** Rationale and measurements live in
-`DECISIONS.md`, open work in `.claude/PLAN.md`, host findings in `STACK.md`, install in
+`DECISIONS.md`, open work in `BACKLOG.md`, host findings in `STACK.md`, install in
 `SETUP.md`, and the step-by-step for each route in that route's skill under `.claude/skills/`.
 Nothing here restates any of them — a number or a procedure copied into this file is a number or
 a procedure that will be wrong here first.
@@ -349,11 +349,11 @@ that track, not the artifact.
   VRAM is the largest single model rather than the sum — which is what makes one model load per
   BATCH safe. **TTS costs no VRAM at all** (Silero runs on CPU). Per-model budgets, the chunk-size
   ceiling that does not announce itself, and the host RAM wall in `separate`: STACK.md.
-- **Secondary (deferred):** Intel Arc B390 iGPU. See PLAN.
+- **Secondary (deferred):** Intel Arc B390 iGPU. See BACKLOG (`tasks/weaker-hardware.md`).
 
 Design budget: batch wall-clock ≤ ×5 video duration, comfortably cleared. It is dominated by
 transcribe; synthesis is not a factor. Any stage-share split you need comes off a fresh run, not
-off this page — PLAN, "Numbers to re-measure".
+off this page — the F5-era split is retired (DECISIONS 2026-08-24).
 
 ## Constraints / assumptions
 
@@ -385,7 +385,7 @@ NC is fine for personal listening and is a hard gate on anything published; it w
 personal use (user, 2026-07-27). **Both rows are unverified against the current model card —
 re-check before any distribution.** If NC ever binds, `v5_cis_base` is the escape hatch: same
 engine family, so the adapter would not change — only the voice and the stress preprocessor, which
-this pipeline is already building toward. See PLAN, "Publication rights".
+this pipeline is already building toward.
 
 - **If you ever add a voice that is not the model's own, study the law of your jurisdiction first.**
   EU member states and Canada protect a person's voice from unauthorized *public* use (personality
@@ -399,5 +399,5 @@ this pipeline is already building toward. See PLAN, "Publication rights".
 ## Status
 
 Polishing — the pipeline runs on real videos, batch mode included, with translation supplied at the
-seam. Current roadmap: `.claude/PLAN.md`; rationale history: `DECISIONS.md`; raw capture:
+seam. Current roadmap: `BACKLOG.md` (details in `tasks/`); rationale history: `DECISIONS.md`; raw capture:
 `INBOX.md`. Setup: `SETUP.md`; verified host facts: `STACK.md`.

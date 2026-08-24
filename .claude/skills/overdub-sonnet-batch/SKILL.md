@@ -114,8 +114,8 @@ sweep is worth running even though it usually does nothing.
 *(The counts once quoted here — "17 units at ×1.8..×12.5, 10 of them seeded" — were recomputed
 2026-07-25 and were wrong: 17 mixed a SENTENCE-row count with units, and ×12.5 was one sentence's
 pre-repair figure, since repaired to 2.04. Over all of `work/` the real population is 7 units of
-3575, worst 2.63 — and all of it measured at the old grouping. PLAN "Numbers to re-measure"
-carries the correction; do not restate a population number here until a Silero batch exists.)*
+3575, worst 2.63 — and all of it measured at the old grouping. `tasks/slot-fit.md` carries the
+correction; do not restate a population number here until a Silero batch exists.)*
 
 Skip it only for a queue you have already repaired (`sentences.json` newer than the repair stamp).
 A video whose digest `- asr:` line says `alignment collapse suspected` is never a skip.
@@ -346,7 +346,8 @@ That is the guardrail earning its keep, and the argument against ever relaxing i
 Two things make the rate above 2004 a FLOOR, both worth knowing before the number is trusted
 further: a video that failed once and passed on a retry is indistinguishable from a clean success
 afterwards (the draft is overwritten), and **sentence count is a proxy for what actually binds,
-which is output VOLUME in characters** — PLAN carries the re-measurement.
+which is output VOLUME in characters** — `tasks/chunk-threshold-on-chars.md` carries the
+re-measurement.
 
 Switch that video to one agent per CHUNK. The seam does not move: each agent writes the ordinary
 draft record shape into `work/<id>/translate/<from>-<to>.json`, and `--join` concatenates them into
@@ -552,8 +553,8 @@ Everything between the timers is invisible to it: process starts and the gaps be
 **The translate wave used to be invisible here too and no longer is (2026-08-05).**
 `build_translation.py` now records it into `stages["translate"]`, so on a video translated since
 that date the seam IS inside `total_wall_s`. Two consequences, both load-bearing. A total from
-before that date is not comparable with one from after — PLAN "Numbers to re-measure" (F) carries
-the boundary. And the recording depends on `translate.started`: when the helper prints
+before that date is not comparable with one from after — `overdub/CLAUDE.md` (corpus provenance)
+carries the boundary. And the recording depends on `translate.started`: when the helper prints
 `[warn] translate wave not timed`, that video's total silently means the OLD thing, so read the
 helper's output before trusting a total. What is still outside every timer, always: process starts
 and the human's gaps.

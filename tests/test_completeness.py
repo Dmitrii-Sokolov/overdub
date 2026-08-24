@@ -262,7 +262,7 @@ def test_dup_adjacent_restart_caught_by_containment() -> None:
 
 
 def test_dup_adjacent_loop_swallowing_previous_line() -> None:
-    # Real 2YCaBqP8muw 16/17 (PLAN 0f): the tip list is re-spoken inside the next sentence.
+    # Real 2YCaBqP8muw 16/17: the tip list is re-spoken inside the next sentence.
     # ratio 0.6569, containment 0.9167.
     d = completeness.duplicate_adjacent([
         "They are give Claude context, show examples of what good looks like, "

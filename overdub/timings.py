@@ -162,7 +162,7 @@ def record_stage_span(work, stage, *, enqueued, started, finished, clock=None) -
     a millisecond apart.
 
     Deliberately ADDITIVE: `stages[x]` keeps its meaning untouched. That float has already changed
-    scope once (PLAN, "Numbers to re-measure" (F)) and every timings.json on disk is keyed to the
+    scope once (2026-08-05 — `overdub/CLAUDE.md`, corpus provenance) and every timings.json on disk is keyed to the
     current one, so a second silent redefinition would make the corpus unreadable rather than
     merely incomplete. The two also fail differently and that is worth having — perf_counter is
     monotonic and immune to a clock step, these stamps are comparable ACROSS videos and processes.

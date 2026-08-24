@@ -54,8 +54,8 @@ MIN_SENT_CHARS = 15     # EN chars below which a sentence is "ultra-short" and m
                         # neighbor. Calibrated on the retired F5 engine, which sized its duration
                         # canvas by text length and made tiny texts echo the reference tail (the
                         # id43 "Решениям." class). NOT re-validated on Silero — do not read this
-                        # threshold as measured on the shipped engine. Re-measuring it is PLAN,
-                        # Backlog ("Re-validate MIN_SENT_CHARS on Silero").
+                        # threshold as measured on the shipped engine. Re-measuring it is
+                        # BACKLOG (tasks/min-sent-chars-silero.md).
 MERGE_GAP_MAX = 0.6     # never merge across a pause longer than this (seconds) — the gap
                         # becomes continuous synthesized speech, i.e. deliberate sync drift
 MERGE_TOTAL_GAP_MAX = 1.5   # cap on the CUMULATIVE silence a chain of merges may absorb

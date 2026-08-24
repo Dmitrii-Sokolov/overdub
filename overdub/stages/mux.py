@@ -250,7 +250,7 @@ def gained_tracks(stamped, now) -> list[str]:
     """Tracks present NOW that the stamped mux did not carry — the re-mux trigger.
 
     UPGRADE-ONLY on purpose. A track that has VANISHED must NOT re-mux: `work/<id>/` cleanup
-    deletes binaries after a successful mux (PLAN), and hardlinked baselines in `work-exp/`
+    deletes binaries after a successful mux (tasks/clean-workdir-after-mux.md), and hardlinked baselines in `work-exp/`
     can even arrive with an OLDER mtime than the output, so a symmetric comparison would
     silently strip the RU track out of an MKV that already shipped it. Losing a track is only
     ever an explicit operator act; gaining one is the pipeline finishing its job.

@@ -92,7 +92,7 @@ declined and shipped defaults are tuned for Silero. Two things Silero forces on 
 the same sentence without the word), which is why `text_tts` is Cyrillic-by-contract via the
 `pronounce` chain; and **it has no `supports_target`**, so slot fitting is the pipeline's job now.
 That job is half done (2026-07-25): `atempo_floor` stretches under-filled units and closed 70% of
-the measured silence, while sizing the TRANSLATION to the slot is still open (PLAN, "Slot fit"). The
+the measured silence, while sizing the TRANSLATION to the slot is still open (`tasks/slot-fit.md`). The
 duration model those two share is `overdub.tts.voice_rate` / `target_chars` (both in
 `overdub/tts/__init__.py`) and is keyed on `tts_voice` —
 speaking rate is a VOICE fact (eugene 19.85 ru ch/s vs baya 14.41, measured 2026-07-25 over every
@@ -235,11 +235,20 @@ law"). Two traps it carries: it praises `aidar`, which our own ear ranking rejec
 so inline, ours wins; and `<break>` is NOT an unpulled lever, it was built and REJECTED by ear
 (DECISIONS 2026-07-25) and ships off at `silero_ssml_breaks = False`.
 
-## Artifacts
+## Artifacts — agent-docs format (since 2026-08-24)
 
-Planning lives in `.claude/PLAN.md`, rationale in `DECISIONS.md`,
-raw ideas in `INBOX.md`. Shipped work is recoverable from git history —
-there is no CHANGELOG file.
+Tasks live in `BACKLOG.md` (one line per task → `tasks/<slug>.md`, created lazily), rationale in
+`DECISIONS.md`, raw capture in `INBOX.md` (append-only, `- [tag] DATE text`, emptied only by
+`/triage`), module-local facts in `overdub/CLAUDE.md`. Shipped work is recoverable from git
+history — there is no CHANGELOG file, and there is no PLAN.md any more (dissolved 2026-08-24,
+DECISIONS). Two rules bind every session: findings and ideas are APPENDED to `INBOX.md` and
+nothing there is reordered or rewritten; an executor never writes `BACKLOG.md` or `DECISIONS.md`
+— that is `/triage` alone (the one exception: ticking your own BACKLOG line on completion).
+
+**Deliberate deviation:** `DECISIONS.md` is a single file — a hand-maintained one-line Index
+plus dated entries as the detail, guarded by `tests/test_decisions_index.py` — not the bare
+index the format specifies. "DECISIONS YYYY-MM-DD" citations across code and docs resolve by
+grep against the dated entries; keep citing that way.
 
 **A measured number in prose carries its date, or it is not written.** Figures
 rot silently while still reading as current: the ~72 s/video model-loading

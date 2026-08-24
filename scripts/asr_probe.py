@@ -110,8 +110,8 @@ VARIANTS: dict[str, dict] = {
     "threads2": {"num_workers": 2},                # no threaded driver yet — measures nothing today
     # NOT a speed lever. This one exists to re-test a CAUSAL CLAIM this project has been treating
     # as settled since 2026-07-17 — that condition_on_previous_text=False is what produces
-    # terminator-free blocks, and =True is what produces repetition loops. See PLAN, "The
-    # condition_on_previous claim". Needs axes this probe does not have yet; read the item first.
+    # terminator-free blocks, and =True is what produces repetition loops. Adjudicated
+    # 2026-07-24 — the claim survived (DECISIONS); the axes live in claim_metrics/report_claim.
     "nocond": {"cond": False},
 }
 
@@ -136,8 +136,8 @@ def cell(out: Path, vid: str, variant: str, rep: int) -> Path:
 
 
 def claim_metrics(flat: list, sents: list[dict]) -> dict:
-    """The two axes that adjudicate the condition_on_previous claim (PLAN, "The condition_on_previous
-    claim"). LOOP, using the SAME quantities as the 2026-07-19 `overdub.toml` note so the two sides
+    """The two axes that adjudicate the condition_on_previous claim (DECISIONS 2026-07-17,
+    adjudicated 2026-07-24). LOOP, using the SAME quantities as the 2026-07-19 `overdub.toml` note so the two sides
     are directly comparable: degenerate 0.02 s stamps (`n_floor`), duplicate adjacent sentence pairs
     (`dup_pairs`), and the max chars/sec of any sentence (`max_chps` — a collapsed alignment inflates
     it). PUNCTUATION: terminator density per 100 words (`term_density`) and the LONGEST
@@ -292,7 +292,7 @@ def report_claim(out: Path, vids: list[str], repeats: int) -> None:
     loop and punctuation axes, per video, as RANGES across the repeats. The claim (DECISIONS
     2026-07-17, `overdub.toml` note 2026-07-19) is TWO-SIDED: cond=True makes repetition loops
     (loop axes high on cond=True) and cond=False makes terminator-free blocks (term density low /
-    longest gap high on cond=False). **Falsification criterion, fixed in PLAN before the run:** if
+    longest gap high on cond=False). **Falsification criterion, fixed in advance of the run (verdict: DECISIONS 2026-07-24):** if
     the LOOP rows OVERLAP between the two sides across the repeats — especially on `4szRHy_CT7s`,
     the source the claim was built on — the 2026-07-19 attribution does not survive. Overlapping
     ranges on a sampling decoder mean the flag is not the operative variable; the verdict is read

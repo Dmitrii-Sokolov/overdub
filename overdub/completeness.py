@@ -286,8 +286,8 @@ def duplicate_adjacent(texts: list[str]) -> dict[int, int]:
     flagged and the interior members keep their LAST twin (id 1 of a 0/1/2 run maps to 2, not 0)
     — the flag is the signal, the twin id is a triage convenience, not a complete adjacency graph.
 
-    autojunk=False mirrors the repo's already-settled similarity metric (PLAN "Open questions":
-    char-level SequenceMatcher(autojunk=False)) and removes a length-dependent behaviour cliff
+    autojunk=False mirrors the repo's already-settled similarity metric (char-level
+    SequenceMatcher(autojunk=False), as in the verify round-trip) and removes a length-dependent behaviour cliff
     at 200 chars, which matters here because sentences reach 238 (MAX_CHARS is 240). It changes
     NO decision on the current corpus: autojunk only suppresses the LOW-similarity range
     (measured 0.0067 vs 0.2761 on a real long pair) and leaves high-similarity pairs untouched

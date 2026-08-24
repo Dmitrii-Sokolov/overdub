@@ -13,7 +13,7 @@ real run lost videos without it.
 
 The route skills own what differs: the pipeline command, the artifacts, the gates, the report.
 
-**Section numbers are a join key.** The three route skills, README and `.claude/PLAN.md` cite this file by
+**Section numbers are a join key.** The three route skills, README and `tasks/*.md` cite this file by
 number, and renumbering breaks none of those references visibly — it just points them somewhere
 else. Numbering is therefore APPEND-ONLY: a new section goes at the end. Renaming a heading is free.
 

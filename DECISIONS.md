@@ -4,7 +4,7 @@ Why we chose what we chose. Newest first — **append directly below the `---` t
 never above it.** Entries are not rewritten to match today's code: when the code moves out from
 under one it gets a `> SUPERSEDED <date>` line and stays, because the rejected alternative is the
 part worth keeping. Content is cut in exactly three cases — pure scheduling that already lives in
-`PLAN.md`; a generalised lesson promoted to `~/.claude/knowledge/`, where the entry keeps what it
+`BACKLOG.md` or a task file; a generalised lesson promoted to `~/.claude/knowledge/`, where the entry keeps what it
 decided HERE and points at the file instead of restating it; and prose that decides nothing that
 still applies, i.e. a verdict on a retired component or a roadmap ordering both overtaken. The
 third is the narrow one: a REJECTED alternative is never dead — it is the part worth keeping — so
@@ -77,6 +77,7 @@ divider. Look things up through this index, not by scrolling.
 - `07-16` dead-air elimination BUILD † · `07-16` interim ear verdict
 
 **Pipeline, batch, artifacts**
+- `08-24` agent-docs replaces the 4-file framework; PLAN dissolves into BACKLOG + tasks/
 - `08-11` `separate` CHUNKS long audio; the length threshold hid a container wall and a memory wall
 - `08-06` the per-video trigger is a WATCHER beside the wave; the pipeline did not move
 - `08-06` Parakeet and htdemucs DO co-reside; a re-download is not transcript-neutral
@@ -92,6 +93,7 @@ divider. Look things up through this index, not by scrolling.
 - `07-15` pipeline tail design panel
 
 **Measurement & method** — the entries most likely to save you a day
+- `08-24` RETIRED with PLAN: F5-era stage shares + pre-07-22 wall-clock figures
 - `08-07` `utilization.gpu` is not a load signal; quote the SM CLOCK
 - `08-06` **the batch gets an absolute clock**; the first honest baseline retires the ~1.7× estimate
 - `07-25` retrospective: three times the arithmetic was right and the SHAPE was wrong
@@ -111,6 +113,42 @@ divider. Look things up through this index, not by scrolling.
 † carries a `SUPERSEDED` header — the code it describes is gone or changed. Read the header first.
 
 ---
+
+## 2026-08-24 — agent-docs replaces the 4-file framework; PLAN.md dissolves
+
+Chose the portfolio-wide agent-docs format (`BACKLOG.md` + `tasks/<slug>.md` + module
+`CLAUDE.md` files + append-only `INBOX.md`, with BACKLOG and DECISIONS written only at triage)
+over keeping the project-local 4-file framework — the portfolio had already migrated and this
+project was the last holdout running its own spec. PLAN.md's content routed four ways: ordered
+items → BACKLOG "Open" plus `tasks/` files carrying their accumulated context; measurement
+fences that guard data still on disk (the F5-corpus identification pair, the `total_wall_s`
+scope change) and standing pipeline constraints → `overdub/CLAUDE.md`; dead figures → the
+retirement entry below; the publication-rights gate → README "Voices, cloning and the law".
+
+**Deliberate deviation from the format:** DECISIONS.md stays a SINGLE file — the hand-maintained
+one-line Index up top with dated entries as the detail — rather than a bare index with details
+scattered into module docs. Dozens of "DECISIONS YYYY-MM-DD" citations in code comments, README,
+STACK and the route skills resolve by grepping this file's dated entries; splitting would break
+every one of them for zero benefit. `tests/test_decisions_index.py` keeps the index honest
+either way. Reconsider if the index stops being maintained or triage starts skipping it.
+
+## 2026-08-24 — retired with PLAN.md: F5-era stage shares and pre-07-22 wall-clock figures
+
+PLAN "Numbers to re-measure" quarantined these as groups (B) and (C); with PLAN dissolved they
+are retired here so the numbers stay greppable as DEAD. **Retired, do not re-quote:**
+
+- **(B) F5-era batch stage shares:** synthesize 47.6% · transcribe 21.3% · download 9.8% ·
+  verify 8.3% · mux 7.9% · separate 4.9%; batch RTF 0.451 (7.26 h → 3.27 h); the 2026-07-24
+  36-run split (synthesize 52.6 + verify 7.6 + mux 7.4 + separate 4.8 = 72.7%); and the
+  "3.3 h → ~1.9 h, RTF → ~0.26" projection, which extrapolated one video to a batch.
+  Replacement: `tasks/retime-batch-silero.md`.
+- **(C) pre-2026-07-22 stage-wall derivatives:** the ~72 s/video model-loading fixed cost, the
+  2026-07-19 audition whole-pipeline RTF pair (Silero 0.14-0.17 vs F5 0.70-0.92 — unlabelled,
+  two unquotable numbers), and every `breakdown_pct` of that era. Replacement: re-derive from
+  `rtf_work` on the next pass.
+
+The LIVE fences moved to `overdub/CLAUDE.md`, not here — they guard artifacts still on disk
+(36 F5 manifests, 252 pre-08-05 timings.json) whose provenance exists only in the docs.
 
 ## 2026-08-20 — fewer turns per translator; the batching knob was not the one that mattered
 

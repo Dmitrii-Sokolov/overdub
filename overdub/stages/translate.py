@@ -9,7 +9,7 @@ What still lives here is the CONTRACT: `SYSTEM` (the translation rules) and `_is
 per-line gate). `scripts/build_translation.py` imports `_is_bad`, so that half is enforced by the
 code. `SYSTEM` is imported by nothing — route B's prompt is a static copy in
 `.claude/workflows/translate-batch.js` — so it is the source of truth by convention only, and the
-inventory of its hand-synced copies is in PLAN, "Slot fit" obstacle (iii).
+inventory of its hand-synced copies is in tasks/slot-fit.md, obstacle (iii).
 """
 
 from __future__ import annotations

@@ -153,8 +153,8 @@ class SeparateStage:
         #   a non-empty transcript — the earliest signal, available right after transcribe. It is
         #     what lets separate run BEFORE assemble, which is the point: demucs is the only GPU
         #     work that depends on nothing but source.mkv, so it can fill the translate seam's
-        #     idle GPU instead of sitting in the post-translate tail (PLAN, measured: 301.5 s of
-        #     a 2438.6 s batch).
+        #     idle GPU instead of sitting in the post-translate tail (measured 2026-08-06:
+        #     301.5 s of a 2438.6 s batch, DECISIONS).
         #
         # Skipping still protects the expensive case it was built for. A no-speech video — a
         # music-only clip, the slowest kind to separate at up to 449 s — has an EMPTY transcript

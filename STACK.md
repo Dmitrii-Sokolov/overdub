@@ -177,9 +177,9 @@ validates a draft is `overdub/stages/translate._is_bad`.
   the whole Stage-3 budget. Measured RTF ~0.02–0.3 on CPU — TTS is no longer a throughput factor.
 - **Deterministic** (no seed) → good for a reproducible verify gate, BUT a failed segment can't be
   reseeded, only flagged. **No `supports_target`** — fitting speech to its slot is the pipeline's job
-  (`atempo_floor` at assembly + the open "Slot fit" item in PLAN).
+  (`atempo_floor` at assembly + the open `tasks/slot-fit.md`).
 - Takes SSML (`<speak> <p> <s> <prosody> <break>`) while the adapter sends plain `text=` — an open
-  PLAN item ("Input prosody"), not a settled decision. **Except `<break>`, which is NOT open:
+  BACKLOG item (`tasks/input-prosody.md`), not a settled decision. **Except `<break>`, which is NOT open:
   `silero.build_ssml` is built and wired (`supports_breaks`, gaps from `synthesize.build_units`)
   but ships OFF — `silero_ssml_breaks = False`, rejected by ear 2026-07-25 as the right mechanism
   on the wrong problem.** Read that config comment before re-proposing pause markup; the engine

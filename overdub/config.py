@@ -172,7 +172,7 @@ class Config:
                                      # that, i.e. 8%, while ADDING pauses where the speaker had
                                      # none. The real lever is translation length + atempo<1.
                                      # Kept, not deleted: correct mechanism, wrong problem. This
-                                     # is the ONLY copy of these forensics — PLAN "Input prosody"
+                                     # is the ONLY copy of these forensics — tasks/input-prosody.md
                                      # and docs/russian-tts-guide.md both point here instead of
                                      # restating them, so do not trim it away.
                                      # Audio-affecting → part of synth_key.
