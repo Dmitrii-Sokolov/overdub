@@ -27,7 +27,8 @@ divider. Look things up through the index, not by scrolling.
 
 First deliberate deletion pass over this file, user-driven. The header's cut policy gains a
 fourth case: a WHOLE entry may be deleted when the code it describes is gone AND every lesson it
-holds is restated in a surviving entry. Deleted under that rule (~490 of ~3700 lines): the F5
+holds is restated in a surviving entry. The whole pass: 536 lines replaced by 113 (the commit
+diff is the exact record). Deleted under that rule: the F5
 speed ledger + `f5_nfe` pair (levers of an engine closed by user decision 2026-07-25 — it is not
 coming back, so "would be re-investigated from scratch" no longer paid for the pages), the
 ESpeech narrator voice, Gemma-replaces-Qwen3 and Silero-v5-acknowledged (the local-LLM translate
