@@ -41,3 +41,4 @@ Tags: `[bug] [feature] [chore] [?]` — one line per entry, processed weekly.
      redirect line in the route-B skill step 3. Deleted (5): scout_report embed size and the
      summary.md bypass (dead with route C / the summarizer), route-B empty-transcript gate and
      wasted no-speech agents (closed 2026-08-06), unlisted Vimeo URLs (outside YouTube→RU). -->
+- [feature] 2026-10-27 Multi-speaker dubbing spec drafted with the user → tasks/multi-speaker-dubbing.md. Triage owes: a DECISIONS entry lifting the founding "single-speaker, no diarization" hard constraint (CLAUDE.md, AGENTS.md, README Constraints all state it); a BACKLOG line; `narrator-gender-f0.md` absorbed (F0 per speaker feeds both voice and translator); fate of `multi-speaker-detector.md` (its ECAPA flag is subsumed by diarization).
