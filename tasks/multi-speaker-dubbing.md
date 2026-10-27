@@ -70,13 +70,17 @@ the grammatical gender of every first-person past verb.
   own process), `ParakeetWorker.diarize`, `Session.diarizer`, `overdub/stages/diarize.py` between
   transcribe and translate (and in `transcribe_only_stages`), `cfg.diarize`. Word → speaker by
   overlap, `smooth_islands`, re-cut + `invalidate_downstream` only when the cut changes.
-- [ ] **F0 per speaker → gender** (absorbs `narrator-gender-f0.md`: measured once, used for both
-  voice and translator) + ΔF for the timbre metric.
+- [x] **F0 + ΔF per speaker** (2026-10-27): `overdub/timbre.py` (pure numpy), written by the
+  diarize stage into `diar.json` → `speakers_info` (words, f0_hz, delta_f_hz, pool, gender) for
+  every video, single-speaker included. Absorbs `narrator-gender-f0.md`'s measurement; feeding
+  `gender` to the translator is the contract item below.
 - [x] **Fixture:** auto labels of `z7cNbsr3b5s` and `i-o5YbNfmh0` judged fully correct by ear
   (user, 2026-10-27) — `work-exp/diar-probe/<id>/labels.txt` stand as the reference, uncorrected.
-- [ ] **False-split run** over the single-speaker corpus → the Q8 threshold. Must be READ-ONLY on
-  `work/` (the bridge + `assign_speakers` + `smooth_islands`, never the stage): on a corpus
-  workdir the stage would retire a real translation on every false split.
+- [x] **False-split run** over the corpus (2026-10-27, read-only) — see Findings; it replaced the
+  Q8 threshold with identity linking.
+- [ ] **Windowed diarization + identity linking:** diarize fixed windows (bounded VRAM), link
+  speakers across windows and merge same-identity labels by TitaNet embedding cosine; calibrate
+  the threshold on the interview channels (two-person episodes must come out as 2).
 - [x] **Speaker change = hard boundary** in resegment and `_merge_short` (`_split_overlong` runs
   inside a same-speaker range by construction).
 - [ ] **Same boundary in `build_units`** — rides with per-unit voice (needs `speaker` in
@@ -116,9 +120,14 @@ Test videos (user, 2026-10-27): 2 speakers — `i-o5YbNfmh0`, `N6FkmdL0Lg0`, `9G
 - **Plain sum of squares, NO speech-time weighting** (user): the assignment then depends only on
   the speaker's voice, so the same person recurring across videos of a series gets the same dub
   voice.
-- **Gender for the voice pool: hard threshold at 165 Hz median F0, never `unknown`.** The
-  translator's field keeps the `unknown` band (~155-185 Hz → impersonal constructions): the
-  voice pool and the grammatical gender are two decisions over the same measurement.
+- ~~Gender for the voice pool: hard threshold at 165 Hz median F0~~ — superseded the same day
+  (user, after a man measured 176 Hz): **outside 150-200 Hz F0 decides; inside it ΔF does**
+  (pool split at 1075 Hz, never `unknown`; the translator's gender is `unknown` between 1040 and
+  1110 Hz). Voice pool and grammatical gender stay two decisions over the same measurement.
+- **`diarize` stays on by default** (user, 2026-10-27), with the false-split finding known: a
+  re-run of an old workdir re-cuts its transcript when speakers are found.
+- **Q8 replaced:** no word-share merge threshold; speakers are linked by identity (TitaNet
+  embeddings) across fixed windows, which also bounds VRAM on long audio (user agreed).
 - False split: a "speaker" under X% of speech time or N turns merges into the nearest by
   embedding; X and N come from the false-split run, every merge is reported.
 - Palette lives in config as an ordered list of named variants (base voice + pitch + formant +
@@ -211,6 +220,54 @@ outputs in `work-exp/diar-probe/`):
   0/0/2/6/11, and the 11 of `hm8NzEd5io0` read as real reactions ("Nice.", "Yeah.", "I see.",
   "Likewise.", "Thank you."). Diarize stage wall 2.4-10.4 s per video, worker load included on the
   first.
+
+**Timbre measurement, 2026-10-27** (`overdub/timbre.py`; scripts `work-exp/voice-palette/
+timbre_*.py`, `work-exp/diar-probe/timbre_videos.py`):
+
+- **Validated on an exact scaling** (the same audio read at ×0.88 / ×1.12 its sample rate): F0
+  within 1%; ΔF within 1-5% male, 2-3% female once the LPC ceiling follows the pool (5000 / 5500
+  Hz). A single 5000 Hz ceiling read kseniya's ×1.12 as ×1.027. The first F0 version read
+  eugene at x-low pitch (76 Hz) as 156 Hz — an octave error fixed by the window-autocorrelation
+  correction and a 3-period frame.
+- **rubberband's formant shift is about half its name** on this scale: eugene ×0.990 / ×1.059,
+  kseniya ×0.968 / ×1.052, and for aidar / xenia the ×0.88 variant even measures ABOVE its base
+  (×1.033 / ×1.032). Within one voice family ΔF differences sit inside the estimator's error, so
+  matching among a base and its formant variants is effectively arbitrary (deterministic). Across
+  bases ΔF carries signal: xenia 1085 vs kseniya 1252 Hz.
+- **Palette** (F0 / ΔF Hz): eugene 95 / 953, aidar 129 / 943, xenia 203 / 1085, kseniya 254 / 1252.
+- **Test videos:** every speaker lands in a pool; `9GtcbnmldcY` speaker 0 reads 176 Hz — female
+  pool, `unknown` grammatical gender (inside the 155-185 band). `hm8NzEd5io0` is four male
+  speakers (110-142 Hz), i.e. it needs four voices of the male palette.
+- **F0 alone misplaces a high male voice.** User, 2026-10-27: `9GtcbnmldcY` speaker 0 is a man;
+  he measures 176 Hz (autocorrelation) and 172 Hz (cepstrum, independent) — real, not an octave
+  error — while his ΔF, 922 Hz, is the most male of all. Male ΔF over the test videos 922-1037,
+  the one real female 1169, palette female 1085-1312: ΔF separates where F0 overlaps.
+
+**False-split run over the corpus, 2026-10-27** (122 videos with words, 163.9 h, read-only;
+`work-exp/diar-probe/false-split-2026-10-27.jsonl` + raw segments beside it):
+
+- **91 of 122 "single-speaker" videos come out multi-speaker after smoothing**, 72 of them with a
+  minority of ≥10% of the words. By length: 0-15 min 26/45 (17 ≥10%), 15-60 min 10/14 (2),
+  60-120 min 24/30 (23), 120-240 min 24/26 (23), >240 min 7/7 (7). A word-share threshold cannot
+  be the merge rule: false and real minorities both reach 25-45%.
+- **The corpus is NOT single-speaker — it holds two interview channels.** Lex Fridman 27 of 27
+  multi-speaker, Dwarkesh Patel 36 of 39: 63 of the 91. The single-voice channels are the real
+  negative set and stay low: GOG Classics Vault 0/6, Claude 1/8, Steve (Builder.io) 3/12.
+- **Similar timbre does not mean one person** (retracted the same day). Near-identical F0/ΔF
+  across a split was read as "one voice split after an intro"; the user's ear put a real second
+  speaker at every one of the four places checked — `9TU0XjJqpOg` @1:27, `1fmcdz2EO_c` @0:44 (a
+  short line over the first speaker's monologue), `NNr6gPelJ3E` @0:54, `frYSOKvNiiE` @0:06 (an
+  inserted news clip). Two men at 108 and 110 Hz are two men.
+- **The real false split is over-counting in long interviews.** A two-person interview comes out
+  with 3-4 speakers — 4 on 14 of the 27 Lex Fridman videos — i.e. streaming Sortformer loses a
+  voice's identity over hours and opens a new label for it. Identity linking (TitaNet across
+  windows) is the fix, not a size threshold.
+- **Cost: 12.4 s of diarizer per audio hour** (33.8 min over 163.9 h) — negligible beside
+  transcribe, which answers the Q3 cost question.
+- **VRAM grows ~5 GB per audio hour and has no ceiling**: peak 1.2 GB (<15 min), 6.2 GB (<2 h),
+  10.8 GB (<4 h), **20.2 GB on a >4 h video — past the 12 GB card**, i.e. the WDDM spill-to-RAM
+  regime the Parakeet worker documents (no OOM, a twentieth of the throughput). Long audio needs
+  chunking before this stage can run unattended on the corpus.
 
 ## Open questions
 
