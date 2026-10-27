@@ -73,7 +73,8 @@ def main(argv: list[str] | None = None) -> None:
         p.error("--video-major applies to --batch only (a single video has nothing to amortise)")
     if args.transcribe_only and args.only:
         p.error("--only does not apply to --transcribe-only (it IS a stage list: download, "
-                "transcribe — and its download is audio-only, which --only cannot express)")
+                "transcribe, diarize — and its download is audio-only, which --only cannot "
+                "express)")
 
     # usage errors before any side effects. Erroring rather than ignoring matches the --only
     # typo validation below: a silent no-op at 2am is the failure mode this repo prevents.

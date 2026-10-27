@@ -112,6 +112,14 @@ class Session:
         return self.get(("parakeet", str(cfg.parakeet_python), bool(cfg.parakeet_vad)),
                         lambda: ParakeetWorker(cfg.parakeet_python, vad=bool(cfg.parakeet_vad)))
 
+    def diarizer(self, cfg: Config):
+        """The .venv-parakeet DIARIZATION worker — a separate process from parakeet(), never the
+        same one (the worker's serve() says why)."""
+        from .parakeet import ParakeetWorker
+
+        return self.get(("diarizer", str(cfg.parakeet_python)),
+                        lambda: ParakeetWorker(cfg.parakeet_python, model="diar"))
+
     def tts_engine(self, cfg: Config):
         from .tts import build_engine
 

@@ -233,8 +233,11 @@ def test_transcribe_only_single_url_reaches_the_driver() -> None:
 
 # --- stage list ---------------------------------------------------------------------
 
-def test_stage_list_is_download_then_transcribe() -> None:
-    assert [s.name for s in transcribe_only_stages(Config())] == ["download", "transcribe"]
+def test_stage_list_is_download_transcribe_diarize() -> None:
+    # diarize belongs to the transcript pass: a multi-speaker re-cut of sentences.json after the
+    # translate wave would throw that wave's translation away
+    assert ([s.name for s in transcribe_only_stages(Config())]
+            == ["download", "transcribe", "diarize"])
 
 
 def test_stage_list_is_a_strict_prefix_of_all_stages() -> None:
@@ -242,8 +245,8 @@ def test_stage_list_is_a_strict_prefix_of_all_stages() -> None:
     # truncated list ever stops being a prefix, promotion resumes onto a workdir built by a
     # different sequence and the fast-skips stop meaning what they say.
     cfg = Config()
-    assert ([s.name for s in transcribe_only_stages(cfg)]
-            == [s.name for s in all_stages(cfg)][:2])
+    short = [s.name for s in transcribe_only_stages(cfg)]
+    assert short == [s.name for s in all_stages(cfg)][:len(short)]
 
 
 def test_transcribe_only_download_is_audio_only_and_the_full_one_is_not() -> None:

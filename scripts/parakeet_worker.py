@@ -41,6 +41,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 MODEL_ID = "nvidia/parakeet-tdt-0.6b-v3"
 
+# Diarization model, served by the same script in `--model diar` mode. Streaming Sortformer handles
+# long audio on this card (34.7 min in 2.07 GiB peak, 2026-10-27) and caps at 4 speakers. The
+# stream geometry is the model card's highest-latency setting: the most context per decision,
+# which is what an offline pass wants.
+DIAR_MODEL_ID = "nvidia/diar_streaming_sortformer_4spk-v2.1"
+DIAR_STREAM = {"chunk_len": 340, "chunk_right_context": 40, "fifo_len": 40,
+               "spkcache_update_period": 300, "spkcache_len": 188}
+
 # Long-audio policy. Full attention is quadratic and the model card's "24 minutes" is measured on
 # an A100 80GB — this host has 12 GB, and the corpus holds videos over 4 hours. So: local
 # attention for everything (uniform decode config across the corpus is what makes the numbers
@@ -104,6 +112,51 @@ def _load_model(attn: str):
     print(f"[parakeet] {MODEL_ID} ({attn} attention) loaded in {time.perf_counter() - t0:.1f}s",
           file=sys.stderr)
     return model
+
+
+def _load_diar():
+    from nemo.collections.asr.models import SortformerEncLabelModel
+    import torch
+
+    t0 = time.perf_counter()
+    model = SortformerEncLabelModel.from_pretrained(DIAR_MODEL_ID).eval()
+    if torch.cuda.is_available():
+        model = model.cuda()
+    for k, v in DIAR_STREAM.items():
+        setattr(model.sortformer_modules, k, v)
+    model.sortformer_modules._check_streaming_parameters()
+    print(f"[parakeet] {DIAR_MODEL_ID} loaded in {time.perf_counter() - t0:.1f}s", file=sys.stderr)
+    return model
+
+
+def parse_diar_segments(lines: list[str]) -> list[dict]:
+    """NeMo's "<start> <end> <speaker>" strings -> [{"start","end","speaker"}], in time order."""
+    rows = []
+    for line in lines:
+        start, end, speaker = line.split()
+        rows.append({"start": round(float(start), 3), "end": round(float(end), 3),
+                     "speaker": speaker})
+    rows.sort(key=lambda r: (r["start"], r["end"]))
+    return rows
+
+
+def diarize_one(model, wav: Path) -> tuple[list[dict], dict]:
+    import torch
+
+    _audio, duration = _read_wav(wav)
+    if torch.cuda.is_available():
+        torch.cuda.reset_peak_memory_stats()
+    t0 = time.perf_counter()
+    segments = parse_diar_segments(model.diarize(audio=[str(wav)], batch_size=1)[0])
+    wall = time.perf_counter() - t0
+    return segments, {
+        "model": DIAR_MODEL_ID,
+        "audio_sec": round(duration, 1),
+        "wall_sec": round(wall, 2),
+        "vram_peak_mb": (round(torch.cuda.max_memory_allocated() / 1e6, 1)
+                         if torch.cuda.is_available() else None),
+        "n_speakers": len({s["speaker"] for s in segments}),
+    }
 
 
 def _read_wav(path: Path):
@@ -398,7 +451,7 @@ def transcribe_one(model, wav: Path, *, use_vad: bool = True) -> tuple[list[dict
     return words, meta
 
 
-def serve(attn: str, use_vad: bool) -> int:
+def serve(attn: str, use_vad: bool, kind: str = "asr") -> int:
     """Line protocol on stdin/stdout, one request per line, so the PIPELINE can use this venv.
 
     Loading the model costs 10-30 s. The pipeline is stage-major — every video in a batch passes
@@ -408,9 +461,15 @@ def serve(attn: str, use_vad: bool) -> int:
     one WhisperModel today.
 
     Request : {"wav": "<path>"}                        one JSON object per line
-    Response: {"words": [...], "meta": {...}}  or  {"error": "..."}
+    Response: {"words": [...], "meta": {...}}  or  {"error": "..."}             (kind "asr")
+              {"segments": [...], "meta": {...}}  or  {"error": "..."}          (kind "diar")
     A malformed line answers with an error and keeps serving; only EOF ends the loop, so one bad
     video cannot take the sweep down with it.
+
+    ONE MODEL KIND PER PROCESS. Streaming Sortformer calls torch.cuda.empty_cache() on every
+    inference (its process_signal), and an empty_cache between TDT decodes is exactly what killed
+    the CUDA-graph replay in transcribe_one. Diarization therefore never shares a process with the
+    ASR model — it gets its own `--model diar` worker.
 
     THE PROTOCOL STREAM IS A PRIVATE DUP OF FD 1, NOT sys.stdout. Loading the NeMo model leaves
     fd 1 unusable when it is a pipe — the first `print` after `from_pretrained` dies with
@@ -427,7 +486,7 @@ def serve(attn: str, use_vad: bool) -> int:
         proto.write(json.dumps(obj, ensure_ascii=False) + "\n")
         proto.flush()
 
-    model = _load_model(attn)
+    model = _load_diar() if kind == "diar" else _load_model(attn)
     reply({"ready": True})
     for line in sys.stdin:
         line = line.strip()
@@ -435,8 +494,12 @@ def serve(attn: str, use_vad: bool) -> int:
             continue
         try:
             req = json.loads(line)
-            words, meta = transcribe_one(model, Path(req["wav"]), use_vad=use_vad)
-            reply({"words": words, "meta": meta})
+            if kind == "diar":
+                segments, meta = diarize_one(model, Path(req["wav"]))
+                reply({"segments": segments, "meta": meta})
+            else:
+                words, meta = transcribe_one(model, Path(req["wav"]), use_vad=use_vad)
+                reply({"words": words, "meta": meta})
         except Exception as e:                                    # noqa: BLE001 — see docstring
             reply({"error": f"{type(e).__name__}: {e}"})
     return 0
@@ -447,6 +510,8 @@ def main() -> int:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--serve", action="store_true",
                     help="line-protocol mode for the pipeline (see serve())")
+    ap.add_argument("--model", choices=("asr", "diar"), default="asr",
+                    help="with --serve: which model this process serves (one kind per process)")
     ap.add_argument("--root", type=Path, default=ROOT / "work",
                     help="corpus root: every <root>/<id>/source.wav is transcribed")
     ap.add_argument("--out", type=Path, default=ROOT / "work-exp" / "parakeet" / "out")
@@ -459,7 +524,7 @@ def main() -> int:
     args = ap.parse_args()
 
     if args.serve:
-        return serve(args.attn, not args.no_vad)
+        return serve(args.attn, not args.no_vad, args.model)
 
     wavs = sorted(args.root.glob("*/source.wav"), key=lambda p: p.stat().st_size)
     if args.ids:

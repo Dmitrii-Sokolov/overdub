@@ -5,6 +5,7 @@ from __future__ import annotations
 from ..config import Config
 from ..pipeline import Stage
 from .assemble import AssembleStage
+from .diarize import DiarizeStage
 from .download import DownloadStage
 from .mux import MuxStage
 from .separate import SeparateStage
@@ -18,6 +19,7 @@ def all_stages(cfg: Config) -> list[Stage]:
     return [
         DownloadStage(),
         TranscribeStage(),
+        DiarizeStage(),    # before translate: a multi-speaker re-cut must land before the seam
         TranslateStage(),
         SynthesizeStage(),
         VerifyStage(),
@@ -51,4 +53,4 @@ def transcribe_only_stages(cfg: Config) -> list[Stage]:
     `cfg` is unused; it is accepted for symmetry with all_stages so the call site in cli stays
     a single expression.
     """
-    return [DownloadStage(audio_only=True), TranscribeStage()]
+    return [DownloadStage(audio_only=True), TranscribeStage(), DiarizeStage()]

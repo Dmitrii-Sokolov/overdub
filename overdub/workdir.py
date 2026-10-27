@@ -194,7 +194,10 @@ class WorkDir:
     def words(self) -> Path: return self.root / "words.json"              # transcribe: raw flattened words (re-tuning)
 
     @property
-    def sentences(self) -> Path: return self.root / "sentences.json"      # transcribe
+    def sentences(self) -> Path: return self.root / "sentences.json"      # transcribe (diarize re-cuts it)
+
+    @property
+    def diar(self) -> Path: return self.root / "diar.json"                # diarize: raw speaker segments
 
     @property
     def translate_dir(self) -> Path: return self.root / "translate"       # route B chunked: per-chunk agent drafts
@@ -259,6 +262,11 @@ class WorkDir:
         return self.root / "_pre-repair-translation.json"  # --repair-asr: the anomaly report
                                                            # (translation.json) just before the
                                                            # LATEST repair — overwritten per pass
+
+    @property
+    def pre_diarize_translation(self) -> Path:
+        return self.root / "_pre-diarize-translation.json"  # diarize: the translation of the
+                                                            # single-speaker cut it replaced
 
     def invalidate_downstream(self) -> tuple[list[str], list[str]]:
         """Delete exactly the artifacts downstream of sentences.json. Returns (removed, failed)

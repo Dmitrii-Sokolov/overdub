@@ -26,16 +26,22 @@ WORKER = Path(__file__).resolve().parents[1] / "scripts" / "parakeet_worker.py"
 
 
 class ParakeetWorker:
-    """A live `parakeet_worker.py --serve` process. Not thread-safe; the sweep is sequential."""
+    """A live `parakeet_worker.py --serve` process. Not thread-safe; the sweep is sequential.
 
-    def __init__(self, python: Path, *, attn: str = "local", vad: bool = True) -> None:
+    `model` picks what the process serves: "asr" (transcribe) or "diar" (diarize). One kind per
+    process — the worker's serve() says why the two must never share a CUDA context."""
+
+    def __init__(self, python: Path, *, attn: str = "local", vad: bool = True,
+                 model: str = "asr") -> None:
         exe = Path(python)
         if not exe.exists():
+            what = ("Diarization needs the Parakeet venv" if model == "diar"
+                    else "Parakeet ASR is selected")
             raise RuntimeError(
-                f"Parakeet ASR is selected but its interpreter is missing: {exe}. Create the venv "
-                f"(see SETUP.md) or set asr_engine = \"whisper\" in overdub.toml. This pipeline "
-                f"never auto-installs.")
-        argv = [str(exe), "-X", "utf8", str(WORKER), "--serve", "--attn", attn]
+                f"{what} but its interpreter is missing: {exe}. Create the venv (see SETUP.md)"
+                + ("" if model == "diar" else " or set asr_engine = \"whisper\" in overdub.toml")
+                + ". This pipeline never auto-installs.")
+        argv = [str(exe), "-X", "utf8", str(WORKER), "--serve", "--model", model, "--attn", attn]
         if not vad:
             argv.append("--no-vad")
         env = dict(os.environ, PYTHONUTF8="1")     # the worker prints transcript text on stdout
@@ -52,14 +58,23 @@ class ParakeetWorker:
             raise RuntimeError(f"parakeet worker died (exit {code}) — its stderr is above")
         return json.loads(line)
 
-    def transcribe(self, wav: Path) -> tuple[list[dict], dict]:
-        """(words, meta) for one wav. Raises on a worker-side failure — the stage decides."""
+    def _ask(self, wav: Path) -> dict:
         self._p.stdin.write(json.dumps({"wav": str(wav)}) + "\n")
         self._p.stdin.flush()
         reply = self._readline()
         if "error" in reply:
             raise RuntimeError(f"parakeet worker: {reply['error']}")
+        return reply
+
+    def transcribe(self, wav: Path) -> tuple[list[dict], dict]:
+        """(words, meta) for one wav. Raises on a worker-side failure — the stage decides."""
+        reply = self._ask(wav)
         return reply["words"], reply["meta"]
+
+    def diarize(self, wav: Path) -> tuple[list[dict], dict]:
+        """(segments [{"start","end","speaker"}], meta) for one wav, from a `model="diar"` worker."""
+        reply = self._ask(wav)
+        return reply["segments"], reply["meta"]
 
     def close(self) -> None:
         """Never raises: teardown must not mask an exception already unwinding (Session.clear)."""

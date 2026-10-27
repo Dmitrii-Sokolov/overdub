@@ -52,6 +52,12 @@ class Config:
                                      # gated. It also removed all 7 tail truncations and cut
                                      # uncovered speech from 1246 words to 816. The flag exists to
                                      # REPRODUCE that measurement, not to trade quality for speed.
+    diarize: bool = True             # speaker diarization after transcribe (streaming Sortformer
+                                     # in a second .venv-parakeet worker, either asr_engine). A video
+                                     # with one speaker keeps its transcript untouched; with more,
+                                     # sentences are re-cut at every speaker change and carry a
+                                     # `speaker`. The flag exists to measure its cost, not to ship
+                                     # off.
 
     # STT — faster-whisper (asr_engine = "whisper"; also the verify round-trip either way)
     whisper_model: str = "large-v3"

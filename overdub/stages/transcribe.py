@@ -100,6 +100,7 @@ class W:
     start: float
     end: float
     seg_end: bool      # True if last word of its whisper segment (a pause prior)
+    speaker: "int | None" = None   # set by diarize on a multi-speaker video; None everywhere else
 
 
 def _f(v, default: float) -> float:
@@ -316,10 +317,13 @@ def _merge_short(flat: list[W], spans: list[tuple[int, int]]) -> list[tuple[int,
             continue
         gap_prev = flat[a].start - flat[spans[i - 1][1]].end if i > 0 else None
         gap_next = flat[spans[i + 1][0]].start - flat[b].end if i + 1 < len(spans) else None
+        # a speaker change is a hard boundary: two people's lines merged are one voice reading both
         ok_prev = (gap_prev is not None and gap_prev <= MERGE_GAP_MAX
+                   and flat[spans[i - 1][1]].speaker == flat[a].speaker
                    and absorbed[i - 1] + gap_prev + absorbed[i] <= MERGE_TOTAL_GAP_MAX
                    and not _too_long(flat, spans[i - 1][0], b))
         ok_next = (gap_next is not None and gap_next <= MERGE_GAP_MAX
+                   and flat[spans[i + 1][0]].speaker == flat[b].speaker
                    and absorbed[i] + gap_next + absorbed[i + 1] <= MERGE_TOTAL_GAP_MAX
                    and not _too_long(flat, a, spans[i + 1][1]))
         if ok_prev and ok_next:                          # both fit: smaller gap, tie → prev
@@ -348,7 +352,7 @@ def resegment(flat: list[W]) -> list[dict]:
     start = 0
     for i, w in enumerate(flat):
         nxt = flat[i + 1] if i + 1 < len(flat) else None
-        if _ends_sentence(w, nxt):
+        if _ends_sentence(w, nxt) or (nxt is not None and nxt.speaker != w.speaker):
             ranges.append((start, i))
             start = i + 1
     if start < len(flat):                               # unterminated tail
@@ -362,12 +366,15 @@ def resegment(flat: list[W]) -> list[dict]:
         text = " ".join(flat[k].text for k in range(a, b + 1)).strip()
         if not text:
             continue
-        out.append({
+        rec = {
             "id": len(out),                             # assigned last → always contiguous
             "text": text,
             "start": round(flat[a].start, 3),
             "end": round(flat[b].end, 3),
-        })
+        }
+        if flat[a].speaker is not None:                 # absent, not null, on a single speaker
+            rec["speaker"] = flat[a].speaker
+        out.append(rec)
     return out
 
 
@@ -570,6 +577,7 @@ class TranscribeStage:
             sentences = resegment(flat)
             ctx.work.sentences.write_text(
                 json.dumps(sentences, ensure_ascii=False, indent=2), encoding="utf-8")
+            ctx.work.diar.unlink(missing_ok=True)   # its speaker cut no longer describes this file
             work_s = time.perf_counter() - t0
             holes = wmeta.get("holes") or []
             unrecovered = wmeta.get("holes_unrecovered") or []
@@ -653,6 +661,7 @@ class TranscribeStage:
         ctx.work.sentences.write_text(
             json.dumps(sentences, ensure_ascii=False, indent=2), encoding="utf-8"
         )
+        ctx.work.diar.unlink(missing_ok=True)       # its speaker cut no longer describes this file
         # after the artifacts are on disk: "from launch to exit" is the whole stage minus the
         # model, and resegmentation plus these two writes are part of what an optimization
         # would be trying to move.
