@@ -17,8 +17,7 @@ NOT a ceiling** (re-framed 2026-08-06). AC: not frozen — task imported from PL
 ## State
 
 Not started; nothing is gated on it. Imported from PLAN.md at the 2026-08-24 agent-docs
-migration. Two measured datapoints exist in INBOX (2026-08-04: ≈63k/agent on a mostly-empty
-queue vs ≈334k/agent on a long-transcript queue — 5.3× apart); triage routes them here.
+migration; the two INBOX datapoints were routed into Findings at triage 2026-10-27.
 
 ## Findings
 
@@ -29,3 +28,12 @@ it does not become one by being quoted again. Route B spends one sub-agent per v
 translator), route E one per CHUNK. The only route that
 ever had a recorded figure (the digest route, ~200k per video) was deleted with the route,
 so that number describes nothing that still exists.
+
+**Two measured datapoints, both 2026-08-04, both from the era when route B still spawned a
+summarizer per video** (two agents per video — the per-video means do not carry over to today's
+one-agent route). @9fingergames: 3,254,362 tokens over 52 agents / 26 videos (≈63k per agent),
+but 16 of 26 transcripts were empty and their agents trivial. 5-video WL batch: 4,344,370 over 13
+agents (≈334k per agent, ≈869k per video), all five at 1221-2829 sentences; ~1.1M of it bought
+nothing — the two stalled videos were paid twice and delivered no `translation.json`. Transcript
+LENGTH is the variable both means hide. Neither is comparable to the ~5.6k/video orchestrator-side
+projection — different grain, different pocket.

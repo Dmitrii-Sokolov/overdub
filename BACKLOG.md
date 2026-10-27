@@ -7,8 +7,11 @@ references stayed put, so "item 1" meant four different things by 2026-07-22 (DE
 Line order inside a section is the priority order; the next measurement is allowed to overturn it.
 Admission rule: an item must change the TOOL (CLAUDE.md) — repairing one video is never an item.
 
-## Open — ordered by value (re-cut 2026-07-27; there is no blocker)
+## Open — ordered by value (re-cut 2026-10-27; there is no blocker)
 
+- [ ] A silent dub never reaches an export: level check at the `mux` gate, `synthesize` done() checks its wavs → tasks/silent-dub-guard.md
+- [ ] `needs_triage` means "open this video" again: `num_loss` advisory (0/25 measured), no-speech out, holes sited by ear → tasks/needs-triage-recalibration.md
+- [ ] `drain.py` leaves nothing ready behind, its timeout bounds what it says, and its exit is announced → tasks/drain-deadline.md
 - [ ] The first video reaches its post-translate tail while the next still translates: mux profiled and taken, a clean end-to-end figure, acceptance re-phrased → tasks/pipeline-batch-latency.md
 - [ ] Proper nouns survive ASR into all three surfaces (dub, EN subs, RU subs) via a name list at the source pass → tasks/asr-name-list.md
 - [ ] Promotion into route B confirmed once on real media (transcribe fast-skips, download re-runs) → tasks/promotion-to-dub.md
@@ -36,6 +39,9 @@ Admission rule: an item must change the TOOL (CLAUDE.md) — repairing one video
 - [ ] Decided whether the detector-driven repair half needs a home on Parakeet (completeness-seeded re-reads; that class's rate on Parakeet unmeasured; DECISIONS 2026-08-06) → tasks/parakeet-repair-home.md
 - [ ] The floor CHAIN recalibrated off the accumulated series (`_guard` still gates on the "knowingly unreliable" ratio — config.py's own comment asks; `floor_longest_run ≥ 40` separates the real collapses) → tasks/floor-chain-recalibration.md
 - [ ] download/verify/assemble/mux report timing `detail`, so `work_complete` can go True on a real run → tasks/stage-timing-detail.md
+- [ ] `--repair-asr` reads the transcript's language and treats an empty transcript as nothing to do (whisper only) → tasks/repair-asr-language-and-empty.md
+- [ ] `video_id` recognises every YouTube URL shape in use (`/live/` observed), pinned by a test → tasks/video-id-url-shapes.md
+- [ ] Route E diagnostics say something on a healthy run: entity detector stops firing on corrected spellings, `--stats`, floors re-sited, per-chunk source file → tasks/route-e-diagnostics.md
 - [ ] Repair-window hotwords/initial_prompt — decide whether `--repair-asr` earns more investment at all (word lists cheapest first; measure on the golden fixture; DECISIONS 2026-07-20) → tasks/repair-window-hotwords.md
 
 ## Backlog — lower value
@@ -61,6 +67,8 @@ Admission rule: an item must change the TOOL (CLAUDE.md) — repairing one video
 - [ ] RU analogue for the "four Ds" mnemonic class (Д/Ф/К/Д does not spell "4D" — prompt unpacking or a RU mnemonic) → tasks/ru-mnemonics.md
 - [ ] Any-language source → Russian (shelved until the EN queue runs dry; breaks the EN→RU hard constraint) → tasks/any-language-source.md
 - [ ] Translation completeness tail: EN↔RU content-word ratio / back-translation on outliers (failure class: DECISIONS 2026-07-18 — the class carries to any route, the measured rate died with the local translator) → tasks/translation-completeness-tail.md
+- [ ] Route E spends cleaner agents only on triggered sentences (+ a per-video glossary agent), A/B on one video first → tasks/route-e-triggered-routing.md
+- [ ] Every `§N` citation in the repo resolves to an existing heading of `docs/queue-contract.md`, checked by a test
 - [ ] Babble duration heuristic (expected-vs-actual unit duration flags garbled synth the ASR round-trip misses) — add BEFORE any narrator-voice or engine change → tasks/babble-heuristic.md
 
 ## Deferred — not near-term

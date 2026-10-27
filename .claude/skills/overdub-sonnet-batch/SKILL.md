@@ -447,6 +447,9 @@ $t0 = Get-Date
 ```
 
 - Final MKVs land in `out/`; per-video artifacts in `work/<id>/`.
+- A long batch redirects its output to a file (`> work/<name>.log 2>&1`), never `Tee-Object`:
+  demucs progress bars flood the background-task stream, and two step-3 runs on 2026-08-01 were
+  killed mid-`separate` that way while the identical command with a redirect exited 0.
 - Interrupt/resume: re-run the same command — completed stages fast-skip. Graceful stop:
   create `work/STOP`. Exit codes: 0 ok / 1 any fail / 2 usage / 3 stop-halt.
 - Morning triage: `work/<id>/report.json` — any `*_flag`, or `speed_factor > 1.8`. Translate

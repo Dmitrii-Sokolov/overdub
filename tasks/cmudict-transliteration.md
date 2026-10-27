@@ -53,3 +53,13 @@ Compounds are the sharper case: `AlchemySerializeField` came out as one glued
 `data/cmudict.dict` is already in-repo and covers the measured class, while espeak would be a
 third external binary against the two the stack rule allows, and it answers only the
 brand/neologism tail the letter rules already own.
+
+**Shader lectures, 2026-08-09** (routed from INBOX 2026-10-27): 236 (`E4PHFnvMzFc`) and 193
+(`mL8U8tIiRRg`) distinct Latin tokens through the fallback, 1266 and 693 invented readings. The
+`fallback` bucket letter-maps (`albedo → албедо`, `alpha → алфа`, `analysis → аналисис`,
+`aliasing → алиейсинг`, `angle → англ`); the `letters` bucket spells whole WORDS
+(`coords → си-оу-оу-ар-ди-эс`). Both buckets also hold correct output (`ambient → амбиент`,
+`brdf → би-ар-ди-эф`). The examples are the first dozen per bucket alphabetically — **not an
+error rate**. No detector sees the class: `english_echo` proxies "Latin survived", not "the
+reading is wrong", and verify is off. The corpus for a real rate is the per-video
+`pronounce_audit.json` (`via` and `count` per token — weight by occurrences, not types).

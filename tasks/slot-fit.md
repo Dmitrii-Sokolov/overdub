@@ -85,3 +85,21 @@ inter-unit gap). Quote these; every earlier pair on this video was measured at g
 cf ≥ 1.8, up to ×12.5"** — recomputed over all of `work/` 2026-07-25: 7 units of 3575, worst
 2.63 (12 SENTENCE rows — the two counts were being mixed, and the ×12.5 was one sentence's
 pre-repair `speed_factor`).
+
+**`slot_silence_sec` and `fill_median` overstate the dub's hole — measured 2026-08-01** (19-video
+batch, routed from INBOX 2026-10-27). Both are measured against the SLOT (span plus the following
+inter-unit gap), so every pause the SOURCE speaker left counts as dub silence; `in_span_silence`
+does not fix it, because a unit groups several sentences. At the only grain that isolates the dub
+— sum of per-SENTENCE spans vs sum of per-UNIT `placed_sec`, deduped by `group_id` — source
+speech 1348.8 m, dub voiced 1397.1 m, real hole 7.5 m (0.6%); **15 of 19 videos voice more time
+than the source spoke.** `slot_silence` reported 87.8 m, 11.7× the real hole, and ranked wrong
+(`_xbGK_5wlfs` looked 3rd-worst at 9.1 m with no hole at all). The report should headline the
+sentence-grain figure and demote slot_silence to a source-pacing stat, or drop it. Re-derive from
+`report.json` (`segments[].placed_sec`, `group_id`) + `translation.json` spans.
+
+**The one real under-fill on that batch:** `s30pjYV8aBM` (Terra Nil), 44.5 m of source speech
+against 38.1 m voiced = 14.4% hole; next worst `9j3I3owY8a8` at 1.6%, nothing else above 0.2%.
+Diffuse, not a few broken units (worst half of 225 units hold 93% of it; typical offender a
+2-sentence unit, ~17 s span, ~10 s of speech). Worth one listen: if 14% is audible as dead air,
+it is the only evidence so far that this task has a real target. Do not generalise it to the
+batch.

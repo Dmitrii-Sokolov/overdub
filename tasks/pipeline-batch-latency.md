@@ -56,3 +56,10 @@ pipeline change at all. All confirmed on real media; the drain measured ×1.40 o
 phase (10 videos, 2026-08-07) with 10 drained, 0 failed, 0 pending. **The ~1.7× projection this
 item opened with is withdrawn** — it came off a batch where the tail fitted inside the wave, and
 on the 10-video baseline the inequality runs the other way.
+
+**Mux on one long video, 2026-09-19** (routed from INBOX 2026-10-27): `GDN3mPqJdvo` (5.02 h of
+audio, 3171 sentences, `dub_mix = "bed"`) spent 1312.4 s in mux = 12.8% of a 10253.6 s stage
+total — the order of synthesize (1289.3 s), 13.5× assemble (97.2 s), with the video stream never
+re-encoded. Inputs: a 3.19 GB uncompressed `source_bed.wav`, a 2.66 GB output. Where the time
+goes is unmeasured and it is one video, so no rate: split the stage per ffmpeg stream on two or
+three lengths before drawing anything.

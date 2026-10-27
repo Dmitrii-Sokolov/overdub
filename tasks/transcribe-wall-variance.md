@@ -33,3 +33,17 @@ a changed input (`vad_speech_sec` identical to 0.1 s on all ten, so the VAD saw 
 Partial candidate: first-use CUDA kernel compilation, which a warm sweep amortises and an
 isolated run pays in full — but it does not explain the FIRST video of the re-run being slow
 too.
+
+**Parakeet repeat-decodes are not bit-identical — measure it with the same harness** (routed from
+INBOX 2026-10-27). 2026-08-07: two `--force` decodes of the same `source.wav` (`IOMCDpzpNaQ`)
+gave 1531 and 1530 words, 94 sentences both times; `uFYLIdYXntk` the day before reproduced
+exactly (2055 words / 150 sentences) — one confirmation was luck, not proof. 2026-08-11: one
+byte-identical wav (SHA256 compared) decoded three times gave 915, 910 and 918 words, differing
+in words, not timestamps (one reading lost «модифицирующие путь» mid-sentence); batch mode and
+`--serve` both, same model, `--attn local` and VAD gate, so the entry point is not the variable.
+The GPU was busy (49%, 87 °C) during two of the three — a hypothesis, not a measurement. What
+rests on the claim: the `--repair-asr` refusal on Parakeet (DECISIONS 2026-08-06, "two readings
+agree" vacuously true), every before/after keyed on `asr_key`, and the scheduler's "same queue →
+same artifacts" acceptance. Next step is one measurement, not a code change: `host_guard.py`,
+then N decodes of one wav on an idle host, then under load — word counts and word-stream diffs.
+A repeat-decode harness answers the wall variance and the determinism rate for one price.
