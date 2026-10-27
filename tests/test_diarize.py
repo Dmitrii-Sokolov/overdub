@@ -24,6 +24,9 @@ import sys
 import tempfile
 from pathlib import Path
 
+import numpy as np
+import soundfile as sf
+
 _ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_ROOT))
 
@@ -163,6 +166,7 @@ def _ctx(tmp: Path, segments, *, translated: bool = True) -> Context:
     work = WorkDir(root=tmp / "vid")
     work.root.mkdir(parents=True, exist_ok=True)
     work.words.write_text(json.dumps(WORDS), encoding="utf-8")
+    sf.write(str(work.source_audio), np.zeros(16000 * 7, dtype=np.int16), 16000)
     work.sentences.write_text(json.dumps(resegment(_flat(WORDS, [None] * len(WORDS))), indent=2),
                               encoding="utf-8")
     if translated:
@@ -239,6 +243,15 @@ def test_no_words_skips_the_model() -> None:
         DiarizeStage().run(ctx)
         assert ctx.session._d.calls == 0
         assert json.loads(ctx.work.diar.read_text(encoding="utf-8"))["speakers"] == 0
+
+
+def test_silence_yields_no_timbre_rather_than_a_voice() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        ctx = _ctx(Path(d), ONE)
+        DiarizeStage().run(ctx)
+        info = json.loads(ctx.work.diar.read_text(encoding="utf-8"))["speakers_info"]
+        assert info == [{"speaker": 0, "words": len(WORDS), "f0_hz": None, "delta_f_hz": None,
+                         "voiced_frames": 0, "pool": None, "gender": "unknown"}], info
 
 
 def test_diarize_off_is_done_without_an_artifact() -> None:

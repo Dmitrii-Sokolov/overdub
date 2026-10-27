@@ -124,6 +124,24 @@ def smooth_islands(flat: list[W]) -> None:
         i = j + 1
 
 
+def speaker_timbres(flat: list[W], audio, sr: int) -> list[dict]:
+    """Per speaker: words, median F0, ΔF, voice pool and grammatical gender, measured over that
+    speaker's own words. A single-speaker video reports one entry, speaker 0 — its narrator needs
+    a pool and a gender just as much."""
+    from ..timbre import grammatical_gender, pool_of, timbre
+
+    spans: dict[int, list[tuple[float, float]]] = {}
+    for w in flat:
+        spans.setdefault(w.speaker or 0, []).append((w.start, w.end))
+    out = []
+    for spk in sorted(spans):
+        t = timbre(audio, sr, spans[spk])
+        out.append({"speaker": spk, "words": len(spans[spk]), **t,
+                    "pool": pool_of(t["f0_hz"], t["delta_f_hz"]),
+                    "gender": grammatical_gender(t["f0_hz"], t["delta_f_hz"])})
+    return out
+
+
 def _write_atomic(path, text: str) -> None:
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(text, encoding="utf-8")
@@ -183,7 +201,19 @@ class DiarizeStage:
         else:
             print(f"       {n} speaker{'s' if n != 1 else ''} — transcript unchanged")
 
+        info = []
+        if flat:
+            import soundfile as sf
+
+            # int16, not float: a 4-hour source stays ~0.5 GB, and timbre() casts only its frames
+            audio, sr = sf.read(str(ctx.work.source_audio), dtype="int16")
+            info = speaker_timbres(flat, audio, sr)
+            for s in info:
+                print(f"       speaker {s['speaker']}: F0 {s['f0_hz']} Hz, ΔF {s['delta_f_hz']} Hz "
+                      f"→ {s['pool']} pool, {s['gender']}")
+
         _write_atomic(ctx.work.diar, json.dumps(
-            {"speakers": n, "segments": segments, "meta": meta}, ensure_ascii=False, indent=1))
+            {"speakers": n, "speakers_info": info, "segments": segments, "meta": meta},
+            ensure_ascii=False, indent=1))
         timings.record_stage_detail(ctx.work, "diarize", work_sec=round(time.perf_counter() - t0, 3),
                                     speakers=n, rewritten=rewritten, model=meta.get("model"))
