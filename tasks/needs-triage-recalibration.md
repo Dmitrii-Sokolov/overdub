@@ -8,7 +8,7 @@ nothing to listen to. AC: not frozen — fix at pickup.
 
 ## Plan
 
-- [ ] `num_loss` joins `_ADVISORY_COMPLETENESS` (measured precision 0/25, see Findings).
+- [x] `num_loss` joins `_ADVISORY_COMPLETENESS` (measured precision 0/25, see Findings).
 - [ ] A `no_transcript` degraded run leaves the triage flag and gets its own row in the digest
   and the queue page — "no speech" is not "listen to this".
 - [ ] Site `holes_unrecovered` by ear: listen to ~10 unrecovered spans across videos, decide
@@ -17,8 +17,8 @@ nothing to listen to. AC: not frozen — fix at pickup.
 
 ## State
 
-Not started. Opened at triage 2026-10-27 on a user verdict: hundreds of hours of route-B
-translations read as correct by ear, while the flag marks half the videos.
+Step 1 shipped 2026-10-27 (DECISIONS 2026-10-27): `num_loss` advisory, corpus re-scores
+106 → 48 of 198. Next: the `no_transcript` row, then the holes listen.
 
 ## Findings
 

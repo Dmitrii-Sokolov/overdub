@@ -64,6 +64,10 @@ _BROKEN = 1.8   # combined compression factor at/above which a unit is "candidat
 # neg_loss joined 2026-07-27 on measured precision, not on theory: 24 inspected fires, 0 real
 # (DECISIONS 2026-07-27). It stays COUNTED — `n_neg_loss` still prints and the offenders list
 # still names it — because re-promotion has to be decidable off the same series that demoted it.
+# num_loss joined 2026-10-27, the last completeness flag to go, on the same kind of evidence:
+# 25 random fires over the September-October runs, 0 real — every one a number rendered as a
+# Russian word ("1,000" → "тысячу", "3D" → "трёхмерный") or an ASR garble the translator
+# corrected ("Claude 35 Sonic" → "Claude 3.5 Sonnet"). It alone sent 79 of 198 videos to triage.
 # entity_loss was the original member and its DETECTOR is gone as of 2026-08-01 (DECISIONS):
 # demoting it was not enough, because an advisory flag still costs a line in every offenders
 # list and an embedded player on the listen page — 1179 of 1186 units on the 19-video batch.
@@ -73,7 +77,8 @@ _BROKEN = 1.8   # combined compression factor at/above which a unit is "candidat
 # ACTIONABLE and light up needs_triage on every historical workdir. Pinned by
 # test_legacy_report_with_entity_loss_still_reads.
 _ADVISORY_COMPLETENESS = frozenset({"length_short", "entity_loss",
-                                    "dup_adjacent", "rate_implausible", "neg_loss"})
+                                    "dup_adjacent", "rate_implausible", "neg_loss",
+                                    "num_loss"})
 
 # Translate flags that do NOT decide needs_triage. english_echo measures the LATIN RATIO of a
 # translation, which on route B is a deliberate output: the prompt keeps commands, filenames and

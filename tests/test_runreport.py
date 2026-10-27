@@ -384,14 +384,19 @@ def _completeness_run(flag: str, key: str) -> dict:
         return runreport.build_run_report(work, _CFG)
 
 
-def test_num_loss_stays_actionable() -> None:
-    # The guard that keeps every demotion narrow: num_loss compares RU against EN, so it is a
-    # claim about the TRANSLATION — exactly what a human can act on by listening. A blanket
-    # "completeness is advisory" would silently take it too. It keeps its status on measured
-    # precision: the 2026-07-25 stem suppressor removed 5 of its 7 fires.
+def test_num_loss_is_advisory_and_still_counted() -> None:
+    # DEMOTED 2026-10-27 (was test_num_loss_stays_actionable). Same argument as neg_loss below:
+    # precision, not which side it reads. 25 random fires over 198 September-October runs, 0
+    # real — numbers rendered as Russian words ("3D" → "трёхмерный") and ASR garbles the
+    # translator corrected ("04 Mini" → "o4-mini"). It was the sole reason 79 of those 198 videos
+    # were marked for triage. Counted for the same reason neg_loss is: re-promotion has to be
+    # decidable off the series that demoted it.
     run = _completeness_run("num_loss", "n_num_loss")
-    assert run["completeness"]["n_actionable"] == 1
-    assert run["needs_triage"] is True
+    assert run["completeness"]["n_num_loss"] == 1
+    assert run["completeness"]["n_flagged"] == 1
+    assert run["completeness"]["n_actionable"] == 0
+    assert run["completeness"]["n_advisory"] == 1
+    assert run["needs_triage"] is False
 
 
 def test_neg_loss_is_advisory_and_still_counted() -> None:

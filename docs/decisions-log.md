@@ -23,6 +23,35 @@ divider. Look things up through the index, not by scrolling.
 
 ---
 
+## 2026-10-27 — `num_loss` is demoted to advisory; no completeness flag decides triage any more
+
+The user's verdict, by ear over hundreds of hours of route-B output: the translations are correct
+and the share of real errors is negligible. The flag disagreed — `needs_triage` was true on
+**106 of the 198 `run.json`** written since 2026-09-01 (mtime as the proxy for "the current
+pipeline", 189.3 h of video), and the driver was `num_loss`: 382 units out of 124840 segments,
+on 79 videos.
+
+**25 random fires inspected, 0 real.** Every one is the translator doing its job: a number written
+as a Russian word (`1,000 → тысячу`, `10,000 year → десятитысячелетнюю`, `3D → трёхмерный` ten
+times), an ASR garble corrected (`04 Mini → o4-mini`, `Claude 35 Sonic → Claude 3.5 Sonnet`,
+`Opus 30 → Opus 3`, `18, 24, flop → 10^24 флопс`) or an idiom (`AI 101 → азы ИИ`). One arguable:
+`Hamachi 4 Quattro → Omarchy Quattro`. The 2026-07-19 completeness entry's "0 fires on 427" on
+the Sonnet path does not describe today's translator: the dual-form draft (2026-08-11) and the
+garble-correcting prompt make spelling a number out and fixing a misheard one normal output, and
+the stem suppressor cannot see a correction or an adjective.
+
+Re-scored with the flag advisory: **106 → 48 (24%)** — `holes_unrecovered` 32, a degraded
+`no_transcript` run 9, other actionable flags 7. Those two remaining drivers are the rest of
+`tasks/needs-triage-recalibration.md` and are NOT decided here: no-speech videos are a reporting
+row, not a listen request, and `holes_unrecovered` fires on 16% of videos with no measured
+precision while being the one flag that names a dub-less stretch of the MKV.
+
+Same shape as `neg_loss` (2026-07-27): COUNTED, not deleted — `n_num_loss` still prints and the
+offenders list still names it, so re-promotion stays decidable off the same series. With it,
+every completeness flag is advisory; a completeness detector that a human should act on would
+have to earn its way back in with an inspected sample.
+
+
 ## 2026-08-24 — routes C and D leave the project; the second prune follows them through code and record
 
 User decision: scouting a queue (route C) and digesting it (route D) are no longer goals of this

@@ -62,6 +62,10 @@ num_loss  (signal B) — a digit run present in src_en but absent from text_ru. 
     три->тре-, сто->ста), and a 3-char numeral stem that is also an ordinary word prefix
     ("сто" in "стоит") can suppress a real loss. The second is a MISS, this module's documented
     safe direction; both are pinned by tests so they stay limits rather than surprises.
+    ADVISORY since 2026-10-27: on today's translator 25 sampled fires held 0 real losses —
+    numbers written as adjectives ("3D" -> "трёхмерный") and ASR garbles the translator
+    corrected ("Claude 35" -> "Claude 3.5") — so it is counted but no longer sends a video to
+    triage.
 
 neg_loss  (signal B) — an EN negation marker present in src_en with NO RU negation marker in
     text_ru. Negation inverts meaning: the single most dangerous SILENT loss. RU markers are

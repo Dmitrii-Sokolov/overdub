@@ -35,6 +35,7 @@ what makes the index scannable, and the labels carry the reasons (rationale: DEC
 - `07-15` word-level sentence resegmentation
 
 **Verify / completeness**
+- `10-27` `num_loss` demoted to advisory (0 of 25 real); no completeness flag decides triage any more
 - `08-01` `entity_loss` DELETED, not demoted again
 - `07-27` `neg_loss` demoted to advisory
 - `07-26` a mis-heard PRODUCT NAME is not sentence damage
