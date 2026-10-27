@@ -50,3 +50,58 @@ Tags: `[bug] [feature] [chore] [?]` — one line per entry, processed weekly.
 - [?] Second route-B token datapoint, and it makes the caution above concrete: the 5-video WL batch of 2026-08-04 burned 4,344,370 sub-agent tokens over 13 agents (wave 1 3,595,859 / 10 agents, wave 2 748,511 / 3) = **≈334k per agent, ≈869k per video** — 5.3× the 63k/agent of the 2026-08-04 @9fingergames batch, because there 16 of 26 transcripts were empty and here all 5 run 1221-2829 sentences. Neither mean is a rate; transcript LENGTH is the variable both are hiding, and a per-1000-sentences figure is the one worth persisting. Note ~1.1M of this bought nothing — the two videos that stalled (see the chunking entry) were paid for twice and delivered no `translation.json`.
 - [bug] `video_id` does not recognise the `/live/` URL form, so a former livestream gets a sha1 workdir instead of its YouTube id. `_YT_ID` (`workdir.py:153`) matches `v=`, `/shorts/`, `youtu.be/` and `/embed/` only; observed 2026-08-14 on `https://www.youtube.com/live/OAu3jkX8dK4`, which produced `work/6b38c4b89df/`. Three consequences, in ascending order of cost: reports and exports name the video by a hash a human cannot look up; `_read_queue`'s dedupe is by `video_id`, so the SAME video written as `/live/…` and as `watch?v=…` passes the `-Unique` guard and gets processed twice into two workdirs; and every skill's `$ids` block, which derives ids from `queue.txt` by the same rule, then addresses artifacts that are correct but unfindable by id. The fix is one alternative in the regex (`/live/`), and the reason to write it down rather than patch it in passing is that the same gap plausibly covers other modern URL shapes (`/watch/`, share links with extra path segments) — worth enumerating what YouTube emits today and pinning the lot with a test, rather than adding one branch per surprise. Note yt-dlp resolves all of these fine; only the local id derivation is blind.
 - [bug] `--repair-asr` forces ENGLISH on every window it re-reads: `repair.py:383` passes `language=ctx.cfg.source_lang`, which is `"en"` by hard constraint. That was harmless while every route was EN→RU and is not any more — route E became EN-or-RU on 2026-08-14, so a Russian queue on `asr_engine = "whisper"` would have whisper decode Russian audio as English and splice the result into `sentences.json` under an accept gate that compares two equally-wrong readings against each other. Not observed in the wild: the shipped engine is Parakeet, where the mode refuses outright, so this fires only for someone who switched engines to repair a Russian video — which is exactly what a reader of the route-E docs might do. The skill now says "do not run whisper repair over a Russian queue" (`overdub-clean` E2), and prose is the weaker half of the fix. The real one is one line: repair should take the language from the TRANSCRIPT (`build_clean.detect_lang` already does this from `sentences.json`, cheaply and per video) or be handed it explicitly, never from a config key whose documented meaning is "what the dubbing pipeline expects". Worth doing together with the `--transcribe-file` seam, which solved the same problem by asking the ASR instead (`transcribefile.py`, `language=None`) — three call sites now read `cfg.source_lang` for three different reasons and only two of them mean it.
+- [bug] 2026-09-14 Route B: a single-agent translation can hard-crash on the 64000-output-token API
+  cap well under every existing chunking heuristic. 4 of 38 videos in one batch failed with `API
+  Error: Claude's response exceeded the 64000 output token maximum` and wrote NO draft at all —
+  `Fp-4GmRpnDI` (375 sentences), `WFzoiq84AdY` (299), `lMjnjDiN3vE` (298), `ERg0j1fSyJE` (212). All
+  four are under `DEFAULT_CHUNK` (400, `build_translation.py`) and far under the ~2000-sentence
+  threshold entry above ("route B has no chunking" / "Do NOT site a size threshold on this
+  sample") — so neither guard would have caught them, and `--plan` with no `--chunk` override
+  produces exactly ONE chunk for all four (covering the whole video), which does not fix this
+  failure mode at all. Size is not monotonic here either: `vcgr6oXBihs` (322 sentences, the
+  2nd-largest in the batch) translated fine as a single agent while three smaller videos failed.
+  This is a DIFFERENT failure signature than the earlier "INCOMPLETE" entry — no partial draft, no
+  status line, a hard API error — which fits the existing caution that sentence count is a proxy
+  for output VOLUME IN CHARACTERS, not the real constraint: these four likely carry unusually
+  verbose `src` anomaly notes (garbled/truncated ASR needing long explanations) rather than just
+  more sentences. Fix applied ad hoc this run: `--chunk 100` (not the 400 default) on just these
+  four, 12 chunks total, all succeeded. Worth deciding whether `build_translation.py --plan`'s
+  default should drop well below 400, or whether the trigger for the chunked path should be
+  "single-agent attempt hard-errored" rather than a sentence-count guess made in advance.
+- [?] 2026-09-04 Route E: what the cleaner agents actually DO, measured over every `clean.json` on disk (13 videos, 10078 sentences, `src` vs `text`): 54.5% byte-identical, 4.5% punctuation/case only, 30.7% pure deletion (nothing added or substituted), 2.1% emptied, 8.1% substitution. Stoplist precision is BIMODAL, so a regex can own part of the deletions and not the rest: um/uh 100%, ну 99%, короче 99%, собственно 100%, i mean 98%, как бы 93%, в общем 93%, типа 92%, you know 92% — together 2505 of 4300 stoplist deletions (58%); вот 59%, like 60%, right 41%, понимаете 41%, okay 39%, kind of 36%, да 35% are context reads; so 8%, just 5%, actually 0%, то есть 0%, просто 2%, значит 1%, там 12% are correctly KEPT (the ru prompt's "filler only sometimes" paragraph holds). Adjacent-dup stutters are only 7% of the non-filler deletions — false starts are not regex-shaped. 41% of substituted tokens are a mapping repeated ≥2× inside one video (fermulab→fermilab ×4, динамик→dynamic ×10, бачинг→batching ×9, все→всё ×21) — glossary-shaped. 42% of sentences carry NO trigger (no stoplist hit, no adjacent dup, no Latin on ru) and the agent still changed 15.2% of those (649), mostly commas and name spellings — the miss rate of any "skip untriggered sentences" routing. Consequences: a deterministic pre-pass on the ≥92% words cuts ZERO spawns (every id must come back, chunks are cut by count) and gains nothing the agent does not already do at 100%; the spawn-cutting lever is routing only triggered sentences (~40% fewer chunks) plus a per-video glossary agent, at the price of the 649 — A/B one video before touching the join contract. "Precision" here means "agrees with Sonnet", there is no human reference for route E. Separate no-risk finding: `cleanerPrompt` points every agent at the COMPLETE `sentences.json` (16142 lines at 6 per record on nVA0ASqbBhY; Read defaults to 2000 lines), so all 34 agents on that video locate their range by offset — `--plan` could write `clean/<from>-<to>.src.json` (range plus a few context lines) and hand each agent its own file. Scripts were scratchpad-only; re-derive from `clean.json` `src`/`text`.
+- [?] 2026-09-19 Route B: `mux` is the largest non-translate stage and nobody has looked at why. On
+  `GDN3mPqJdvo` (5.02 h of audio, 3171 sentences, `dub_mix = "bed"`) it took 1312.4 s = 12.8% of the
+  10253.6 s stage total — the same order as synthesize (1289.3 s) and 13.5× assemble (97.2 s), while
+  the original video stream is never re-encoded. The inputs on disk were a 3.19 GB uncompressed
+  `source_bed.wav` and a 2.66 GB output. What the time is spent on is UNMEASURED (audio-track encode,
+  the copy of the video stream, the write of the output are all candidates) and it is one video, so
+  there is no rate yet. Split the stage per ffmpeg stream on two or three different lengths before
+  drawing anything.
+- [?] 2026-09-19 Route B: source-anomaly rate on a multi-speaker panel, `GDN3mPqJdvo` ("joining an AI
+  doom panel discussion oh boy"): 392 of 3171 sentences (12.4%), 3171/3171 scanned. By kind: garbled
+  211, truncated 121, dup_neighbour 53, context_contradiction 7. The single-speaker assumption (no
+  diarization) shows in the last kind: id 136 "No" against the same speaker's "Now, yes" in id 134,
+  id 239 "300 feet" against "300 miles" in id 210 — turns of different speakers read as one. No
+  corpus baseline was computed, so 12.4% is not yet comparable to a single-voice video; `--repair-asr`
+  is unavailable on Parakeet, so the digest's suggested action does not exist for this engine.
+- [bug] 2026-10-07 Download: an unlisted Vimeo page link (`vimeo.com/<id>/<hash>`) does not extract
+  without credentials in yt-dlp — 2026.7.4 fails with `Failed to fetch macos OAuth token: HTTP Error
+  401`, 2026.8.19 with `The web client only works when logged-in`. The same video extracts
+  anonymously as `https://player.vimeo.com/video/<id>?h=<hash>` plus `--referer https://vimeo.com/`
+  (1080p + Original audio, a 2:42:41 file downloaded whole on both versions). Observed from the
+  yt-dlp CLI, not through `stages/download.py`. Both versions warn "no impersonate target is
+  available"; whether the `curl-cffi` extra makes the page URL work was not tried.
+- [bug] 2026-10-26 `scripts/drain.py` leaves videos pending that became ready mid-sweep, and its
+  `--timeout` does not bound what it says it bounds. The loop is sweeps over the queue; `drain_one`
+  blocks for a video's whole tail, and the deadline is checked only BETWEEN sweeps (`drain.py:180`).
+  Measured on the 25-video queue of 2026-10-25 (20 translated, 5 already built): started 21:38,
+  `--timeout 3600`, last log write 01:04 — 3.4 h. It exited with `18 drained, 0 failed, 7 pending`
+  although all 7 were ready on disk well before it quit: 3 per-video drafts complete at 21:52-21:54
+  (full id coverage, `build_translation.py` exits 0 on them), 4 chunked videos joined 22:03-22:19.
+  Mechanism: each was unready when the final sweep reached it (early in queue order), became ready
+  while the sweep was inside later tails, and the deadline ended the loop before another sweep.
+  Cost: the pipeline sat idle 01:04 -> 06:40 until the step-3 resume was started by hand — the
+  silent failure `pending` was meant to make visible, but the process was a `Start-Process` child
+  with no completion notification, so nothing told the orchestrator it was over. Candidate fixes:
+  deadline as "no progress for N s" rather than wall clock from start; a final sweep after the
+  deadline; and run it as a harness-tracked background command so its exit is announced.
