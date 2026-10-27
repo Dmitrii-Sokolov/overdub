@@ -39,6 +39,11 @@ ISLAND_MAX_WORDS = 3    # a run of another speaker this short, starting inside a
                         # overlapping "right" ("correct all the | time.", "Mac | minis."), the
                         # longest 2 words; real backchannels follow a FINISHED sentence and are
                         # never touched by this rule.
+MAIN_SHARE = 0.03       # a speaker under this share of the words is an insert (a news clip, a
+                        # quoted guest), not a participant: still its own voice, but voiced after
+                        # the participants. Counting only speakers at or above it matched the
+                        # user's participant counts on 88 of 89 calibration videos, the miss an
+                        # under-count (windowed diarization + linking, 2026-10-27).
 
 
 def _merged(intervals: list[tuple[float, float]]) -> tuple[list[float], list[float]]:
@@ -125,9 +130,9 @@ def smooth_islands(flat: list[W]) -> None:
 
 
 def speaker_timbres(flat: list[W], audio, sr: int) -> list[dict]:
-    """Per speaker: words, median F0, ΔF, voice pool and grammatical gender, measured over that
-    speaker's own words. A single-speaker video reports one entry, speaker 0 — its narrator needs
-    a pool and a gender just as much."""
+    """Per speaker: words, their share, whether that makes a main participant, median F0, ΔF,
+    voice pool and grammatical gender, measured over that speaker's own words. A single-speaker
+    video reports one entry, speaker 0 — its narrator needs a pool and a gender just as much."""
     from ..timbre import grammatical_gender, pool_of, timbre
 
     spans: dict[int, list[tuple[float, float]]] = {}
@@ -136,7 +141,9 @@ def speaker_timbres(flat: list[W], audio, sr: int) -> list[dict]:
     out = []
     for spk in sorted(spans):
         t = timbre(audio, sr, spans[spk])
-        out.append({"speaker": spk, "words": len(spans[spk]), **t,
+        share = len(spans[spk]) / len(flat)
+        out.append({"speaker": spk, "words": len(spans[spk]), "share": round(share, 4),
+                    "main": share >= MAIN_SHARE, **t,
                     "pool": pool_of(t["f0_hz"], t["delta_f_hz"]),
                     "gender": grammatical_gender(t["f0_hz"], t["delta_f_hz"])})
     return out

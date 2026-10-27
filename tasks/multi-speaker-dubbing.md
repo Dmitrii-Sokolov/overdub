@@ -78,7 +78,7 @@ the grammatical gender of every first-person past verb.
   (user, 2026-10-27) — `work-exp/diar-probe/<id>/labels.txt` stand as the reference, uncorrected.
 - [x] **False-split run** over the corpus (2026-10-27, read-only) — see Findings; it replaced the
   Q8 threshold with identity linking.
-- [ ] **Windowed diarization + identity linking:** diarize fixed windows (bounded VRAM), link
+- [x] **Windowed diarization + identity linking:** diarize fixed windows (bounded VRAM), link
   speakers across windows and merge same-identity labels by TitaNet embedding cosine; calibrate
   the threshold on the interview channels (two-person episodes must come out as 2).
 - [x] **Speaker change = hard boundary** in resegment and `_merge_short` (`_split_overlong` runs
@@ -126,6 +126,10 @@ Test videos (user, 2026-10-27): 2 speakers — `i-o5YbNfmh0`, `N6FkmdL0Lg0`, `9G
   1110 Hz). Voice pool and grammatical gender stay two decisions over the same measurement.
 - **`diarize` stays on by default** (user, 2026-10-27), with the false-split finding known: a
   re-run of an old workdir re-cuts its transcript when speakers are found.
+- **Short inserts get a voice too** (user, 2026-10-27): a speaker under 3% of the words is not a
+  participant but is another person — it takes a palette voice after the main participants, and
+  when its gender's palette is exhausted it speaks in the voice of the main participant closest
+  in timbre.
 - **Q8 replaced:** no word-share merge threshold; speakers are linked by identity (TitaNet
   embeddings) across fixed windows, which also bounds VRAM on long audio (user agreed).
 - False split: a "speaker" under X% of speech time or N turns merges into the nearest by
@@ -159,8 +163,9 @@ Test videos (user, 2026-10-27): 2 speakers — `i-o5YbNfmh0`, `N6FkmdL0Lg0`, `9G
 
 ## State
 
-Diarization stage built; next is the read-only false-split run, then F0/ΔF. The five test videos
-sit in `work/` transcribed and diarized, untranslated.
+Diarization stage, timbre and windowed linking built; next is per-unit voice. The five test videos
+sit in `work/` transcribed and diarized, untranslated; their diar.json predates `speakers_info`
+and windowing, so a `--only diarize --force` refreshes them.
 Voice-palette spike closed (ear pass done: all 12 palette voices accepted). Artifacts and scripts in
 `work-exp/voice-palette/` (archive): `synth_palette.py` → `diff_check.py` → `make_listen.py` →
 `embed_palette.py`, outputs under `2026-10-27/`.
@@ -262,12 +267,53 @@ timbre_*.py`, `work-exp/diar-probe/timbre_videos.py`):
   with 3-4 speakers — 4 on 14 of the 27 Lex Fridman videos — i.e. streaming Sortformer loses a
   voice's identity over hours and opens a new label for it. Identity linking (TitaNet across
   windows) is the fix, not a size threshold.
+- **Calibration set** (`work-exp/diar-probe/calibration.tsv`, built by `calibration_template.py`):
+  the interview and single-voice channels with an expected count — host + guests named in the
+  title, solo essays 1 — every prefilled value confirmed by the user, the unreadable ones settled
+  by ear; 3 videos have no single right count (a crowd, distorted voices, inserted clips) and are
+  not scored. **Raw diarization on the 85 first scored: exact 40, over 45, under 0** — the error
+  runs one way, so an identity merge, which can only lower a count, aims straight at it.
+- **Identity merge, whole-file segments, 2026-10-27** (`identity_embed.py` on CPU → 
+  `identity_sweep.py`; per smoothed speaker up to 12 × 3 s TitaNet chunks spread over the whole
+  video, agglomerative merge on centroid cosine): of 89 scored videos, **exact 41 → 73**. Plateau
+  at 0.45-0.55 (73 exact, 13-14 over, 2-3 under); recall drops on both sides (0.30: 64 exact, 16
+  under; 0.85: 62 exact, 26 over). **0.45 chosen**: same score as 0.50, and the costs are not
+  symmetric — an over-split changes one person's voice mid-video, an under-merge gives two people
+  one voice, which is what the pipeline did before.
+- **Counting only main voices (user: inserts are short) moves it to 85 of 89.** The table counts
+  participants; a news clip or a quoted guest is a real voice but not one. Counting a merged
+  group only at ≥3% of the video's words: thr 0.55-0.70 → **85 exact, 2 over, 2 under** — a wider
+  plateau than without the share, so **0.60 / 3% supersedes 0.45**.
+- **Two of those four misses were the table's** (user, by ear: `8-boBsWcr5A` 3, `ctsHqR2vtWQ`
+  2). Rescored: **87 of 89 exact, 0 over, 2 under** at 0.55-0.70 / 3%; the setting does not move.
+  The over-split class — the costly one — is gone on this set. What is left is under-merging in
+  the two longest panels (~5 h, the user's counts are lower bounds): `_1f-o0nqpEI` 83/17%
+  (≥3 expected), `ugvHCXCOmm4` 52/24/24% (≥4). No threshold buys them back for free — 0.80
+  recovers one and reopens two over-splits.
 - **Cost: 12.4 s of diarizer per audio hour** (33.8 min over 163.9 h) — negligible beside
   transcribe, which answers the Q3 cost question.
 - **VRAM grows ~5 GB per audio hour and has no ceiling**: peak 1.2 GB (<15 min), 6.2 GB (<2 h),
   10.8 GB (<4 h), **20.2 GB on a >4 h video — past the 12 GB card**, i.e. the WDDM spill-to-RAM
   regime the Parakeet worker documents (no OOM, a twentieth of the throughput). Long audio needs
   chunking before this stage can run unattended on the corpus.
+
+**Windowed diarization + identity linking in the worker, 2026-10-27** (`scripts/parakeet_worker.py`:
+equal windows of ≤1200 s, labels `w<k>:<spk>`, TitaNet linking at 0.60; then the stage's own
+assign → smooth → renumber and `MAIN_SHARE` 3%; `work-exp/diar-probe/calibrate_windowed.py`, output
+`calibrate-windowed-2026-10-27.jsonl`, idle GPU):
+
+- **88 of 89 exact, 0 over, 1 under** (with the table fix below) — the whole-file + merge baseline
+  was 87 / 0 / 2. Both
+  long-panel under-merges (`_1f-o0nqpEI`, `ugvHCXCOmm4`) now come out right at the same 0.60 / 3%;
+  why was not isolated.
+- **The one miss was the table's, and turned into an under-count.** `9V6tWC4CdFQ` (table 2) gets a
+  third main voice at 7.7% of the words, 12 runs between 1:52:01 and 2:09:04, the first opening
+  "Hey Lex, my name is Andrew. I lead the Google Beam team". User, by ear: 4 or more participants,
+  a 4th from 2:02 — table corrected to 4. The 2:02-2:09 runs sit in the same group as Andrew's, so
+  rescored the set is **88 exact, 0 over, 1 under**: two guests sharing one voice, the cheap error
+  direction.
+- **VRAM is bounded: peak 1.6 GB** over the set (whole-file: 20.2 GB). **Cost 14.1 s per audio
+  hour** (whole-file 12.4 s; the difference is the TitaNet pass and per-window model state).
 
 ## Open questions
 

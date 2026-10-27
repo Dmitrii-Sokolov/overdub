@@ -250,8 +250,9 @@ def test_silence_yields_no_timbre_rather_than_a_voice() -> None:
         ctx = _ctx(Path(d), ONE)
         DiarizeStage().run(ctx)
         info = json.loads(ctx.work.diar.read_text(encoding="utf-8"))["speakers_info"]
-        assert info == [{"speaker": 0, "words": len(WORDS), "f0_hz": None, "delta_f_hz": None,
-                         "voiced_frames": 0, "pool": None, "gender": "unknown"}], info
+        assert info == [{"speaker": 0, "words": len(WORDS), "share": 1.0, "main": True,
+                         "f0_hz": None, "delta_f_hz": None, "voiced_frames": 0, "pool": None,
+                         "gender": "unknown"}], info
 
 
 def test_diarize_off_is_done_without_an_artifact() -> None:

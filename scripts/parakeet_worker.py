@@ -41,13 +41,30 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 MODEL_ID = "nvidia/parakeet-tdt-0.6b-v3"
 
-# Diarization model, served by the same script in `--model diar` mode. Streaming Sortformer handles
-# long audio on this card (34.7 min in 2.07 GiB peak, 2026-10-27) and caps at 4 speakers. The
-# stream geometry is the model card's highest-latency setting: the most context per decision,
-# which is what an offline pass wants.
+# Diarization model, served by the same script in `--model diar` mode. Streaming Sortformer, up to
+# 4 speakers per call; the stream geometry is the model card's highest-latency setting: the most
+# context per decision, which is what an offline pass wants.
 DIAR_MODEL_ID = "nvidia/diar_streaming_sortformer_4spk-v2.1"
 DIAR_STREAM = {"chunk_len": 340, "chunk_right_context": 40, "fifo_len": 40,
                "spkcache_update_period": 300, "spkcache_len": 188}
+
+# WINDOWS + IDENTITY LINKING, because one whole-file call fails twice on long audio (corpus run,
+# 2026-10-27): its VRAM grows ~5 GB per audio hour with no ceiling (20.2 GB on a >4 h video, past
+# the 12 GB card into the WDDM spill regime), and over hours it loses a voice's identity and opens
+# a new label for it — 48 of 89 calibration videos over-counted, two-person interviews reading
+# 3-4. So each window is diarized alone (bounded memory, and a 4-speaker cap per window rather
+# than per video), and labels are then joined across AND within windows by voice: TitaNet
+# embeddings, agglomerative merge on centroid cosine while it is >= LINK_THRESHOLD. On whole-file
+# labels that merge took the calibration set from 41 to 87 of 89 exact speaker counts, with no
+# over-split left, on a plateau from 0.55 to 0.70 — 0.60 is its middle. Windowed as below, the
+# same set reads 88 of 89 exact, 0 over, 1 under, at a peak of 1.6 GB.
+DIAR_WINDOW_SEC = 1200.0
+LINK_MODEL_ID = "nvidia/speakerverification_en_titanet_large"
+LINK_THRESHOLD = 0.60
+LINK_CHUNK_SEC = 3.0            # one embedding per piece of a label's speech
+LINK_MAX_CHUNKS = 12            # spread evenly over the label's whole span: drift is over time
+LINK_MIN_SEC = 1.0              # a label with less speech than this gets no embedding, no merge
+LINK_RUN_GAP = 0.3              # segments closer than this are one run of speech
 
 # Long-audio policy. Full attention is quadratic and the model card's "24 minutes" is measured on
 # an A100 80GB — this host has 12 GB, and the corpus holds videos over 4 hours. So: local
@@ -115,18 +132,85 @@ def _load_model(attn: str):
 
 
 def _load_diar():
-    from nemo.collections.asr.models import SortformerEncLabelModel
+    """(Sortformer, TitaNet) — the diarizer and the identity model it is linked with."""
+    from nemo.collections.asr.models import EncDecSpeakerLabelModel, SortformerEncLabelModel
     import torch
 
     t0 = time.perf_counter()
     model = SortformerEncLabelModel.from_pretrained(DIAR_MODEL_ID).eval()
+    link = EncDecSpeakerLabelModel.from_pretrained(LINK_MODEL_ID).eval()
     if torch.cuda.is_available():
-        model = model.cuda()
+        model, link = model.cuda(), link.cuda()
     for k, v in DIAR_STREAM.items():
         setattr(model.sortformer_modules, k, v)
     model.sortformer_modules._check_streaming_parameters()
-    print(f"[parakeet] {DIAR_MODEL_ID} loaded in {time.perf_counter() - t0:.1f}s", file=sys.stderr)
-    return model
+    print(f"[parakeet] {DIAR_MODEL_ID} + {LINK_MODEL_ID} loaded in "
+          f"{time.perf_counter() - t0:.1f}s", file=sys.stderr)
+    return model, link
+
+
+def diar_windows(duration: float) -> list[tuple[float, float]]:
+    """Equal windows of at most DIAR_WINDOW_SEC covering [0, duration] — equal, so the last one is
+    never a sliver too short for the diarizer to tell voices apart in."""
+    n = max(1, -int(-duration // DIAR_WINDOW_SEC))
+    step = duration / n
+    return [(i * step, duration if i == n - 1 else (i + 1) * step) for i in range(n)]
+
+
+def link_chunks(spans: list[tuple[float, float]]) -> list[tuple[float, float]]:
+    """Pieces of one label's speech to embed: its runs cut into LINK_CHUNK_SEC pieces, at most
+    LINK_MAX_CHUNKS of them spread evenly over the whole span. A label with no run that long
+    offers its longest run instead, if that reaches LINK_MIN_SEC; otherwise nothing."""
+    runs: list[list[float]] = []
+    for a, b in sorted(spans):
+        if runs and a - runs[-1][1] <= LINK_RUN_GAP:
+            runs[-1][1] = max(runs[-1][1], b)
+        else:
+            runs.append([a, b])
+    pieces = []
+    for a, b in runs:
+        t = a
+        while b - t >= LINK_CHUNK_SEC:
+            pieces.append((t, t + LINK_CHUNK_SEC))
+            t += LINK_CHUNK_SEC
+    if not pieces:
+        if not runs:
+            return []
+        a, b = max(runs, key=lambda r: r[1] - r[0])
+        return [(a, b)] if b - a >= LINK_MIN_SEC else []
+    if len(pieces) <= LINK_MAX_CHUNKS:
+        return pieces
+    step = (len(pieces) - 1) / (LINK_MAX_CHUNKS - 1)
+    return [pieces[round(i * step)] for i in range(LINK_MAX_CHUNKS)]
+
+
+def link_labels(embs: dict, threshold: float = LINK_THRESHOLD) -> tuple[dict, list]:
+    """({label: group}, merges) — agglomerative merge of labels by the cosine of their centroids
+    (mean of all their unit-norm chunk embeddings), most similar pair first, while it is at least
+    `threshold`. A group is named after its first label in sorted order; a label absent from
+    `embs` (too little speech) is its own group. `merges` lists (kept, absorbed, cosine)."""
+    import numpy as np
+
+    groups = {label: [label] for label in sorted(embs)}
+    pool = {label: np.asarray(embs[label]) for label in sorted(embs)}
+    merges = []
+    while len(pool) > 1:
+        names = sorted(pool)
+        cents = {k: pool[k].mean(axis=0) / np.linalg.norm(pool[k].mean(axis=0)) for k in names}
+        best, pair = -2.0, None
+        for i, a in enumerate(names):
+            for b in names[i + 1:]:
+                c = float(cents[a] @ cents[b])
+                if c > best:
+                    best, pair = c, (a, b)
+        if best < threshold:
+            break
+        a, b = pair
+        pool[a] = np.concatenate([pool[a], pool.pop(b)])
+        groups[a] += groups.pop(b)
+        merges.append((a, b, round(best, 3)))
+    mapping = {label: name for name, members in groups.items() for label in members}
+    return mapping, merges
 
 
 def parse_diar_segments(lines: list[str]) -> list[dict]:
@@ -140,22 +224,59 @@ def parse_diar_segments(lines: list[str]) -> list[dict]:
     return rows
 
 
-def diarize_one(model, wav: Path) -> tuple[list[dict], dict]:
+def diarize_one(models, wav: Path) -> tuple[list[dict], dict]:
+    """Segments with linked labels for one wav: every window diarized alone (labels "w<k>:<spk>"),
+    then joined by voice (link_labels). The pipeline renumbers speakers itself, so the final label
+    is just the group's name."""
+    import tempfile
+
+    import numpy as np
+    import soundfile as sf
     import torch
 
-    _audio, duration = _read_wav(wav)
+    model, link = models
+    audio, duration = _read_wav(wav)
     if torch.cuda.is_available():
         torch.cuda.reset_peak_memory_stats()
     t0 = time.perf_counter()
-    segments = parse_diar_segments(model.diarize(audio=[str(wav)], batch_size=1)[0])
+    windows = diar_windows(duration)
+    raw: list[dict] = []
+    with tempfile.TemporaryDirectory() as tmp:
+        for k, (a, b) in enumerate(windows):
+            clip = Path(tmp) / f"w{k}.wav"
+            sf.write(str(clip), audio[int(a * 16000):int(b * 16000)], 16000, subtype="PCM_16")
+            for s in parse_diar_segments(model.diarize(audio=[str(clip)], batch_size=1)[0]):
+                raw.append({"start": round(s["start"] + a, 3), "end": round(s["end"] + a, 3),
+                            "speaker": f"w{k}:{s['speaker']}"})
+    raw.sort(key=lambda r: (r["start"], r["end"]))
+
+    embs = {}
+    with torch.inference_mode():
+        for label in sorted({s["speaker"] for s in raw}):
+            vecs = []
+            for a, b in link_chunks([(s["start"], s["end"]) for s in raw if s["speaker"] == label]):
+                x = torch.from_numpy(audio[int(a * 16000):int(b * 16000)]).unsqueeze(0).to(link.device)
+                _, e = link.forward(input_signal=x,
+                                    input_signal_length=torch.tensor([x.shape[1]], device=link.device))
+                e = e[0].float().cpu().numpy()
+                vecs.append(e / np.linalg.norm(e))
+            if vecs:
+                embs[label] = np.stack(vecs)
+    mapping, merges = link_labels(embs)
+    segments = [{**s, "speaker": mapping.get(s["speaker"], s["speaker"])} for s in raw]
     wall = time.perf_counter() - t0
     return segments, {
         "model": DIAR_MODEL_ID,
+        "link_model": LINK_MODEL_ID,
+        "link_threshold": LINK_THRESHOLD,
+        "windows": len(windows),
         "audio_sec": round(duration, 1),
         "wall_sec": round(wall, 2),
         "vram_peak_mb": (round(torch.cuda.max_memory_allocated() / 1e6, 1)
                          if torch.cuda.is_available() else None),
+        "labels_raw": len({s["speaker"] for s in raw}),
         "n_speakers": len({s["speaker"] for s in segments}),
+        "merges": merges,
     }
 
 
