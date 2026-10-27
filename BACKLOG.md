@@ -9,7 +9,7 @@ Admission rule: an item must change the TOOL (CLAUDE.md) — repairing one video
 
 ## Open — ordered by value (re-cut 2026-10-27; there is no blocker)
 
-- [ ] A silent dub never reaches an export: level check at the `mux` gate, `synthesize` done() checks its wavs → tasks/silent-dub-guard.md
+- [x] A silent dub never reaches an export: level check at the `mux` gate, `synthesize` done() checks its wavs → tasks/silent-dub-guard.md
 - [ ] `needs_triage` means "open this video" again: `num_loss` advisory (0/25 measured), no-speech out, holes sited by ear → tasks/needs-triage-recalibration.md
 - [ ] `drain.py` leaves nothing ready behind, its timeout bounds what it says, and its exit is announced → tasks/drain-deadline.md
 - [ ] The first video reaches its post-translate tail while the next still translates: mux profiled and taken, a clean end-to-end figure, acceptance re-phrased → tasks/pipeline-batch-latency.md

@@ -73,6 +73,19 @@ def _extract(src, dst, *, sr=_MIX_SR, ch=2) -> None:
 
 _CHUNK = 10_000_000
 
+# Peak below which a finished dub is silence, not a quiet track. The broken dub of 2026-08-04
+# peaked at -91.0 dBFS; the re-synthesized ones averaged -22 dBFS, so the bar sits far from both.
+_SILENT_PEAK_DBFS = -60.0
+
+
+def dub_peak_dbfs(path) -> float:
+    """Peak level of a wav in dBFS, read in blocks; -inf for an all-zero or empty file."""
+    peak = 0.0
+    for block in sf.blocks(str(path), blocksize=1 << 20, dtype="float32", always_2d=True):
+        if block.size:
+            peak = max(peak, float(np.abs(block).max()))
+    return 20 * float(np.log10(peak)) if peak > 0 else float("-inf")
+
 
 def _sqsum(x: np.ndarray) -> float:
     """Chunked float64 sum of squares — no full-array float64 copy (a 39-min stereo track
@@ -345,6 +358,17 @@ class MuxStage:
                 raise RuntimeError("segments/manifest.json missing while dub_ru.wav exists — "
                                    "re-run synthesize/assemble (mux needs the unit spans)")
             man = json.loads(w.seg_manifest.read_text(encoding="utf-8"))
+            # A silent dub is INCONSISTENT too, and it must raise rather than degrade: degrading
+            # would re-mux a dub-less container over an output.mkv that may carry the good dub.
+            # Raising before the tmp is written leaves any existing export exactly as it was.
+            # Whatever the cause (missing unit wavs, all-empty text_tts, a broken mix), this is
+            # the last point where refusing still protects the export.
+            peak_db = dub_peak_dbfs(w.dub_audio)
+            if peak_db < _SILENT_PEAK_DBFS:
+                raise RuntimeError(
+                    f"dub_ru.wav is silent (peak {peak_db:.1f} dBFS) — refusing to mux it; "
+                    f"{w.output.name} is left as it was. Check assemble's flags in report.json "
+                    f"and re-run assemble once the unit wavs are back")
         else:
             man = {}
 

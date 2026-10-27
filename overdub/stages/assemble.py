@@ -379,6 +379,16 @@ class AssembleStage:
         ids = [s["id"] for s in segs]
         if ids != list(range(len(segs))) or sorted(i for u in units for i in u["ids"]) != ids:
             raise RuntimeError("assemble id mismatch (never-drop invariant)")
+        # A VOICED unit whose wav is gone means the manifest and the disk disagree. 2026-08-04:
+        # per-segment wavs deleted, manifest kept, synthesize fast-skipped, and this stage flagged
+        # every unit and wrote a full-length dub of digital silence over the good one. Raising
+        # before any write keeps the previous dub_ru.wav, and with it the export, untouched.
+        lost = [u["ids"][0] for u in units
+                if (u.get("samples") or 0) > 0 and not ctx.work.seg_wav(u["ids"][0]).exists()]
+        if lost:
+            raise RuntimeError(
+                f"{len(lost)} of {len(units)} voiced unit wav(s) named by segments/manifest.json "
+                f"are missing (first u{lost[0]}) — re-synthesize: --force --only synthesize")
 
         # plan pass (no audio): absolute offsets, slots from ROUNDED offsets, speed factors
         n = len(units)
