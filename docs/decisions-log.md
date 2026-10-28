@@ -2088,6 +2088,9 @@ reproduce pre-2026-07-19 runs.
 - **aidar, baya** — off-standard accent, sounds harder to follow; phonemes drift from ordinary
   Russian. Avoid.
 
+> PARTLY SUPERSEDED 2026-10-27: the multi-speaker palette (user ear) brings `aidar` back as the
+> second male voice and makes `xenia` the primary female (tasks/multi-speaker-dubbing.md).
+
 **Speed is the headline: synthesis is 12-19× faster than F5 and CPU-only** (measured on the same
 5 videos: synth 11-14 s vs 128-250 s), with round-trip similarity at near parity. This is the
 measurement the 2026-07-25 engine decision then rested on; at the time the verdict was "quality
@@ -2189,6 +2192,9 @@ container quirks.
 **Single-speaker assumption for v1.** Covers ~95% of target content.
 Diarization (whisperX + pyannote) would multiply complexity by 2–3x — deferred
 until actually needed.
+
+> PARTLY SUPERSEDED 2026-10-28: the single-speaker assumption is lifted — diarization ships on by
+> default and each speaker gets a dub voice (tasks/multi-speaker-dubbing.md).
 
 **Rejected: Microsoft local voices.** Windows Narrator natural voices have no
 ru-RU voice at all (verified 2026-07); legacy SAPI5 "Irina" is unusable.

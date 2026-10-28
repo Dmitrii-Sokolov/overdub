@@ -50,7 +50,6 @@ videos survived, which is exactly the wrong direction.
   "fixed" by feeding it `cfg.source_lang` — that key means "what the dubbing
   pipeline expects" and forcing it onto a Russian source is already an open bug
   on the whisper repair path (INBOX).
-- **Single-speaker assumption.** No diarization in v1.
 - **No tempo cap upward; a floor downward.** `atempo` speeds a segment up as
   much as its slot requires — uncapped, by design. Since 2026-07-25 it also
   SLOWS an under-filled unit toward its slot, bounded by `atempo_floor` (0.75,
@@ -103,7 +102,7 @@ duration model those two share is `overdub.tts.voice_rate` / `target_chars` (bot
 speaking rate is a VOICE fact (eugene 19.85 ru ch/s vs baya 14.41, measured 2026-07-25 over every
 Silero manifest on disk — provenance at the constant) and an unmeasured voice
 disables the model rather than borrowing a rate. Adapter default is v5_5_ru; v4_ru only to reproduce old runs
-(DECISIONS 2026-07-19). No voice cloning — fixed narrator voice. Don't
+(DECISIONS 2026-07-19). No voice cloning — a fixed palette of stock voices, one per speaker. Don't
 hardcode engine specifics outside the engine adapter. Two venvs, never merge them:
 `.venv-asr` (pipeline) and `.venv-demucs` (separate stage);
 run the pipeline with `.venv-asr` python via `python -X utf8 -m overdub`.

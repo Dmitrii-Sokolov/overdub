@@ -9,7 +9,7 @@ founding entry) — the lift itself is a `/triage` decision, not this task's.
 
 Why: there is no `speaker` field anywhere in the pipeline. Sentence and unit merges ignore who is
 talking, so on the panel `GDN3mPqJdvo` turns of different speakers are glued into one thought
-(see `multi-speaker-detector.md`, Findings), one voice voices everyone, and the translator guesses
+(see Findings, the panel anomaly rate), one voice voices everyone, and the translator guesses
 the grammatical gender of every first-person past verb.
 
 ## Frozen Spec
@@ -76,7 +76,7 @@ the grammatical gender of every first-person past verb.
   overlap, `smooth_islands`, re-cut + `invalidate_downstream` only when the cut changes.
 - [x] **F0 + ΔF per speaker** (2026-10-27): `overdub/timbre.py` (pure numpy), written by the
   diarize stage into `diar.json` → `speakers_info` (words, f0_hz, delta_f_hz, pool, gender) for
-  every video, single-speaker included. Absorbs `narrator-gender-f0.md`'s measurement; feeding
+  every video, single-speaker included. Absorbs the retired narrator-gender task's measurement; feeding
   `gender` to the translator is the contract item below.
 - [x] **Fixture:** auto labels of `z7cNbsr3b5s` and `i-o5YbNfmh0` judged fully correct by ear
   (user, 2026-10-27) — `work-exp/diar-probe/<id>/labels.txt` stand as the reference, uncorrected.
@@ -193,13 +193,21 @@ Test videos (user, 2026-10-27): 2 speakers — `i-o5YbNfmh0`, `N6FkmdL0Lg0`, `9G
 
 Every plan item built and every AC measured: route B on the five test videos passed the ear
 (user, 2026-10-28); the identity run gave 9 of 9 male single-speaker videos byte-identical
-(Findings). Open: the closing triage (INBOX 2026-10-27). Candidate follow-up from route B: short
-backchannel turns compressed 2-4.7× (Findings).
+(Findings). Closed at triage: the single-speaker constraint is lifted (DECISIONS 2026-10-28).
+Candidate follow-up from route B: short backchannel turns compressed 2-4.7× (Findings).
 Voice-palette spike closed (ear pass done: all 12 palette voices accepted). Artifacts and scripts in
 `work-exp/voice-palette/` (archive): `synth_palette.py` → `diff_check.py` → `make_listen.py` →
 `embed_palette.py`, outputs under `2026-10-27/`.
 
 ## Findings
+
+**Source-anomaly rate on a multi-speaker panel, 2026-09-19** (moved here from the retired
+detector task): `GDN3mPqJdvo` ("joining an AI doom panel discussion oh boy"), 392 of 3171
+sentences (12.4%), all 3171 scanned. By kind: garbled 211, truncated 121, dup_neighbour 53,
+context_contradiction 7. The missing diarization shows in the last kind: id 136 "No" against the
+same speaker's "Now, yes" in id 134, id 239 "300 feet" against "300 miles" in id 210 — turns of
+different speakers read as one. No corpus baseline was computed, so 12.4% is not comparable to a
+single-voice video.
 
 **Voice-palette spike, 2026-10-27** (30 `text_tts` sentences of `aVwxzDHniEw`, Silero v5_5_ru,
 TitaNet-large cosine; every figure compares DIFFERENT-text pairs — same-text pairing inflates the

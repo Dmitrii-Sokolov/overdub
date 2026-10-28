@@ -9,6 +9,7 @@ Admission rule: an item must change the TOOL (CLAUDE.md) — repairing one video
 
 ## Open — ordered by value (re-cut 2026-10-27; there is no blocker)
 
+- [x] A multi-speaker video is dubbed with a distinct voice per speaker; turns never share a sentence → tasks/multi-speaker-dubbing.md
 - [x] A silent dub never reaches an export: level check at the `mux` gate, `synthesize` done() checks its wavs → tasks/silent-dub-guard.md
 - [ ] `needs_triage` means "open this video" again: `num_loss` advisory (0/25 measured), no-speech out, holes sited by ear → tasks/needs-triage-recalibration.md
 - [ ] `drain.py` leaves nothing ready behind, its timeout bounds what it says, and its exit is announced → tasks/drain-deadline.md
@@ -50,7 +51,6 @@ Admission rule: an item must change the TOOL (CLAUDE.md) — repairing one video
 - [ ] Per-chunk silence trimming + crossfade at joins (the "seams") → tasks/seam-crossfade.md
 - [ ] A versioned stress dictionary (`terms.tsv`) for domain terms — the class `pronounce_audit.json` surfaces and nothing consumes → tasks/terms-tsv.md
 - [ ] `MIN_SENT_CHARS` re-validated on Silero (calibrated on retired F5; synth sub-15-char units alone vs merged and listen — before any further merge tuning, every other merge knob is calibrated against this one) → tasks/min-sent-chars-silero.md
-- [ ] The translator knows the narrator's grammatical gender (median-F0 pass → prompt field) → tasks/narrator-gender-f0.md
 - [ ] URL/domain branch in the normalizer ("клод точка эй-ай"; the dot must not survive into TTS) → tasks/translation-audit-remainders.md
 - [ ] File-scoped terminology glossary carried across segments ("alignment" rendered 3 ways in one file) → tasks/translation-audit-remainders.md
 - [ ] `english_echo` stops writing `failed` on deliberately preserved terms → tasks/translation-audit-remainders.md
@@ -75,8 +75,6 @@ Admission rule: an item must change the TOOL (CLAUDE.md) — repairing one video
 
 - [ ] `n_src` promoted into `flags_actionable` — blocked on measuring its fire rate and precision on a real Sonnet batch first (`entity_loss` at 11 of 12 is the precedent) → tasks/nsrc-promotion.md
 - [ ] In-pipeline Anthropic API translate flag — build ONLY if the manual sub-agent seam becomes the bottleneck (approved in principle, DECISIONS 2026-07-18) → tasks/api-translate-flag.md
-- [ ] Gender-matched narrator voice (kseniya/xenia/baya per video) — design question + ear pass; shares the F0 pass → tasks/narrator-gender-f0.md
-- [ ] Multi-speaker violation detector (ECAPA vs dominant-voice centroid → report flag; full diarization stays out of scope) → tasks/multi-speaker-detector.md
 - [ ] UTMOS/MOS verification — only if batch stats prove the duration heuristic insufficient → tasks/utmos-verification.md
 - [ ] Unit sim threshold re-tune (base 0.9) — only if production flags misbehave → tasks/sim-threshold-retune.md
 - [ ] Streamed mixing in mux — trigger: multi-hour sources (the numpy mix holds a ~2-3 GB transient even after chunked RMS/peak) → tasks/streamed-mixing.md

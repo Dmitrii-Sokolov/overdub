@@ -41,5 +41,9 @@ Tags: `[bug] [feature] [chore] [?]` — one line per entry, processed weekly.
      redirect line in the route-B skill step 3. Deleted (5): scout_report embed size and the
      summary.md bypass (dead with route C / the summarizer), route-B empty-transcript gate and
      wasted no-speech agents (closed 2026-08-06), unlisted Vimeo URLs (outside YouTube→RU). -->
-- [feature] 2026-10-27 Multi-speaker dubbing spec drafted with the user → tasks/multi-speaker-dubbing.md. Triage owes: a DECISIONS entry lifting the founding "single-speaker, no diarization" hard constraint (CLAUDE.md, AGENTS.md, README Constraints all state it); a BACKLOG line; `narrator-gender-f0.md` absorbed (F0 per speaker feeds both voice and translator); fate of `multi-speaker-detector.md` (its ECAPA flag is subsumed by diarization).
-- [?] 2026-10-28 Silero is deterministic only to rounding, not to the byte: `DmgujoZ1mmk` rendered 4 times from one translation.json with voice eugene — the first render (the session's first synthesize process) differed from the other three in all 16 unit wavs, same lengths, max |diff| 5.5e-4 (≈ −66 dB, inaudible); the other three were byte-identical to each other. `overdub/tts/silero.py` does not pin `torch.set_num_threads`, the likely lever. Consequences: "same text → same audio" (silero.py docstring, `supports_seed = False`) holds by ear, not by hash, so any byte-identity check across two runs can fail without a code change; reseed-is-a-no-op still holds. Evidence: `work-exp/identity-2026-10-28/off/DmgujoZ1mmk/_segments-trial/` vs `segments/`.
+<!-- processed 2026-10-28: 2 entries → 0. Multi-speaker: DECISIONS 10-28 (single-speaker lifted)
+     + 10-27 (voice palette), tombstones on the founding and 07-19 entries, BACKLOG [x] line,
+     narrator-gender-f0 and multi-speaker-detector absorbed and deleted (the panel finding moved
+     into the multi-speaker task), the constraint dropped from CLAUDE.md / AGENTS.md / README.
+     Silero rounding: overdub/CLAUDE.md fact + silero.py docstrings fixed in place; the
+     thread-pinning lever not queued (inaudible, changes nothing in the tool). -->

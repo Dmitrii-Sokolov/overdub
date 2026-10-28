@@ -18,6 +18,7 @@ what makes the index scannable, and the labels carry the reasons (rationale: DEC
 - `07-19` 4-way bake-off † · `07-15` translate stage BUILD †
 
 **TTS / synthesize**
+- `10-27` per-gender voice palette, timbre-matched; aidar back as 2nd male, xenia primary female → tasks/multi-speaker-dubbing.md
 - `07-25` **Silero v5_5_ru is the ONLY engine** — user call on speed and hardware, ear-confirmed on finished videos
 - `07-19` v5 audition: v4 was tested by mistake; the voice ear-ranking (eugene/kseniya, avoid aidar/baya)
 - `07-16` the F5/ESpeech era † — cloning worked and was dropped by GOAL; fd-dup capture, single-writer manifest and `synth_key` outlive it
@@ -85,6 +86,7 @@ what makes the index scannable, and the labels carry the reasons (rationale: DEC
 - `07-19` measurement gotchas that will recur · `07-19` `no_repeat_ngram_size` REJECTED
 
 **Scope & founding constraints**
+- `10-28` single-speaker constraint LIFTED: diarization on by default, a dub voice per speaker → tasks/multi-speaker-dubbing.md
 - `07-15` founding decisions · `07-15` PoC reframe
 - `07-17` proper nouns: pronunciation chain
 - `07-16` local-only constraint amended †

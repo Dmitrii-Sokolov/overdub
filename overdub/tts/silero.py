@@ -1,4 +1,4 @@
-"""Silero RU TTS engine — native Russian, CPU, deterministic.
+"""Silero RU TTS engine — native Russian, CPU, deterministic to rounding.
 
 A voice is a stock speaker or a variant "<speaker>+formant=F": the stock render with its formants
 moved by F through ffmpeg's rubberband, pitch and duration kept — so a variant shares its base
@@ -96,7 +96,7 @@ def shift_formants(path: Path, factor: float, sample_rate: int) -> None:
 class SileroEngine:
     LANGUAGE = "ru"
     MODEL_ID = "v4_ru"               # default release; overridden per-run by cfg.silero_model
-    supports_seed = False            # deterministic: same text → same audio, reseed is a no-op
+    supports_seed = False            # same text → same audio to rounding, not to the byte; reseed is a no-op
     supports_target = False          # no native speed — atempo does all timing fit
     supports_breaks = True           # SSML <break>: v5 only, gated per-instance below
 

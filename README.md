@@ -5,7 +5,7 @@ Local-first, semi-automated pipeline for dubbing YouTube videos into Russian.
 Download → transcribe → translate → synthesize → verify → assemble → separate → mux.
 Every stage but one runs on local hardware with no per-minute billing; the exception is
 translation, which left the host at the seam and is written by Claude Sonnet sub-agents.
-Built for batch processing of hundreds of hours of single-speaker content.
+Built for batch processing of hundreds of hours of content.
 
 **This file is the MAP and the commands.** Rationale and measurements live in
 `DECISIONS.md` (index) + `docs/decisions-log.md` (entries), open work in `BACKLOG.md`, host findings in `STACK.md`, install in
@@ -335,7 +335,6 @@ off this page — the F5-era split is retired (DECISIONS 2026-08-24).
 
 ## Constraints / assumptions
 
-- Single speaker per video (covers ~95% of target content). No diarization.
 - Local STT and TTS, always. Translation is Claude Sonnet in semi-automatic mode, at the seam —
   always explicit, never a silent fallback.
 - **The dubbing routes are EN→RU.** Route E and `--transcribe-file` translate nothing and are

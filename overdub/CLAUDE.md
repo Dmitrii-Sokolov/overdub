@@ -56,5 +56,10 @@ Measured facts and standing constraints local to the pipeline package. Tasks liv
 - `_title_of` is a networked `yt-dlp --print title` (30 s timeout) for pre-2026-07-20 workdirs;
   in the finish sweep those queue back-to-back — an offline resume of 12 videos can sit ~6 min
   in one block at the very end. A caveat, not a bug.
+- **Silero is deterministic to rounding, not to the byte:** unit wavs of one text can differ by
+  ≤ 5.5e-4 (≈ −66 dB, inaudible) between synthesize processes (`DmgujoZ1mmk`, 4 renders, the
+  first process off the other three, 2026-10-28). A byte-identity check across two runs needs a
+  tolerance or a single process; reseeding stays a no-op. Suspected lever: `overdub/tts/silero.py`
+  does not pin torch's thread count.
 - `word_timestamps=True` stays load-bearing: sentence resegmentation, timing sync and
   `--repair-asr` are all built on it.
