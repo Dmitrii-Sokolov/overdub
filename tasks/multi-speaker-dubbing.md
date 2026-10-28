@@ -362,6 +362,19 @@ assign → smooth → renumber and `MAIN_SHARE` 3%; `work-exp/diar-probe/calibra
   `hm8NzEd5io0` 110/967 → eugene, 136/936 → aidar, 142/1043 → eugene+formant=1.12,
   124/944 → aidar+formant=1.12.
 
+**Boundary accuracy, 2026-10-28** (pipeline `sentences.json` speakers vs the ear-approved
+`work-exp/diar-probe/<id>/labels.txt`, a sentence scored by the reference speaker covering most
+of it, labels mapped one-to-one; the two wavs differ by 0.04 s in length):
+
+- `z7cNbsr3b5s` (394 sentences, 3 speakers): **98.5% of words** (384 sentences) carry the right
+  speaker; 1 sentence holds a second reference speaker for ≥ 1 s; of 56 reference turns
+  (segments ≥ 1 s) 50 have a pipeline speaker change within 0.5 s. `i-o5YbNfmh0`: 100%, 2 of 2
+  turns.
+- **The miss is the windowed diarizer, not the cut:** 6 of the 10 wrong sentences are one
+  stretch, 386-408 s, where window 0 labels the second man as the first (`w0:speaker_1`) and
+  switches to him only at 408 s; the whole-file probe has him from 386.6 s. The two men are 4 Hz
+  apart (Findings above).
+
 **Turn dashes, 2026-10-28:** on `z7cNbsr3b5s` (394 sentences) the English degraded track gets
 65 dashes for 65 speaker changes.
 
