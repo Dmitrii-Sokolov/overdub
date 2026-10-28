@@ -191,11 +191,10 @@ Test videos (user, 2026-10-27): 2 speakers — `i-o5YbNfmh0`, `N6FkmdL0Lg0`, `9G
 
 ## State
 
-Every plan item built. Open against the AC: the single-speaker identity run (golden fixture + 5
-male-pool corpus videos, diarize on vs off), boundary accuracy on the fixture video as a number,
-and a route-B run on the five test videos (rule 9 and the full dub by ear). The
-five test videos sit in `work/` transcribed and diarized with `speakers_info`, untranslated — a
-route-B run on them is the first check of rule 9 and of the full dub by ear.
+Every plan item built; boundary accuracy measured; route B ran on the five test videos (MKVs in
+`out/`, awaiting the ear verdict). Open against the AC: the single-speaker identity run (golden
+fixture + 5 male-pool corpus videos, diarize on vs off). Candidate follow-up from route B: short
+backchannel turns compressed 2-4.7× (Findings).
 Voice-palette spike closed (ear pass done: all 12 palette voices accepted). Artifacts and scripts in
 `work-exp/voice-palette/` (archive): `synth_palette.py` → `diff_check.py` → `make_listen.py` →
 `embed_palette.py`, outputs under `2026-10-27/`.
@@ -374,6 +373,21 @@ of it, labels mapped one-to-one; the two wavs differ by 0.04 s in length):
   stretch, 386-408 s, where window 0 labels the second man as the first (`w0:speaker_1`) and
   switches to him only at 408 s; the whole-file probe has him from 386.6 s. The two men are 4 Hz
   apart (Findings above).
+
+**Route B on the five test videos, 2026-10-28** (translate-batch workflow + drain; 5 of 5 muxed,
+markers 4.5 s apart):
+
+- **Every speaker got its assigned voice** in the manifests, as in the assignment table above.
+- **Rule 9 holds on a crude check** (regex over «я + past tense» and short adjectives): the woman
+  in `z7cNbsr3b5s` speaks feminine in all 7 hits («Очень рада», «я уже говорила», «я работала»),
+  no male speaker of the four translated videos has a feminine form.
+- **The translator now reports diarization errors as source anomalies**: trailing words handed
+  to the previous speaker (`hm8NzEd5io0` 196 "How", 317 "You", 119/148 dangling turns "by the
+  other speaker") and two lines attributed to the wrong speaker (241-242,
+  `context_contradiction`).
+- **Short turns are the new speed offenders**: units ≥ 1.8× — 0 / 2 / 0 / 5 / 7 in the test-video order —
+  are mostly one- or two-word backchannels in their own unit ("Right." 4.38×, "But" 4.69×,
+  "Got it." 2.30×): a turn is a hard boundary, so a reply no longer borrows its neighbour's slot.
 
 **Turn dashes, 2026-10-28:** on `z7cNbsr3b5s` (394 sentences) the English degraded track gets
 65 dashes for 65 speaker changes.
