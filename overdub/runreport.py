@@ -513,6 +513,13 @@ def _build_run_report(work, cfg):
     n_unrecovered = int(asr_block.get("holes_unrecovered") or 0)
     needs_triage = flags_actionable > 0 or n_over > 0 or degraded or n_unrecovered > 0
 
+    # None = not diarized (switch off, or a workdir from before the stage), never "one speaker".
+    # merges are the cross-window identity links: [label, label it joined, centroid cosine].
+    diar = _load_json(work.diar)
+    diar_block = ({"speakers": diar.get("speakers"),
+                   "merges": (diar.get("meta") or {}).get("merges") or []}
+                  if isinstance(diar, dict) else None)
+
     run = {
         "video_id": work.root.name,
         "title": title,
@@ -537,6 +544,7 @@ def _build_run_report(work, cfg):
             "work_complete": work_complete,
         },
         "asr": asr_block,
+        "diarize": diar_block,
         "translate": {
             "n_sentences": n_sentences,
             "n_failed": n_failed,
@@ -666,6 +674,7 @@ def summarize_offenders(report, translation=None, limit=40):
             "id": sid,
             "reasons": reasons,
             "speed": (round(speed, 4) if speed is not None else None),
+            "speaker": (tr.get("speaker") if isinstance(tr, dict) else None),
             "src_en": (tr.get("src_en") if isinstance(tr, dict) else None),
             "text_ru": (tr.get("text_ru") if isinstance(tr, dict) else None),
         })
@@ -774,6 +783,8 @@ def flagged_units(report, translation=None, limit=500):
             "reasons": reasons,
             "similarity": (round(sim, 4) if isinstance(sim, (int, float)) else None),
             "hypothesis": lead.get("hypothesis"),
+            # a unit never spans a speaker change, so its first sentence speaks for all of it
+            "speaker": (trs[0].get("speaker") if isinstance(trs[0], dict) else None),
             "text_tts": _join("text_tts"),
             "src_en": _join("src_en"),
             "text_ru": _join("text_ru"),

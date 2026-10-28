@@ -709,6 +709,29 @@ def test_flagged_units_dedup_reasons_and_join() -> None:
     assert u["text_ru"] == "Шестьдесят кадров. Это немало."
     assert u["start"] == 1.0 and u["end"] == 5.0
     assert u["speed"] == 2.0
+    assert u["speaker"] is None                                 # single speaker: no field
+
+
+def test_flagged_rows_carry_the_speaker() -> None:
+    segs = [_unit(0, 0, verify_flag="low_similarity", combined=1.0),
+            _unit(1, 1, verify_flag="low_similarity", combined=1.0)]
+    translation = [{"id": 0, "speaker": 0, "src_en": "a", "text_ru": "а"},
+                   {"id": 1, "speaker": 1, "src_en": "b", "text_ru": "б"}]
+    rep = {"segments": segs}
+    assert [u["speaker"] for u in runreport.flagged_units(rep, translation)] == [0, 1]
+    assert [r["speaker"] for r in runreport.summarize_offenders(rep, translation)] == [0, 1]
+
+
+def test_run_carries_the_speaker_count_and_every_merge() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        work = _mkwork(d, report=_clean_report(),
+                       translation=[{"id": i, "status": "ok"} for i in range(4)])
+        assert runreport.build_run_report(work, _CFG)["diarize"] is None   # never diarized
+        merge = ["w0:speaker_1", "w1:speaker_0", 0.94]
+        work.diar.write_text(json.dumps({"speakers": 2, "speakers_info": [], "segments": [],
+                                         "meta": {"merges": [merge]}}), encoding="utf-8")
+        assert runreport.build_run_report(work, _CFG)["diarize"] == {"speakers": 2,
+                                                                     "merges": [merge]}
 
 
 def test_flagged_units_translate_flag_on_member() -> None:

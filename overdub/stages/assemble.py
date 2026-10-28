@@ -165,6 +165,23 @@ def source_timed_rows(records, field) -> list[tuple[float, float, str]]:
     return rows
 
 
+def turn_marked(records, field) -> list:
+    """Copy of records where every sentence that changes speaker opens with a dialogue dash:
+    "— " on the Russian side (`text_ru`), "- " on the English one. Display only — the copy
+    feeds the srt writers, the artifacts on disk keep their text. A record without `speaker`
+    (single speaker, legacy workdir) never marks, and neither does the first one."""
+    dash = "— " if field == "text_ru" else "- "
+    out, prev = [], None
+    for rec in records or []:
+        spk = rec.get("speaker") if isinstance(rec, dict) else None
+        text = (rec.get(field) or "").strip() if isinstance(rec, dict) else ""
+        if spk is not None and prev is not None and spk != prev and text:
+            rec = {**rec, field: dash + text}
+        out.append(rec)
+        prev = spk
+    return out
+
+
 def _write_srt(path, rows, *, split: bool = True) -> None:
     """rows: iterable of (start, end, text). Long cues are broken up for DISPLAY only (see
     _split_cue). end is floored to start+0.05 — a zero/negative cue is silently dropped by
@@ -361,11 +378,12 @@ class AssembleStage:
         # environment error naming the wrong cause.
         segs = _load_json(ctx.work.translation)
         if not isinstance(segs, list) or not segs:
-            en = source_timed_rows(_load_json(ctx.work.sentences), "text")
+            en = source_timed_rows(turn_marked(_load_json(ctx.work.sentences), "text"), "text")
             return _degraded(ctx, "no_translation" if en else "no_transcript", en, None)
         if not ctx.work.seg_manifest.exists():
-            return _degraded(ctx, "no_synthesis", source_timed_rows(segs, "src_en"),
-                             source_timed_rows(segs, "text_ru"))
+            return _degraded(ctx, "no_synthesis",
+                             source_timed_rows(turn_marked(segs, "src_en"), "src_en"),
+                             source_timed_rows(turn_marked(segs, "text_ru"), "text_ru"))
         if shutil.which("ffmpeg") is None:
             raise RuntimeError("ffmpeg not found on PATH — required for atempo. "
                                "Install ffmpeg; overdub does not auto-install.")
@@ -496,8 +514,9 @@ class AssembleStage:
         lowpass = effective_lowpass(cfg.dub_lowpass_hz, sr)
         if lowpass:
             _apply_lowpass(dub_tmp, sr, lowpass)
-        _write_srt(ctx.work.en_srt, [(s["start"], s["end"], s["src_en"]) for s in segs])
-        _write_ru_srt(ctx.work.ru_srt, plans, segs, sr)
+        _write_srt(ctx.work.en_srt,
+                   [(s["start"], s["end"], s["src_en"]) for s in turn_marked(segs, "src_en")])
+        _write_ru_srt(ctx.work.ru_srt, plans, turn_marked(segs, "text_ru"), sr)
         report.prune(rep, {s["id"] for s in segs})
         rep["assemble"] = {
             "sample_rate": sr, "duration_sec": round(total / sr, 3),

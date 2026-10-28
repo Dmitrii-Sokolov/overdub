@@ -99,7 +99,12 @@ the grammatical gender of every first-person past verb.
   `test_speakers_info_sits_above_the_segments`); contract rule 1 lost "single-narrator", rule 9
   sets the grammar of a speaker's gender (`unknown` → wording that marks none, else the text,
   else masculine); same in both workflow prompts, `SYSTEM` and the `.agents/` mirror.
-- [ ] **Subtitles + reporting.**
+- [x] **Subtitles + reporting:** `assemble.turn_marked` opens a sentence that changes speaker
+  with "— " (`text_ru`) / "- " (English) on every srt path, degraded ones included — display
+  only, the artifacts keep their text; `run.json` → `diarize: {speakers, merges}` (None when not
+  diarized), `speaker` on the `flagged_units` and `summarize_offenders` rows.
+- [ ] **Nothing drops the field:** `--repair-asr` (its sentences loader keeps only
+  `{id,text,start,end}`) and `tools/renorm_workdir.py`.
 
 Test videos (user, 2026-10-27): 2 speakers — `i-o5YbNfmh0`, `N6FkmdL0Lg0`, `9GtcbnmldcY`;
 3 speakers — `z7cNbsr3b5s`; 4 speakers — `hm8NzEd5io0`.
@@ -183,8 +188,8 @@ Test videos (user, 2026-10-27): 2 speakers — `i-o5YbNfmh0`, `N6FkmdL0Lg0`, `9G
 
 ## State
 
-Diarization, timbre, windowed linking, per-unit voice and the translator contract built; next is
-subtitles + reporting, then preserving `speaker` through repair / renorm / degraded assemble. The
+Diarization, timbre, windowed linking, per-unit voice, the translator contract, turn dashes and
+reporting built; next is preserving `speaker` through `--repair-asr` and renorm. The
 five test videos sit in `work/` transcribed and diarized with `speakers_info`, untranslated — a
 route-B run on them is the first check of rule 9 and of the full dub by ear.
 Voice-palette spike closed (ear pass done: all 12 palette voices accepted). Artifacts and scripts in
@@ -352,6 +357,9 @@ assign → smooth → renumber and `MAIN_SHARE` 3%; `work-exp/diar-probe/calibra
   are 4 Hz apart, so which of them gets eugene is decided by noise;
   `hm8NzEd5io0` 110/967 → eugene, 136/936 → aidar, 142/1043 → eugene+formant=1.12,
   124/944 → aidar+formant=1.12.
+
+**Turn dashes, 2026-10-28:** on `z7cNbsr3b5s` (394 sentences) the English degraded track gets
+65 dashes for 65 speaker changes.
 
 ## Open questions
 
