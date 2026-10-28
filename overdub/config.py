@@ -156,7 +156,17 @@ class Config:
     tts_engine: str = "silero"       # THE engine since 2026-07-25 (user decision, DECISIONS):
                                      # speed + hardware cost, quality difference accepted as a
                                      # trade.
-    tts_voice: str = "eugene"        # silero-only
+    tts_voice: str = "eugene"        # silero-only; the voice of every unit whose speaker is
+                                     # unknown (diarization off, a workdir without speakers_info)
+    # Multi-speaker palettes, ordered: a video's k speakers of a pool take the first k voices,
+    # matched to them by timbre. Ear verdict 2026-10-27; a variant "<base>+formant=F" is the base
+    # voice with its formants moved by F at the same pitch and duration. The first male voice is
+    # tts_voice on purpose: a male narrator then sounds exactly as he did before diarization.
+    voice_palette_male: tuple = ("eugene", "aidar", "eugene+formant=1.12", "aidar+formant=1.12",
+                                 "eugene+formant=0.88", "aidar+formant=0.88")
+    voice_palette_female: tuple = ("xenia", "kseniya", "xenia+formant=1.12",
+                                   "kseniya+formant=1.12", "xenia+formant=0.88",
+                                   "kseniya+formant=0.88")
     silero_model: str = "v5_5_ru"    # silero-only release id via torch.hub. v4_ru (~38 MB) was
                                      # the 2026-07-15 bake-off entrant BY MISTAKE — v5_5_ru
                                      # (~139 MB) was already current and is audibly better; v4 is

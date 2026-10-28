@@ -24,8 +24,11 @@ class TtsEngine(Protocol):
 
     def synthesize(self, text: str, out_path: Path, *, seed: int | None = None,
                    target_sec: float | None = None, max_sec: float | None = None,
-                   gaps: list[float] | None = None) -> float | None:
+                   gaps: list[float] | None = None, voice: str | None = None) -> float | None:
         """Render `text` to a mono wav at `out_path` (self.sample_rate).
+
+        `voice` is the palette voice of this unit's speaker; None means the engine's configured
+        voice.
 
         `seed=None` means the engine's configured base seed; deterministic engines ignore it.
         `target_sec`/`max_sec` (engines with supports_target only): the source span to fill

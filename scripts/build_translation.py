@@ -4,7 +4,8 @@ README "Running" route B: the sub-agent translates and writes only the fragile, 
 part -- {id, text_ru} per sentence. THIS script owns the deterministic, error-prone rest so
 the translate-seam contract never rides on an LLM's discipline:
 
-  - src_en / start / end   copied from sentences.json (join on id)
+  - src_en / start / end   copied from sentences.json (join on id), and `speaker` when the
+                           video was diarized into more than one speaker
   - text_ru / text_tts     the draft's ONE string carries both forms inline as
                            [[written|spoken]]; written_form() resolves the subtitle side and
                            spoken_form() the synthesis side, which then goes through
@@ -292,6 +293,8 @@ def build(work: WorkDir, draft_path: Path, cfg: Config
             "text_ru": text_ru, "text_tts": normalize_for_tts(spoken),
             "status": "ok" if reason is None else "failed", "attempts": 1,
         }
+        if s.get("speaker") is not None:                 # diarized: whose voice reads it
+            rec["speaker"] = s["speaker"]
         # The audit must see the string that BECOMES the dub, not the one the subtitle shows.
         # audit_summary reads a record's text_ru, and since 2026-08-11 that field is the WRITTEN
         # side, where Latin is legitimate and never reaches the pronounce chain at all. Auditing

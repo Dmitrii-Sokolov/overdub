@@ -1,4 +1,8 @@
-"""Silero RU TTS engine — native Russian, fixed voice, CPU, deterministic.
+"""Silero RU TTS engine — native Russian, CPU, deterministic.
+
+A voice is a stock speaker or a variant "<speaker>+formant=F": the stock render with its formants
+moved by F through ffmpeg's rubberband, pitch and duration kept — so a variant shares its base
+voice's speaking rate.
 
 Loaded via torch.hub (snakers4/silero-models, cached in ~/.cache/torch/hub). Model release
 is a config knob (`silero_model`): "v4_ru" (~38 MB, the long-standing default) or "v5_5_ru"
@@ -17,11 +21,15 @@ through TorchCodec, so we sidestep that shifting backend entirely.
 
 from __future__ import annotations
 
+import os
 import re
+import subprocess
 from pathlib import Path
 
 import soundfile as sf
 import torch
+
+from . import parse_voice
 
 # Silero rounds break times itself; anything under this reads as no pause at all, and anything
 # over it is a hole the ear hears as a dropout rather than a beat. The floor also keeps the
@@ -61,6 +69,30 @@ def build_ssml(text: str, gaps: list[float] | None) -> str | None:
     return "<speak>" + " ".join(out) + "</speak>"
 
 
+def formant_filter(factor: float) -> str:
+    """ffmpeg -af chain moving the formants by `factor` at the same pitch and duration: the first
+    pass shifts pitch AND formants, the second puts the pitch back while preserving formants."""
+    return (f"rubberband=pitch={factor}:formant=shifted:pitchq=quality,"
+            f"rubberband=pitch={1 / factor:.6f}:formant=preserved:pitchq=quality")
+
+
+def shift_formants(path: Path, factor: float, sample_rate: int) -> None:
+    """Rewrite the wav at `path` in place with its formants moved by `factor`."""
+    from ..stages.download import _tool_exe
+
+    tmp = path.with_name(path.name + ".fx")
+    try:
+        subprocess.run([_tool_exe("ffmpeg"), "-v", "error", "-y", "-i", str(path),
+                        "-af", formant_filter(factor), "-ar", str(sample_rate), "-ac", "1",
+                        "-c:a", "pcm_s16le", "-f", "wav", str(tmp)],
+                       check=True, capture_output=True)
+        os.replace(tmp, path)
+    except subprocess.CalledProcessError as e:
+        tmp.unlink(missing_ok=True)
+        raise RuntimeError(f"formant shift x{factor} failed: "
+                           f"{e.stderr.decode(errors='replace').strip()}") from e
+
+
 class SileroEngine:
     LANGUAGE = "ru"
     MODEL_ID = "v4_ru"               # default release; overridden per-run by cfg.silero_model
@@ -85,14 +117,15 @@ class SileroEngine:
 
     def synthesize(self, text: str, out_path: Path, *, seed: int | None = None,
                    target_sec: float | None = None, max_sec: float | None = None,
-                   gaps: list[float] | None = None) -> None:
+                   gaps: list[float] | None = None, voice: str | None = None) -> None:
+        speaker, formant = parse_voice(voice or self.voice)
         kw = {"text": text}
         ssml = build_ssml(text, gaps) if self.breaks else None
         if ssml is not None:
             kw = {"ssml_text": ssml}
         audio = self._model.apply_tts(
             **kw,
-            speaker=self.voice,
+            speaker=speaker,
             sample_rate=self.sample_rate,
             put_accent=True,
             put_yo=True,
@@ -100,6 +133,8 @@ class SileroEngine:
         # explicit format="WAV": callers pass atomic temp paths (…/00007.wav.tmp) whose
         # extension soundfile cannot infer a container from, so never rely on the suffix.
         sf.write(str(out_path), audio.cpu().numpy(), self.sample_rate, format="WAV", subtype="PCM_16")
+        if formant != 1.0:
+            shift_formants(out_path, formant, self.sample_rate)
 
     def begin_video(self) -> None:
         pass                     # no per-video failure state to reset (no worker, no seed)

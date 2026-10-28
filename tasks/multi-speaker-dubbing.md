@@ -3,8 +3,8 @@
 ## Goal + AC
 
 A video with several speakers is dubbed with a distinct Russian voice per speaker, and turns of
-different speakers are never read as one sentence. A single-speaker video comes out exactly as it
-does today. This lifts the founding "single-speaker, no diarization" constraint (DECISIONS,
+different speakers are never read as one sentence. A single-speaker video is voiced by its pool's
+first palette voice: a male narrator comes out exactly as today, a female one in a female voice. This lifts the founding "single-speaker, no diarization" constraint (DECISIONS,
 founding entry) — the lift itself is a `/triage` decision, not this task's.
 
 Why: there is no `speaker` field anywhere in the pipeline. Sentence and unit merges ignore who is
@@ -16,9 +16,13 @@ the grammatical gender of every first-person past verb.
 
 ### Acceptance criteria
 
-- **Single-speaker identity:** on the golden fixture videos plus 5 corpus videos,
-  `sentences.json`, `translation.json` and the dub are byte-identical with diarization on and off.
-  The diarization wall on those runs is reported (expected negligible, user 2026-10-27).
+- **Single-speaker identity (male pool):** on the golden fixture videos plus 5 corpus videos
+  with a male-pool narrator, `sentences.json`, `translation.json` and the dub are byte-identical
+  with diarization on and off. The diarization wall on those runs is reported (expected
+  negligible, user 2026-10-27).
+- **Single female narrator:** a single-speaker video whose speaker lands in the female pool is
+  voiced by the first female palette voice; with diarization off (or no `speakers_info`) every
+  video keeps `tts_voice`.
 - **False-split rate measured:** over the single-speaker corpus (filtered at selection, so it is a
   pure negative set), the share of videos where diarization finds >1 speaker before and after the
   Q8 merge rule. Budget: ≤ 1 h of GPU, `host_guard` first.
@@ -83,10 +87,13 @@ the grammatical gender of every first-person past verb.
   the threshold on the interview channels (two-person episodes must come out as 2).
 - [x] **Speaker change = hard boundary** in resegment and `_merge_short` (`_split_overlong` runs
   inside a same-speaker range by construction).
-- [ ] **Same boundary in `build_units`** — rides with per-unit voice (needs `speaker` in
-  `translation.json` first).
-- [ ] **Per-unit voice:** `voice=` per `synthesize()` call; palette variants as config; cache keys
-  and manifest per unit.
+- [x] **Same boundary in `build_units`** — `speaker` in `translation.json` is copied from
+  `sentences.json` by `scripts/build_translation.py`.
+- [x] **Per-unit voice:** `voice=` per `synthesize()` call (`overdub/tts/silero.py`
+  `shift_formants`); palettes `voice_palette_male` / `voice_palette_female` in config, timbre
+  table `VOICE_TIMBRE` in `overdub/tts/__init__.py`; assignment `overdub/voices.py`
+  (`assign_voices`, Q22 inserts); `speaker` + `voice` per manifest unit, reuse and `done()`
+  compare the voice per unit.
 - [ ] **Translator contract** (route B contract, both workflow prompts, the `.agents/` mirror,
   `build_translation.py` copying the field).
 - [ ] **Subtitles + reporting.**
@@ -130,6 +137,16 @@ Test videos (user, 2026-10-27): 2 speakers — `i-o5YbNfmh0`, `N6FkmdL0Lg0`, `9G
   participant but is another person — it takes a palette voice after the main participants, and
   when its gender's palette is exhausted it speaks in the voice of the main participant closest
   in timbre.
+- **A single speaker goes through the same assignment** (user, 2026-10-27, Q23): a female-pool
+  narrator gets the first female palette voice; the old "single-speaker byte-identical" AC holds
+  for the male pool only, whose first voice is `tts_voice`. `tts_voice` stays the voice of a
+  workdir with no `speakers_info` and of a unit whose sentence has no `speaker`.
+- **Timbre standardization** (user, Q24): each feature divided by its spread over that pool's
+  palette voices — a constant, so a speaker's voice depends on their own timbre only.
+- **Unmeasurable speaker** (user, Q25; no voiced frames, `pool: None`): male pool, takes the next
+  free voice after the measured speakers, no timbre cost.
+- **Where synthesize reads the speaker** (user, Q26): `translation.json`, into which
+  `build_translation.py` copies it from `sentences.json` by id; the translator never writes it.
 - **Q8 replaced:** no word-share merge threshold; speakers are linked by identity (TitaNet
   embeddings) across fixed windows, which also bounds VRAM on long audio (user agreed).
 - False split: a "speaker" under X% of speech time or N turns merges into the nearest by
@@ -312,8 +329,25 @@ assign → smooth → renumber and `MAIN_SHARE` 3%; `work-exp/diar-probe/calibra
   a 4th from 2:02 — table corrected to 4. The 2:02-2:09 runs sit in the same group as Andrew's, so
   rescored the set is **88 exact, 0 over, 1 under**: two guests sharing one voice, the cheap error
   direction.
+- **Re-run on the five test videos** (`--only diarize --force`): speaker counts still 2/2/2/3/4;
+  `z7cNbsr3b5s` and `hm8NzEd5io0` were re-cut (untranslated, nothing lost).
 - **VRAM is bounded: peak 1.6 GB** over the set (whole-file: 20.2 GB). **Cost 14.1 s per audio
   hour** (whole-file 12.4 s; the difference is the TitaNet pass and per-window model state).
+
+**Per-unit voice, 2026-10-27:**
+
+- **A real Silero render keeps duration sample-exact through the formant shift** (one sentence,
+  v5_5_ru, 48 kHz): eugene and eugene+formant=1.12 both 250200 samples, F0 95.6 / 95.9 Hz, ΔF
+  931 → 995 Hz; xenia and xenia+formant=0.88 both 291600 samples, ΔF 1055 → 1175 Hz — the 0.88
+  variant reads ABOVE its base again, as in the spike.
+- **Assignment on the five test videos** (F0/ΔF Hz, word share → voice):
+  `i-o5YbNfmh0` 108/951 97% → eugene, 130/979 insert → aidar;
+  `N6FkmdL0Lg0` 103/989 84% → eugene, 120/1000 16% → aidar;
+  `9GtcbnmldcY` 176/923 81% → aidar (the high male voice), 108/1037 19% → eugene;
+  `z7cNbsr3b5s` 191/1170 16% → xenia, 105/943 57% → aidar, 101/944 27% → eugene — the two men
+  are 4 Hz apart, so which of them gets eugene is decided by noise;
+  `hm8NzEd5io0` 110/967 → eugene, 136/936 → aidar, 142/1043 → eugene+formant=1.12,
+  124/944 → aidar+formant=1.12.
 
 ## Open questions
 

@@ -4,8 +4,14 @@ A render unit is one or more adjacent sentences from translation.json grouped fo
 prosody (dead-air design, DECISIONS 2026-07-16): consecutive sentences join while the
 inter-sentence gap is ≤ cfg.group_gap_max, the unit's source span stays ≤ _GROUP_MAX_SPAN
 and its joined text_tts ≤ _GROUP_MAX_CHARS. Empty-text sentences form singleton units and
-break chains. The unit wav lives at seg_wav(first_id); translation ids stay the reporting
-grain everywhere downstream (verify/assemble fan unit facts out per sentence id).
+break chains, and so does a change of `speaker`. The unit wav lives at seg_wav(first_id);
+translation ids stay the reporting grain everywhere downstream (verify/assemble fan unit facts
+out per sentence id).
+
+Voice: every unit is rendered in its speaker's palette voice (voice_for → overdub.voices), and
+the manifest records `speaker` and `voice` per unit. The voice is not part of synth_key — it
+follows diar.json and the palettes — so the reuse guard and done() compare it per unit, and a
+changed voice re-renders exactly the units it changed.
 
 Slot-fill: an engine advertising supports_target would receive target_sec = the unit's SOURCE
 SPAN and max_sec = its slot [start, next_unit.start) and pick its own native speed. No shipped
@@ -64,6 +70,7 @@ def build_units(segs: list[dict], gap_max: float, span_max: float = _GROUP_MAX_S
         text = (s.get("text_tts") or "").strip()
         u = units[-1] if units else None
         if (gap_max > 0 and text and u is not None and u["text"]
+                and s.get("speaker") == u["speaker"]           # one voice per unit
                 and s["start"] - u["end"] <= gap_max
                 and s["end"] - u["start"] <= span_max
                 and len(u["text"]) + 1 + len(text) <= chars_max):
@@ -73,8 +80,29 @@ def build_units(segs: list[dict], gap_max: float, span_max: float = _GROUP_MAX_S
             u["text"] = f"{u['text']} {text}"
         else:
             units.append({"ids": [s["id"]], "start": s["start"], "end": s["end"], "text": text,
-                          "gaps": []})
+                          "gaps": [], "speaker": s.get("speaker")})
     return units
+
+
+def voice_for(ctx: Context):
+    """speaker → palette voice for this video (overdub.voices), from diar.json's speakers_info.
+
+    A sentence without a speaker is the narrator of a single-speaker video when diar.json holds
+    exactly one speaker; with diarization off, no speakers_info, or a sentence without a speaker
+    in a multi-speaker video, the voice is tts_voice — what every unit was before diarization."""
+    from ..tts import VOICE_TIMBRE, palettes
+    from ..voices import assign_voices
+
+    cfg = ctx.cfg
+    info: list[dict] = []
+    if cfg.diarize and ctx.work.diar.exists():
+        info = json.loads(ctx.work.diar.read_text(encoding="utf-8")).get("speakers_info") or []
+    voices = assign_voices(info, palettes(cfg), VOICE_TIMBRE) if info else {}
+    narrator = info[0]["speaker"] if len(info) == 1 else None
+
+    def of(speaker: int | None) -> str:
+        return voices.get(narrator if speaker is None else speaker, cfg.tts_voice)
+    return of
 
 
 def unit_sim_threshold(cfg, speed: float | None) -> float:
@@ -147,6 +175,14 @@ class SynthesizeStage:
                 print("       [info] synthesize: translation changed since manifest — "
                       "re-synthesizing stale units", file=sys.stderr)
                 return False
+            # a unit's voice follows diar.json and the palettes, neither of which is in synth_key
+            voice = voice_for(ctx)
+            spk = {s["id"]: s.get("speaker") for s in segs}
+            if any((u.get("voice") or doc.get("voice")) != voice(spk[u["ids"][0]])
+                   for u in units if u.get("text_tts")):
+                print("       [info] synthesize: a unit's voice changed since manifest — "
+                      "re-synthesizing those units", file=sys.stderr)
+                return False
         except Exception:
             pass                                           # unreadable translation.json →
                                                            # keep the legacy gate (never crash)
@@ -186,6 +222,9 @@ class SynthesizeStage:
         units = build_units(segs, cfg.group_gap_max, cfg.group_span_max, cfg.group_chars_max)
         if sorted(i for u in units for i in u["ids"]) != list(range(len(segs))):
             raise RuntimeError("units do not cover translation ids (synthesize never-drop)")
+        voice = voice_for(ctx)
+        for u in units:
+            u["voice"] = voice(u["speaker"])
 
         # prior manifest → reusable units, gated by synth_key
         prior: dict[tuple, dict] = {}
@@ -194,7 +233,9 @@ class SynthesizeStage:
                 doc = json.loads(ctx.work.seg_manifest.read_text(encoding="utf-8"))
                 prior_key = doc.get("synth_key") or _legacy_key(doc)
                 if prior_key == key:
-                    prior = {tuple(u["ids"]): u for u in units_of(doc)}
+                    # a unit from before per-unit voices was rendered in the manifest's one voice
+                    prior = {tuple(u["ids"]): {**u, "voice": u.get("voice") or doc.get("voice")}
+                             for u in units_of(doc)}
                 else:
                     print(f"       [info] synth key changed ({prior_key} → {key}) — full resynthesis")
             except Exception:
@@ -209,7 +250,8 @@ class SynthesizeStage:
             u = units[i]
             p = prior.get(tuple(u["ids"]))
             if (p is None or not ctx.work.seg_wav(u["ids"][0]).exists()
-                    or p.get("text_tts") != u["text"] or p.get("flag") == "synth_error"):
+                    or p.get("text_tts") != u["text"] or p.get("flag") == "synth_error"
+                    or (u["text"] and p.get("voice") != u["voice"])):
                 return False
             if supports_target and u["text"]:
                 slot = slot_of(i)
@@ -289,6 +331,7 @@ class SynthesizeStage:
             else:
                 fresh_since_flush += 1
                 kw = {"target_sec": target, "max_sec": slot} if supports_target else {}
+                kw["voice"] = u["voice"]
                 if getattr(engine, "supports_breaks", False):
                     kw["gaps"] = u.get("gaps") or []       # restore the pauses grouping ate
                 try:
@@ -366,7 +409,8 @@ class SynthesizeStage:
                 "sample_rate": srate, "start": u["start"], "end": u["end"],
                 "target_sec": (round(target, 3) if u["text"] else None),
                 "max_sec": (round(slot, 3) if slot is not None else None),
-                "text_tts": u["text"], "flag": flag, "speed": speed_used,
+                "text_tts": u["text"], "speaker": u["speaker"], "voice": u["voice"],
+                "flag": flag, "speed": speed_used,
                 "seed": seed_used, "attempts": attempts, "synth_sim": synth_sim,
             })
             if fresh_since_flush >= _FLUSH_EVERY:
@@ -400,7 +444,7 @@ class SynthesizeStage:
         # resynthesis (e.g. --force) still changes it, so the downstream self-heal gates
         # (verify/assemble) can never skip over refreshed wavs
         uk = hashlib.sha1(json.dumps(
-            [(e["ids"], e.get("text_tts"), e.get("samples")) for e in out],
+            [(e["ids"], e.get("text_tts"), e.get("samples"), e.get("voice")) for e in out],
             ensure_ascii=False).encode("utf-8")).hexdigest()[:12]
         doc = {
             "sample_rate": sr, "engine": cfg.tts_engine,

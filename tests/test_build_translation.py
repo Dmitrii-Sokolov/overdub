@@ -78,6 +78,17 @@ def test_src_en_and_timings_copied_from_sentences() -> None:
     assert out[0]["start"] == 3.25 and out[0]["end"] == 5.5
 
 
+def test_speaker_copied_from_sentences_and_never_invented() -> None:
+    # the speaker picks the dub voice: it comes from diarization, never from the translator
+    sents = [_sent(0, "Hi."), _sent(1, "Hello.")]
+    sents[0]["speaker"], sents[1]["speaker"] = 0, 1
+    out, _, _ = _build(sents, [{"id": 0, "text_ru": "Привет.", "speaker": 7},
+                               {"id": 1, "text_ru": "Здравствуй."}])
+    assert [o["speaker"] for o in out] == [0, 1]
+    out, _, _ = _build([_sent(0, "Hi.")], [{"id": 0, "text_ru": "Привет."}])
+    assert "speaker" not in out[0]                     # undiarized: the record is as before
+
+
 def test_text_tts_normalized_not_llm_spelled() -> None:
     # text_tts must be the Python normalizer's output, digits/Latin expanded — never text_ru verbatim
     out, _, _ = _build(

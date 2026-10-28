@@ -42,6 +42,44 @@ _VOICE_RATE = {                     # voice: (ru chars per second, fixed seconds
 }
 
 
+# Timbre of every Silero voice the palettes may name: (median F0 Hz, formant spacing ΔF Hz), measured
+# by overdub.timbre on 30 v5_5_ru sentences per voice (2026-10-27). Measured, not derived from the
+# variant's name: rubberband's formant shift lands at about half its nominal factor, and for aidar
+# and xenia the 0.88 variant even reads ABOVE its base.
+VOICE_TIMBRE = {
+    "eugene": (95.2, 953.2), "aidar": (128.7, 942.8), "xenia": (202.5, 1085.0),
+    "kseniya": (254.0, 1252.2), "baya": (251.3, 1312.0),
+    "eugene+formant=0.88": (96.6, 943.5), "eugene+formant=1.12": (96.2, 1009.3),
+    "aidar+formant=0.88": (129.4, 974.2), "aidar+formant=1.12": (129.0, 972.0),
+    "xenia+formant=0.88": (203.4, 1119.2), "xenia+formant=1.12": (202.5, 1094.1),
+    "kseniya+formant=0.88": (255.3, 1212.7), "kseniya+formant=1.12": (254.0, 1317.4),
+}
+
+
+def parse_voice(name: str) -> tuple[str, float]:
+    """("eugene+formant=1.12") → ("eugene", 1.12); a stock voice has formant factor 1.0."""
+    base, sep, rest = name.partition("+")
+    if not sep:
+        return name, 1.0
+    key, eq, value = rest.partition("=")
+    if key != "formant" or not eq:
+        raise ValueError(f"unknown voice variant {name!r} (expected <voice>+formant=<factor>)")
+    return base, float(value)
+
+
+def palettes(cfg: Config) -> dict[str, list[str]]:
+    """{pool: ordered voices}, every name checked against VOICE_TIMBRE — an unmeasured voice
+    cannot be matched to anyone, so it fails here instead of being skipped."""
+    out = {"male": list(cfg.voice_palette_male), "female": list(cfg.voice_palette_female)}
+    for pool, names in out.items():
+        if not names:
+            raise ValueError(f"voice_palette_{pool} is empty")
+        unknown = [n for n in names if n not in VOICE_TIMBRE]
+        if unknown:
+            raise ValueError(f"voice_palette_{pool}: no measured timbre for {unknown}")
+    return out
+
+
 def voice_rate(cfg: Config) -> tuple[float, float] | None:
     """(chars_per_sec, fixed_sec) for the configured voice, or None when unknown.
 
