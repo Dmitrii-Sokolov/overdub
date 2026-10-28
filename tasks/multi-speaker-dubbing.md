@@ -191,9 +191,9 @@ Test videos (user, 2026-10-27): 2 speakers — `i-o5YbNfmh0`, `N6FkmdL0Lg0`, `9G
 
 ## State
 
-Every plan item built; boundary accuracy measured; route B ran on the five test videos (MKVs in
-`out/`, awaiting the ear verdict). Open against the AC: the single-speaker identity run (golden
-fixture + 5 male-pool corpus videos, diarize on vs off). Candidate follow-up from route B: short
+Every plan item built and every AC measured: route B on the five test videos passed the ear
+(user, 2026-10-28); the identity run gave 9 of 9 male single-speaker videos byte-identical
+(Findings). Open: the closing triage (INBOX 2026-10-27). Candidate follow-up from route B: short
 backchannel turns compressed 2-4.7× (Findings).
 Voice-palette spike closed (ear pass done: all 12 palette voices accepted). Artifacts and scripts in
 `work-exp/voice-palette/` (archive): `synth_palette.py` → `diff_check.py` → `make_listen.py` →
@@ -391,6 +391,25 @@ markers 4.5 s apart):
 
 **Turn dashes, 2026-10-28:** on `z7cNbsr3b5s` (394 sentences) the English degraded track gets
 65 dashes for 65 speaker changes.
+
+**Single-speaker identity run, 2026-10-28** (`work-exp/identity-2026-10-28/`: two arms over
+copies of one decode — same `source.wav`, `words.json`, `sentences.json`, `translation.json` —
+`--only diarize synthesize assemble`, `dub_mix = "replace"` since the fixture has no bed; 6
+fixture + 5 GOG Classics Vault videos, 85 min of audio):
+
+- **Male pool: 9 of 9 byte-identical** in `sentences.json`, `translation.json`, `dub_ru.wav`, both
+  srt, the manifest and every unit wav (4 fixture + 5 GOG, F0 125-155 Hz). One pair first
+  differed in every unit wav at ≤ 5.5e-4: Silero run-to-run rounding, not diarization — a fresh
+  render of each arm matched the other byte for byte (INBOX 2026-10-28).
+- **The fixture is not a male single-speaker set.** `2YCaBqP8muw` is one woman (F0 208-225 Hz
+  in every minute, ΔF ~1140) and got the first female voice with transcript and translation
+  unchanged — the single-female-narrator AC on real media. `ytEN_iAk09c` came out as 2 male
+  speakers (F0 128 / 136 Hz, ΔF equal, TitaNet did not merge them), one clean handover at 219.9 s
+  on a paragraph break and no return — a real second presenter (ear, user 2026-10-28), so the
+  diarizer was right and the fixture was wrong to call the video single-speaker. Accordingly the cut and translation were retired, as designed.
+- **Diarize cost:** 2.4-4.7 s per video (the stage's own work, worker loaded), plus ~60 s once per
+  sweep for the worker's start (the first video's stage read 63.8 s; the models themselves load in
+  4.3 s, so the rest is the NeMo import). GPU peak 896 MB on `ytEN_iAk09c`.
 
 ## Open questions
 
