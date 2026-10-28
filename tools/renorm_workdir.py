@@ -32,7 +32,10 @@ from overdub.normalize import normalize_for_tts  # noqa: E402
 
 _BIG = ["source.mkv", "source.wav", "source_bed.wav"]
 # both yt-dlp sidecar name variants (mkv merge path vs single-format /b fallback)
-_SMALL = ["source.info.json", "source.mkv.info.json", "words.json", "sentences.json"]
+# diar.json rides along: without it the copy re-diarizes on the GPU before synthesize can pick a
+# voice per speaker
+_SMALL = ["source.info.json", "source.mkv.info.json", "words.json", "sentences.json",
+          "diar.json"]
 
 
 def _link(src: Path, dst: Path) -> None:

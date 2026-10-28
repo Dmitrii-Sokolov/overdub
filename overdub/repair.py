@@ -83,7 +83,8 @@ class WindowResult:
     window: Window
     accepted: bool
     reason: str              # "identical" when accepted; else "readings differ" |
-                             # "empty reading" | "empty span" | "asr error: <Type>: <msg>"
+                             # "empty reading" | "empty span" | "spans a speaker change" |
+                             # "asr error: <Type>: <msg>"
     old_texts: list[str]     # every text the window covers, in id order
     new_texts: list[str] = field(default_factory=list)   # accepted reading's texts ([] on reject)
     alt_texts: list[str] = field(default_factory=list)   # on a "readings differ" reject: the two
@@ -415,6 +416,14 @@ def repair_window(sentences: list[dict], w: Window, *, window_asr) -> WindowResu
     old_texts = [s["text"] for s in sentences[w.lo:w.hi + 1]]
     if w.t1 - w.t0 <= 0:
         return WindowResult(window=w, accepted=False, reason="empty span", old_texts=old_texts)
+    # A speaker change is a hard sentence boundary, and the window's reading is resegmented
+    # without one — so a window across a turn could only give back cross-speaker sentences.
+    # Checked before the ASR: rejecting it costs no decode.
+    speakers = {s.get("speaker") for s in sentences[w.lo:w.hi + 1]}
+    if len(speakers) > 1:
+        return WindowResult(window=w, accepted=False, reason="spans a speaker change",
+                            old_texts=old_texts)
+    speaker = speakers.pop()
     try:
         a = window_asr(w.t0, w.t1, False)
         b = window_asr(w.t0, w.t1, True)
@@ -432,6 +441,9 @@ def repair_window(sentences: list[dict], w: Window, *, window_asr) -> WindowResu
     new = clamp_into(resegment(offset_words(a, w.t0)), w.t0, w.t1)
     if not new:
         return WindowResult(window=w, accepted=False, reason="empty reading", old_texts=old_texts)
+    if speaker is not None:
+        for s in new:
+            s["speaker"] = speaker
     new_texts = [s["text"] for s in new]
     return WindowResult(window=w, accepted=True, reason="identical", old_texts=old_texts,
                         new_texts=new_texts, new_sents=new, unchanged=new_texts == old_texts,

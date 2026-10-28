@@ -103,8 +103,11 @@ the grammatical gender of every first-person past verb.
   with "— " (`text_ru`) / "- " (English) on every srt path, degraded ones included — display
   only, the artifacts keep their text; `run.json` → `diarize: {speakers, merges}` (None when not
   diarized), `speaker` on the `flagged_units` and `summarize_offenders` rows.
-- [ ] **Nothing drops the field:** `--repair-asr` (its sentences loader keeps only
-  `{id,text,start,end}`) and `tools/renorm_workdir.py`.
+- [x] **Nothing drops the field:** `repair.repair_window` gives the window's new sentences the
+  speaker of the run they replace and rejects a window across a speaker change before decoding
+  ("spans a speaker change": its reading is resegmented with no turn boundary);
+  `tools/renorm_workdir.py` copies `diar.json`, translation records were already copied whole.
+  The degraded assemble path reads records that carry `speaker` (`turn_marked`).
 
 Test videos (user, 2026-10-27): 2 speakers — `i-o5YbNfmh0`, `N6FkmdL0Lg0`, `9GtcbnmldcY`;
 3 speakers — `z7cNbsr3b5s`; 4 speakers — `hm8NzEd5io0`.
@@ -188,8 +191,9 @@ Test videos (user, 2026-10-27): 2 speakers — `i-o5YbNfmh0`, `N6FkmdL0Lg0`, `9G
 
 ## State
 
-Diarization, timbre, windowed linking, per-unit voice, the translator contract, turn dashes and
-reporting built; next is preserving `speaker` through `--repair-asr` and renorm. The
+Every plan item built. Open against the AC: the single-speaker identity run (golden fixture + 5
+male-pool corpus videos, diarize on vs off), boundary accuracy on the fixture video as a number,
+and a route-B run on the five test videos (rule 9 and the full dub by ear). The
 five test videos sit in `work/` transcribed and diarized with `speakers_info`, untranslated — a
 route-B run on them is the first check of rule 9 and of the full dub by ear.
 Voice-palette spike closed (ear pass done: all 12 palette voices accepted). Artifacts and scripts in

@@ -336,6 +336,31 @@ def test_replacement_text_is_the_windows_own_asr_output() -> None:
     assert [s["text"] for s in out if s["text"] in expected] == expected
 
 
+def _spoken_by(sents: list[dict], speakers: list[int]) -> list[dict]:
+    return [{**s, "speaker": k} for s, k in zip(sents, speakers)]
+
+
+def test_a_repaired_sentence_keeps_its_speaker() -> None:
+    sents = _spoken_by(_even(4), [0, 1, 1, 0])
+    w = repair.Window(lo=1, hi=2, seeds=[1], reasons=["explicit"], t0=4.0, t1=12.0)
+    r = repair.repair_window(sents, w, window_asr=_fake_asr("One line. And another one."))
+    assert r.accepted and r.new_sents
+    assert all(s["speaker"] == 1 for s in r.new_sents), r.new_sents
+
+
+def test_a_window_across_a_speaker_change_is_rejected_before_any_decode() -> None:
+    sents = _spoken_by(_even(4), [0, 0, 1, 1])
+    w = repair.Window(lo=1, hi=2, seeds=[1], reasons=["explicit"], t0=4.0, t1=12.0)
+    r = repair.repair_window(sents, w, window_asr=_fake_asr(AssertionError("decoded")))
+    assert not r.accepted and r.reason == "spans a speaker change", r.reason
+
+
+def test_a_single_speaker_repair_adds_no_speaker_field() -> None:
+    w = repair.Window(lo=1, hi=2, seeds=[1], reasons=["explicit"], t0=4.0, t1=12.0)
+    r = repair.repair_window(_even(4), w, window_asr=_fake_asr("One line."))
+    assert r.accepted and all("speaker" not in s for s in r.new_sents), r.new_sents
+
+
 def test_splice_renumbers_contiguously_and_preserves_neighbours() -> None:
     sents = _even(6, dur=4.0)
     new = [{"id": 0, "text": "merged", "start": 12.0, "end": 20.0}]
