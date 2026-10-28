@@ -199,6 +199,18 @@ def test_two_speakers_recut_the_transcript_and_retire_the_translation() -> None:
         assert json.loads(ctx.work.words.read_text(encoding="utf-8")) == WORDS   # never written
 
 
+def test_speakers_info_sits_above_the_segments() -> None:
+    # the route-B translator reads only the head of diar.json to learn each speaker's gender
+    with tempfile.TemporaryDirectory() as d:
+        ctx = _ctx(Path(d), TWO)
+        DiarizeStage().run(ctx)
+        lines = ctx.work.diar.read_text(encoding="utf-8").splitlines()
+        head = next(i for i, ln in enumerate(lines) if ln.startswith(' "segments"'))
+        assert head < 200
+        assert "speakers_info" in "\n".join(lines[:head])
+        assert all("gender" in s for s in json.loads(ctx.work.diar.read_text(encoding="utf-8"))["speakers_info"])
+
+
 def test_a_speaker_owning_only_an_island_is_not_counted() -> None:
     # the z7cNbsr3b5s false split: a fourth "speaker" with one word, inside another's sentence
     segs = [_seg(0.0, 3.6, "a"), _seg(1.4, 1.6, "ghost"), _seg(3.9, 6.5, "b")]

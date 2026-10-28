@@ -28,6 +28,24 @@ A JSON list, `id` contiguous from 0. The sub-agent reads this.
 
 The unit of translation is the sentence (`text`). Translate in `id` order.
 
+A video with more than one speaker carries `"speaker": <int>` on every record; a single-speaker
+video carries none. A sentence never spans two speakers — a change of `speaker` is a turn.
+
+## Input — `work/<id>/diar.json`, `speakers_info` only
+
+Who the speakers are. Read the first 200 lines of the file: `speakers_info` is its second key and
+sits above the long `segments` list, which you do not need.
+
+```json
+{ "speakers": 2,
+  "speakers_info": [ {"speaker": 0, "gender": "feminine", ...},
+                     {"speaker": 1, "gender": "masculine", ...} ], ... }
+```
+
+`gender` is `feminine`, `masculine` or `unknown`, measured from the voice. A sentence without
+`speaker` belongs to the only entry. No `diar.json` (diarization off, or an old workdir): the
+gender is `unknown` for everyone.
+
 ## Draft schema — `work/<id>/translation.draft.json` (the sub-agent writes THIS, and only this)
 
 A JSON list, one entry per sentence, covering **every** id in `sentences.json`:
@@ -49,8 +67,8 @@ are filled deterministically by the helper. One `text_ru` = one natural spoken-R
 > These mirror the `SYSTEM` prompt the pipeline keeps, so every translation lands the same shape.
 > **Source of truth is `SYSTEM` in `overdub/stages/translate.py`** — if that changes, sync here.
 
-1. Translate each English sentence into **natural, spoken Russian** for a single-narrator
-   voice-over dub.
+1. Translate each English sentence into **natural, spoken Russian** for a voice-over dub in
+   which every speaker has their own voice.
 2. This is **dubbing**: the Russian must sound natural said aloud and stay **close in length** to
    the English so it fits the same on-screen time slot. Do not pad, do not over-compress.
 3. Keep terminology, names and pronouns **consistent** across sentences (that is why you translate
@@ -86,6 +104,12 @@ are filled deterministically by the helper. One `text_ru` = one natural spoken-R
    enumerated clauses: an item that repeats another item's head, or that contradicts the rolling
    context, is `enum_repeat` / `context_contradiction` even when each sentence reads fine alone.
    Every record gets a `src` — `"ok"` when the English is sound.
+9. **The speaker's gender decides the grammar of what they say about themselves** — «я сделал» /
+   «я сделала», «рад» / «рада» — and of what another speaker says to them («ты пришла»). With
+   `unknown`, prefer wording that marks no gender («у меня получилось», present tense); where
+   Russian forces a form, take it from the text (a name, «as a mother»), and failing that use the
+   masculine. The text also wins over a measured gender it contradicts. Between speakers keep one
+   form of address («ты» or «вы») per pair for the whole video.
 
 ### Why rules 5-6 ask for BOTH forms (2026-08-11)
 
@@ -152,6 +176,8 @@ text finds it. Mark id 19 `truncated` ("ends mid-thought; id 20 reads as its con
 ```
 
 - `src_en`, `start`, `end` — copied from `sentences.json` (join on id). The resume/congruence key.
+- `speaker` — copied from `sentences.json` when it is there; it picks the dub voice. A `speaker`
+  in the draft is ignored, so the draft schema does not have one.
 - `text_ru` — the draft line with every `[[written|spoken]]` span collapsed to its **written**
   side. This is what `ru.srt` shows, so it keeps `RTX 4080` and `Unity`.
 - `text_tts` — the same line collapsed to its **spoken** side, then

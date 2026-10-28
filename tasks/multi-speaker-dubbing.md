@@ -94,8 +94,11 @@ the grammatical gender of every first-person past verb.
   table `VOICE_TIMBRE` in `overdub/tts/__init__.py`; assignment `overdub/voices.py`
   (`assign_voices`, Q22 inserts); `speaker` + `voice` per manifest unit, reuse and `done()`
   compare the voice per unit.
-- [ ] **Translator contract** (route B contract, both workflow prompts, the `.agents/` mirror,
-  `build_translation.py` copying the field).
+- [x] **Translator contract:** `speaker` comes in on `sentences.json` records, `gender` from the
+  head of `diar.json` (`speakers_info` above `segments`, kept there by
+  `test_speakers_info_sits_above_the_segments`); contract rule 1 lost "single-narrator", rule 9
+  sets the grammar of a speaker's gender (`unknown` → wording that marks none, else the text,
+  else masculine); same in both workflow prompts, `SYSTEM` and the `.agents/` mirror.
 - [ ] **Subtitles + reporting.**
 
 Test videos (user, 2026-10-27): 2 speakers — `i-o5YbNfmh0`, `N6FkmdL0Lg0`, `9GtcbnmldcY`;
@@ -180,9 +183,10 @@ Test videos (user, 2026-10-27): 2 speakers — `i-o5YbNfmh0`, `N6FkmdL0Lg0`, `9G
 
 ## State
 
-Diarization stage, timbre and windowed linking built; next is per-unit voice. The five test videos
-sit in `work/` transcribed and diarized, untranslated; their diar.json predates `speakers_info`
-and windowing, so a `--only diarize --force` refreshes them.
+Diarization, timbre, windowed linking, per-unit voice and the translator contract built; next is
+subtitles + reporting, then preserving `speaker` through repair / renorm / degraded assemble. The
+five test videos sit in `work/` transcribed and diarized with `speakers_info`, untranslated — a
+route-B run on them is the first check of rule 9 and of the full dub by ear.
 Voice-palette spike closed (ear pass done: all 12 palette voices accepted). Artifacts and scripts in
 `work-exp/voice-palette/` (archive): `synth_palette.py` → `diff_check.py` → `make_listen.py` →
 `embed_palette.py`, outputs under `2026-10-27/`.

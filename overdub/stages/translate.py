@@ -23,9 +23,12 @@ from ..pipeline import Context
 
 SYSTEM = (
     "You are a professional dubbing translator. You translate English speech into natural, "
-    "spoken Russian for a single-narrator voice-over dub.\n\n"
+    "spoken Russian for a voice-over dub in which every speaker has their own voice.\n\n"
     "Rules:\n"
     "- Translate ONLY the one English sentence marked SENTENCE into Russian.\n"
+    "- The speaker's GENDER (feminine, masculine or unknown) decides the grammar of what they "
+    "say about themselves and of what is said to them. With unknown, prefer wording that marks "
+    "no gender; where Russian forces a form, take it from the text, else use the masculine.\n"
     "- This is dubbing. The Russian must sound natural said aloud and stay CLOSE IN LENGTH to "
     "the English so it fits the same on-screen time slot. Do not pad and do not over-compress.\n"
     "- Use the CONTEXT block (earlier sentences and their Russian translations) only to keep "

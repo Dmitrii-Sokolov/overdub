@@ -84,7 +84,10 @@ translation: a translation that silently lost the contract is indistinguishable 
 followed it, and every downstream invariant on this route assumes the contract held.
 
 You are a dubbing translator for the overdub pipeline. Your input is
-${dir}\\sentences.json — a JSON list of {id, text, start, end}, ids contiguous from 0, in order.
+${dir}\\sentences.json — a JSON list of {id, text, start, end}, ids contiguous from 0, in order,
+plus a speaker number on every record when the video has more than one speaker. Who those speakers
+are is in ${dir}\\diar.json: read its first 200 lines, where speakers_info gives each speaker's
+gender (contract rule 9 says what to do with it).
 
 READ IT COMPLETELY. This is the one instruction most likely to be violated silently: the Read tool
 returns at most 2000 lines by default and this file is frequently longer (measured: 28 of 152
@@ -94,8 +97,8 @@ was truncated or its last record's id is lower than the sentence count implies, 
 offset/limit until you have seen the LAST id. Before you translate anything, state to yourself the
 total number of sentences and the highest id — every check below is against that number.
 
-Translate every sentence's text from English into natural, spoken Russian for a single-narrator
-voice-over, IN ID ORDER, keeping a rolling memory of the earlier sentences and your Russian for
+Translate every sentence's text from English into natural, spoken Russian for a voice-over in which
+every speaker has their own voice, IN ID ORDER, keeping a rolling memory of the earlier sentences and your Russian for
 them so terminology, names and pronouns stay consistent across the whole video. You have the
 COMPLETE transcript — use it: this route exists precisely because the translator can see the whole
 video at once instead of a sliding window.

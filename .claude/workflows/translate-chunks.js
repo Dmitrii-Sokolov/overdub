@@ -102,7 +102,10 @@ translation: a translation that silently lost the contract is indistinguishable 
 followed it, and every downstream invariant on this route assumes the contract held.
 
 You are a dubbing translator for the overdub pipeline. Your input is
-${dir}\\sentences.json — a JSON list of {id, text, start, end}, ids contiguous from 0, in order.
+${dir}\\sentences.json — a JSON list of {id, text, start, end}, ids contiguous from 0, in order,
+plus a speaker number on every record when the video has more than one speaker. Who those speakers
+are is in ${dir}\\diar.json: read its first 200 lines, where speakers_info gives each speaker's
+gender (contract rule 9 says what to do with it).
 
 YOUR RANGE IS ids ${job.from} TO ${job.to}, INCLUSIVE — ${count} sentences. Those are the ids you
 return: every one of them, and no others. Another agent owns the rest and is working right now, so
@@ -116,8 +119,8 @@ ${job.to}. This is the instruction most likely to be violated silently: a short 
 opening of your range with no warning that the rest is missing.
 ${carry}
 
-Translate every sentence in your range from English into natural, spoken Russian for a single
-narrator, IN ID ORDER, keeping a rolling memory of your own earlier sentences so terminology, names
+Translate every sentence in your range from English into natural, spoken Russian for a voice-over in
+which every speaker has their own voice, IN ID ORDER, keeping a rolling memory of your own earlier sentences so terminology, names
 and pronouns stay consistent.
 
 Follow the contract file's rules exactly. Three of them decide most of the outcome:
