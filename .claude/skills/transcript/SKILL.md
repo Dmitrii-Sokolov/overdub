@@ -17,9 +17,11 @@ only re-renders the file. `--force` redoes the transcribe as well.
 
 ## What comes out
 
-`work/<id>/transcript.md`: title, duration, speaker count, then the uploader's description verbatim
+`work/<id>/transcript.md`: title, a line `Duration: H:MM:SS · N speakers`, a line `channel (N subscribers) · date ·
+views · likes` (each part only if the video has it), then the uploader's description verbatim
 under `## Description` (it usually carries chapter timecodes and the speaker list; absent when the
-video has none), then `## Transcript` with the paragraphs. A paragraph breaks on a
+video has none), then `## Transcript` with the paragraphs. The video's chapters, when it has them,
+are `### title [t]` headings inside the transcript. A paragraph breaks on a
 pause of 1 s or more, on 900 characters, and always on a change of speaker. With several speakers
 each change opens with `**Speaker N** [t]`; with one speaker there are no labels and a `**[t]**`
 timecode appears every two minutes. `N` is the diarization id (from 0), not a name.

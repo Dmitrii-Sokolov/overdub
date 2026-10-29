@@ -520,11 +520,9 @@ def _finalize_transcript(ctx: Context) -> str:
     if isinstance(sents, list):
         info = _load_json(w.info_json)
         title = info.get("title") if isinstance(info, dict) else None
-        desc = info.get("description") if isinstance(info, dict) else None
         try:
             write_transcript(w, sents, title=title if isinstance(title, str) else None,
-                             duration=_transcript_duration(sents, info),
-                             description=desc if isinstance(desc, str) else None)
+                             duration=_transcript_duration(sents, info), info=info)
         except Exception as e:                      # noqa: BLE001 — see docstring
             note = f" · transcript.md FAILED ({type(e).__name__}: {e})"
     return _transcript_status(ctx) + note

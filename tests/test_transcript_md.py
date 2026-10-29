@@ -56,7 +56,7 @@ def test_labels_appear_only_when_several_people_talk() -> None:
     two = render_transcript([_s(0, 0.0, 1.0, "Hello.", 0), _s(1, 1.0, 2.0, "Hi.", 1)],
                             title="T", duration=125.0)
     assert "**Speaker 0** [0:00]" in two and "**Speaker 1** [0:01]" in two
-    assert "2 speakers" in two and "2:05" in two
+    assert "Duration: 2:05 · 2 speakers" in two
     one = render_transcript([_s(0, 0.0, 1.0, "Hello.", 0), _s(1, 9.0, 10.0, "Again.", 0)],
                             title="T", duration=None)
     assert "Speaker" not in one and "speakers" not in one
@@ -74,12 +74,43 @@ def test_no_speech_says_so() -> None:
 
 def test_description_sits_between_the_header_and_the_body() -> None:
     md = render_transcript([_s(0, 0.0, 1.0, "Hello.", 0)], title="T", duration=None,
-                           description="0:00 Intro\r\n12:30 Q&A\r\nGuest: Jane\n")
+                           info={"description": "0:00 Intro\r\n12:30 Q&A\r\nGuest: Jane\n"})
     assert "## Description\n\n0:00 Intro\n12:30 Q&A\nGuest: Jane\n\n## Transcript\n" in md
     assert md.index("## Description") < md.index("Hello.")
-    for blank in (None, "", "  \n"):
+    for blank in (None, {}, {"description": ""}, {"description": "  \n"}, {"description": 5}):
         assert "## Description" not in render_transcript([_s(0, 0.0, 1.0, "Hi.", 0)], title="T",
-                                                         duration=None, description=blank)
+                                                         duration=None, info=blank)
+
+
+def test_the_facts_line_prints_only_what_is_there() -> None:
+    full = {"channel": "Lex Fridman", "channel_follower_count": 5_070_000,
+            "upload_date": "20250203", "view_count": 2_120_661, "like_count": 28_478}
+    md = render_transcript([_s(0, 0.0, 1.0, "Hi.", 0)], title="T", duration=None, info=full)
+    assert "Lex Fridman (5.1M subscribers) · 2025-02-03 · 2.1M views · 28.5K likes" in md
+    part = render_transcript([_s(0, 0.0, 1.0, "Hi.", 0)], title="T", duration=None,
+                             info={"channel": "C", "view_count": 999, "like_count": None,
+                                   "upload_date": "bad"})
+    assert "C · 999 views" in part and "None" not in part and "likes" not in part
+
+
+def test_chapters_become_headings_and_repeat_the_speaker() -> None:
+    sents = [_s(0, 0.0, 5.0, "Intro.", 0), _s(1, 70.0, 75.0, "Topic.", 0),
+             _s(2, 75.0, 80.0, "Reply.", 1)]
+    info = {"chapters": [{"start_time": 0, "title": "Intro"},
+                         {"start_time": 60, "title": "Main"},
+                         {"start_time": 600, "title": "Never reached"},
+                         {"start_time": "x", "title": "Broken"}, {"title": "No time"}]}
+    md = render_transcript(sents, title="T", duration=None, info=info)
+    assert "### Intro [0:00]" in md and "### Main [1:00]" in md
+    assert "Never reached" not in md and "Broken" not in md
+    assert md.index("### Main") < md.index("**Speaker 0** [1:10]") < md.index("Topic.")
+    assert md.count("**Speaker 0**") == 2                 # again after the heading
+
+
+def test_a_monologue_chapter_heading_replaces_the_timecode() -> None:
+    md = render_transcript([_s(0, 0.0, 1.0, "A.", 0), _s(1, 30.0, 31.0, "B.", 0)], title="T",
+                           duration=None, info={"chapters": [{"start_time": 20, "title": "Two"}]})
+    assert "### Two [0:20]" in md and "**[0:30]**" not in md
 
 
 def test_finalize_writes_the_document_and_never_raises() -> None:
