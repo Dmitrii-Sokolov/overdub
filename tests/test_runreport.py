@@ -1297,6 +1297,21 @@ def test_batch_totals_carries_the_stage_split() -> None:
     assert {n for n, _s, _p in tot["stages"]} == {"synthesize", "transcribe", "mux", "download"}
 
 
+def test_batch_totals_leave_the_parallel_translate_spans_out() -> None:
+    # translate walls are sub-agent spans that ran side by side; summed over a batch they printed
+    # "translate 1.5h 52.7%" for a wave that took a fraction of that (2026-10-29)
+    runs = [
+        {"timings": {"total_wall_s": 300.0, "video_sec": 600.0,
+                     "stages": {"translate": 200.0, "synthesize": 60.0, "mux": 40.0}}},
+        {"timings": {"total_wall_s": 250.0, "video_sec": 600.0,
+                     "stages": {"translate": 200.0, "synthesize": 50.0}}},
+    ]
+    tot = queueview.batch_totals(runs)
+    assert tot["total_wall"] == 150.0
+    assert tot["throughput"] == "×8.00"
+    assert tot["stages"] == [("synthesize", 110.0, 73.3), ("mux", 40.0, 26.7)]
+
+
 def test_the_per_video_digest_lists_every_stage_not_the_top_three() -> None:
     # Four of seven stages used to be invisible ("top: a%, b%, c%"), and a share with no seconds
     # beside it cannot be compared across videos of different lengths.

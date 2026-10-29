@@ -334,17 +334,28 @@ def batch_totals(runs) -> dict:
     `stages` is [(name, sec, pct), ...] descending — the batch-level stage split, which is the
     number an optimisation decision actually needs. Per-video `breakdown_pct` already existed but
     answered a different question: one 26-minute video's shares say nothing about where a night
-    went. Empty list when no stage timing survived."""
-    total_wall = round(sum((r.get("timings", {}) or {}).get("total_wall_s", 0) or 0
-                           for r in runs), 1)
+    went. Empty list when no stage timing survived.
+
+    The translate stage is left out of both the sum and the split. Its per-video wall is a
+    Sonnet sub-agent's span, and those spans run in parallel: summed over a batch they add up to
+    hours the night never had (1.5h "translate" over 4 videos, 2026-10-29). The per-video digest
+    line keeps it — one video's own span is a real number."""
+    total_wall = 0.0
+    per_stage: dict[str, float] = {}
+    for r in runs:
+        t = r.get("timings", {}) or {}
+        total_wall += t.get("total_wall_s", 0) or 0
+        for name, val in (t.get("stages", {}) or {}).items():
+            if not isinstance(val, (int, float)) or isinstance(val, bool):
+                continue
+            if name == "translate":
+                total_wall -= val
+            else:
+                per_stage[name] = per_stage.get(name, 0.0) + float(val)
+    total_wall = round(total_wall, 1)
     sum_video = sum(((r.get("timings", {}) or {}).get("video_sec") or 0) for r in runs)
     thru = f"×{sum_video / total_wall:.2f}" if total_wall > 0 else "n/a"
     n_triage = sum(1 for r in runs if r.get("needs_triage"))
-    per_stage: dict[str, float] = {}
-    for r in runs:
-        for name, val in ((r.get("timings", {}) or {}).get("stages", {}) or {}).items():
-            if isinstance(val, (int, float)) and not isinstance(val, bool):
-                per_stage[name] = per_stage.get(name, 0.0) + float(val)
     stages = [(n, round(v, 1), round(100 * v / total_wall, 1) if total_wall else 0.0)
               for n, v in sorted(per_stage.items(), key=lambda kv: -kv[1])]
     return {"total_wall": total_wall, "wall_dur": format_dur(total_wall),
