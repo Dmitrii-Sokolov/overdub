@@ -139,8 +139,9 @@ Translation is just an artifact, so the pipeline stops cleanly at the translate 
 from it.
 
 ```powershell
-# 1. transcribe the batch — no translation yet
-.venv-asr\Scripts\python.exe -X utf8 -m overdub --batch queue.txt --only download transcribe
+# 1. transcribe and diarize the batch — no translation yet (a speaker re-cut after the seam
+#    deletes the translation)
+.venv-asr\Scripts\python.exe -X utf8 -m overdub --batch queue.txt --only download transcribe diarize
 
 # 2. the seam: Sonnet sub-agents write work/<id>/translation.draft.json, then
 .venv-asr\Scripts\python.exe -X utf8 scripts\build_translation.py "work\<id>"

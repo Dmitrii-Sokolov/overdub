@@ -54,17 +54,29 @@ nothing, and reads the same whether the command runs in the foreground or the ba
 
 ```powershell
 $t0 = Get-Date
-.venv-asr\Scripts\python.exe -X utf8 -m overdub --batch queue.txt --only download transcribe
+.venv-asr\Scripts\python.exe -X utf8 -m overdub --batch queue.txt --only download transcribe diarize
 "STEP_ELAPSED_S=$([int]((Get-Date) - $t0).TotalSeconds)"
 ```
 
 Single video: same command with the URL instead of `--batch queue.txt`.
 
-Produces per video: `work/<id>/sentences.json` — a JSON list of `{id, text, start, end}`,
-`id` contiguous from 0. That is the sub-agent's input.
+**`diarize` belongs in step 1, never left to step 3** (2026-10-29). On a multi-speaker video it
+re-cuts `sentences.json` at every speaker change and `invalidate_downstream` deletes the
+translation — so diarizing AFTER the seam throws away a finished Sonnet wave and sends the video
+through translate a second time. That happened to six videos on 2026-10-28, every one of them
+translated twice. Run here, the re-cut lands before anything is translated. It is also the only
+way an already-dubbed workdir from before the stage existed (2026-10-27) gets diarized: such a
+video has a current `translation.json`, so `$todo` is empty for it and step 3 is the only other
+stage list that contains `diarize` — skip step 3 on a "nothing to do" batch and the video is
+never diarized at all. After step 1, a re-cut video has lost its translation and the `$todo`
+filter below picks it up like any other.
 
-**Gate before step 2:** step 1 exited 0 and `work/<id>/sentences.json` exists for every id in
-`$ids`. The batch continues past per-video failures (`FAIL` rows in the summary) — re-run the
+Produces per video: `work/<id>/sentences.json` — a JSON list of `{id, text, start, end}`,
+`id` contiguous from 0, plus a `speaker` on each sentence of a multi-speaker video — and
+`work/<id>/diar.json`. That is the sub-agent's input.
+
+**Gate before step 2:** step 1 exited 0 and `work/<id>/sentences.json` and `work/<id>/diar.json`
+exist for every id in `$ids`. The batch continues past per-video failures (`FAIL` rows in the summary) — re-run the
 same step-1 command until clean; completed stages fast-skip.
 
 ### Step 1b — Repair the transcript BEFORE translating it (added 2026-07-25)
@@ -536,7 +548,14 @@ Measured 2026-08-02 on a 2-video queue, 3.22 h of audio: digest `throughput ×4.
 machine time 4532 s = **×2.56** (session span 4618 s = ×2.51). Split: step 1 1148 s · step 1b
 41 s · **step 2 1676 s** · step 3 1667 s — the translate wave was the largest single line item at
 37% of the batch and appears in no existing number. Planning a night on ×4.13 overbooks it by
-~60%.
+~60%. **That is one early 2-video sample, retired as a planning figure** — see below.
+
+**The planning figure is ×10 of video time on a large batch** (user, 2026-10-29). The
+post-translate tail backs it: 16 single-video full-pipeline runs in `work/runs.jsonl` between
+2026-10-22 and 2026-10-28 (the drain's per-video resumes) ran at ×11.8-13.9 audio per elapsed
+second. Those `elapsed_s` exclude the translate wave, which the drain overlaps with the tail, so
+the end-to-end ratio sits below them — hence ×10, not ×12. Do not read it off a stage-major row
+in `runs.jsonl`: those mix fast-skip resumes in, which is how ×40-×140 rows appear there.
 
 **When the batch has flagged units, also offer the clickable page** — one HTML with an inline
 audio player per flagged unit (expected vs whisper-heard, click to listen), so the user can
