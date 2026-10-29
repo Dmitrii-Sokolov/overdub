@@ -212,6 +212,9 @@ class WorkDir:
     def clean_md(self) -> Path: return self.root / "clean.md"             # route E: the deliverable
 
     @property
+    def transcript_md(self) -> Path: return self.root / "transcript.md"   # --transcribe-only: paragraphs + speakers
+
+    @property
     def thumb(self) -> Path: return self.root / "thumb.jpg"               # queue report: 160px preview, data-URI'd into the page
 
     @property
@@ -307,6 +310,7 @@ class WorkDir:
             self.clean_md,                               # every route-E artifact is keyed by id,
             *sorted(self.clean_dir.glob("*.json")),      # so a renumber silently re-points each
                                                          # cleaned line at a different sentence
+            self.transcript_md,                          # rendered from sentences.json itself
             self.seg_manifest,                           # synthesize
             self.report,                                 # verify + assemble + mux
             self.dub_audio,                              # assemble

@@ -58,6 +58,7 @@ from pathlib import Path
 # scripts/ is sys.path[0] when run as a file -- put the repo root first so `import overdub` resolves
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from overdub.transcript_md import body_lines, paragraphs, stamp as _stamp   # noqa: E402
 from overdub.workdir import WorkDir, replace_retry              # noqa: E402
 
 # --- chunking -----------------------------------------------------------------
@@ -333,61 +334,6 @@ def report(stats: dict) -> None:
 
 
 # --- rendering ----------------------------------------------------------------
-# Pause that ends a paragraph, in seconds. A HYPOTHESIS sited on ordinary speech rhythm, not a
-# measured constant: a breath inside a thought runs ~0.3-0.6 s, while a topic change is usually
-# longer. Re-site it once a wave of real transcripts exists.
-_PARA_GAP = 1.0
-# A paragraph this long is broken at the next sentence regardless of pauses -- a speaker who never
-# pauses would otherwise produce one unreadable block per chunk.
-_PARA_MAX_CHARS = 900
-# Seconds between timecodes. They are navigation, so one per paragraph would be noise and one per
-# chapter would be useless.
-_STAMP_EVERY = 120.0
-
-
-def _stamp(sec: float) -> str:
-    """Seconds -> [M:SS] or [H:MM:SS] past the hour."""
-    s = int(sec)
-    h, m, s = s // 3600, (s % 3600) // 60, s % 60
-    return f"[{h}:{m:02d}:{s:02d}]" if h else f"[{m}:{s:02d}]"
-
-
-def paragraphs(records: list[dict]) -> list[dict]:
-    """Group the non-empty cleaned lines into {start, text} paragraphs.
-
-    The ONLY structural decision this route makes, and it is made here rather than by the agents
-    on purpose: a paragraph break is a property of the audio (a pause), so it is knowable from the
-    timestamps and does not need judgement. Leaving it to the agents would also make the breaks
-    disagree across a chunk boundary, where neither agent can see the other's text.
-    """
-    out: list[dict] = []
-    cur: list[str] = []
-    cur_start = 0.0
-    prev: dict | None = None
-    for r in records:
-        if not r["text"]:
-            continue                                     # emptied line: dropped here, kept in clean.json
-        brk = prev is not None and (
-            _gap(prev, r) >= _PARA_GAP or sum(len(t) + 1 for t in cur) >= _PARA_MAX_CHARS)
-        if brk and cur:
-            out.append({"start": cur_start, "text": " ".join(cur)})
-            cur = []
-        if not cur:
-            cur_start = float(r["start"])
-        cur.append(r["text"])
-        prev = r
-    if cur:
-        out.append({"start": cur_start, "text": " ".join(cur)})
-    return out
-
-
-def _gap(prev: dict, cur: dict) -> float:
-    try:
-        return max(float(cur["start"]) - float(prev["end"]), 0.0)
-    except (KeyError, TypeError, ValueError):
-        return 0.0
-
-
 def render_md(doc: dict) -> str:
     """clean.json -> the deliverable. Metadata header, then timecoded paragraphs.
 
@@ -400,14 +346,7 @@ def render_md(doc: dict) -> str:
                         f"https://www.youtube.com/watch?v={doc['video_id']}") if v]
     head += ["", " · ".join(meta), ""]
 
-    lines: list[str] = []
-    last = None
-    for p in doc["paragraphs"]:
-        if last is None or p["start"] - last >= _STAMP_EVERY:
-            lines += [f"**{_stamp(p['start'])}**", ""]
-            last = p["start"]
-        lines += [p["text"], ""]
-    return "\n".join(head + lines)
+    return "\n".join(head + body_lines(doc["paragraphs"]))
 
 
 def _iso(yyyymmdd: str | None) -> str | None:

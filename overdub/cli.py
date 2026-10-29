@@ -19,6 +19,7 @@ from .config import Config
 from .pipeline import Context, STOP_NAME, Session, StopRequested, check_stop, run_pipeline
 from .stages import all_stages, transcribe_only_stages
 from .stages.download import _tool_exe
+from .transcript_md import write_transcript
 from .workdir import WorkDir, replace_retry, safe_filename, video_id
 
 
@@ -203,7 +204,7 @@ def _run_one(url: str, cfg: Config, *, force: bool, only: set[str] | None,
     run_pipeline(ctx, transcribe_only_stages(cfg) if transcribe_only else all_stages(cfg),
                  force=force, only=only)
     _rollup_and_print(work, cfg)
-    return _transcript_status(ctx) if transcribe_only else _export_output(ctx)
+    return _finalize_transcript(ctx) if transcribe_only else _export_output(ctx)
 
 
 def _parse_repair_ids(spec: str, p) -> list[int]:
@@ -493,13 +494,40 @@ def _transcript_status(ctx: Context) -> str:
         # a bare existence check), so a file that will not parse is a defect the operator must
         # see, not an empty video.
         return "transcribed · no readable sentences.json"
-    info = _load_json(w.info_json)
+    dur = _transcript_duration(sents, _load_json(w.info_json))
+    return f"transcribed · {clock(dur)} · {len(sents)} sentences"
+
+
+def _transcript_duration(sents: list, info) -> float | None:
+    """Video length: yt-dlp's figure, else the end of the last sentence."""
     dur = info.get("duration") if isinstance(info, dict) else None
     if not isinstance(dur, (int, float)) or isinstance(dur, bool) or dur <= 0:
         ends = [s.get("end") for s in sents
                 if isinstance(s, dict) and isinstance(s.get("end"), (int, float))]
         dur = max(ends) if ends else None
-    return f"transcribed · {clock(dur)} · {len(sents)} sentences"
+    return dur
+
+
+def _finalize_transcript(ctx: Context) -> str:
+    """`--transcribe-only` finalize: render work/<id>/transcript.md, then report the status.
+
+    Same never-raises contract as _transcript_status: a failed render is REPORTED and the video
+    stays a successful transcription.
+    """
+    w = ctx.work
+    sents = _load_json(w.sentences)
+    note = ""
+    if isinstance(sents, list):
+        info = _load_json(w.info_json)
+        title = info.get("title") if isinstance(info, dict) else None
+        desc = info.get("description") if isinstance(info, dict) else None
+        try:
+            write_transcript(w, sents, title=title if isinstance(title, str) else None,
+                             duration=_transcript_duration(sents, info),
+                             description=desc if isinstance(desc, str) else None)
+        except Exception as e:                      # noqa: BLE001 — see docstring
+            note = f" · transcript.md FAILED ({type(e).__name__}: {e})"
+    return _transcript_status(ctx) + note
 
 
 def _run_batch_video_major(urls: list[str], cfg: Config, *, force: bool,
@@ -622,7 +650,7 @@ def _run_batch_stage_major(urls: list[str], cfg: Config, *, force: bool,
     """
     stages = ((transcribe_only_stages(cfg) if transcribe_only else all_stages(cfg))
               if stages is None else stages)
-    finalize = ((_transcript_status if transcribe_only else _export_output)
+    finalize = ((_finalize_transcript if transcribe_only else _export_output)
                 if finalize is None else finalize)
     session = Session()                              # one cache for the whole batch; cleared
                                                      # after EVERY stage sweep (see below)
