@@ -47,3 +47,4 @@ Tags: `[bug] [feature] [chore] [?]` — one line per entry, processed weekly.
      into the multi-speaker task), the constraint dropped from CLAUDE.md / AGENTS.md / README.
      Silero rounding: overdub/CLAUDE.md fact + silero.py docstrings fixed in place; the
      thread-pinning lever not queued (inaudible, changes nothing in the tool). -->
+- [bug] 2026-10-29 diarize guard (stages/diarize.py:182) keys on _pre-repair-sentences.json existing; --force transcribe does not clear it, so its own advice 're-transcribe the video' still raises. Hit on Hrbq66XqtCo; worked around by renaming the file to _stale-pre-repair-sentences.json.
