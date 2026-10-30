@@ -235,7 +235,9 @@ def mux_args(video, *, dub=None, subs=(), out, dub_mix: str) -> list[str]:
     if dub is not None:
         inputs += ["-i", str(dub)]
         maps += ["-map", f"{idx}:a:0"]
-        codecs += ["-c:a:1", "aac", "-b:a:1", "192k"]
+        # fast coder, not the default twoloop: the encode was 94% of mux (575 of 621 s on a
+        # 2.66 h video, 2026-10-29), fast is 4.8x quicker, and the ear found no difference
+        codecs += ["-c:a:1", "aac", "-aac_coder:a:1", "fast", "-b:a:1", "192k"]
         meta += ["-metadata:s:a:1", "language=rus",
                  "-metadata:s:a:1", f"title=Russian dub ({dub_mix})"]
         disp += ["-disposition:a:0", "0", "-disposition:a:1", "default"]

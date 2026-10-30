@@ -11,6 +11,8 @@ which reads as "mux is broken", not as "there was no dub".
 The full-track case is pinned VERBATIM against the argv that shipped before the tracks became
 optional. That is the whole safety argument for the refactor: the normal path must be
 byte-identical, or every muxed video since 2026-07-15 stops being comparable to the next one.
+One deliberate change since: the dub's AAC encoder runs `-aac_coder fast` (2026-10-30, ear
+verdict: no audible difference from twoloop at 192k).
 """
 
 from __future__ import annotations
@@ -37,7 +39,7 @@ _SHIPPED = [
     "ffmpeg", "-y", "-loglevel", "error",
     "-i", V, "-i", D, "-i", EN, "-i", RU,
     "-map", "0:v:0", "-map", "0:a:0", "-map", "1:a:0", "-map", "2:0", "-map", "3:0",
-    "-c:v", "copy", "-c:a:0", "copy", "-c:a:1", "aac", "-b:a:1", "192k",
+    "-c:v", "copy", "-c:a:0", "copy", "-c:a:1", "aac", "-aac_coder:a:1", "fast", "-b:a:1", "192k",
     "-c:s", "srt",
     "-metadata:s:a:0", "language=eng", "-metadata:s:a:0", "title=Original",
     "-metadata:s:a:1", "language=rus",
