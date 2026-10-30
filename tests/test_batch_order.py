@@ -338,6 +338,84 @@ def test_stale_stop_does_not_noop_the_run() -> None:
         check_stop(root, "second")                       # must NOT raise
 
 
+# --- concurrent mux sweep -----------------------------------------------------------
+
+def test_the_mux_sweep_runs_every_video_concurrently_and_isolates_a_failure() -> None:
+    trace: list = []
+    stages = [FakeStage("s1", trace), FakeStage("mux", trace, fail_on={VIDS[1]})]
+    with tempfile.TemporaryDirectory() as d:
+        code, out = _drive(Path(d), stages)
+    assert code == 1
+    assert {v for s, v in _runs(trace) if s == "mux"} == set(VIDS)
+    assert "up to 3 at a time" in out                    # min(mux_concurrency 4, 3 videos)
+    assert f"[FAIL] {VIDS[1]}" in out and f"[ok  ] {VIDS[0]}" in out and f"[ok  ] {VIDS[2]}" in out
+
+
+def test_mux_concurrency_one_keeps_the_serial_sweep() -> None:
+    trace: list = []
+    stages = [FakeStage("mux", trace)]
+    with tempfile.TemporaryDirectory() as d:
+        cfg = _cfg(Path(d))
+        cfg.mux_concurrency = 1
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
+            cli._run_batch_stage_major(URLS, cfg, force=False, only=None, stages=stages,
+                                       finalize=lambda ctx: "out.mkv")
+    assert _runs(trace) == [("mux", v) for v in VIDS]   # queue order, one at a time
+    assert "at a time" not in buf.getvalue()
+
+
+def test_the_concurrent_sweep_admits_by_ram_in_queue_order() -> None:
+    # budget fits one video at a time: the sweep must still run all three, never two at once
+    import threading
+    live, peak, lock = [0], [0], threading.Lock()
+
+    class Probe(FakeStage):
+        def run(self, ctx) -> None:
+            with lock:
+                live[0] += 1
+                peak[0] = max(peak[0], live[0])
+            import time
+            time.sleep(0.05)
+            with lock:
+                live[0] -= 1
+            super().run(ctx)
+
+    from overdub import host
+    from overdub.stages import mux
+    real_ram, real_need = host.available_ram, mux.ram_need
+    host.available_ram = lambda: cli._RAM_HEADROOM + 10
+    mux.ram_need = lambda work: 8
+    trace: list = []
+    try:
+        with tempfile.TemporaryDirectory() as d:
+            code, _ = _drive(Path(d), [Probe("mux", trace)])
+    finally:
+        host.available_ram, mux.ram_need = real_ram, real_need
+    assert code == 0 and peak[0] == 1
+    assert [v for _s, v in _runs(trace)] == VIDS
+
+
+def test_a_stop_in_the_mux_sweep_starts_nothing_new_and_keeps_what_finished() -> None:
+    trace: list = []
+    exported: list[str] = []
+    stages = [FakeStage("s1", trace, stop_after={VIDS[2]}), FakeStage("mux", trace)]
+    with tempfile.TemporaryDirectory() as d:
+        cfg = _cfg(Path(d))
+        cfg.mux_concurrency = 2
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
+            code = cli._run_batch_stage_major(
+                URLS, cfg, force=False, only=None, stages=stages,
+                finalize=lambda ctx: exported.append(ctx.work.root.name) or "out.mkv")
+    # the STOP written after s1 is honored by ONE of the two first muxes; the other finishes and
+    # ships, the third video is never started
+    assert code == 3
+    muxed = [v for s, v in _runs(trace) if s == "mux"]
+    assert len(muxed) == 1 and VIDS[2] not in muxed
+    assert exported == muxed
+
+
 # --- finish sweep -------------------------------------------------------------------
 
 def test_finish_sweep_rolls_up_every_job_including_failed() -> None:

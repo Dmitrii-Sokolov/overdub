@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import re
 import subprocess
@@ -189,6 +190,14 @@ class WorkDir:
 
     @property
     def info_json(self) -> Path: return self.root / "source.info.json"   # yt-dlp metadata (title)
+
+    def source_duration(self) -> float:
+        """The video's duration in seconds per yt-dlp's metadata; 0.0 when unknown."""
+        try:
+            dur = json.loads(self.info_json.read_text(encoding="utf-8")).get("duration")
+        except Exception:                                  # noqa: BLE001 — unknown, not an error
+            return 0.0
+        return float(dur) if isinstance(dur, (int, float)) and not isinstance(dur, bool) else 0.0
 
     @property
     def words(self) -> Path: return self.root / "words.json"              # transcribe: raw flattened words (re-tuning)

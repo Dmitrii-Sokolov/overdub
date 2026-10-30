@@ -62,11 +62,32 @@ def _full_draft(work: WorkDir, n: int) -> None:
     _draft(work, json.dumps([{"id": i, "text_ru": "Привет."} for i in range(n)]))
 
 
+class _FakeMuxes(drain.MuxPool):
+    """MuxPool without children: a started mux exits on the next reap with `result`."""
+    started: list = []
+    result = (True, "drained")
+
+    def start(self, url: str, need: int) -> None:
+        _FakeMuxes.started.append((url, len(self.running)))
+        self.running[url] = (None, None, need)
+
+    def reap(self, block: bool = False):
+        out = [(u, *_FakeMuxes.result) for u in self.running]
+        self.running.clear()
+        return out
+
+
 def _run(q: Path, c: Path, *extra: str) -> tuple[int, str]:
     buf = io.StringIO()
-    with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
-        code = drain.main(["--queue", str(q), "--config", str(c),
-                           "--timeout", "0.2", "--poll", "0.01", *extra])
+    real = drain.MuxPool
+    drain.MuxPool = _FakeMuxes
+    _FakeMuxes.started = []
+    try:
+        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
+            code = drain.main(["--queue", str(q), "--config", str(c),
+                               "--timeout", "0.2", "--poll", "0.01", *extra])
+    finally:
+        drain.MuxPool = real
     return code, buf.getvalue()
 
 
@@ -137,7 +158,7 @@ def test_a_video_with_a_draft_is_drained_and_one_without_stays_pending() -> None
         q, c = _setup(tmp)
         _full_draft(_work(tmp, VIDS[0]), 3)
         real = drain.drain_one
-        drain.drain_one = lambda url, work: (seen.append(work.root.name), (True, "drained"))[1]
+        drain.drain_one = lambda url, work, stages: (seen.append(work.root.name), (True, "tail"))[1]
         try:
             code, out = _run(q, c)
         finally:
@@ -155,7 +176,7 @@ def test_a_failed_drain_is_reported_and_never_silently_dropped() -> None:
         for v in VIDS:
             _full_draft(_work(tmp, v), 3)
         real = drain.drain_one
-        drain.drain_one = lambda url, work: (False, "pipeline exit 1: boom")
+        drain.drain_one = lambda url, work, stages: (False, "pipeline exit 1: boom")
         try:
             code, out = _run(q, c)
         finally:
@@ -174,13 +195,66 @@ def test_a_STOP_is_observed_and_not_consumed() -> None:
         _draft(_work(tmp, VIDS[0]), json.dumps([{"id": 0, "text_ru": "Привет."}]))
         (tmp / "work" / STOP_NAME).write_text("", encoding="utf-8")
         real = drain.drain_one
-        drain.drain_one = lambda url, work: (True, "drained")
+        drain.drain_one = lambda url, work, stages: (True, "tail")
         try:
             code, out = _run(q, c)
         finally:
             drain.drain_one = real
         assert (tmp / "work" / STOP_NAME).exists()         # left for the pipeline to honor
     assert "STOP present" in out
+
+
+# --- mux in the background ----------------------------------------------------
+def test_the_tail_stops_before_mux_and_mux_runs_in_the_background() -> None:
+    # mux needs no GPU, so it is split off the serial tail; the tail must still run every OTHER
+    # stage, or a video would reach mux without its dub
+    got: list = []
+    with tempfile.TemporaryDirectory() as d:
+        tmp = Path(d)
+        q, c = _setup(tmp)
+        for v in VIDS:
+            _full_draft(_work(tmp, v), 3)
+        real = drain.drain_one
+        drain.drain_one = lambda url, work, stages: (got.append(list(stages)), (True, "tail"))[1]
+        try:
+            code, out = _run(q, c)
+        finally:
+            drain.drain_one = real
+    assert code == 0
+    assert "mux" not in got[0] and {"synthesize", "assemble", "separate"} <= set(got[0])
+    assert [u for u, _n in _FakeMuxes.started] == URLS
+    assert "2 drained, 0 failed, 0 pending" in out
+
+
+def test_a_failed_background_mux_is_a_failed_video() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        tmp = Path(d)
+        q, c = _setup(tmp)
+        _full_draft(_work(tmp, VIDS[0]), 3)
+        real = drain.drain_one
+        drain.drain_one = lambda url, work, stages: (True, "tail")
+        _FakeMuxes.result = (False, "mux exit 1: encoder died")
+        try:
+            code, out = _run(q, c)
+        finally:
+            drain.drain_one = real
+            _FakeMuxes.result = (True, "drained")
+    assert code == 1
+    assert "encoder died" in out and "0 drained, 1 failed, 1 pending" in out
+
+
+def test_the_mux_pool_admits_by_ram_and_always_one() -> None:
+    pool = drain.MuxPool(width=4, budget=10)
+    assert pool.fits(50)                                   # nothing running: always admitted
+    pool.running["a"] = (None, None, 6)
+    assert pool.fits(4) and not pool.fits(5)               # 6 + 5 > 10
+    # the next video's tail is checked the same way, but is never refused by the width cap
+    pool.running["b"] = (None, None, 0)
+    pool.width = 2
+    assert pool.fits_beside(4) and not pool.fits_beside(5) and not pool.fits(0)
+    pool = drain.MuxPool(width=1, budget=None)
+    pool.running["a"] = (None, None, 0)
+    assert not pool.fits(0)                                # the width cap holds without a budget
 
 
 if __name__ == "__main__":

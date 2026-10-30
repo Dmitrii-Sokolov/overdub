@@ -32,6 +32,19 @@ from ..workdir import replace_retry
 
 SR = 44100                                                 # htdemucs's rate; the bed matches it
 
+_RAM_PER_CHUNK_HOUR = int(18.2 * 2**30)   # peak RAM per hour of the largest chunk: 17.32 GiB for a
+                                          # 3600 s chunk, 13.74 GiB for a 46.6-min video in one
+                                          # piece (2026-10-30), +5%. The stitch is streamed, so
+                                          # nothing past one chunk is resident at once.
+
+
+def ram_need(work, cfg) -> int:
+    """Bytes of RAM this stage holds at its peak on this workdir — one chunk's worth, never more,
+    so it stops growing past `separate_chunk_sec`. 0 when the duration is unknown."""
+    dur = work.source_duration()
+    chunk = cfg.separate_chunk_sec
+    return int(_RAM_PER_CHUNK_HOUR * (min(dur, chunk) if chunk else dur) / 3600)
+
 
 def _probe_duration(src: Path) -> float:
     """Source duration in seconds, off ffprobe. Raises — the chunk plan cannot be guessed."""

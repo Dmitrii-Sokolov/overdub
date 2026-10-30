@@ -635,6 +635,75 @@ class _Job:
                                  # un-finish a video that is already done.
 
 
+def _run_stage(j: _Job, st, *, force: bool, only: set[str] | None) -> tuple[str | None, str | None]:
+    """Run ONE (stage, video) pair; returns (failed, stopped), at most one of them set.
+
+    One stage at a time: check_stop, the only/done filters and record_stage_timing all stay inside
+    run_pipeline, so the per-(stage, video) checkpoint granularity and the STOP message text come
+    for free and cannot drift between the two orders."""
+    try:
+        run_pipeline(j.ctx, [st], force=force, only=only, owns_session=False)
+    except StopRequested as e:                       # MUST precede `except Exception`
+        return None, str(e)
+    except Exception as e:                           # KeyboardInterrupt passes through
+        traceback.print_exc()
+        return f"{st.name}: {type(e).__name__}: {e}", None
+    return None, None
+
+
+_RAM_HEADROOM = 4 * 2**30          # left free for everything that is not a mux
+
+
+def _sweep_concurrent(st, jobs: list[_Job], width: int, *, force: bool,
+                      only: set[str] | None) -> list[tuple[_Job, str | None, str | None]]:
+    """Run one stage over the batch `width` videos at a time; (job, failed, stopped) per video run.
+
+    Only mux takes this path. It holds no model and no GPU, its time is one single-threaded encode
+    per video, and each video writes only its own workdir, so videos do not contend for anything
+    but cores and RAM. RAM is the bound that bites: a mux holds stages.mux.ram_need bytes at its
+    peak, and a video is admitted only while the running ones' needs plus its own fit the RAM that
+    was free when the sweep started. The budget is fixed rather than re-read, because a mux that
+    has started but not yet allocated would make a live reading look free. A video is always
+    admitted when nothing is running, so one too large for the budget still runs, alone.
+
+    Queue order is kept: a video that does not fit waits for a slot instead of being overtaken.
+    After a STOP no new video starts; the ones already running finish and are reported, because a
+    mux that completed beside the stop is a finished video.
+    """
+    from concurrent.futures import FIRST_COMPLETED, wait
+
+    from . import host
+    from .stages.mux import ram_need
+
+    free = host.available_ram()
+    budget = None if free is None else max(0, free - _RAM_HEADROOM)
+    pending = [(i, j) for i, j in enumerate(jobs, 1) if j.status == "run"]
+    need = {j.vid: ram_need(j.ctx.work) for _i, j in pending}
+    running: dict = {}
+    out: list[tuple[_Job, str | None, str | None]] = []
+    stop_seen = False
+    print(f"\n--- {st.name}: {len(pending)} video(s), up to {width} at a time")
+    with ThreadPoolExecutor(max_workers=width) as pool:
+        while pending or running:
+            while pending and not stop_seen and len(running) < width:
+                i, j = pending[0]
+                held = sum(need[k.vid] for k in running.values())
+                if running and budget is not None and held + need[j.vid] > budget:
+                    break
+                pending.pop(0)
+                print(f"\n--- {st.name}  [{i}/{len(jobs)}] {j.vid}")
+                running[pool.submit(_run_stage, j, st, force=force, only=only)] = j
+            if not running:
+                break                                # a stop with nothing left in flight
+            finished, _ = wait(running, return_when=FIRST_COMPLETED)
+            for fut in finished:
+                j = running.pop(fut)
+                failed, stopped = fut.result()
+                out.append((j, failed, stopped))
+                stop_seen = stop_seen or stopped is not None
+    return out
+
+
 def _run_batch_stage_major(urls: list[str], cfg: Config, *, force: bool,
                            only: set[str] | None, transcribe_only: bool = False,
                            stages=None, finalize=None) -> int:
@@ -668,59 +737,63 @@ def _run_batch_stage_major(urls: list[str], cfg: Config, *, force: bool,
     if dl is not None and len(jobs) > 1:
         _prefetch_downloads(jobs, dl, cfg, force=force, only=only)
 
+    def settle(j: _Job, st, failed: str | None, stopped: str | None) -> str | None:
+        """Apply one (stage, video) outcome to the status machine; the halt text on a stop."""
+        if failed is None and stopped is None:
+            j.n_done += 1
+        if failed is not None:
+            j.status, j.detail = "FAIL", failed
+            session.clear()                          # a stage that raised may have left a
+                                                     # poisoned engine — never reuse it
+        if stopped is None:
+            return None
+        # check_stop CONSUMED the STOP file, so exactly ONE (stage, video) pair can ever
+        # observe it. Continuing to the next video would leave the rest of the batch running
+        # against an already-deleted STOP — the stop silently un-honored for 11 of 12 videos.
+        # The caller breaks BOTH loops.
+        j.status, j.detail = "stop", stopped
+        for k in jobs:
+            if k.status != "run":
+                continue
+            if k.n_done == len(stages):
+                # already through EVERY stage in this run — a stop arriving while a LATER video
+                # is still in the last sweep cannot un-finish it. Leaving it "run" keeps its
+                # export in the finish sweep; marking it "stop" would report six finished videos
+                # as "not reached" and ship none of them, which is a false diagnosis, not just a
+                # cosmetic one.
+                continue
+            k.status = "stop"
+            k.detail = (f"stopped after '{stages[k.n_done - 1].name}'" if k.n_done
+                        else f"not reached (stopped at '{st.name}')")
+        return f"{stopped}, video {j.vid}"
+
     for st in stages:
         try:
-            for i, j in enumerate(jobs, 1):
-                if j.status != "run":                # excluded by an earlier stage — a
-                    continue                         # dropped video is never revisited
-                # header only for stages that can actually run — run_pipeline still gets
-                # EVERY pair below, so the STOP checkpoint grid stays identical to
-                # video-major's; this just keeps an --only run from logging 8 sweeps of
-                # headers with nothing under them
-                if only is None or st.name in only:
-                    print(f"\n--- {st.name}  [{i}/{len(jobs)}] {j.vid}")
-                failed = stopped = None
-                try:
-                    # ONE stage at a time: check_stop, the only/done filters and
-                    # record_stage_timing all stay inside run_pipeline, so the
-                    # per-(stage, video) checkpoint granularity and the STOP message text
-                    # come for free and cannot drift between the two orders.
-                    run_pipeline(j.ctx, [st], force=force, only=only, owns_session=False)
-                except StopRequested as e:           # MUST precede `except Exception`
-                    stopped = str(e)
-                except Exception as e:               # KeyboardInterrupt passes through
-                    traceback.print_exc()
-                    failed = f"{st.name}: {type(e).__name__}: {e}"
-                # handled OUTSIDE the handlers: while one is active the traceback pins
-                # st.run's frame and every model local to it, so a session.clear() in there
-                # would free nothing
-                if failed is None and stopped is None:
-                    j.n_done += 1
-                if failed is not None:
-                    j.status, j.detail = "FAIL", failed
-                    session.clear()                  # a stage that raised may have left a
-                                                     # poisoned engine — never reuse it
-                if stopped is not None:
-                    # check_stop CONSUMED the STOP file, so exactly ONE (stage, video) pair
-                    # can ever observe it. Continuing to the next video would leave the rest
-                    # of the batch running against an already-deleted STOP — the stop
-                    # silently un-honored for 11 of 12 videos. Break BOTH loops.
-                    j.status, j.detail = "stop", stopped
-                    halted = f"{stopped}, video {j.vid}"
-                    for k in jobs:
-                        if k.status != "run":
-                            continue
-                        if k.n_done == len(stages):
-                            # already through EVERY stage in this run — a stop arriving while a
-                            # LATER video is still in the last sweep cannot un-finish it. Leaving
-                            # it "run" keeps its export in the finish sweep; marking it "stop"
-                            # would report six finished videos as "not reached" and ship none of
-                            # them, which is a false diagnosis, not just a cosmetic one.
-                            continue
-                        k.status = "stop"
-                        k.detail = (f"stopped after '{stages[k.n_done - 1].name}'" if k.n_done
-                                    else f"not reached (stopped at '{st.name}')")
-                    break
+            width = min(int(getattr(cfg, "mux_concurrency", 1) or 1),
+                        sum(1 for j in jobs if j.status == "run"))
+            if st.name == "mux" and width > 1 and (only is None or "mux" in only):
+                outcomes = _sweep_concurrent(st, jobs, width, force=force, only=only)
+                # the stop goes LAST: a video whose mux finished beside it is through every
+                # stage, and settling it first is what keeps the stop from un-finishing it
+                for j, failed, stopped in sorted(outcomes, key=lambda o: o[2] is not None):
+                    halted = settle(j, st, failed, stopped) or halted
+            else:
+                for i, j in enumerate(jobs, 1):
+                    if j.status != "run":            # excluded by an earlier stage — a
+                        continue                     # dropped video is never revisited
+                    # header only for stages that can actually run — run_pipeline still gets
+                    # EVERY pair below, so the STOP checkpoint grid stays identical to
+                    # video-major's; this just keeps an --only run from logging 8 sweeps of
+                    # headers with nothing under them
+                    if only is None or st.name in only:
+                        print(f"\n--- {st.name}  [{i}/{len(jobs)}] {j.vid}")
+                    failed, stopped = _run_stage(j, st, force=force, only=only)
+                    # settled OUTSIDE _run_stage's handlers: while one is active the traceback
+                    # pins st.run's frame and every model local to it, so a session.clear() in
+                    # there would free nothing
+                    halted = settle(j, st, failed, stopped)
+                    if halted:
+                        break
         finally:
             session.clear()                          # a model's lifetime is ONE stage sweep
         if halted:

@@ -46,7 +46,7 @@ import sys
 import numpy as np
 import soundfile as sf
 
-from .. import report
+from .. import host, report
 from ..pipeline import Context
 from ..runreport import unrecovered_spans
 from ..workdir import replace_retry
@@ -254,6 +254,18 @@ def mux_args(video, *, dub=None, subs=(), out, dub_mix: str) -> list[str]:
             + disp + ["-f", "matroska", str(out)])
 
 
+_RAM_ARRAYS = 3                   # float32 48 kHz stereo tracks resident at mux's peak: dub, original
+                                  # and bed, between the bed read and `del orig`
+
+
+def ram_need(work) -> int:
+    """Bytes of RAM one mux of this workdir holds at its peak — what a scheduler running several
+    at once must find free before starting another. Derived from the video's duration; 0 when the
+    duration is unknown, which lets the caller fall back to the concurrency cap alone. 3.01 GiB
+    estimated against 2.92 GiB measured peak on a 46.6-min video (2026-10-30)."""
+    return int(work.source_duration() * _MIX_SR * 2 * 4 * _RAM_ARRAYS)
+
+
 def tracks_on_disk(work) -> dict[str, bool]:
     """Which optional tracks a mux run right now WOULD carry. The stamp's vocabulary."""
     return {"dub": work.dub_audio.exists(),
@@ -447,11 +459,14 @@ class MuxStage:
                 del base, dub, mix, flat
 
             tmp = w.output.with_suffix(".mkv.tmp")
-            subprocess.run(
-                mux_args(w.source_video, dub=(mix_wav if tracks["dub"] else None),
-                         subs=subs, out=tmp, dub_mix=cfg.dub_mix),
-                check=True,
-            )
+            argv = mux_args(w.source_video, dub=(mix_wav if tracks["dub"] else None),
+                            subs=subs, out=tmp, dub_mix=cfg.dub_mix)
+            # the AAC encode is single-threaded and nearly all of this stage's wall clock, so it
+            # goes to the P-cores rather than wherever the scheduler happens to put it
+            proc = subprocess.Popen(argv)
+            host.pin(proc, host.performance_mask())
+            if proc.wait() != 0:
+                raise subprocess.CalledProcessError(proc.returncode, argv)
             # artifact flips BEFORE the stamp (assemble's "done-gate flips LAST" discipline):
             # a crash between them leaves new-mkv + old-stamp → harmless idempotent re-mux;
             # stamp-first would ship the OLD mix labeled as the new mode after a failed swap

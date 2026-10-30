@@ -23,6 +23,13 @@ class Config:
                                      # succeeded on a plain re-run. Widening this makes the burst
                                      # burstier, so the knob buys wall-clock with a rate-limit risk
                                      # that has never been measured above 3.
+    mux_concurrency: int = 4         # videos muxed at once — the stage-major mux sweep and the
+                                     # drain's background muxes (1 = serial). Each mux is one
+                                     # single-threaded AAC encode pinned to the P-cores, so several
+                                     # fit beside each other; the bound that bites first is RAM — a
+                                     # mux holds ~3.8 GiB per hour of video at its peak (2.92 GiB
+                                     # measured on a 46.6-min video, 2026-10-30) — and the scheduler
+                                     # admits a mux only while the sum of the running ones fits.
     # export — title-named final MKVs: "<title> [<video id>].mkv" (hardlink/copy of output.mkv)
     output_dir: Path = Path("out")
 
