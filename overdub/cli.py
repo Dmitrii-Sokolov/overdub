@@ -519,6 +519,8 @@ def _finalize_transcript(ctx: Context) -> str:
     note = ""
     if isinstance(sents, list):
         info = _load_json(w.info_json)
+        if not isinstance(info, dict):              # the name of the '/b' fallback, see _title_of
+            info = _load_json(w.root / "source.mkv.info.json")
         title = info.get("title") if isinstance(info, dict) else None
         try:
             write_transcript(w, sents, title=title if isinstance(title, str) else None,

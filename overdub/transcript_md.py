@@ -138,7 +138,8 @@ def _facts(info: dict) -> str:
     date = info.get("upload_date")
     if isinstance(date, str) and len(date) == 8 and date.isdigit():
         parts.append(f"{date[:4]}-{date[4:6]}-{date[6:]}")
-    for key, noun in (("view_count", "views"), ("like_count", "likes")):
+    for key, noun in (("view_count", "views"), ("like_count", "likes"),
+                      ("comment_count", "comments")):
         n = _count(info, key)
         if n is not None:
             parts.append(f"{_compact(n)} {noun}")
@@ -169,7 +170,8 @@ def render_transcript(sentences: list[dict], *, title: str, duration: float | No
     if n_speakers > 1:
         meta.append(f"{n_speakers} speakers")
     head = [f"# {title}", ""]
-    for line in (" · ".join(meta), _facts(info)):
+    url = info.get("webpage_url")
+    for line in (" · ".join(meta), _facts(info), url if isinstance(url, str) else ""):
         if line:
             head += [line, ""]
     desc = (info.get("description") if isinstance(info.get("description"), str) else "")

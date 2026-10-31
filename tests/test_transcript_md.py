@@ -147,6 +147,31 @@ def test_finalize_renders_the_view_of_a_finished_dub() -> None:
         assert "**Speaker 1**" in work.transcript_md.read_text(encoding="utf-8")
 
 
+def test_finalize_reads_the_sidecar_under_its_single_format_name() -> None:
+    # 24 workdirs of 956 carry only this name (2026-10-31); without it they lose the upload date
+    with tempfile.TemporaryDirectory() as d:
+        work = WorkDir(Path(d) / "abc12345678")
+        work.root.mkdir()
+        ctx = type("C", (), {"work": work})()
+        work.sentences.write_text('[{"id": 0, "text": "Hi.", "start": 0.0, "end": 1.0}]',
+                                  encoding="utf-8")
+        (work.root / "source.mkv.info.json").write_text(
+            '{"title": "T", "channel": "C", "upload_date": "20240520"}', encoding="utf-8")
+        cli._finalize_transcript(ctx)
+        md = work.transcript_md.read_text(encoding="utf-8")
+        assert md.startswith("# T\n") and "C · 2024-05-20" in md
+
+
+def test_the_header_carries_comments_and_the_link() -> None:
+    md = render_transcript([_s(0, 0.0, 1.0, "Hi.", 0)], title="T", duration=None,
+                           info={"channel": "C", "comment_count": 110,
+                                 "webpage_url": "https://www.youtube.com/watch?v=abc12345678"})
+    assert "C · 110 comments\n\nhttps://www.youtube.com/watch?v=abc12345678\n" in md
+    for blank in ({}, {"webpage_url": 5}):
+        assert "http" not in render_transcript([_s(0, 0.0, 1.0, "Hi.", 0)], title="T",
+                                               duration=None, info=blank)
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):

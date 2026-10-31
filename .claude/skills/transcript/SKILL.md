@@ -18,7 +18,7 @@ only re-renders the file. `--force` redoes the transcribe as well.
 ## What comes out
 
 `work/<id>/transcript.md`: title, a line `Duration: H:MM:SS · N speakers`, a line `channel (N subscribers) · date ·
-views · likes` (each part only if the video has it), then the uploader's description verbatim
+views · likes · comments` (each part only if the video has it), the video's link, then the uploader's description verbatim
 under `## Description` (it usually carries chapter timecodes and the speaker list; absent when the
 video has none), then `## Transcript` with the paragraphs. The video's chapters, when it has them,
 are `### title [t]` headings inside the transcript. A paragraph breaks on a
