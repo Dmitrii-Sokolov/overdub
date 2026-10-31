@@ -32,6 +32,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -262,6 +263,20 @@ def test_transcribe_only_diarize_keeps_a_finished_dub_and_the_full_one_does_not(
     cfg = Config()
     assert transcribe_only_stages(cfg)[2].keep_dub is True
     assert next(s for s in all_stages(cfg) if s.name == "diarize").keep_dub is False
+
+
+def test_extract_wav_takes_the_first_audio_track() -> None:
+    # our own MKV: a:0 is the original, a:1 the dub, and ffmpeg's unmapped pick follows the dub's
+    # default flag, so a local dubbed file would come back as a transcript of the Russian voice
+    from overdub.stages import download
+
+    with tempfile.TemporaryDirectory() as d, \
+            mock.patch.object(download.subprocess, "run") as run, \
+            mock.patch.object(download, "replace_retry"), \
+            mock.patch.object(download, "_tool_exe", return_value="ffmpeg"):
+        download._extract_wav(Path(d) / "in.mkv", Path(d) / "out.wav")
+    argv = run.call_args.args[0]
+    assert argv[argv.index("-map") + 1] == "0:a:0", argv
 
 
 def test_transcribe_only_runs_no_stage_after_transcribe() -> None:

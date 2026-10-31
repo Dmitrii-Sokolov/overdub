@@ -234,14 +234,17 @@ def _extract_wav(src: Path, dst: Path) -> None:
     sentences.json comes out short, and nothing ever says so. The audio-only mode is what makes
     this load-bearing: its gate is the first in the pipeline with NO sibling artifact to
     contradict a torn file. Every other large artifact in this repo already goes through
-    replace_retry."""
+    replace_retry.
+
+    `-map 0:a:0`, because --transcribe-file also lands here with our own MKV: its dub is the
+    default track, and ffmpeg's unmapped pick follows that flag to the Russian voice."""
     tmp = dst.parent / (dst.name + ".tmp")
     tmp.unlink(missing_ok=True)                        # orphan from a prior crash
     subprocess.run(
         [
             _tool_exe("ffmpeg"), "-y", "-loglevel", "error",
             "-i", str(src),
-            "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le",
+            "-map", "0:a:0", "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le",
             # explicit "-f wav": ffmpeg picks its output muxer from the EXTENSION, and the
             # atomic tmp above ends in ".tmp", which matches no muxer — without this the call
             # dies with "Unable to choose an output format" before writing a byte and takes
