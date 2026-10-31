@@ -186,7 +186,8 @@ dubbing pipeline expects".
 `--repair-asr` is a usage error, refused before any side effect. Its fetch is `-f bestaudio` with
 no `/best` fallback on purpose — a source with no audio-only format FAILS out of the pass rather
 than quietly pulling a full video stream, and a 100-video queue costs a few GB instead of ~100 GB
-in hour 0.
+in hour 0. A transcript pass never costs a finished dub: a translated multi-speaker video gets its
+diarized cut in `transcript_view.json`, while route B's `--only ... diarize` is what re-cuts one.
 
 One sub-agent per CHUNK, not per video: this is the one route whose output is as long as its input,
 and a per-video agent cleans the opening faithfully and compresses harder the further it goes with

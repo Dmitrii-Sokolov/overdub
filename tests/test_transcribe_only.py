@@ -257,6 +257,13 @@ def test_transcribe_only_download_is_audio_only_and_the_full_one_is_not() -> Non
     assert all_stages(cfg)[0].audio_only is False
 
 
+def test_transcribe_only_diarize_keeps_a_finished_dub_and_the_full_one_does_not() -> None:
+    # a transcript is a read: it must not cost the dub. The full run is the one that may re-cut.
+    cfg = Config()
+    assert transcribe_only_stages(cfg)[2].keep_dub is True
+    assert next(s for s in all_stages(cfg) if s.name == "diarize").keep_dub is False
+
+
 def test_transcribe_only_runs_no_stage_after_transcribe() -> None:
     """Through cli.main, so what is pinned is that main SELECTS the truncated list.
 

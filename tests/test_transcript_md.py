@@ -132,6 +132,21 @@ def test_finalize_writes_the_document_and_never_raises() -> None:
         assert "Guest: Jane" in work.transcript_md.read_text(encoding="utf-8")
 
 
+def test_finalize_renders_the_view_of_a_finished_dub() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        work = WorkDir(Path(d) / "abc12345678")
+        work.root.mkdir()
+        ctx = type("C", (), {"work": work})()
+        work.sentences.write_text('[{"id": 0, "text": "Hi. Yo.", "start": 0.0, "end": 2.0}]',
+                                  encoding="utf-8")
+        work.transcript_view.write_text(
+            '[{"id": 0, "text": "Hi.", "start": 0.0, "end": 1.0, "speaker": 0},'
+            ' {"id": 1, "text": "Yo.", "start": 1.0, "end": 2.0, "speaker": 1}]',
+            encoding="utf-8")
+        cli._finalize_transcript(ctx)
+        assert "**Speaker 1**" in work.transcript_md.read_text(encoding="utf-8")
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):

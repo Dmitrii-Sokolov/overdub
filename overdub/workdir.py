@@ -224,6 +224,9 @@ class WorkDir:
     def transcript_md(self) -> Path: return self.root / "transcript.md"   # --transcribe-only: paragraphs + speakers
 
     @property
+    def transcript_view(self) -> Path: return self.root / "transcript_view.json"  # --transcribe-only: the diarized cut of a finished dub
+
+    @property
     def thumb(self) -> Path: return self.root / "thumb.jpg"               # queue report: 160px preview, data-URI'd into the page
 
     @property
@@ -320,6 +323,7 @@ class WorkDir:
             *sorted(self.clean_dir.glob("*.json")),      # so a renumber silently re-points each
                                                          # cleaned line at a different sentence
             self.transcript_md,                          # rendered from sentences.json itself
+            self.transcript_view,                        # a cut of the same words, or a copy of them
             self.seg_manifest,                           # synthesize
             self.report,                                 # verify + assemble + mux
             self.dub_audio,                              # assemble

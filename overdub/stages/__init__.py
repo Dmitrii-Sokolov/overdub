@@ -50,7 +50,10 @@ def transcribe_only_stages(cfg: Config) -> list[Stage]:
     Under stage-major ONE DownloadStage instance serves every video of the batch. Safe: stages
     carry no per-instance state beyond `audio_only`, which is a constant for the whole run.
 
+    `keep_dub` is the same kind of fact: a transcript is a read, so a workdir that already has a
+    translation must come out of this list with that translation and its dub intact.
+
     `cfg` is unused; it is accepted for symmetry with all_stages so the call site in cli stays
     a single expression.
     """
-    return [DownloadStage(audio_only=True), TranscribeStage(), DiarizeStage()]
+    return [DownloadStage(audio_only=True), TranscribeStage(), DiarizeStage(keep_dub=True)]

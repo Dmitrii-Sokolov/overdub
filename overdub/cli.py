@@ -515,7 +515,7 @@ def _finalize_transcript(ctx: Context) -> str:
     stays a successful transcription.
     """
     w = ctx.work
-    sents = _load_json(w.sentences)
+    sents = _load_json(w.transcript_view if w.transcript_view.exists() else w.sentences)
     note = ""
     if isinstance(sents, list):
         info = _load_json(w.info_json)

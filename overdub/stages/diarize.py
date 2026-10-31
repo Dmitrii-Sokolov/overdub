@@ -15,6 +15,11 @@ of the transcript is stale, and it goes the way --repair-asr sends it: the trans
 to `_pre-diarize-translation.json` first (it is the one artifact that cost a Sonnet pass), then
 WorkDir.invalidate_downstream deletes the rest. The video re-enters route B for translation.
 
+A TRANSCRIPT PASS DOES NOT PAY THAT PRICE. `--transcribe-only` asks for text, so under it
+(`keep_dub`) a translated workdir with several speakers gets its cut in `transcript_view.json` and
+nothing else changes: sentences.json, the translation and the dub stay. diar.json stays absent too,
+because it would tell a later full run that this workdir needs no re-cut.
+
 words.json is read, never written: it is the raw record of what the ASR heard (DECISIONS
 2026-07-19), and the speaker of a word is derivable from it and diar.json at any time.
 
@@ -158,8 +163,23 @@ def _write_atomic(path, text: str) -> None:
 class DiarizeStage:
     name = "diarize"
 
+    def __init__(self, *, keep_dub: bool = False) -> None:
+        self.keep_dub = keep_dub
+
     def done(self, ctx: Context) -> bool:
-        return not ctx.cfg.diarize or ctx.work.diar.exists()
+        if not ctx.cfg.diarize or ctx.work.diar.exists():
+            return True
+        return self.keep_dub and ctx.work.transcript_view.exists()
+
+    def _write_view(self, ctx: Context, flat: list[W], n: int) -> None:
+        """A repaired sentences.json is copied as it is: words.json predates the repair, so a cut
+        from it would undo the repair, and unlabelled text is the smaller loss."""
+        repaired = ctx.work.pre_repair_sentences.exists()
+        view = (json.loads(ctx.work.sentences.read_text(encoding="utf-8")) if repaired
+                else resegment(flat))
+        _write_atomic(ctx.work.transcript_view, json.dumps(view, ensure_ascii=False, indent=2))
+        print(f"       {n} speakers → {ctx.work.transcript_view.name} (finished dub kept"
+              + (", repaired text unlabelled)" if repaired else ")"))
 
     def run(self, ctx: Context) -> None:
         from .. import timings
@@ -177,6 +197,10 @@ class DiarizeStage:
             for w, lab in zip(flat, _renumber([w.speaker for w in flat])):
                 w.speaker = lab
         n = len({w.speaker for w in flat if w.speaker is not None})
+
+        if n >= 2 and self.keep_dub and ctx.work.translation.exists():
+            self._write_view(ctx, flat, n)
+            return
 
         rewritten = False
         if n >= 2 and ctx.work.pre_repair_sentences.exists():
@@ -219,6 +243,7 @@ class DiarizeStage:
                 print(f"       speaker {s['speaker']}: F0 {s['f0_hz']} Hz, ΔF {s['delta_f_hz']} Hz "
                       f"→ {s['pool']} pool, {s['gender']}")
 
+        ctx.work.transcript_view.unlink(missing_ok=True)     # sentences.json speaks for itself now
         _write_atomic(ctx.work.diar, json.dumps(
             {"speakers": n, "speakers_info": info, "segments": segments, "meta": meta},
             ensure_ascii=False, indent=1))

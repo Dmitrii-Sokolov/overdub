@@ -27,7 +27,9 @@ each change opens with `**Speaker N** [t]`; with one speaker there are no labels
 timecode appears every two minutes. `N` is the diarization id (from 0), not a name.
 
 Next to it: `sentences.json` (every sentence with `speaker`, `start`, `end`), `diar.json` (raw
-speaker segments) and `source.wav`.
+speaker segments) and `source.wav`. A video that already has a translation and more than one
+speaker keeps its `sentences.json`, translation and dub: its cut goes to `transcript_view.json`
+instead, and no `diar.json` appears.
 
 ## After the run
 

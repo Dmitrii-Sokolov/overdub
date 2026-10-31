@@ -248,6 +248,68 @@ def test_a_repaired_transcript_with_two_speakers_raises_and_stays_not_done() -> 
         assert not DiarizeStage().done(ctx)
 
 
+def test_a_transcript_pass_leaves_a_finished_dub_alone() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        ctx = _ctx(Path(d), TWO)
+        ctx.work.dub_audio.write_bytes(b"dub")
+        before = (ctx.work.sentences.read_bytes(), ctx.work.translation.read_bytes())
+        stage = DiarizeStage(keep_dub=True)
+        stage.run(ctx)
+        assert (ctx.work.sentences.read_bytes(), ctx.work.translation.read_bytes()) == before
+        assert ctx.work.dub_audio.exists() and not ctx.work.pre_diarize_translation.exists()
+        view = json.loads(ctx.work.transcript_view.read_text(encoding="utf-8"))
+        assert [(s["speaker"], s["text"]) for s in view] == [(0, ASK), (1, NO)], view
+        assert stage.done(ctx)
+
+
+def test_a_full_run_still_owes_a_kept_dub_its_recut() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        ctx = _ctx(Path(d), TWO)
+        DiarizeStage(keep_dub=True).run(ctx)
+        assert not ctx.work.diar.exists() and not DiarizeStage().done(ctx)
+        DiarizeStage().run(ctx)
+        assert not ctx.work.translation.exists() and not ctx.work.transcript_view.exists()
+
+
+def test_a_view_does_not_outlive_the_authoritative_diarization() -> None:
+    # the speaker count can move on one wav: a later one-speaker verdict leaves no re-cut to clear
+    # the view, and a surviving one would keep rendering two speakers over sentences.json
+    with tempfile.TemporaryDirectory() as d:
+        ctx = _ctx(Path(d), TWO)
+        DiarizeStage(keep_dub=True).run(ctx)
+        ctx.session._d.segments = ONE
+        DiarizeStage().run(ctx)
+        assert ctx.work.diar.exists() and not ctx.work.transcript_view.exists()
+
+
+def test_a_transcript_pass_with_nothing_translated_recuts_as_usual() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        ctx = _ctx(Path(d), TWO, translated=False)
+        DiarizeStage(keep_dub=True).run(ctx)
+        sents = json.loads(ctx.work.sentences.read_text(encoding="utf-8"))
+        assert [s["speaker"] for s in sents] == [0, 1], sents
+        assert ctx.work.diar.exists() and not ctx.work.transcript_view.exists()
+
+
+def test_a_transcript_pass_over_one_speaker_marks_the_workdir_diarized() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        ctx = _ctx(Path(d), ONE)
+        DiarizeStage(keep_dub=True).run(ctx)
+        assert ctx.work.diar.exists() and not ctx.work.transcript_view.exists()
+
+
+def test_a_transcript_pass_shows_a_repaired_transcript_unlabelled() -> None:
+    # words.json predates the repair, so a re-cut would quietly bring the repaired text back wrong
+    with tempfile.TemporaryDirectory() as d:
+        ctx = _ctx(Path(d), TWO)
+        ctx.work.pre_repair_sentences.write_text("[]", encoding="utf-8")
+        before = ctx.work.sentences.read_bytes()
+        DiarizeStage(keep_dub=True).run(ctx)
+        assert ctx.work.sentences.read_bytes() == before
+        assert (json.loads(ctx.work.transcript_view.read_text(encoding="utf-8"))
+                == json.loads(before))
+
+
 def test_no_words_skips_the_model() -> None:
     with tempfile.TemporaryDirectory() as d:
         ctx = _ctx(Path(d), TWO, translated=False)
