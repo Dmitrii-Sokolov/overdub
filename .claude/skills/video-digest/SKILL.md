@@ -45,7 +45,7 @@ Arguments: one or more inputs, each a YouTube URL or a path to a local media fil
    from the session environment. Speaker labels and timecodes are navigation, not content; do not
    carry them into the digest.
 6. **Part 3 uses WebSearch** for the errors worth verifying, for what may have changed since
-   publication, and for every checkable forecast. The digest marks which items were searched and
+   publication, and for every forecast whose date has passed. The digest marks which items were searched and
    which come from memory, as the prompt requires. Do not mark an item as searched unless a search
    was actually run for it.
 7. **Save** with Write, then print the same text in the chat:
@@ -61,8 +61,9 @@ the duration and speaker count from its transcript header and any `[warn]`.
 ## Limits
 
 - The digest is written in Russian whatever the video's language; quotes and terms stay as spoken.
-- The transcript is ASR output without cleanup: a name or a number may be misheard. Part 3 is where
-  that is supposed to surface, so do not silently correct such a spot in Parts 1-2.
+- The transcript is ASR output without cleanup: a name or a number may be misheard. Write such a
+  spot correctly only when the right form is certain, otherwise leave it out. Part 3 names it only
+  when the mistake changes the meaning.
 - Several speakers (interview, panel): the diarizer's ids are not names. Name a speaker only when
   the title or description names the guests and the transcript makes the match plain; otherwise do
   not attribute the claim. The description is the uploader's text, not a checked source: its
