@@ -18,10 +18,12 @@ by-product, not the point. The check: ask what a run RETURNED — a number, a
 flag distribution, a verdict, a fixture; a run that returned only watchable
 artifacts was a production run, and this repo does not do production runs yet.
 Same rule reversed: intermediate artifacts are
-consumables, so anything that persists a generalizable finding (the golden
-fixture, `_pre-repair-*.json` pairs, `work-exp/` baselines) outranks the videos
-themselves — `work-exp/` has already lost baselines to a cleanup while the
-videos survived, which is exactly the wrong direction.
+consumables. Everything under the gitignored `work/` and `work-exp/` may be
+deleted at any moment, and a cleanup there is the design working, not a loss
+(owner decision 2026-11-05). So a generalizable finding (the golden fixture,
+`_pre-repair-*.json` pairs, a baseline worth comparing against) never lives
+only there: whatever has to survive is tracked, or kept outside the ignored
+paths.
 
 ## Host environment
 
