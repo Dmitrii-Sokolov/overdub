@@ -34,7 +34,9 @@ from overdub.workdir import WorkDir                                  # noqa: E40
 V, D, EN, RU, OUT = "src.mkv", "mix.wav", "en.srt", "ru.srt", "out.mkv.tmp"
 ALL_SUBS = [("eng", EN), ("rus", RU)]
 
-# The exact command mux.run built for a complete workdir before the tracks became optional.
+# The exact command mux.run builds for a complete workdir: the argv from before the tracks became
+# optional plus the one deliberate change since, `-aac_coder:a:1 fast` (2026-10-30). An export
+# muxed before that date was encoded with the default twoloop coder, not with this list.
 _SHIPPED = [
     "ffmpeg", "-y", "-loglevel", "error",
     "-i", V, "-i", D, "-i", EN, "-i", RU,
