@@ -189,14 +189,29 @@ class WorkDir:
     def source_audio(self) -> Path: return self.root / "source.wav"      # 16k mono, for whisper
 
     @property
-    def info_json(self) -> Path: return self.root / "source.info.json"   # yt-dlp metadata (title)
+    def info_json(self) -> Path: return self.root / "source.info.json"   # yt-dlp metadata: the name
+                                                                          # writers use; read via info()
+
+    def info(self) -> dict | None:
+        """yt-dlp's metadata for this video; None when no sidecar reads as a JSON object.
+
+        yt-dlp names the sidecar after the container it actually wrote: `source.info.json` on the
+        mkv merge path (and once the audio-only fetch has renamed its own), `source.mkv.info.json`
+        on the single-format '/b' fallback. Every reader comes through here, so none of them can
+        know only one of the names. source.info.json is tried first; a torn or non-object file
+        falls through to the other name instead of hiding it."""
+        for path in (self.info_json, self.root / "source.mkv.info.json"):
+            try:
+                doc = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):                  # missing, torn, or not UTF-8
+                continue
+            if isinstance(doc, dict):
+                return doc
+        return None
 
     def source_duration(self) -> float:
         """The video's duration in seconds per yt-dlp's metadata; 0.0 when unknown."""
-        try:
-            dur = json.loads(self.info_json.read_text(encoding="utf-8")).get("duration")
-        except Exception:                                  # noqa: BLE001 — unknown, not an error
-            return 0.0
+        dur = (self.info() or {}).get("duration")
         return float(dur) if isinstance(dur, (int, float)) and not isinstance(dur, bool) else 0.0
 
     @property

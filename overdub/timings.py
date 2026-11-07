@@ -220,13 +220,14 @@ def record_run(work_root, ids, *, started, finished, order, config_key) -> None:
     costs that line and not the file.
     """
     try:
+        from .workdir import WorkDir
+
         ids = list(ids)
         audio_s, audio_n = 0.0, 0
         for vid in ids:
-            info = _load_json(work_root / vid / "source.info.json")
-            dur = info.get("duration") if isinstance(info, dict) else None
-            if isinstance(dur, (int, float)) and not isinstance(dur, bool) and dur > 0:
-                audio_s += float(dur)
+            dur = WorkDir(work_root / vid).source_duration()
+            if dur > 0:
+                audio_s += dur
                 audio_n += 1
         row = {"run_id": RUN_ID, "started": started, "finished": finished,
                "elapsed_s": _elapsed_s(started, finished), "order": order,

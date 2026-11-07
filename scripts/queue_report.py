@@ -553,8 +553,7 @@ def _views(entries: list[dict]) -> list[dict]:
             v = _NOT_DOWNLOADED
         # A title may exist even when nothing else does: the info.json sidecar lands before the
         # media on a partial fetch. Showing it beats a bare id for a row whose job is action.
-        info = _load_json(work.info_json)
-        info_title = info.get("title") if isinstance(info, dict) else None
+        info_title = (work.info() or {}).get("title")
         title = (run or {}).get("title") or info_title or e["vid"]
         # duration ladder: the run's measured video_sec first, then the collector's fallback
         duration = None

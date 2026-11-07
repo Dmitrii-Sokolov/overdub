@@ -397,18 +397,12 @@ def _read_queue(path: Path) -> list[str]:
 
 
 def _title_of(ctx: Context) -> str | None:
-    """Title from persisted source.info.json; pre-change workdirs get one metadata-only
-    yt-dlp call, persisted on success (self-heals: offline resumes stay offline-safe).
-    None → caller names by video id. Never triggers a download."""
-    # yt-dlp derives the sidecar name from the actual ext: source.info.json on the mkv
-    # merge path, source.mkv.info.json on the single-format '/b' fallback — probe both
-    for ij in (ctx.work.info_json, ctx.work.root / "source.mkv.info.json"):
-        try:
-            title = json.loads(ij.read_text(encoding="utf-8")).get("title")
-            if title:
-                return title
-        except (OSError, ValueError):               # missing or torn (ValueError also covers
-            pass                                    # a truncated UTF-8 seq) → backfill attempt
+    """Title from the persisted yt-dlp sidecar (WorkDir.info); pre-change workdirs get one
+    metadata-only yt-dlp call, persisted on success (self-heals: offline resumes stay
+    offline-safe). None → caller names by video id. Never triggers a download."""
+    title = (ctx.work.info() or {}).get("title")
+    if title:
+        return title
     try:                                            # --print implies --simulate: no download.
         # PYTHONUTF8=1: yt-dlp encodes piped stdout in the locale codepage — Cyrillic titles
         # get dropped/mangled on stock (non-UTF-8-ACP) Windows without it
@@ -494,7 +488,7 @@ def _transcript_status(ctx: Context) -> str:
         # a bare existence check), so a file that will not parse is a defect the operator must
         # see, not an empty video.
         return "transcribed · no readable sentences.json"
-    dur = _transcript_duration(sents, _load_json(w.info_json))
+    dur = _transcript_duration(sents, w.info())
     return f"transcribed · {clock(dur)} · {len(sents)} sentences"
 
 
@@ -518,10 +512,8 @@ def _finalize_transcript(ctx: Context) -> str:
     sents = _load_json(w.transcript_view if w.transcript_view.exists() else w.sentences)
     note = ""
     if isinstance(sents, list):
-        info = _load_json(w.info_json)
-        if not isinstance(info, dict):              # the name of the '/b' fallback, see _title_of
-            info = _load_json(w.root / "source.mkv.info.json")
-        title = info.get("title") if isinstance(info, dict) else None
+        info = w.info()
+        title = info.get("title") if info else None
         try:
             write_transcript(w, sents, title=title if isinstance(title, str) else None,
                              duration=_transcript_duration(sents, info), info=info)
@@ -869,7 +861,7 @@ def _summarize(results: list[tuple[str, str, str]], not_run: list[str], halted: 
 
 def _load_json(path: Path):
     """Tolerant JSON read: None on missing/torn. Shared by the batch sweep (run.json) and
-    _transcript_status (sentences.json / source.info.json) — same "an unreadable optional
+    _transcript_status (sentences.json) — same "an unreadable optional
     artifact degrades, never crashes" contract runreport and both scripts/ reporters use."""
     try:
         return json.loads(path.read_text(encoding="utf-8"))

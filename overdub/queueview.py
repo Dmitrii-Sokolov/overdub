@@ -192,9 +192,7 @@ def collect_entries(queue, workdirs, work_root, *, limit=500, rebuild=False, cfg
             sents = _load_json(work.sentences)
             sents = sents if isinstance(sents, list) else []
             entry["n_sentences"] = len(sents)
-            info = _load_json(work.info_json)
-            info = info if isinstance(info, dict) else {}
-            dur = info.get("duration")
+            dur = (work.info() or {}).get("duration")
             if not isinstance(dur, (int, float)) or isinstance(dur, bool) or dur <= 0:
                 ends = [s.get("end") for s in sents
                         if isinstance(s, dict) and isinstance(s.get("end"), (int, float))]

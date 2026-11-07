@@ -258,8 +258,7 @@ def _build_run_report(work, cfg):
         (work.root / "run.json").unlink(missing_ok=True)
         return None
 
-    info = _load_json(work.info_json)
-    info = info if isinstance(info, dict) else None
+    info = work.info()
     title = info.get("title") if info else None
 
     # --- timings + RTF -------------------------------------------------------

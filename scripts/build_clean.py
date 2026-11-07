@@ -415,8 +415,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     records, stats = join(work, chunks)
-    info = _load_json(work.info_json)
-    info = info if isinstance(info, dict) else {}
+    info = work.info() or {}
     doc = {
         "video_id": work.root.name,
         # DEGRADES rather than raises, unlike --plan above: by join time the agents have already
