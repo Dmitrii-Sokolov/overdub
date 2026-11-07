@@ -395,10 +395,16 @@ class MuxStage:
         pass_patches: list[tuple[int, np.ndarray]] = []
         try:
             if tracks["dub"]:
+                # Each extraction wav is deleted as soon as it is in memory, not in the finally:
+                # nothing reads it again, and on a long video the three together are gigabytes
+                # of scratch that would otherwise sit on disk through the whole encode — times
+                # the number of muxes running at once. The finally still covers the error path.
                 _extract(w.dub_audio, dub48)               # 24k mono → 48k stereo
                 dub, _ = sf.read(str(dub48), dtype="float32")
+                dub48.unlink()
                 _extract(w.source_video, orig48)           # original: gain reference (+ duck base)
                 orig, _ = sf.read(str(orig48), dtype="float32")
+                orig48.unlink()
 
                 # duck/gain intervals = unit spans EXTENDED to the placed audio: the slot-fill
                 # neutral branch deliberately spills RU past the span into the free gap, and
@@ -415,6 +421,7 @@ class MuxStage:
                 if cfg.dub_mix == "bed":
                     _extract(w.source_bed, bed48)
                     base = sf.read(str(bed48), dtype="float32")[0]
+                    bed48.unlink()
                     # The passthrough slices are cut out HERE, while orig is still in memory: they
                     # are seconds of audio against a whole track, and the `del` below is what keeps
                     # a 40-minute video from holding two full copies of it.
