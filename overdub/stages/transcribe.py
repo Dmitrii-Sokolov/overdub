@@ -577,7 +577,8 @@ class TranscribeStage:
             sentences = resegment(flat)
             ctx.work.sentences.write_text(
                 json.dumps(sentences, ensure_ascii=False, indent=2), encoding="utf-8")
-            ctx.work.diar.unlink(missing_ok=True)   # its speaker cut no longer describes this file
+            ctx.work.diar.unlink(missing_ok=True)   # its speaker cut no longer describes this file,
+            ctx.work.transcript_view.unlink(missing_ok=True)   # nor does a view cut from old words
             work_s = time.perf_counter() - t0
             holes = wmeta.get("holes") or []
             unrecovered = wmeta.get("holes_unrecovered") or []
@@ -661,7 +662,8 @@ class TranscribeStage:
         ctx.work.sentences.write_text(
             json.dumps(sentences, ensure_ascii=False, indent=2), encoding="utf-8"
         )
-        ctx.work.diar.unlink(missing_ok=True)       # its speaker cut no longer describes this file
+        ctx.work.diar.unlink(missing_ok=True)       # its speaker cut no longer describes this file,
+        ctx.work.transcript_view.unlink(missing_ok=True)       # nor does a view cut from old words
         # after the artifacts are on disk: "from launch to exit" is the whole stage minus the
         # model, and resegmentation plus these two writes are part of what an optimization
         # would be trying to move.

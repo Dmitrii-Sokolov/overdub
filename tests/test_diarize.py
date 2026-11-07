@@ -271,6 +271,20 @@ def test_a_full_run_still_owes_a_kept_dub_its_recut() -> None:
         assert not ctx.work.translation.exists() and not ctx.work.transcript_view.exists()
 
 
+def test_a_view_without_the_translation_it_spares_is_not_done() -> None:
+    # the view stands in for diar.json only to keep a translation alive; once that is gone the
+    # transcript pass owes the real re-cut, and a skipped diarize would keep rendering the old view
+    with tempfile.TemporaryDirectory() as d:
+        ctx = _ctx(Path(d), TWO)
+        stage = DiarizeStage(keep_dub=True)
+        stage.run(ctx)
+        assert stage.done(ctx)
+        ctx.work.translation.unlink()
+        assert not stage.done(ctx)
+        stage.run(ctx)
+        assert ctx.work.diar.exists() and not ctx.work.transcript_view.exists()
+
+
 def test_a_view_does_not_outlive_the_authoritative_diarization() -> None:
     # the speaker count can move on one wav: a later one-speaker verdict leaves no re-cut to clear
     # the view, and a surviving one would keep rendering two speakers over sentences.json

@@ -38,6 +38,7 @@ import parakeet_worker as pw                                       # noqa: E402
 from overdub.asr import asr_key, asr_key_core                      # noqa: E402
 from overdub.config import Config                                  # noqa: E402
 from overdub.pipeline import Context                               # noqa: E402
+from overdub.stages.diarize import DiarizeStage                    # noqa: E402
 from overdub.stages.transcribe import TranscribeStage              # noqa: E402
 from overdub.workdir import WorkDir                                # noqa: E402
 
@@ -248,6 +249,20 @@ def test_the_stage_stamps_where_the_unrecovered_speech_is() -> None:
         # The count stays beside them: it is what needs_triage reads, and a run predating the
         # spans still has to be tellable from one that was checked and came back clean.
         assert detail["holes_unrecovered"] == 1, detail
+
+
+def test_a_new_decode_retires_the_transcript_view_of_the_old_one() -> None:
+    # The view is a speaker cut of the PREVIOUS decode's words. Left behind, it kept diarize "done"
+    # on the next transcript pass, and transcript.md rendered the old decode's text over this one.
+    words = [{"text": "One.", "start": 0.0, "end": 0.4, "seg_end": True}]
+    with tempfile.TemporaryDirectory() as d:
+        ctx = _ctx(Path(d), _FakeWorker(words))
+        ctx.work.translation.write_text("[]", encoding="utf-8")
+        ctx.work.transcript_view.write_text("[]", encoding="utf-8")
+        assert DiarizeStage(keep_dub=True).done(ctx)          # a transcript pass's resting state
+        TranscribeStage().run(ctx)
+        assert not ctx.work.transcript_view.exists()
+        assert not DiarizeStage(keep_dub=True).done(ctx)
 
 
 def test_the_stage_collapses_a_repetition_loop() -> None:

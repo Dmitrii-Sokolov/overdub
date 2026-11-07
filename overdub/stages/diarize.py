@@ -169,7 +169,10 @@ class DiarizeStage:
     def done(self, ctx: Context) -> bool:
         if not ctx.cfg.diarize or ctx.work.diar.exists():
             return True
-        return self.keep_dub and ctx.work.transcript_view.exists()
+        # the view stands in for diar.json only while the translation it spares exists; without
+        # one, run() owes sentences.json the real re-cut
+        return (self.keep_dub and ctx.work.transcript_view.exists()
+                and ctx.work.translation.exists())
 
     def _write_view(self, ctx: Context, flat: list[W], n: int) -> None:
         """A repaired sentences.json is copied as it is: words.json predates the repair, so a cut

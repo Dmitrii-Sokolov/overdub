@@ -53,6 +53,7 @@ from overdub.asr import (VERIFY_BEAM_SIZE, asr_key, asr_key_core,  # noqa: E402
                          load_whisper, roundtrip_similarity)
 from overdub.config import Config  # noqa: E402
 from overdub.pipeline import Context, Session  # noqa: E402
+from overdub.stages.diarize import DiarizeStage  # noqa: E402
 from overdub.stages.synthesize import SynthesizeStage  # noqa: E402
 from overdub.stages.transcribe import MIN_WORD_DUR, TranscribeStage, transcribe_words  # noqa: E402
 from overdub.stages.verify import VerifyStage  # noqa: E402
@@ -732,6 +733,23 @@ def test_a_forced_rewrite_with_no_translation_stays_free() -> None:
         _quiet(TranscribeStage().run, ctx)
         detail = json.loads((tmp / "timings.json").read_text(encoding="utf-8"))["detail"]
         assert detail["transcribe"]["asr_key"] == asr_key(cfg), detail
+
+
+def test_a_forced_rewrite_retires_the_transcript_view_of_the_old_decode() -> None:
+    # `--force --only transcribe` over a transcript pass's workdir: the view is a speaker cut of the
+    # words this run replaces, and a survivor kept diarize "done" on the next transcript pass.
+    with tempfile.TemporaryDirectory() as d:
+        tmp = Path(d) / VID
+        work = _work(tmp)
+        work.source_audio.write_bytes(b"RIFF")
+        work.translation.write_text("[]", encoding="utf-8")
+        work.transcript_view.write_text("[]", encoding="utf-8")
+        ctx = _ctx(work)
+        ctx.session.whisper = lambda c, m, *, role: FakeModel()  # type: ignore[method-assign]
+        assert DiarizeStage(keep_dub=True).done(ctx)
+        _quiet(TranscribeStage().run, ctx)
+        assert not work.transcript_view.exists()
+        assert not DiarizeStage(keep_dub=True).done(ctx)
 
 
 def test_a_cond_only_difference_does_not_block_a_forced_rewrite() -> None:
