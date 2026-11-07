@@ -95,8 +95,11 @@ COMMANDS and the artifact contract; they are deliberately not a second copy of e
   `transcribe`, and so on, so each model loads once per BATCH instead of once per video. The trade
   is that no MKV is finished until late in the run; a failed video drops out of the remaining
   stages without affecting the others, and the summary says which stage it died on. `--video-major`
-  restores the old order and produces byte-identical audio. Download is the exception — it runs as
-  a concurrent pre-pass (`download_concurrency`) before the sweep.
+  restores the old order and produces byte-identical audio. Two stages run several videos at once:
+  download as a best-effort pre-pass before the sweep (`download_concurrency`; whatever it fails
+  to fetch, the sweep fetches again), and mux inside its own sweep, up to `mux_concurrency` videos
+  admitted while their RAM fits. A STOP during the mux sweep lets the running muxes finish and
+  starts no new one.
 - **A MISSING artifact degrades; an INCONSISTENT one raises.** No translation → `en.srt` off the
   transcript and no dub; `mux` needs only `source.mkv` and ships whatever tracks exist. An EMPTY
   transcript is neither — a video with no speech gets `translation.json` as `[]` from the pipeline

@@ -582,18 +582,19 @@ def _run_batch_video_major(urls: list[str], cfg: Config, *, force: bool,
 def _prefetch_downloads(jobs, stage, cfg, *, force: bool, only: set[str] | None) -> None:
     """Fetch the batch's videos CONCURRENTLY before the stage sweep. Best-effort, never raises.
 
-    download is the only stage that holds no GPU and is bound by the network, so it is the only
-    one a thread pool helps: on the 2026-08-06 baseline it was 323.8 s of strictly serial fetching
-    (13.3% of machine time) whose longest single video was 82 s — most of it queue, not transfer.
+    download holds no GPU and is bound by the network, so a thread pool helps it: on the
+    2026-08-06 baseline it was 323.8 s of strictly serial fetching (13.3% of machine time) whose
+    longest single video was 82 s — most of it queue, not transfer.
 
-    WHY A PRE-PASS AND NOT A PARALLEL BRANCH INSIDE THE SWEEP. The sweep's inner loop owns the
-    STOP semantics, the cross-stage status machine and failure isolation, all of them pinned by
-    tests; widening it to run jobs concurrently would put the batch's convergence guarantees on
-    the line for one stage's wall clock. Here the sweep is untouched and stays the AUTHORITY: this
-    pass runs the same stage through the same `run_pipeline`, so timings, spans and the artifact
-    contract come from one code path, and anything it fails to fetch simply has `done() == False`
-    when the sweep reaches it — refetched sequentially, reported as an ordinary FAIL row. That is
-    why every exception here is swallowed: a prefetch failure must cost a retry, never a video.
+    WHY A PRE-PASS, WHEN MUX RUNS CONCURRENTLY INSIDE ITS OWN SWEEP. mux (_sweep_concurrent) runs
+    up to `mux_concurrency` videos at once, admitted while their RAM fits, and every outcome still
+    goes through the sweep's settle(): a failure drops that video, and a STOP lets the running
+    muxes finish and admits no new one. A download failure has to cost less than that — a retry,
+    never a video — so download stays a best-effort pass before the sweep, and the sweep stays the
+    AUTHORITY: this pass runs the same stage through the same `run_pipeline`, so timings, spans and
+    the artifact contract come from one code path, and anything it fails to fetch simply has
+    `done() == False` when the sweep reaches it — refetched sequentially, reported as an ordinary
+    FAIL row. That is why every exception here is swallowed.
 
     Per-video timings.json files are distinct, so the concurrent writes do not race each other.
 
@@ -764,8 +765,9 @@ def _run_batch_stage_major(urls: list[str], cfg: Config, *, force: bool,
     halted: str | None = None
 
     # Concurrent fetch BEFORE the sweep, so the sweep's own download pass finds the artifacts and
-    # fast-skips. Deliberately outside the loop below: that loop's guarantees are the batch's, and
-    # this stage's wall clock does not buy a share of them. Best-effort by contract.
+    # fast-skips. Outside the loop below, unlike mux, which runs concurrently inside it with its
+    # outcomes settled like any other stage's: a failed prefetch must cost only a retry, so this
+    # pass is best-effort by contract and reports nothing per video.
     dl = next((s for s in stages if s.name == "download"), None)
     if dl is not None and len(jobs) > 1:
         _prefetch_downloads(jobs, dl, cfg, force=force, only=only)

@@ -12,8 +12,8 @@ class Config:
     # work dir
     work_root: Path = Path("work")
     download_concurrency: int = 3    # videos fetched at once in the batch PREFETCH (1 = off, the
-                                     # pre-2026-08-06 behaviour). download is the only stage that
-                                     # holds no GPU and is bound by the network, and on the
+                                     # pre-2026-08-06 behaviour). download holds no GPU and is
+                                     # bound by the network, and on the
                                      # 2026-08-06 baseline it was 13.3% of machine time — 323.8 s
                                      # of strictly serial fetching whose longest single video was
                                      # 82 s, i.e. most of it was the queue and not the transfer.
