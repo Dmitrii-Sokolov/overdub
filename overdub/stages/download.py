@@ -77,6 +77,13 @@ _RETRY_ARGV = [
 # experiment (yt-dlp issue #12563) and says nothing about the video in front of you.
 _CLIENT_ARGV = ["--extractor-args", "youtube:player_client=web_embedded"]
 
+# ONE video per workdir, whatever the URL says. A `watch?v=X&list=PL…` URL is a playlist to
+# yt-dlp by default, and with the fixed `source.*` output path every entry lands over the one
+# workdir named after X — verified 2026-07-24 on a real such URL. The URL reaches this stage as
+# the queue line was written (the CLI dedupes by id but passes the line on unchanged), so this is
+# the one place that covers every route and every hand-made queue.
+_SINGLE_VIDEO_ARGV = ["--no-playlist"]
+
 
 class DownloadStage:
     """Fetches the source and produces the two artifacts every later stage keys on.
@@ -118,6 +125,7 @@ class DownloadStage:
                 _tool_exe("yt-dlp"),
                 *_RETRY_ARGV,
                 *_CLIENT_ARGV,
+                *_SINGLE_VIDEO_ARGV,
                 "-f", "bv*[ext=mp4]+ba[ext=m4a]/bv*+ba/b",
                 "--merge-output-format", "mkv",
                 "--write-info-json",
@@ -166,6 +174,7 @@ class DownloadStage:
                 _tool_exe("yt-dlp"),
                 *_RETRY_ARGV,
                 *_CLIENT_ARGV,
+                *_SINGLE_VIDEO_ARGV,
                 "-f", "bestaudio",
                 "--write-info-json",
                 # the queue report shows a preview beside each title; grabbing it while we are

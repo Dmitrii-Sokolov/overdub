@@ -78,9 +78,11 @@ All three guards are load-bearing:
   `video_id()` hash-fallbacks it into a `work/<sha1>` dir — but is invisible to every gate the
   route runs, so it silently never gets its sub-agent, its translation or its summary.
 - **A line carrying `&list=` is the worse case, because the regex gate WAVES IT THROUGH** — the
-  video id matches — and then `yt-dlp` follows the playlist: the download stage passes no
-  `--no-playlist` and `-o` is a fixed `source.*` path (`stages/download.py`), so dozens of videos
-  are fetched over one workdir. Verified 2026-07-24 on a real `watch?v=…&list=…` URL.
+  video id matches — and then `yt-dlp` follows the playlist unless told not to: `-o` is a fixed
+  `source.*` path (`stages/download.py`), so dozens of videos are fetched over one workdir.
+  Verified 2026-07-24 on a real `watch?v=…&list=…` URL. Since 2026-11-07 the download stage
+  passes `--no-playlist`, so the fetch itself is safe; the guard stays because the line still
+  reaches every other consumer of the queue as written.
 - **Duplicate spellings** of one video share a workdir and the CLI dedupes them (`cli.py`); without
   `-Unique` two parallel sub-agents race on the same draft file.
 

@@ -409,6 +409,8 @@ def test_audio_ytdlp_argv() -> None:
         assert yt[yt.index("--retries") + 1] == "10"
         assert yt[yt.index("--extractor-retries") + 1] == "5"
         assert yt[yt.index("--retry-sleep") + 1].startswith("exp=")
+        # a `watch?v=X&list=…` queue line must fetch X alone, not the playlist over one workdir
+        assert "--no-playlist" in yt
 
 
 def test_audio_ffmpeg_argv_and_atomic_write() -> None:
@@ -570,6 +572,7 @@ def test_the_full_download_asks_for_a_thumbnail_too() -> None:
         yt = next(c for c in calls if c[0] == "yt-dlp")
         assert "--write-thumbnail" in yt
         assert yt[yt.index("--convert-thumbnails") + 1] == "jpg"
+        assert "--no-playlist" in yt                     # same guard as the audio-only branch
 
 
 def test_audio_download_cleans_a_stale_audio_file_before_fetching() -> None:
