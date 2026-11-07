@@ -222,8 +222,11 @@ draining a video runs the build and the tail in that order, so nothing can race 
 
 Read its final summary. `pending` means no usable draft appeared before the deadline — that video
 is not lost and not finished, the step-3 resume still owes it, and step 3 below runs unchanged and
-picks up whatever the drain left. `failed` means the build or the pipeline exited non-zero for
-that video; the reason is on the line, and it is an ordinary per-video failure, not a batch one.
+picks up whatever the drain left. `pending` with "not drained before the STOP" means a STOP
+stopped the drain first — the same resume owes it. `failed` means the build or the pipeline exited
+non-zero for that video, other than exit 3 (a child that honored a STOP: that video stays pending
+and the drain stops); the reason is on the line, and it is an ordinary per-video failure, not a
+batch one.
 
 Two things it deliberately does not do: it never consumes a `work/STOP` (it stops watching and
 leaves the file, because the pipeline is the layer that reports a halt per video), and it never

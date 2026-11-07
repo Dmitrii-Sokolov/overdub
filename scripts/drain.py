@@ -61,6 +61,7 @@ from overdub.workdir import WorkDir, video_id            # noqa: E402
 
 _POLL_S = 5.0
 _ROOT = Path(__file__).resolve().parent.parent
+_STOP_EXIT = 3                     # `-m overdub`'s exit code when it honored a STOP: halted, not failed
 
 
 def queue_urls(path: Path) -> list[str]:
@@ -125,18 +126,26 @@ def _last_line(out: str) -> str:
     return (out.strip().splitlines()[-1:] or ["(no output)"])[0]
 
 
-def drain_one(url: str, work: WorkDir, tail_stages: list[str]) -> tuple[bool, str]:
+def drain_one(url: str, work: WorkDir, tail_stages: list[str]) -> tuple[bool | None, str]:
     """Build this video's translation, then run its pipeline up to (not including) mux.
 
     mux is split off because it is the one tail stage that needs nothing the NEXT video wants: no
     GPU, no model, only cores and RAM. Run inline it held the next video's synthesize and separate
-    back for its whole encode; started in the background (MuxPool) it overlaps them."""
+    back for its whole encode; started in the background (MuxPool) it overlaps them.
+
+    `ok` is None when a STOP halted the video: neither drained nor failed, the resume owes it."""
     py = sys.executable
     code, out = _run([py, "-X", "utf8", str(_ROOT / "scripts" / "build_translation.py"),
                       str(work.root)])
     if code != 0:
         return False, f"build failed: {_last_line(out)}"
+    # the tail child removes a STOP it finds at startup as stale, so one written during the build
+    # has to be seen here (work.root is <work_root>/<id>)
+    if (work.root.parent / STOP_NAME).exists():
+        return None, "STOP present — tail not started"
     code, out = _run([py, "-X", "utf8", "-m", "overdub", url, "--only", *tail_stages])
+    if code == _STOP_EXIT:
+        return None, f"tail halted by STOP: {_last_line(out)}"
     if code != 0:
         return False, f"pipeline exit {code}: {_last_line(out)}"
     return True, "tail done"
@@ -171,8 +180,9 @@ class MuxPool:
                                 cwd=str(_ROOT), stdout=log, stderr=subprocess.STDOUT)
         self.running[url] = (proc, log, need)
 
-    def reap(self, block: bool = False) -> list[tuple[str, bool, str]]:
-        """(url, ok, detail) for every child that has exited; with block, waits for at least one."""
+    def reap(self, block: bool = False) -> list[tuple[str, bool | None, str]]:
+        """(url, ok, detail) for every child that has exited; with block, waits for at least one.
+        `ok` is None for a child that honored a STOP instead of muxing."""
         while True:
             out = []
             for url, (proc, log, _n) in list(self.running.items()):
@@ -182,9 +192,9 @@ class MuxPool:
                 log.seek(0)
                 text = log.read()
                 log.close()
-                out.append((url, proc.returncode == 0,
-                            "drained" if proc.returncode == 0
-                            else f"mux exit {proc.returncode}: {_last_line(text)}"))
+                code = proc.returncode
+                out.append((url, None if code == _STOP_EXIT else code == 0,
+                            "drained" if code == 0 else f"mux exit {code}: {_last_line(text)}"))
             if out or not block or not self.running:
                 return out
             time.sleep(1.0)
@@ -217,19 +227,30 @@ def main(argv: list[str] | None = None) -> int:
     tail_stages = [st.name for st in all_stages(cfg) if st.name != "mux"]
     muxes = MuxPool(int(getattr(cfg, "mux_concurrency", 1) or 1), host.ram_admission())
 
+    halted: list[str] = []                                # a child that honored a STOP, if any
+
     def settle_muxes(block: bool = False) -> None:
         for u, ok, detail in muxes.reap(block):
+            if ok is None:
+                halted.append(u)
+                print(f"[stop] {video_id(u)}  {detail}")
+                continue
             (done if ok else failed)[u] = detail
             print(f"[{'ok  ' if ok else 'FAIL'}] {video_id(u)}  {detail}")
+
+    def stopping() -> bool:
+        """Has a STOP been made? The file is observed, NOT consumed: the pipeline's own checkpoint
+        is what reports a halt per video. Every child this loop starts removes a STOP it finds at
+        startup as stale, so this is asked after each wait and right before each launch — asked
+        only at the top of the loop, a STOP written during a wait was deleted by the next child."""
+        return bool(halted) or (cfg.work_root / STOP_NAME).exists()
 
     print(f"[drain] watching {len(urls)} video(s), poll {args.poll:.0f}s, "
           f"timeout {args.timeout:.0f}s, up to {muxes.width} mux(es) in the background")
     deadline = time.monotonic() + args.timeout
     while len(done) + len(failed) < len(urls):
         settle_muxes()
-        if (cfg.work_root / STOP_NAME).exists():
-            # Observed, NOT consumed: the sweep's own checkpoint is what reports a halt per video.
-            print("[drain] STOP present — leaving it for the pipeline and stopping here")
+        if stopping():
             break
         progressed = False
         for u in urls:
@@ -245,8 +266,14 @@ def main(argv: list[str] | None = None) -> int:
             tail_need = separate_stage.ram_need(w, cfg)
             while not muxes.fits_beside(tail_need):
                 settle_muxes(block=True)
+            if stopping():
+                break
             print(f"[drain] {vid} ready — building and running its tail")
             ok, detail = drain_one(u, w, tail_stages)
+            if ok is None:
+                halted.append(u)
+                print(f"[stop] {vid}  {detail}")
+                break
             if not ok:
                 failed[u] = detail
                 print(f"[FAIL] {vid}  {detail}")
@@ -254,10 +281,14 @@ def main(argv: list[str] | None = None) -> int:
                 need = mux_stage.ram_need(w)
                 while not muxes.fits(need):
                     settle_muxes(block=True)
+                if stopping():
+                    break
                 muxes.start(u, need)
                 print(f"[drain] {vid} tail done — mux started in the background "
                       f"({len(muxes.running)} running)")
             progressed = True
+        if stopping():
+            break
         if len(done) + len(failed) + len(muxes.running) >= len(urls):
             if not muxes.running:
                 break
@@ -269,12 +300,19 @@ def main(argv: list[str] | None = None) -> int:
         if not progressed:
             time.sleep(args.poll)
 
+    stopped = stopping()
+    if (cfg.work_root / STOP_NAME).exists():
+        print("[drain] STOP present — leaving it for the pipeline, starting nothing new; "
+              "running muxes finish")
+    elif halted:
+        print("[drain] a child honored the STOP — starting nothing new; running muxes finish")
     while muxes.running:                                  # a mux already started is finished, never
         settle_muxes(block=True)                          # abandoned: its tail is paid for
     pending = [u for u in urls if u not in done and u not in failed]
     print(f"\n[drain] {len(done)} drained, {len(failed)} failed, {len(pending)} pending")
     for u in pending:
-        print(f"[    ] {video_id(u)}  no usable draft — the step-3 resume still owes it")
+        why = "not drained before the STOP" if stopped or halted else "no usable draft"
+        print(f"[    ] {video_id(u)}  {why} — the step-3 resume still owes it")
     return 1 if failed else 0
 
 

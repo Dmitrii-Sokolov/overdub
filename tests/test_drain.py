@@ -77,11 +77,31 @@ class _FakeMuxes(drain.MuxPool):
         return out
 
 
-def _run(q: Path, c: Path, *extra: str) -> tuple[int, str]:
+class _HeldMuxes(drain.MuxPool):
+    """MuxPool without children whose muxes run until the drain WAITS for one (a blocking reap).
+    `on_wait` fires at that moment — where an operator's STOP lands while the drain waits."""
+    started: list = []
+    on_wait = None
+
+    def start(self, url: str, need: int) -> None:
+        _HeldMuxes.started.append(url)
+        self.running[url] = (None, None, need)
+
+    def reap(self, block: bool = False):
+        if not block:
+            return []
+        if _HeldMuxes.on_wait is not None:
+            _HeldMuxes.on_wait()
+        out = [(u, True, "drained") for u in self.running]
+        self.running.clear()
+        return out
+
+
+def _run(q: Path, c: Path, *extra: str, pool=_FakeMuxes) -> tuple[int, str]:
     buf = io.StringIO()
     real = drain.MuxPool
-    drain.MuxPool = _FakeMuxes
-    _FakeMuxes.started = []
+    drain.MuxPool = pool
+    pool.started = []
     try:
         with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
             code = drain.main(["--queue", str(q), "--config", str(c),
@@ -202,6 +222,109 @@ def test_a_STOP_is_observed_and_not_consumed() -> None:
             drain.drain_one = real
         assert (tmp / "work" / STOP_NAME).exists()         # left for the pipeline to honor
     assert "STOP present" in out
+
+
+def _stop_during_a_wait(*, mux_width: int, ram) -> tuple[list, int, str, bool]:
+    """Two ready videos; the operator writes STOP while the drain waits on the first video's mux.
+    Returns (videos whose tail ran, exit code, output, STOP still on disk)."""
+    from overdub import host
+    seen: list = []
+    with tempfile.TemporaryDirectory() as d:
+        tmp = Path(d)
+        q, c = _setup(tmp)
+        with c.open("a", encoding="utf-8") as f:
+            f.write(f"mux_concurrency = {mux_width}\n")
+        for v in VIDS:
+            _full_draft(_work(tmp, v), 3)
+        stop = tmp / "work" / STOP_NAME
+        real_one, real_ram = drain.drain_one, host.available_ram
+        drain.drain_one = lambda url, work, stages: (seen.append(work.root.name), (True, "tail"))[1]
+        host.available_ram = ram
+        _HeldMuxes.on_wait = lambda: stop.write_text("", encoding="utf-8")
+        try:
+            code, out = _run(q, c, pool=_HeldMuxes)
+        finally:
+            drain.drain_one, host.available_ram = real_one, real_ram
+            _HeldMuxes.on_wait = None
+        return seen, code, out, stop.exists()
+
+
+def test_a_STOP_made_while_waiting_for_RAM_starts_no_tail() -> None:
+    # Unreadable RAM: the second tail waits for the first mux. A STOP written during that wait used
+    # to be checked only at the top of the loop, so the next tail child started, removed the file
+    # as stale at its own startup, and the rest of the queue drained as if nobody had asked.
+    seen, code, out, kept = _stop_during_a_wait(mux_width=4, ram=lambda: None)
+    assert seen == [VIDS[0]]
+    assert kept
+    assert _HeldMuxes.started == [URLS[0]]
+    assert "1 drained, 0 failed, 1 pending" in out and "before the STOP" in out
+    assert code == 0
+
+
+def test_a_STOP_made_while_waiting_for_a_mux_slot_starts_no_mux() -> None:
+    # One mux slot: the second video's tail runs beside the first mux, then waits for the slot.
+    # The mux child would remove a STOP written during that wait just the same.
+    seen, code, out, kept = _stop_during_a_wait(mux_width=1, ram=lambda: 2**40)
+    assert seen == VIDS
+    assert kept
+    assert _HeldMuxes.started == [URLS[0]]                 # the second mux never started
+    assert "1 drained, 0 failed, 1 pending" in out
+    assert code == 0
+
+
+def test_a_tail_halted_by_STOP_stops_the_drain_and_is_not_a_failure() -> None:
+    # The tail child honors a STOP at a stage boundary, consumes it and exits 3. Read as a plain
+    # failure, the drain went on to the next video with the file already gone.
+    seen: list = []
+    with tempfile.TemporaryDirectory() as d:
+        tmp = Path(d)
+        q, c = _setup(tmp)
+        for v in VIDS:
+            _full_draft(_work(tmp, v), 3)
+        real = drain.drain_one
+        drain.drain_one = lambda url, work, stages: (seen.append(work.root.name),
+                                                     (None, "tail halted by STOP"))[1]
+        try:
+            code, out = _run(q, c)
+        finally:
+            drain.drain_one = real
+    assert seen == [VIDS[0]]
+    assert "0 drained, 0 failed, 2 pending" in out and "honored the STOP" in out
+    assert code == 0
+
+
+def test_drain_one_reads_exit_3_as_a_STOP_and_checks_STOP_before_the_tail() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        tmp = Path(d)
+        w = _work(tmp, VIDS[0])
+        calls: list = []
+        real = drain._run
+        try:
+            drain._run = lambda argv: (calls.append(argv), (0 if len(calls) == 1 else 3, "[stop] x"))[1]
+            ok, detail = drain.drain_one(URLS[0], w, ["synthesize"])
+            assert ok is None and "STOP" in detail and len(calls) == 2
+            # a STOP written during the build: the tail child would delete it, so it never starts
+            calls.clear()
+            (tmp / "work" / STOP_NAME).write_text("", encoding="utf-8")
+            ok, detail = drain.drain_one(URLS[0], w, ["synthesize"])
+            assert ok is None and len(calls) == 1
+            assert (tmp / "work" / STOP_NAME).exists()
+        finally:
+            drain._run = real
+
+
+def test_a_mux_child_halted_by_STOP_is_neither_drained_nor_failed() -> None:
+    class _Proc:
+        returncode = 3
+
+        def poll(self):
+            return 3
+
+    pool = drain.MuxPool(width=2, admits=_admits(10))
+    log = tempfile.TemporaryFile(mode="w+", encoding="utf-8")
+    log.write("[stop] STOP file honored\n")
+    pool.running["u"] = (_Proc(), log, 0)
+    assert pool.reap() == [("u", None, "mux exit 3: [stop] STOP file honored")]
 
 
 # --- mux in the background ----------------------------------------------------
