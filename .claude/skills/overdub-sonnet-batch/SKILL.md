@@ -75,9 +75,19 @@ Produces per video: `work/<id>/sentences.json` — a JSON list of `{id, text, st
 `id` contiguous from 0, plus a `speaker` on each sentence of a multi-speaker video — and
 `work/<id>/diar.json`. That is the sub-agent's input.
 
-**Gate before step 2:** step 1 exited 0 and `work/<id>/sentences.json` and `work/<id>/diar.json`
-exist for every id in `$ids`. The batch continues past per-video failures (`FAIL` rows in the summary) — re-run the
-same step-1 command until clean; completed stages fast-skip.
+**Gate before step 2:** `work/<id>/sentences.json` exists for every id in `$ids`, and so does
+`work/<id>/diar.json` while `diarize` is on (`overdub.toml`, default true). With `diarize = false`
+the stage never writes `diar.json`: `sentences.json` alone is the input, and the translator reads
+every speaker's gender as `unknown`. The batch continues past per-video failures (`FAIL` rows in
+the summary) — re-run the same step-1 command until the only `FAIL` rows left are the
+deterministic one below; completed stages fast-skip.
+
+**One diarize `FAIL` is deterministic — never re-run step 1 for it.** Its message contains
+`sentences.json was rewritten by --repair-asr`: a multi-speaker video whose transcript an earlier
+repair rewrote. Every attempt ends the same way after a full diarization pass. Drop that id from
+`$ids` for this wave and name it in the report; what to do with the video is the human's call.
+This does not shorten the queue (contract §3): the line stays in `queue.txt`, so step 3 meets the
+same `FAIL` for it — expected, not a reason to re-run step 3 either.
 
 ### Step 1b — Repair the transcript BEFORE translating it (added 2026-07-25)
 
@@ -555,12 +565,23 @@ machine time 4532 s = **×2.56** (session span 4618 s = ×2.51). Split: step 1 1
 37% of the batch and appears in no existing number. Planning a night on ×4.13 overbooks it by
 ~60%. **That is one early 2-video sample, retired as a planning figure** — see below.
 
-**The planning figure is ×10 of video time on a large batch** (user, 2026-10-29). The
-post-translate tail backs it: 16 single-video full-pipeline runs in `work/runs.jsonl` between
-2026-10-22 and 2026-10-28 (the drain's per-video resumes) ran at ×11.8-13.9 audio per elapsed
-second. Those `elapsed_s` exclude the translate wave, which the drain overlaps with the tail, so
-the end-to-end ratio sits below them — hence ×10, not ×12. Do not read it off a stage-major row
-in `runs.jsonl`: those mix fast-skip resumes in, which is how ×40-×140 rows appear there.
+**The planning figure is ×10 of video time on a large batch** (user, 2026-10-29). It is the
+user's figure, and no row in `work/runs.jsonl` confirms it: the drain's per-video rows
+(`order: "single"`) bound the end-to-end factor only from ABOVE. Each drain child fast-skips
+what step 1 already did, and the translate wave runs outside it, so a drain row holds neither
+step 1 nor the wave, and how far below it the end-to-end factor sits is not in these rows. Read
+them by era:
+
+- **Before 2026-10-30, one row per video** — the whole resume, mux included. The 16 such rows of
+  2026-10-22..2026-10-28 ran at ×11.8-13.9 audio per elapsed second.
+- **From 2026-10-30, two rows per video** — the tail (every stage but mux), then its background
+  mux (`--only mux`), each carrying the whole video's `audio_s`. A row names no stages, so join
+  the pair by id in start order: the video's window runs from the tail row's `started` to the mux
+  row's `finished`, and that mux overlaps the next video's tail. Either row alone overstates the
+  factor.
+
+Do not read it off a stage-major row in `runs.jsonl` either: those mix fast-skip resumes in,
+which is how ×40-×140 rows appear there.
 
 **When the batch has flagged units, also offer the clickable page** — one HTML with an inline
 audio player per flagged unit (expected vs whisper-heard, click to listen), so the user can
