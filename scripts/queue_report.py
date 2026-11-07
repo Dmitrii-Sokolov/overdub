@@ -475,12 +475,12 @@ def render(entries: list[dict], queue_name: str | None, stamp: str,
         # dub totals from the shared layer — the same numbers the digest's totals line prints
         tot = queueview.batch_totals([e["run"] for e in dubs])
         # H/M and a name for what the number IS. «wall 11778.0s» said neither (operator report
-        # 2026-07-25): five digits of seconds is not a duration, and the figure is work SUMMED per
-        # video — the route-B translate wave between transcribe and synthesize is outside every
-        # stage timer, so it is always smaller than the night the operator actually spent.
+        # 2026-07-25): five digits of seconds is not a duration, and the figure is pipeline work
+        # built from per-video stage walls — the route-B translate wave is left out and mux counts
+        # as clock time, so it is always smaller than the night the operator actually spent.
         out.append(f'<p class="sub">{len(dubs)} видео · работа пайплайна '
                    f'{queueview.format_dur(tot["total_wall"], ru=True)} '
-                   f'(сумма по видео, не время прогона) · '
+                   f'(этапы по видео без перевода, mux по часам; не время прогона) · '
                    f'throughput {tot["throughput"]} · '
                    f'{tot["n_triage"]} требуют прослушивания</p>')
         # The batch stage split — what to optimise, in the one place that sees the whole batch.

@@ -24,6 +24,7 @@ Pure stdlib plus runreport and WorkDir; no model, no GPU, no network.
 
 from __future__ import annotations
 
+import datetime
 import os
 import re
 from pathlib import Path
@@ -319,17 +320,45 @@ def format_dur(sec, *, ru: bool = False) -> str:
     return f"{sec:.1f}{s_u}"
 
 
+def _mux_interval(timings) -> tuple[float, float] | None:
+    """This run's mux span as (started, finished) POSIX seconds, or None when run.json carries no
+    span that parses — absent, torn, or written before run.json copied the spans in."""
+    spans = timings.get("spans")
+    span = spans.get("mux") if isinstance(spans, dict) else None
+    if not isinstance(span, dict):
+        return None
+    try:
+        a = datetime.datetime.fromisoformat(span["started"]).timestamp()
+        b = datetime.datetime.fromisoformat(span["finished"]).timestamp()
+    except (KeyError, TypeError, ValueError):
+        return None
+    return (a, b) if b >= a else None
+
+
+def _union_sec(intervals) -> float:
+    """Seconds covered by at least one interval: overlapping intervals count once."""
+    total, reach = 0.0, None
+    for a, b in sorted(intervals):
+        if reach is None or a > reach:
+            total += b - a
+            reach = b
+        elif b > reach:
+            total += b - reach
+            reach = b
+    return total
+
+
 def batch_totals(runs) -> dict:
     """Batch footer numbers: {total_wall, wall_dur, throughput, n_triage, stages} — run_report's
     totals math moved verbatim. throughput is video-seconds per wall-second ("×1.54" style);
     "n/a" on zero wall (an all-resumed batch where no stage ran leaves nothing to divide by).
 
     `wall_dur` is the same number as a readable duration, because every surface printing
-    `total_wall` printed raw seconds. NAMING, read before reusing it: this is the SUM of per-video
-    stage walls, NOT the elapsed time of the batch — on route B the Sonnet translate wave sits
-    between transcribe and synthesize with no stage timer over it, so the 2026-07-25 batch summed
-    3.3h inside a ~5.2 h night. Every caller must label it as work summed per video, and this
-    must never be added to a wall clock.
+    `total_wall` printed raw seconds. NAMING, read before reusing it: this is PIPELINE WORK built
+    from per-video stage walls, NOT the elapsed time of the batch. Process starts, the gaps
+    between invocations and the translate wave (left out, below) are all outside it, so it is
+    smaller than the night it came from — the 2026-07-25 batch gave 3.3h inside a ~5.2 h night.
+    Every caller must label it as pipeline work, and this must never be added to a wall clock.
 
     `stages` is [(name, sec, pct), ...] descending — the batch-level stage split, which is the
     number an optimisation decision actually needs. Per-video `breakdown_pct` already existed but
@@ -339,9 +368,21 @@ def batch_totals(runs) -> dict:
     The translate stage is left out of both the sum and the split. Its per-video wall is a
     Sonnet sub-agent's span, and those spans run in parallel: summed over a batch they add up to
     hours the night never had (1.5h "translate" over 4 videos, 2026-10-29). The per-video digest
-    line keeps it — one video's own span is a real number."""
+    line keeps it — one video's own span is a real number.
+
+    Mux is counted as CLOCK TIME, not summed: the union of the per-video `spans["mux"]`
+    started→finished intervals. Several muxes run at once (`mux_concurrency` > 1, and
+    scripts/drain.py's background muxes), each wall is measured under that contention, and their
+    sum grows with the overlap — a batch that got faster would read slower. The union removes
+    mux-over-mux overlap only: drain's mux also runs beside the next video's other stages, and
+    that time is still counted in both. A run with a mux wall but no span that parses keeps
+    adding its wall, which is the old summed figure and an upper bound. `--rebuild` copies the
+    spans into an older run.json, but only where its timings.json recorded them — stage spans
+    exist since 2026-08-06."""
     total_wall = 0.0
     per_stage: dict[str, float] = {}
+    mux_spans: list[tuple[float, float]] = []
+    mux_unspanned = 0.0
     for r in runs:
         t = r.get("timings", {}) or {}
         total_wall += t.get("total_wall_s", 0) or 0
@@ -350,8 +391,19 @@ def batch_totals(runs) -> dict:
                 continue
             if name == "translate":
                 total_wall -= val
+            elif name == "mux":
+                total_wall -= val
+                per_stage.setdefault("mux", 0.0)           # keeps its place in a tie, as before
+                span = _mux_interval(t)
+                if span is None:
+                    mux_unspanned += float(val)
+                else:
+                    mux_spans.append(span)
             else:
                 per_stage[name] = per_stage.get(name, 0.0) + float(val)
+    if "mux" in per_stage:
+        per_stage["mux"] = _union_sec(mux_spans) + mux_unspanned
+        total_wall += per_stage["mux"]
     total_wall = round(total_wall, 1)
     sum_video = sum(((r.get("timings", {}) or {}).get("video_sec") or 0) for r in runs)
     thru = f"×{sum_video / total_wall:.2f}" if total_wall > 0 else "n/a"

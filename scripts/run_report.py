@@ -118,16 +118,18 @@ def main(argv: list[str] | None = None) -> int:
             out.append("yes" if row["needs_triage"] else "no")
             print(" | ".join(out))
         tot = queueview.batch_totals(runs)
-        # "pipeline work", not "wall": the figure is the SUM of per-video stage walls, and on
-        # route B the Sonnet translate wave between transcribe and synthesize is outside every
-        # stage timer — the 2026-07-25 batch summed 3.3h inside a ~5.2 h night. The duration leads
-        # because that is what a human reads; the seconds stay for diffing two runs.
-        print(f"totals: pipeline work {tot['wall_dur']} ({tot['total_wall']}s summed over "
-              f"{len(runs)} videos, not batch elapsed) · throughput {tot['throughput']}"
-              f" · {tot['n_triage']} need triage")
+        # "pipeline work", not "wall": the figure is built from per-video stage walls with the
+        # translate wave left out (parallel sub-agent spans do not add up) and mux counted as
+        # clock time (concurrent muxes overlap), so it is neither the sum of the `wall` column
+        # above nor the batch's elapsed time. The duration leads because that is what a human
+        # reads; the seconds stay for diffing two runs.
+        print(f"totals: pipeline work {tot['wall_dur']} ({tot['total_wall']}s of stage walls "
+              f"over {len(runs)} videos, translate excluded, mux as clock time; not batch "
+              f"elapsed) · throughput {tot['throughput']} · {tot['n_triage']} need triage")
         # The batch-level stage split — the number an optimisation decision needs. Per-video shares
         # cannot answer it: one long video's synthesize share says nothing about where the night
-        # went. Same order and same source as the per-video `- stages:` line above.
+        # went. Same order as the per-video `- stages:` line above, but not the same sums: no
+        # translate, and mux is clock time rather than the per-video walls added up.
         if tot["stages"]:
             print("stages: " + " · ".join(
                 f"{name} {queueview.format_dur(sec)} {pct}%" for name, sec, pct in tot["stages"]))

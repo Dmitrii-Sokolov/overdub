@@ -852,12 +852,14 @@ def _summarize(results: list[tuple[str, str, str]], not_run: list[str], halted: 
         # The shared layer owns this math (it used to be duplicated here, verbatim); the sweep and
         # both report surfaces now print ONE set of numbers by construction. "pipeline work" and
         # the H/M form for the same reason they changed there: raw seconds are unreadable, and the
-        # figure is per-video stage walls SUMMED, never the batch's elapsed time.
+        # figure is per-video stage walls without translate and with mux as clock time, never
+        # the batch's elapsed time.
         tot = queueview.batch_totals(runs)
         triage = [r.get("video_id") for r in runs if r.get("needs_triage")]
         print(f"\n── batch sweep ({order}) " + "─" * 20)
         print(f"{len(runs)} run(s) · pipeline work {tot['wall_dur']} ({tot['total_wall']}s "
-              f"summed per video) · throughput {tot['throughput']}")
+              f"of stage walls, translate excluded, mux as clock time) · "
+              f"throughput {tot['throughput']}")
         if tot["stages"]:
             print("stages: " + " · ".join(
                 f"{name} {queueview.format_dur(sec)} {pct}%" for name, sec, pct in tot["stages"]))

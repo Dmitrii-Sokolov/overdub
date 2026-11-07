@@ -18,7 +18,10 @@ Measured facts and standing constraints local to the pipeline package. Tasks liv
   the older pair.
 - **`total_wall_s` CHANGED SCOPE on 2026-08-05 — it now includes the translate seam.**
   `build_translation.py` records the Sonnet wave into `stages["translate"]`, so from that date a
-  run's `total_wall_s`, `rtf`, `breakdown_pct` and the batch stage split all count the seam.
+  run's `total_wall_s`, `rtf` and `breakdown_pct` count the seam. The BATCH totals do not:
+  `queueview.batch_totals` leaves translate out of pipeline work, throughput and the stage split
+  since 2026-10-29 (parallel sub-agent spans do not add up), and since 2026-11-07 counts mux as
+  the interval union of the per-video `spans["mux"]` (concurrent muxes overlap) instead of a sum.
   Before it, `translate` was absent from the `stages` map of all 252 timings.json on disk — the
   two eras are not comparable (measured on `7xTGNNLPyMI` the same day: stage walls alone imply
   ×3.73, the real end-to-end figure was ×1.31). Three traps reading the new number: it is only

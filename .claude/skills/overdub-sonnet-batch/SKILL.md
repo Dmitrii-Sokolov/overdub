@@ -499,7 +499,8 @@ Then summarize for the user in Russian, grounded ONLY in that output (do not inv
   so explicit-id repair is NOT idempotent — re-derive ids before a second pass). Never fold them
   into the quality half of your narrative: they are a claim about the TRANSCRIPT, not about the
   dub. If the `src` column reads `-`, say "не проверялось", never "чисто".
-- **Batch totals:** total wall across videos, aggregate throughput, and WHICH video_ids need
+- **Batch totals:** pipeline work across videos (translate left out, concurrent muxes counted
+  once — see the throughput definition below), aggregate throughput, and WHICH video_ids need
   eyes (the `need triage` list) — so the user knows what to open first, not just that something
   is off.
 - **Capacity:** the audio-per-hour-of-machine-time ratio, computed from the step stamps — see
@@ -513,13 +514,17 @@ with the videos and segments that need a listen.
 ### Capacity — how much video fits in a night (added 2026-08-02)
 
 **The digest's `throughput` cannot answer that and must never be quoted as if it could.** It is
-Σ(`video_sec`) / Σ(`total_wall_s`), and `total_wall_s` is the SUM OF THE SEVEN STAGE TIMERS —
-verified by adding up `vWidan8ggGo`'s seven stages, which reproduce its `total_wall_s` exactly.
-Everything between the timers is invisible to it: process starts and the gaps between invocations.
+Σ(`video_sec`) / the batch's pipeline work as `queueview.batch_totals` computes it: every video's
+`total_wall_s` minus its `stages["translate"]`, with the summed mux walls replaced by the clock
+time the mux spans cover (their interval union — concurrent muxes overlap). A video's
+`total_wall_s` is the SUM OF ITS STAGE TIMERS — verified by adding up `vWidan8ggGo`'s seven
+stages, which reproduce its `total_wall_s` exactly. Everything between the timers is invisible to
+it: process starts and the gaps between invocations.
 
-**The translate wave used to be invisible here too and no longer is (2026-08-05).**
+**The translate wave used to be invisible in `total_wall_s` and no longer is (2026-08-05).**
 `build_translation.py` now records it into `stages["translate"]`, so on a video translated since
-that date the seam IS inside `total_wall_s`. Two consequences, both load-bearing. A total from
+that date the seam IS inside the per-video total — but not inside the digest's batch figure,
+which has left it out since 2026-10-29. Two consequences, both load-bearing. A total from
 before that date is not comparable with one from after — `overdub/CLAUDE.md` (corpus provenance)
 carries the boundary. And the recording depends on `translate.started`: when the helper prints
 `[warn] translate wave not timed`, that video's total silently means the OLD thing, so read the

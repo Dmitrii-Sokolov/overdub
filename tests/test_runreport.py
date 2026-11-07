@@ -1266,15 +1266,19 @@ def test_format_dur_is_one_unit_with_a_decimal() -> None:
 
 
 def test_the_totals_line_names_what_the_number_is() -> None:
-    # "wall" was wrong for what it holds: the sum of per-video stage walls, with route B's Sonnet
-    # translate wave outside every stage timer. A reader who takes it as the batch's elapsed time
-    # concludes the night was 2 h shorter than it was.
-    runs = [{"video_id": "v", "timings": {"total_wall_s": 11778.0, "video_sec": 26136.0},
-             "needs_triage": False}]
-    tot = queueview.batch_totals(runs)
-    line = (f"totals: pipeline work {tot['wall_dur']} ({tot['total_wall']}s summed over "
-            f"{len(runs)} videos, not batch elapsed)")
-    assert "3.3h" in line and "not batch elapsed" in line
+    # "wall" was wrong for what it holds: pipeline work built from per-video stage walls, with
+    # route B's Sonnet translate wave outside it. A reader who takes it as the batch's elapsed
+    # time concludes the night was 2 h shorter than it was. Pinned off the script's own stdout,
+    # so the label cannot drift from a copy of it kept here.
+    with tempfile.TemporaryDirectory() as d:
+        work = _mkwork(d, translation=[{"id": 0, "status": "ok"}],
+                       timings={"stages": {"synthesize": 11778.0}}, info={"duration": 26136.0})
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            assert run_report.main([str(work.root)]) == 0
+    line = next(ln for ln in buf.getvalue().splitlines() if ln.startswith("totals:"))
+    assert line.startswith("totals: pipeline work 3.3h (11778.0s of stage walls"), line
+    assert "translate excluded, mux as clock time; not batch elapsed" in line, line
     assert "wall 11778.0s" not in line
 
 
@@ -1310,6 +1314,58 @@ def test_batch_totals_leave_the_parallel_translate_spans_out() -> None:
     assert tot["total_wall"] == 150.0
     assert tot["throughput"] == "×8.00"
     assert tot["stages"] == [("synthesize", 110.0, 73.3), ("mux", 40.0, 26.7)]
+
+
+def _mux_run(wall, video_sec, mux, span=None):
+    t = {"total_wall_s": wall, "video_sec": video_sec,
+         "stages": {"synthesize": wall - mux, "mux": mux}}
+    if span is not None:
+        t["spans"] = {"mux": {"started": f"2026-11-07T10:{span[0]}+00:00",
+                              "finished": f"2026-11-07T10:{span[1]}+00:00"}}
+    return {"timings": t}
+
+
+def test_batch_totals_count_concurrent_mux_as_clock_time() -> None:
+    # Concurrent muxes (mux_concurrency > 1, drain's background mux) each measure their own wall
+    # under contention; summing them made a batch that got faster read slower. Two overlapping
+    # muxes (00:00-01:40 and 00:40-02:00) cover 120 s of clock, a disjoint one adds its 30 s.
+    runs = [
+        _mux_run(400.0, 1000.0, 100.0, ("00:00.000", "01:40.000")),
+        _mux_run(380.0, 1000.0, 80.0, ("00:40.000", "02:00.000")),
+        _mux_run(330.0, 1000.0, 30.0, ("05:00.000", "05:30.000")),
+    ]
+    tot = queueview.batch_totals(runs)
+    assert dict((n, s) for n, s, _p in tot["stages"])["mux"] == 150.0     # not 210
+    assert tot["total_wall"] == 300.0 + 300.0 + 300.0 + 150.0
+    assert tot["throughput"] == f"×{3000.0 / 1050.0:.2f}"
+    assert sum(pct for _n, _s, pct in tot["stages"]) == 100.0
+
+
+def test_a_mux_wall_without_a_span_keeps_its_summed_figure() -> None:
+    # run.json from before the spans were copied in, or a torn stamp: no clock to place it on,
+    # so the wall is added as before — an upper bound, never a silent drop to zero.
+    runs = [
+        _mux_run(400.0, 1000.0, 100.0, ("00:00.000", "01:40.000")),
+        _mux_run(380.0, 1000.0, 80.0, ("00:40.000", "02:00.000")),
+        _mux_run(330.0, 1000.0, 30.0),
+        _mux_run(310.0, 1000.0, 10.0, ("not a time", "02:00.000")),
+    ]
+    tot = queueview.batch_totals(runs)
+    assert dict((n, s) for n, s, _p in tot["stages"])["mux"] == 120.0 + 30.0 + 10.0
+
+
+def test_run_json_carries_the_stage_spans() -> None:
+    # batch_totals sees run.json only; without the spans there it can place no mux on a clock
+    span = {"enqueued": "a", "started": "2026-11-07T10:00:00.000+00:00",
+            "finished": "2026-11-07T10:01:00.000+00:00", "run_id": "r"}
+    with tempfile.TemporaryDirectory() as d:
+        work = _mkwork(d, translation=[{"id": 0, "status": "ok"}],
+                       timings={"stages": {"mux": 60.0}, "spans": {"mux": span}})
+        assert runreport.build_run_report(work, _CFG)["timings"]["spans"] == {"mux": span}
+    with tempfile.TemporaryDirectory() as d:
+        work = _mkwork(d, translation=[{"id": 0, "status": "ok"}],
+                       timings={"stages": {"mux": 60.0}})
+        assert runreport.build_run_report(work, _CFG)["timings"]["spans"] == {}
 
 
 def test_the_per_video_digest_lists_every_stage_not_the_top_three() -> None:

@@ -755,7 +755,7 @@ def test_counters_exclude_transcript_only_from_the_video_count() -> None:
     # since 2026-07-25 — «wall 60.0s» said neither what it was nor how long that is.
     assert "1 видео · работа пайплайна" in page
     assert "2 видео · работа пайплайна" not in page
-    assert "(сумма по видео, не время прогона)" in page
+    assert "(этапы по видео без перевода, mux по часам; не время прогона)" in page
     assert " · wall " not in page
     # and the header tally names the transcript-only state
     assert "расшифровано: 1" in page

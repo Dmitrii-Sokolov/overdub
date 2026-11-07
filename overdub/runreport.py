@@ -271,6 +271,8 @@ def _build_run_report(work, cfg):
     total_wall = round(sum(stages.values()), 3)
     detail = timings_doc.get("detail") if isinstance(timings_doc, dict) else None
     detail = detail if isinstance(detail, dict) else {}
+    spans = timings_doc.get("spans") if isinstance(timings_doc, dict) else None
+    spans = spans if isinstance(spans, dict) else {}
     overhead, total_overhead = _stage_overhead(stages, detail)
     work_stages = sorted(overhead)
     # A stage's overhead is stages[x] - detail[x].work_sec: two measurements of the SAME stage
@@ -542,6 +544,9 @@ def _build_run_report(work, cfg):
             "rtf_work": rtf_work,
             "work_coverage": work_stages,
             "work_complete": work_complete,
+            # When each stage ran, not how long: the batch totals need it to count stages that
+            # overlap across videos (concurrent mux) as clock time instead of summing them.
+            "spans": spans,
         },
         "asr": asr_block,
         "diarize": diar_block,
