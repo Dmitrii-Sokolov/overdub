@@ -126,24 +126,29 @@ def _last_line(out: str) -> str:
     return (out.strip().splitlines()[-1:] or ["(no output)"])[0]
 
 
-def drain_one(url: str, work: WorkDir, tail_stages: list[str]) -> tuple[bool | None, str]:
+def drain_one(url: str, work: WorkDir, tail_stages: list[str],
+              config: Path) -> tuple[bool | None, str]:
     """Build this video's translation, then run its pipeline up to (not including) mux.
 
     mux is split off because it is the one tail stage that needs nothing the NEXT video wants: no
     GPU, no model, only cores and RAM. Run inline it held the next video's synthesize and separate
     back for its whole encode; started in the background (MuxPool) it overlaps them.
 
+    Both children get the drain's own `config` (absolute: they run from the repo root), or they
+    would read the root overdub.toml and work in its work_root instead of the one being watched.
+
     `ok` is None when a STOP halted the video: neither drained nor failed, the resume owes it."""
     py = sys.executable
     code, out = _run([py, "-X", "utf8", str(_ROOT / "scripts" / "build_translation.py"),
-                      str(work.root)])
+                      str(work.root), "--config", str(config)])
     if code != 0:
         return False, f"build failed: {_last_line(out)}"
     # the tail child removes a STOP it finds at startup as stale, so one written during the build
     # has to be seen here (work.root is <work_root>/<id>)
     if (work.root.parent / STOP_NAME).exists():
         return None, "STOP present — tail not started"
-    code, out = _run([py, "-X", "utf8", "-m", "overdub", url, "--only", *tail_stages])
+    code, out = _run([py, "-X", "utf8", "-m", "overdub", url, "--config", str(config),
+                      "--only", *tail_stages])
     if code == _STOP_EXIT:
         return None, f"tail halted by STOP: {_last_line(out)}"
     if code != 0:
@@ -153,10 +158,11 @@ def drain_one(url: str, work: WorkDir, tail_stages: list[str]) -> tuple[bool | N
 
 class MuxPool:
     """Background `-m overdub <url> --only mux` children, at most `width` at once, admitted by
-    `admits` — host.ram_admission's rule, the one the stage-major mux sweep uses too."""
+    `admits` — host.ram_admission's rule, the one the stage-major mux sweep uses too. Each child
+    reads `config` when one is given, as the drain's tail children do."""
 
-    def __init__(self, width: int, admits):
-        self.width, self.admits = max(1, width), admits
+    def __init__(self, width: int, admits, config: Path | None = None):
+        self.width, self.admits, self.config = max(1, width), admits, config
         self.running: dict[str, tuple[subprocess.Popen, object, int]] = {}
 
     def fits(self, need: int) -> bool:
@@ -175,8 +181,9 @@ class MuxPool:
         log = tempfile.TemporaryFile(mode="w+", encoding="utf-8", errors="replace")
         # unbuffered, so the child's stdout and stderr land in the log in the order they were
         # written and the last line of a failure is its exception, not a flushed progress line
+        config = ["--config", str(self.config)] if self.config is not None else []
         proc = subprocess.Popen([sys.executable, "-X", "utf8", "-u", "-m", "overdub", url,
-                                 "--only", "mux"],
+                                 *config, "--only", "mux"],
                                 cwd=str(_ROOT), stdout=log, stderr=subprocess.STDOUT)
         self.running[url] = (proc, log, need)
 
@@ -217,6 +224,7 @@ def main(argv: list[str] | None = None) -> int:
         sys.stdout.reconfigure(line_buffering=True)
 
     cfg = Config.load(args.config) if args.config.exists() else Config()
+    config = args.config.resolve()                        # what every child is told to read
     # The batch's own reader, so the drain sees the queue the CLI does: a BOM stripped, and two
     # spellings of one video read as ONE — they share a workdir, where two background muxes would
     # overwrite each other's intermediate files.
@@ -228,7 +236,7 @@ def main(argv: list[str] | None = None) -> int:
     done: dict[str, str] = {}
     failed: dict[str, str] = {}
     tail_stages = [st.name for st in all_stages(cfg) if st.name != "mux"]
-    muxes = MuxPool(int(getattr(cfg, "mux_concurrency", 1) or 1), host.ram_admission())
+    muxes = MuxPool(int(getattr(cfg, "mux_concurrency", 1) or 1), host.ram_admission(), config)
 
     halted: list[str] = []                                # a child that honored a STOP, if any
 
@@ -272,7 +280,7 @@ def main(argv: list[str] | None = None) -> int:
             if stopping():
                 break
             print(f"[drain] {vid} ready — building and running its tail")
-            ok, detail = drain_one(u, w, tail_stages)
+            ok, detail = drain_one(u, w, tail_stages, config)
             if ok is None:
                 halted.append(u)
                 print(f"[stop] {vid}  {detail}")
