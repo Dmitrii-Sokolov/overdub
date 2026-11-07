@@ -327,6 +327,32 @@ def test_a_mux_child_halted_by_STOP_is_neither_drained_nor_failed() -> None:
     assert pool.reap() == [("u", None, "mux exit 3: [stop] STOP file honored")]
 
 
+# --- the queue ----------------------------------------------------------------
+def test_two_spellings_of_one_video_are_drained_once() -> None:
+    # They share a workdir: drained twice, two background muxes would overwrite each other's
+    # intermediate files there. The BOM is what Notepad and PowerShell put on line 1.
+    from overdub.workdir import video_id
+    alias = f"https://www.youtube.com/watch?v={VIDS[0]}"
+    assert video_id(alias) == video_id(URLS[0])
+    seen: list = []
+    with tempfile.TemporaryDirectory() as d:
+        tmp = Path(d)
+        q, c = _setup(tmp)
+        q.write_text("﻿" + "\n".join([URLS[0], alias, URLS[1]]) + "\n", encoding="utf-8")
+        for v in VIDS:
+            _full_draft(_work(tmp, v), 3)
+        real = drain.drain_one
+        drain.drain_one = lambda url, work, stages: (seen.append(url), (True, "tail"))[1]
+        try:
+            code, out = _run(q, c)
+        finally:
+            drain.drain_one = real
+    assert seen == [URLS[0], URLS[1]]
+    assert [u for u, _n in _FakeMuxes.started] == [URLS[0], URLS[1]]
+    assert "2 drained, 0 failed, 0 pending" in out and "[dup ]" in out
+    assert code == 0
+
+
 # --- mux in the background ----------------------------------------------------
 def test_the_tail_stops_before_mux_and_mux_runs_in_the_background() -> None:
     # mux needs no GPU, so it is split off the serial tail; the tail must still run every OTHER

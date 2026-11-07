@@ -52,6 +52,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from overdub import host                                 # noqa: E402
+from overdub.cli import _read_queue                      # noqa: E402
 from overdub.config import Config                        # noqa: E402
 from overdub.pipeline import STOP_NAME                   # noqa: E402
 from overdub.stages import all_stages                    # noqa: E402
@@ -62,16 +63,6 @@ from overdub.workdir import WorkDir, video_id            # noqa: E402
 _POLL_S = 5.0
 _ROOT = Path(__file__).resolve().parent.parent
 _STOP_EXIT = 3                     # `-m overdub`'s exit code when it honored a STOP: halted, not failed
-
-
-def queue_urls(path: Path) -> list[str]:
-    """The queue's URLs, comments and blanks dropped — the same shape every route reads."""
-    out = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if line and not line.startswith("#"):
-            out.append(line)
-    return out
 
 
 def draft_ready(work: WorkDir) -> bool:
@@ -217,7 +208,10 @@ def main(argv: list[str] | None = None) -> int:
         sys.stdout.reconfigure(line_buffering=True)
 
     cfg = Config.load(args.config) if args.config.exists() else Config()
-    urls = queue_urls(args.queue)
+    # The batch's own reader, so the drain sees the queue the CLI does: a BOM stripped, and two
+    # spellings of one video read as ONE — they share a workdir, where two background muxes would
+    # overwrite each other's intermediate files.
+    urls = _read_queue(args.queue)
     if not urls:
         print("[FAIL] queue is empty", file=sys.stderr)
         return 2
