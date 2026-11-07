@@ -471,8 +471,17 @@ class MuxStage:
             # the AAC encode is single-threaded and nearly all of this stage's wall clock, so it
             # goes to the P-cores rather than wherever the scheduler happens to put it
             proc = subprocess.Popen(argv)
-            host.pin(proc, host.performance_mask())
-            if proc.wait() != 0:
+            try:
+                host.pin(proc, host.performance_mask())
+                proc.wait()
+            except BaseException:
+                # what subprocess.run does and a bare Popen does not: an interrupt here would
+                # otherwise leave ffmpeg encoding on its own, holding the mix wav and the tmp
+                # open, and the finally's unlink of them would raise over the interrupt itself
+                proc.kill()
+                proc.wait()
+                raise
+            if proc.returncode != 0:
                 raise subprocess.CalledProcessError(proc.returncode, argv)
             # artifact flips BEFORE the stamp (assemble's "done-gate flips LAST" discipline):
             # a crash between them leaves new-mkv + old-stamp → harmless idempotent re-mux;

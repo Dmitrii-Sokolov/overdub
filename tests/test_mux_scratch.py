@@ -7,6 +7,9 @@ at once. The three extraction wavs (dub, original, bed — 48 kHz stereo PCM) ar
 memory before the mix is built and never read again, so they must be off the disk before the
 encode starts: on a long video each is gigabytes, and keeping them through the encode multiplies
 the scratch by the number of concurrent muxes.
+
+And an interrupt during the encode must not leave ffmpeg running behind it: the child is killed
+and reaped, and the interrupt — not a cleanup error — is what reaches the caller.
 """
 
 from __future__ import annotations
@@ -85,6 +88,45 @@ def test_extraction_wavs_are_gone_before_the_encode_starts(monkeypatch) -> None:
     assert seen == {"_mix_dub48.wav": False, "_mix_orig48.wav": False, "_mix_bed48.wav": False,
                     "_mix_ru.wav": True}, seen
     assert left == [], left                                # and the finally still clears the mix
+
+
+class _Interrupt(BaseException):
+    """Takes KeyboardInterrupt's path through the code, but a regression fails this one test
+    instead of aborting the whole pytest session."""
+
+
+def test_an_interrupt_during_the_encode_kills_ffmpeg_and_stays_the_error(monkeypatch) -> None:
+    # A bare Popen + wait has no handler: the interrupt left ffmpeg running, and on Windows the
+    # finally's unlink of the mix wav that ffmpeg still held raised PermissionError OVER the
+    # interrupt — the batch logged a failed mux and moved on while the orphan kept encoding.
+    _no_media_tools(monkeypatch)
+    calls: list[str] = []
+
+    class _Encode:
+        def __init__(self, argv):
+            # a live ffmpeg holds its input open, which on Windows blocks deleting it
+            self._held = open(Path(argv[-1]).parent / "_mix_ru.wav", "rb")
+            self.returncode = None
+
+        def wait(self):
+            calls.append("wait")
+            if self.returncode is None:
+                raise _Interrupt
+            return self.returncode
+
+        def kill(self):
+            calls.append("kill")
+            self._held.close()
+            self.returncode = 1
+
+    monkeypatch.setattr(mux_mod.subprocess, "Popen", _Encode)
+    with tempfile.TemporaryDirectory() as td:
+        ctx = _dub_workdir(td)
+        with pytest.raises(_Interrupt):
+            mux_mod.MuxStage().run(ctx)
+        left = sorted(p.name for p in ctx.work.root.glob("_mix_*"))
+    assert calls == ["wait", "kill", "wait"], calls        # killed, then reaped
+    assert left == [], left
 
 
 if __name__ == "__main__":
