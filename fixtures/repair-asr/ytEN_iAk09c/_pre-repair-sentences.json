@@ -1,0 +1,314 @@
+[
+  {
+    "id": 0,
+    "text": "Hello, and welcome to our final session covering the foundations of AI fluency.",
+    "start": 10.86,
+    "end": 15.64
+  },
+  {
+    "id": 1,
+    "text": "I'm Professor Rick Dakin from the Ringling College of Art and Design.",
+    "start": 16.0,
+    "end": 19.36
+  },
+  {
+    "id": 2,
+    "text": "Over a short period, we've covered quite a lot of ground together, exploring the AI fluency framework and seeing how it applies to everyday collaboration with AI.",
+    "start": 20.0,
+    "end": 28.08
+  },
+  {
+    "id": 3,
+    "text": "Let's take a moment to reflect on what we've learned, highlight some key takeaways, and look ahead to where you might go next.",
+    "start": 28.82,
+    "end": 36.28
+  },
+  {
+    "id": 4,
+    "text": "Let's begin by revisiting the four core competencies, also known as the four Ds, that make up the AI fluency framework.",
+    "start": 36.28,
+    "end": 45.36
+  },
+  {
+    "id": 5,
+    "text": "Delegation focuses on deciding what work should be done by and with AI versus what's best handled by humans alone.",
+    "start": 46.45,
+    "end": 53.13
+  },
+  {
+    "id": 6,
+    "text": "It combines your understanding of the problem, awareness of AI capabilities, and skill in distributing work effectively between you and your AI assistants.",
+    "start": 53.35,
+    "end": 62.39
+  },
+  {
+    "id": 7,
+    "text": "Description addresses how we communicate with AI systems.",
+    "start": 64.76,
+    "end": 68.66
+  },
+  {
+    "id": 8,
+    "text": "Description addresses how we communicate with AI systems.",
+    "start": 68.7,
+    "end": 69.02
+  },
+  {
+    "id": 9,
+    "text": "Through clear articulation of what we want, how we want it approached, and what kind of interaction is most helpful to us, also known as product, process, and performance description,",
+    "start": 69.02,
+    "end": 78.78
+  },
+  {
+    "id": 10,
+    "text": "we guide AI to produce the outputs we need and become more effective collaborators and assistants.",
+    "start": 79.12,
+    "end": 85.48
+  },
+  {
+    "id": 11,
+    "text": "Discernment involves critically evaluating AI outputs and behaviors.",
+    "start": 87.97,
+    "end": 91.55
+  },
+  {
+    "id": 12,
+    "text": "By developing your ability to assess outputs, processes, and interactions, also known as product, process, and performance discernment, you ensure that you're able to do the right thing.",
+    "start": 92.05,
+    "end": 100.29
+  },
+  {
+    "id": 13,
+    "text": "You ensure quality and appropriateness in all your AI -driven outputs.",
+    "start": 100.29,
+    "end": 104.09
+  },
+  {
+    "id": 14,
+    "text": "And finally, diligence ensures our AI interactions are responsible.",
+    "start": 104.82,
+    "end": 110.24
+  },
+  {
+    "id": 15,
+    "text": "Through thoughtful selection of AI systems, transparency about AI's role, and taking accountability for the final product, also known as creation, transparency, and deployment diligence, we can work with AI ethically and safely.",
+    "start": 111.12,
+    "end": 123.92
+  },
+  {
+    "id": 16,
+    "text": "Remember that these competencies apply across all three ways we interact with AI.",
+    "start": 124.69,
+    "end": 130.29
+  },
+  {
+    "id": 17,
+    "text": "Automation, where AI performs specific tasks following your instructions.",
+    "start": 131.56,
+    "end": 135.52
+  },
+  {
+    "id": 18,
+    "text": "Augmentation, where you and AI collaborate as thinking partners.",
+    "start": 136.42,
+    "end": 140.28
+  },
+  {
+    "id": 19,
+    "text": "And agency, where AI is configured to act independently on your behalf.",
+    "start": 141.04,
+    "end": 146.08
+  },
+  {
+    "id": 20,
+    "text": "As you move forward in your AI journey, keep these essential insights in mind.",
+    "start": 146.96,
+    "end": 151.52
+  },
+  {
+    "id": 21,
+    "text": "For delegation, your expertise and judgment remain the foundation of effective AI use.",
+    "start": 151.94,
+    "end": 158.16
+  },
+  {
+    "id": 22,
+    "text": "The most powerful outcomes often emerge from AI.",
+    "start": 158.69,
+    "end": 161.67
+  },
+  {
+    "id": 23,
+    "text": "They emerge when you can identify opportunities where you and AI can build on each other's strengths through iterative collaboration, creating outcomes neither could achieve alone.",
+    "start": 161.67,
+    "end": 172.45
+  },
+  {
+    "id": 24,
+    "text": "For description, clear communication bridges your intentions and AI capabilities.",
+    "start": 174.31,
+    "end": 179.31
+  },
+  {
+    "id": 25,
+    "text": "Sometimes, the most effective instructions aren't elaborate prompts, but thoughtful conversations that provide context, examples, and feedback.",
+    "start": 181.14,
+    "end": 190.58
+  },
+  {
+    "id": 26,
+    "text": "For discernment, critical evaluation.",
+    "start": 190.92,
+    "end": 193.68
+  },
+  {
+    "id": 27,
+    "text": "The most important aspect of AI evaluation is a non -negotiable responsibility.",
+    "start": 193.76,
+    "end": 196.8
+  },
+  {
+    "id": 28,
+    "text": "Your discernment skills protect against AI limitations, and once again enable you to achieve results neither you nor the AI could easily create alone.",
+    "start": 198.43,
+    "end": 207.44
+  },
+  {
+    "id": 29,
+    "text": "For diligence, you remain accountable for what you do with AI and its impact on others.",
+    "start": 208.49,
+    "end": 214.66
+  },
+  {
+    "id": 30,
+    "text": "Being transparent about AI's role in your work builds trust and integrity.",
+    "start": 215.29,
+    "end": 218.82
+  },
+  {
+    "id": 31,
+    "text": "These competencies aren't mastered overnight.",
+    "start": 219.88,
+    "end": 222.07
+  },
+  {
+    "id": 32,
+    "text": "They develop through practice.",
+    "start": 222.72,
+    "end": 224.01
+  },
+  {
+    "id": 33,
+    "text": "As you delegate work, describe your needs, discern the quality of outputs, and apply diligence to your process, your AI fluency will grow naturally.",
+    "start": 224.63,
+    "end": 233.21
+  },
+  {
+    "id": 34,
+    "text": "The goal isn't perfection.",
+    "start": 233.55,
+    "end": 235.05
+  },
+  {
+    "id": 35,
+    "text": "It's about continually developing awareness, commitment, and an intentional approach to working with AI.",
+    "start": 235.37,
+    "end": 241.59
+  },
+  {
+    "id": 36,
+    "text": "The fluency framework is designed to be widely applicable to the broad range of generative AI assistants and remain relevant even as AI systems continue to evolve.",
+    "start": 241.87,
+    "end": 251.93
+  },
+  {
+    "id": 37,
+    "text": "But it is up to us to make sure we continue to develop and develop.",
+    "start": 252.53,
+    "end": 254.69
+  },
+  {
+    "id": 38,
+    "text": "And we continue to apply our learning as well.",
+    "start": 254.69,
+    "end": 256.23
+  },
+  {
+    "id": 39,
+    "text": "We hope this course is just the beginning of your AI fluency journey.",
+    "start": 256.33,
+    "end": 259.93
+  },
+  {
+    "id": 40,
+    "text": "To close out the AI Fluency Foundations course, you'll find some follow -on activities designed to help you apply what you've learned, along with resources for continued exploration.",
+    "start": 260.17,
+    "end": 271.71
+  },
+  {
+    "id": 41,
+    "text": "We began this course with the goal of helping you think differently about AI and the ways we work with it.",
+    "start": 272.17,
+    "end": 278.45
+  },
+  {
+    "id": 42,
+    "text": "These are powerful systems, but they're not silver bullets or magical solutions to every problem.",
+    "start": 278.63,
+    "end": 284.39
+  },
+  {
+    "id": 43,
+    "text": "They're only as useful and safe as we enable them to be.",
+    "start": 284.61,
+    "end": 287.87
+  },
+  {
+    "id": 44,
+    "text": "So invest in your own expertise and stay aware of technological change so that you can delegate appropriately.",
+    "start": 288.03,
+    "end": 294.93
+  },
+  {
+    "id": 45,
+    "text": "Practice art of description and discernment, that thoughtful back and forth conversation that transforms AI from simple automation machines into genuine thinking partners.",
+    "start": 295.47,
+    "end": 305.29
+  },
+  {
+    "id": 46,
+    "text": "And above all, take responsibility for the way you work with AI and what you create together.",
+    "start": 305.61,
+    "end": 310.55
+  },
+  {
+    "id": 47,
+    "text": "Be effective and efficient.",
+    "start": 311.18,
+    "end": 312.62
+  },
+  {
+    "id": 48,
+    "text": "Be ethical and safe.",
+    "start": 313.0,
+    "end": 314.5
+  },
+  {
+    "id": 49,
+    "text": "We're all learning together how to navigate this rapidly evolving landscape.",
+    "start": 315.24,
+    "end": 318.58
+  },
+  {
+    "id": 50,
+    "text": "Thank you for joining us on this journey toward greater AI fluency.",
+    "start": 319.12,
+    "end": 323.08
+  },
+  {
+    "id": 51,
+    "text": "The future of human -AI collaboration is bright, and you're now better equipped to shape it thoughtfully.",
+    "start": 323.18,
+    "end": 329.06
+  }
+]

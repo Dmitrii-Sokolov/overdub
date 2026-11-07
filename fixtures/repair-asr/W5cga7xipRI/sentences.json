@@ -1,0 +1,380 @@
+[
+  {
+    "id": 0,
+    "text": "Let's now examine what generative AI can and cannot do, focusing on LLMs such as Claude.",
+    "start": 12.21,
+    "end": 18.23
+  },
+  {
+    "id": 1,
+    "text": "Think of this as getting to know a new colleague.",
+    "start": 18.37,
+    "end": 20.57
+  },
+  {
+    "id": 2,
+    "text": "Understanding their strengths and limitations help you collaborate more effectively.",
+    "start": 20.91,
+    "end": 24.99
+  },
+  {
+    "id": 3,
+    "text": "To start, we'll focus on what these systems do remarkably well.",
+    "start": 25.67,
+    "end": 29.29
+  },
+  {
+    "id": 4,
+    "text": "You might be amazed at how versatile modern language models can be.",
+    "start": 29.91,
+    "end": 33.81
+  },
+  {
+    "id": 5,
+    "text": "They're skilled with language in ways that seemed impossible just a few years ago.",
+    "start": 34.07,
+    "end": 38.63
+  },
+  {
+    "id": 6,
+    "text": "Crafting emails that capture your voice, condensing lengthy reports into clear summaries, translating between languages,",
+    "start": 38.63,
+    "end": 47.07
+  },
+  {
+    "id": 7,
+    "text": "and explaining complex topics across countless fields, from microbiology to marketing strategy.",
+    "start": 47.47,
+    "end": 53.67
+  },
+  {
+    "id": 8,
+    "text": "What's particularly notable is how these models can shift between different tasks without needing additional training.",
+    "start": 54.19,
+    "end": 60.93
+  },
+  {
+    "id": 9,
+    "text": "The very same system that helps you write poetry or brainstorm ideas for your birthday party can turn around and help you.",
+    "start": 61.34,
+    "end": 68.84
+  },
+  {
+    "id": 10,
+    "text": "Understand quantum computing concepts or analyze quarterly business trends, all through a simple conversation.",
+    "start": 68.84,
+    "end": 77.54
+  },
+  {
+    "id": 11,
+    "text": "These models can also maintain the thread of a conversation, remembering what you discussed earlier and building upon it.",
+    "start": 78.98,
+    "end": 87.36
+  },
+  {
+    "id": 12,
+    "text": "If you mention your project deadline in passing, for example, and refer back to it later within the conversation, the AI typically understands what you're talking about, much like a human conversation partner would.",
+    "start": 88.02,
+    "end": 99.26
+  },
+  {
+    "id": 13,
+    "text": "Many modern LLMs can now also reach beyond their own knowledge, by connecting to external tools and information sources, allowing them to search the web, process files, or even use other applications to enhance their capabilities.",
+    "start": 100.25,
+    "end": 113.55
+  },
+  {
+    "id": 14,
+    "text": "This dramatically expands what they can help with.",
+    "start": 114.59,
+    "end": 117.29
+  },
+  {
+    "id": 15,
+    "text": "However, just like any technology, LLMs as they exist today also have certain limitations.",
+    "start": 117.63,
+    "end": 123.19
+  },
+  {
+    "id": 16,
+    "text": "First, AI models are bounded by their training data.",
+    "start": 124.16,
+    "end": 127.24
+  },
+  {
+    "id": 17,
+    "text": "LLMs have a knowledge cutoff.",
+    "start": 128.15,
+    "end": 129.95
+  },
+  {
+    "id": 18,
+    "text": "Based on when they were trained, the point after which they have no innate knowledge of the world.",
+    "start": 129.97,
+    "end": 136.45
+  },
+  {
+    "id": 19,
+    "text": "For example, a model with a cutoff date of November 2024 means that it wasn't trained on any data after November 2024.",
+    "start": 137.37,
+    "end": 145.27
+  },
+  {
+    "id": 20,
+    "text": "Imagine someone who went into a retreat without internet access at a specific date.",
+    "start": 146.26,
+    "end": 150.38
+  },
+  {
+    "id": 21,
+    "text": "They wouldn't know about events that happened after they left.",
+    "start": 150.88,
+    "end": 153.9
+  },
+  {
+    "id": 22,
+    "text": "Models need tools like web search to learn more about recent developments.",
+    "start": 154.42,
+    "end": 158.7
+  },
+  {
+    "id": 23,
+    "text": "Additionally, the training process doesn't verify every fact in the training data.",
+    "start": 159.69,
+    "end": 164.09
+  },
+  {
+    "id": 24,
+    "text": "This means models can sometimes learn and reproduce inaccuracies that were present in their training data.",
+    "start": 164.89,
+    "end": 170.61
+  },
+  {
+    "id": 25,
+    "text": "They can also make mistakes when trying to piece together information they've learned.",
+    "start": 171.42,
+    "end": 175.26
+  },
+  {
+    "id": 26,
+    "text": "This leads to what is often called a hallucination.",
+    "start": 176.04,
+    "end": 179.44
+  },
+  {
+    "id": 27,
+    "text": "AI confidently stating something that sounds plausible but is actually incorrect.",
+    "start": 180.34,
+    "end": 185.12
+  },
+  {
+    "id": 28,
+    "text": "Unlike search engines that simply retrieve existing documents, LLMs generate responses based on statistical patterns, sometimes producing hallucinations.",
+    "start": 186.24,
+    "end": 196.17
+  },
+  {
+    "id": 29,
+    "text": "Imagine a friend who tells a story with absolute confidence, only to have the details completely wrong.",
+    "start": 197.49,
+    "end": 202.51
+  },
+  {
+    "id": 30,
+    "text": "AI can sometimes be like that.",
+    "start": 202.93,
+    "end": 204.69
+  },
+  {
+    "id": 31,
+    "text": "Another important constraint is the context window we mentioned earlier.",
+    "start": 204.95,
+    "end": 208.71
+  },
+  {
+    "id": 32,
+    "text": "As a reminder, that's the amount of information an AI can process at one time.",
+    "start": 209.07,
+    "end": 213.53
+  },
+  {
+    "id": 33,
+    "text": "Every LLM has a maximum limit to how much information it can consider during a single interaction.",
+    "start": 214.17,
+    "end": 219.13
+  },
+  {
+    "id": 34,
+    "text": "If this limit is exceeded, the AI won't be able to remember information that falls outside the window, usually on a first -in, first -out basis.",
+    "start": 219.13,
+    "end": 227.31
+  },
+  {
+    "id": 35,
+    "text": "Depending on the size of the model, this can limit its ability to process large documents or remember the entire conversation.",
+    "start": 227.73,
+    "end": 233.97
+  },
+  {
+    "id": 36,
+    "text": "Furthermore, unlike traditional software that produces identical outputs given the same inputs, LLMs are somewhat unpredictable by default, also known as non -deterministic.",
+    "start": 234.39,
+    "end": 245.99
+  },
+  {
+    "id": 37,
+    "text": "Ask the same question twice and you might get stuck.",
+    "start": 246.59,
+    "end": 249.11
+  },
+  {
+    "id": 38,
+    "text": "There are slightly different responses each time.",
+    "start": 249.11,
+    "end": 251.03
+  },
+  {
+    "id": 39,
+    "text": "This variability stems from the nature of how these models generate text.",
+    "start": 251.19,
+    "end": 255.75
+  },
+  {
+    "id": 40,
+    "text": "They're making probabilistic decisions about what text should come next, based on patterns in their training data and certain settings that developers can tweak.",
+    "start": 256.05,
+    "end": 265.13
+  },
+  {
+    "id": 41,
+    "text": "This creative variability can be great for brainstorming and generating diverse ideas, but requires awareness when consistency or accuracy are critical.",
+    "start": 265.61,
+    "end": 275.71
+  },
+  {
+    "id": 42,
+    "text": "Some LLM interfaces also offer sensors that can be used to track data.",
+    "start": 276.44,
+    "end": 279.58
+  },
+  {
+    "id": 43,
+    "text": "They can be used to control randomness when needed.",
+    "start": 279.58,
+    "end": 281.36
+  },
+  {
+    "id": 44,
+    "text": "This setting is often referred to as temperature.",
+    "start": 281.83,
+    "end": 284.67
+  },
+  {
+    "id": 45,
+    "text": "Additionally, while these models are improving rapidly, they've historically shown limitations with complex reasoning tasks, particularly with mathematical or logical problems requiring multiple steps.",
+    "start": 285.09,
+    "end": 297.28
+  },
+  {
+    "id": 46,
+    "text": "The good news is that newer reasoning or extended thinking models, specifically designed to think step -by -step, are showing strong progress in these areas.",
+    "start": 297.74,
+    "end": 308.23
+  },
+  {
+    "id": 47,
+    "text": "And finally, while models like Claude can now access external tools, they may still lack access to specific data sources or specialized tools that would be needed for certain tasks.",
+    "start": 308.65,
+    "end": 319.57
+  },
+  {
+    "id": 48,
+    "text": "It's like having a brilliant colleague who can't access your company's internal database.",
+    "start": 319.85,
+    "end": 324.65
+  },
+  {
+    "id": 49,
+    "text": "Their ability to help will be limited no matter how smart they are.",
+    "start": 325.47,
+    "end": 329.03
+  },
+  {
+    "id": 50,
+    "text": "If a model doesn't have access to a piece of data or tool that is needed to answer a question, then it should not come as a surprise that it won't be able to help answer the question.",
+    "start": 329.55,
+    "end": 339.49
+  },
+  {
+    "id": 51,
+    "text": "The field of generative AI is rapidly evolving.",
+    "start": 340.13,
+    "end": 343.01
+  },
+  {
+    "id": 52,
+    "text": "Researchers are working to address current limitations through techniques like retrieval augmented generation,",
+    "start": 344.06,
+    "end": 350.12
+  },
+  {
+    "id": 53,
+    "text": "which connects models to external knowledge and data sources, as well as expanding their ability to use tools and improving their reasoning capabilities.",
+    "start": 350.86,
+    "end": 360.4
+  },
+  {
+    "id": 54,
+    "text": "That said, some limitations will likely remain for the foreseeable future, even if we don't know exactly what those limitations will be.",
+    "start": 360.98,
+    "end": 368.88
+  },
+  {
+    "id": 55,
+    "text": "Understanding what AI can or cannot do is essential for AI fluency and helps you determine when and how to best incorporate these systems effectively into your work and daily life.",
+    "start": 368.88,
+    "end": 380.66
+  },
+  {
+    "id": 56,
+    "text": "The most effective applications will leverage the complementary strengths of humans and AI.",
+    "start": 380.86,
+    "end": 385.24
+  },
+  {
+    "id": 57,
+    "text": "We bring critical thinking, judgment, creativity, and ethical oversight that AI may struggle to replicate, while AI offers speed, scale, pattern recognition, and the ability to process vast amounts of information.",
+    "start": 385.66,
+    "end": 399.12
+  },
+  {
+    "id": 58,
+    "text": "These complementary strengths will evolve as the technology evolves.",
+    "start": 399.44,
+    "end": 402.82
+  },
+  {
+    "id": 59,
+    "text": "That's why continued learning and experimentation are so valuable.",
+    "start": 403.34,
+    "end": 407.34
+  },
+  {
+    "id": 60,
+    "text": "They help you stay abreast of these changes and discover new possibilities.",
+    "start": 407.56,
+    "end": 411.56
+  },
+  {
+    "id": 61,
+    "text": "In these exercises across this course, you'll have a chance to explore these concepts firsthand through conversations with Claude.",
+    "start": 412.04,
+    "end": 419.06
+  },
+  {
+    "id": 62,
+    "text": "This direct experience will help you develop an intuitive feel for what generative AI can do, can't do, and how best to work with it.",
+    "start": 419.18,
+    "end": 428.58
+  }
+]

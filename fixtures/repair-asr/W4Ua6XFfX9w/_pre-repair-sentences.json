@@ -1,0 +1,314 @@
+[
+  {
+    "id": 0,
+    "text": "Hi, my name is Rick Dakin from the Ringling College of Art and Design.",
+    "start": 10.93,
+    "end": 14.53
+  },
+  {
+    "id": 1,
+    "text": "Now that we've explored what AI fluency means and the different ways we interact with AI, let's dive into the core competencies that help us navigate AI collaboration effectively, efficiently, ethically, and safely.",
+    "start": 14.93,
+    "end": 27.63
+  },
+  {
+    "id": 2,
+    "text": "No matter how you're working with AI, whether through automation, augmentation, or agency, there are four essential competencies that make all the difference.",
+    "start": 28.53,
+    "end": 37.11
+  },
+  {
+    "id": 3,
+    "text": "We call them the four Ds, delegation, description, discernment, and diligence.",
+    "start": 37.11,
+    "end": 44.04
+  },
+  {
+    "id": 4,
+    "text": "First is delegation, which focuses on the big picture.",
+    "start": 44.75,
+    "end": 48.37
+  },
+  {
+    "id": 5,
+    "text": "What are you trying to accomplish?",
+    "start": 49.97,
+    "end": 51.55
+  },
+  {
+    "id": 6,
+    "text": "What kinds of work are involved?",
+    "start": 51.81,
+    "end": 53.51
+  },
+  {
+    "id": 7,
+    "text": "What work should you handle yourself?",
+    "start": 53.89,
+    "end": 55.81
+  },
+  {
+    "id": 8,
+    "text": "And where might AI be helpful?",
+    "start": 56.01,
+    "end": 57.67
+  },
+  {
+    "id": 9,
+    "text": "Think about a research project you're working on.",
+    "start": 58.46,
+    "end": 60.94
+  },
+  {
+    "id": 10,
+    "text": "You might decide to have your AI assistant review lengthy documents and data, then engage in a thoughtful discussion about the implications and functions of AI.",
+    "start": 61.04,
+    "end": 68.7
+  },
+  {
+    "id": 11,
+    "text": "Don't just look at the findings, but reserve the critical analysis and final conclusions for yourself.",
+    "start": 68.7,
+    "end": 73.06
+  },
+  {
+    "id": 12,
+    "text": "To delegate effectively, you need to understand your goal and the problem you're solving, recognize what AI can and can't do well, and lastly, thoughtfully divide the work between you and the AI.",
+    "start": 74.18,
+    "end": 87.67
+  },
+  {
+    "id": 13,
+    "text": "Delegation isn't just about offloading tasks.",
+    "start": 88.78,
+    "end": 91.26
+  },
+  {
+    "id": 14,
+    "text": "It's about having a clear vision and strategically choosing how AI fits into your process.",
+    "start": 91.64,
+    "end": 96.5
+  },
+  {
+    "id": 15,
+    "text": "This thoughtful approach is essential for both effectiveness and efficiency.",
+    "start": 97.22,
+    "end": 100.08
+  },
+  {
+    "id": 16,
+    "text": "It's about having effective and efficient AI collaboration.",
+    "start": 100.08,
+    "end": 102.16
+  },
+  {
+    "id": 17,
+    "text": "Next comes description, which focuses on clear communication with AI.",
+    "start": 103.6,
+    "end": 107.96
+  },
+  {
+    "id": 18,
+    "text": "Consider the difference between vaguely stating, make me a logo versus describing your company's values, target audience, preferred colors, style references, and so on.",
+    "start": 109.02,
+    "end": 118.48
+  },
+  {
+    "id": 19,
+    "text": "Or if you're using an AI as a tutor, you might take the extra step to specify, don't tell me the answer.",
+    "start": 119.18,
+    "end": 124.92
+  },
+  {
+    "id": 20,
+    "text": "Just help me work through this problem step -by -step so I can better understand the concept.",
+    "start": 125.04,
+    "end": 129.1
+  },
+  {
+    "id": 21,
+    "text": "Description goes beyond just the idea.",
+    "start": 130.16,
+    "end": 131.58
+  },
+  {
+    "id": 22,
+    "text": "It's about having detailed, context -rich conversations that establish what you're hoping to achieve in the format of the output,",
+    "start": 132.58,
+    "end": 140.94
+  },
+  {
+    "id": 23,
+    "text": "how you want the AI to approach the task, the context and information that the AI might need to best work with you on this task, and the tone and style of interaction.",
+    "start": 141.78,
+    "end": 152.98
+  },
+  {
+    "id": 24,
+    "text": "Effective description means articulating your needs and vision in a way that sets up both you and the AI for greatest collaboration.",
+    "start": 154.4,
+    "end": 161.74
+  },
+  {
+    "id": 25,
+    "text": "The third D is discernment, which involves thoughtfully evaluating what AI gives you.",
+    "start": 161.94,
+    "end": 169.72
+  },
+  {
+    "id": 26,
+    "text": "Let's say you've asked an AI assistant to suggest a marketing strategy.",
+    "start": 170.34,
+    "end": 174.38
+  },
+  {
+    "id": 27,
+    "text": "Your discernment comes into play as you assess, are the facts accurate?",
+    "start": 174.98,
+    "end": 179.42
+  },
+  {
+    "id": 28,
+    "text": "Does the reasoning make sense?",
+    "start": 180.1,
+    "end": 181.64
+  },
+  {
+    "id": 29,
+    "text": "Do the recommendations align with your brand values and audience?",
+    "start": 182.34,
+    "end": 185.5
+  },
+  {
+    "id": 30,
+    "text": "And most importantly, does this output actually help you move forward?",
+    "start": 185.8,
+    "end": 190.48
+  },
+  {
+    "id": 31,
+    "text": "Discernment draws upon your own expectations, expertise, and a domain,",
+    "start": 191.46,
+    "end": 194.2
+  },
+  {
+    "id": 32,
+    "text": "and requires developing the judgment and critical insight to separate what's useful from what's not, and to recognize when AI outputs need refinement or should be set aside entirely.",
+    "start": 194.46,
+    "end": 204.18
+  },
+  {
+    "id": 33,
+    "text": "Most of our interactions with AI involve small loops of description and discernment, describing what we need, evaluating what we get, refining our request, and so on.",
+    "start": 205.08,
+    "end": 214.54
+  },
+  {
+    "id": 34,
+    "text": "We'll explore this more deeply later in the course.",
+    "start": 214.76,
+    "end": 217.5
+  },
+  {
+    "id": 35,
+    "text": "Finally, there's diligence, which focuses on responsible AI interactions.",
+    "start": 218.34,
+    "end": 223.04
+  },
+  {
+    "id": 36,
+    "text": "For example, if you are using AI to help write job descriptions or review applications, how are you ensuring fairness and controlling for potential biases?",
+    "start": 223.61,
+    "end": 232.05
+  },
+  {
+    "id": 37,
+    "text": "When making important decisions with AI assistants, how are you verifying the accuracy of the information presented to you?",
+    "start": 233.32,
+    "end": 240.44
+  },
+  {
+    "id": 38,
+    "text": "Are you protecting sensitive data?",
+    "start": 240.64,
+    "end": 242.58
+  },
+  {
+    "id": 39,
+    "text": "Have you considered how to be transparent about the involvement of AI?",
+    "start": 243.18,
+    "end": 246.58
+  },
+  {
+    "id": 40,
+    "text": "Are you willing to be accountable for the AI -assisted work you have done?",
+    "start": 247.27,
+    "end": 251.83
+  },
+  {
+    "id": 41,
+    "text": "Diligence means taking over the role of AI assistants, the ownership of your AI -assisted work, and being willing to stand behind final products created using AI.",
+    "start": 252.82,
+    "end": 260.1
+  },
+  {
+    "id": 42,
+    "text": "Diligence is critical for safe and ethical AI collaboration.",
+    "start": 261.03,
+    "end": 265.47
+  },
+  {
+    "id": 43,
+    "text": "To recap, AI fluency means developing practical skills, knowledge, insights, and values that help you use AI effectively, efficiently, ethically, and safely.",
+    "start": 267.33,
+    "end": 276.61
+  },
+  {
+    "id": 44,
+    "text": "AI fluency includes four key competencies.",
+    "start": 277.26,
+    "end": 280.5
+  },
+  {
+    "id": 45,
+    "text": "Delegation to decide when and how to use AI.",
+    "start": 281.36,
+    "end": 284.08
+  },
+  {
+    "id": 46,
+    "text": "Description to control AI.",
+    "start": 284.76,
+    "end": 286.06
+  },
+  {
+    "id": 47,
+    "text": "Delegation to communicate clearly with AI.",
+    "start": 286.06,
+    "end": 287.54
+  },
+  {
+    "id": 48,
+    "text": "Discernment to evaluate AI outputs.",
+    "start": 288.2,
+    "end": 290.36
+  },
+  {
+    "id": 49,
+    "text": "And diligence to use AI responsibly.",
+    "start": 290.68,
+    "end": 293.42
+  },
+  {
+    "id": 50,
+    "text": "What makes these competencies so valuable is that they aren't tied to specific AI tools or techniques that might become outdated.",
+    "start": 293.74,
+    "end": 300.48
+  },
+  {
+    "id": 51,
+    "text": "Instead, they're fundamental skills that will help you adapt and grow alongside this rapidly evolving technology.",
+    "start": 301.04,
+    "end": 308.18
+  }
+]

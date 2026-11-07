@@ -1,0 +1,320 @@
+[
+  {
+    "id": 0,
+    "text": "Hi, my name is Drew Bent, and I'm a teacher, programmer, and member of technical staff at Anthropic.",
+    "start": 12.08,
+    "end": 17.8
+  },
+  {
+    "id": 1,
+    "text": "Welcome to our exploration of generative AI.",
+    "start": 18.04,
+    "end": 20.58
+  },
+  {
+    "id": 2,
+    "text": "In this video, we'll dive into what generative AI actually is, how it works under the hood, and the technological breakthroughs that made these systems possible.",
+    "start": 20.8,
+    "end": 29.48
+  },
+  {
+    "id": 3,
+    "text": "You might interact with generative AI daily without fully understanding what's happening behind the scenes.",
+    "start": 29.76,
+    "end": 35.76
+  },
+  {
+    "id": 4,
+    "text": "Let's change that.",
+    "start": 36.36,
+    "end": 37.32
+  },
+  {
+    "id": 5,
+    "text": "Generative AI refers to artificial intelligence systems that can create new content rather than just analyzing existing data.",
+    "start": 37.7,
+    "end": 45.1
+  },
+  {
+    "id": 6,
+    "text": "For example, while traditional AI might classify emails as spam or not spam based on patterns, generative AI can write a completely new email for you.",
+    "start": 45.44,
+    "end": 54.76
+  },
+  {
+    "id": 7,
+    "text": "The first approach analyzes and categorizes.",
+    "start": 55.05,
+    "end": 58.09
+  },
+  {
+    "id": 8,
+    "text": "The second creates something new that didn't exist before.",
+    "start": 58.35,
+    "end": 61.33
+  },
+  {
+    "id": 9,
+    "text": "This represents a fundamental shift in AI capabilities.",
+    "start": 62.07,
+    "end": 65.53
+  },
+  {
+    "id": 10,
+    "text": "Large language models, or LLMs, like Anthropic's Claude models, are a prominent type of generative AI.",
+    "start": 66.27,
+    "end": 72.53
+  },
+  {
+    "id": 11,
+    "text": "They're called language models because they're trained to predict and generated human language.",
+    "start": 73.1,
+    "end": 78.44
+  },
+  {
+    "id": 12,
+    "text": "And large, because they contain billions of parameters, mathematical values that determine how the model processes information somewhat like synaptic connections in your brain.",
+    "start": 78.62,
+    "end": 89.46
+  },
+  {
+    "id": 13,
+    "text": "The path to today's generative AI wasn't sudden.",
+    "start": 89.97,
+    "end": 93.31
+  },
+  {
+    "id": 14,
+    "text": "It involved three crucial developments coming together at the right time.",
+    "start": 93.59,
+    "end": 97.73
+  },
+  {
+    "id": 15,
+    "text": "First, there were algorithmic and architectural breakthroughs that fundamentally changed how AI systems learn.",
+    "start": 97.89,
+    "end": 104.97
+  },
+  {
+    "id": 16,
+    "text": "While neural networks have been around conceptually for decades, the development of the transformer architecture in 2017 was a game changer.",
+    "start": 105.64,
+    "end": 113.78
+  },
+  {
+    "id": 17,
+    "text": "This architecture excels at processing sequences of text while maintaining relationships between words across long passages, which is critical for understanding language in context.",
+    "start": 114.08,
+    "end": 125.04
+  },
+  {
+    "id": 18,
+    "text": "Second, the explosion of digital data provided the essential raw material for training.",
+    "start": 125.42,
+    "end": 130.28
+  },
+  {
+    "id": 19,
+    "text": "Modern LLMs like CLAWD learn from diverse sources such as websites, code repositories, and other text that represent human knowledge and communication.",
+    "start": 130.48,
+    "end": 139.2
+  },
+  {
+    "id": 20,
+    "text": "This vast tapestry of information helps models develop a broad and nuanced understanding of both language and concepts.",
+    "start": 140.07,
+    "end": 147.67
+  },
+  {
+    "id": 21,
+    "text": "And third, massive increases in computational power made it possible to train these complex models on all that data.",
+    "start": 148.22,
+    "end": 155.72
+  },
+  {
+    "id": 22,
+    "text": "Specialized hardware like GPUs or graphics processing units and TPUs or tensor processing units, along with distributed computing networks often called clusters, enabled processing that would have been impossible just a few years earlier.",
+    "start": 156.1,
+    "end": 170.52
+  },
+  {
+    "id": 23,
+    "text": "The combination of these three factors led to an important discovery known as the scaling laws.",
+    "start": 170.86,
+    "end": 176.44
+  },
+  {
+    "id": 24,
+    "text": "These empirical findings showed that as models grew larger and trained on more data with more computing power, their performance improved in predictable ways.",
+    "start": 176.78,
+    "end": 185.96
+  },
+  {
+    "id": 25,
+    "text": "More surprisingly, researchers found that entirely new capabilities began to emerge as these models grew larger.",
+    "start": 186.18,
+    "end": 193.22
+  },
+  {
+    "id": 26,
+    "text": "Abilities no one explicitly programmed, like reasoning through problems step -by -step, or adapting to new tasks with minimal instruction.",
+    "start": 193.74,
+    "end": 201.54
+  },
+  {
+    "id": 27,
+    "text": "Let's peek under the hood at how these systems actually work.",
+    "start": 201.98,
+    "end": 205.26
+  },
+  {
+    "id": 28,
+    "text": "During initial training, also called pre -training, LLMs like CLAWD analyzed patterns across billions of text examples.",
+    "start": 205.52,
+    "end": 212.66
+  },
+  {
+    "id": 29,
+    "text": "Imagine reading every website and piece of text you could find, not just to absorb information, but also to learn how to use them.",
+    "start": 213.06,
+    "end": 217.56
+  },
+  {
+    "id": 30,
+    "text": "This is a great way to understand the statistical relationships between words, phrases, and concepts.",
+    "start": 217.56,
+    "end": 222.76
+  },
+  {
+    "id": 31,
+    "text": "At this stage, the model essentially builds something like a complex map of language and knowledge.",
+    "start": 223.08,
+    "end": 227.74
+  },
+  {
+    "id": 32,
+    "text": "This pre -training process involves showing the model text and asking it to predict what comes next.",
+    "start": 228.0,
+    "end": 233.84
+  },
+  {
+    "id": 33,
+    "text": "Through many iterations, the model gradually refines its predictions, learning the patterns that make language coherent and meaningful.",
+    "start": 234.14,
+    "end": 241.66
+  },
+  {
+    "id": 34,
+    "text": "After pre -training, models undergo additional training called fine -tuning, learning to follow instructions, provide helpful responses, and importantly, avoid generating harmful content.",
+    "start": 241.9,
+    "end": 253.44
+  },
+  {
+    "id": 35,
+    "text": "This often involves human feedback to improve the model's performance, as well as reinforcement learning, which uses rewards",
+    "start": 253.84,
+    "end": 261.1
+  },
+  {
+    "id": 36,
+    "text": "and penalties to shape the model's behavior toward being more helpful, honest, and harmless in the case of anthropics models.",
+    "start": 261.1,
+    "end": 268.7
+  },
+  {
+    "id": 37,
+    "text": "Once models are trained, they are then deployed for you to interact with.",
+    "start": 269.08,
+    "end": 272.82
+  },
+  {
+    "id": 38,
+    "text": "When you interact with CLAWD or another LLM, you're providing a prompt, which is text that the model reads and then continues from based on patterns it learned during training.",
+    "start": 273.08,
+    "end": 281.94
+  },
+  {
+    "id": 39,
+    "text": "The model isn't retrieving pre -written answers from a database.",
+    "start": 282.08,
+    "end": 285.1
+  },
+  {
+    "id": 40,
+    "text": "Instead, it's generating new text that statistically follows from what you've written.",
+    "start": 285.44,
+    "end": 289.88
+  },
+  {
+    "id": 41,
+    "text": "There's also a practical limit to how much information an LLM can consider at once, known as the context window.",
+    "start": 290.2,
+    "end": 297.1
+  },
+  {
+    "id": 42,
+    "text": "Think of this as the AI's working memory.",
+    "start": 297.4,
+    "end": 299.62
+  },
+  {
+    "id": 43,
+    "text": "The context window includes your prompts, the AI responses, and any other information you've shared in your conversation.",
+    "start": 300.04,
+    "end": 306.82
+  },
+  {
+    "id": 44,
+    "text": "While AI companies continue to grow the context window to allow for longer context,",
+    "start": 307.2,
+    "end": 312.56
+  },
+  {
+    "id": 45,
+    "text": "documents, and conversations, these limits remind us that these systems don't have unlimited access to information and cannot use content beyond its current context window without specialized tools like web search.",
+    "start": 312.78,
+    "end": 325.5
+  },
+  {
+    "id": 46,
+    "text": "Bringing this together, the three characteristics that make modern generative AI so powerful include, first,",
+    "start": 325.84,
+    "end": 332.54
+  },
+  {
+    "id": 47,
+    "text": "its ability to process vast amounts of information during generation, training, allowing it to learn complex and nuanced patterns in language and knowledge.",
+    "start": 332.7,
+    "end": 341.04
+  },
+  {
+    "id": 48,
+    "text": "Second, its in -context learning ability.",
+    "start": 341.38,
+    "end": 344.04
+  },
+  {
+    "id": 49,
+    "text": "LLMs can adapt to new tasks based on instructions or examples in your prompt without requiring additional training.",
+    "start": 344.66,
+    "end": 350.64
+  },
+  {
+    "id": 50,
+    "text": "And third, emerging capabilities that arise from scale.",
+    "start": 350.88,
+    "end": 354.12
+  },
+  {
+    "id": 51,
+    "text": "As these models grow larger, they develop abilities that weren't explicitly designed into them, sometimes surprising even their creators.",
+    "start": 354.44,
+    "end": 361.84
+  },
+  {
+    "id": 52,
+    "text": "In the next video, we'll explore what these systems can and can't do well, along with their most common or valuable applications.",
+    "start": 361.84,
+    "end": 368.84
+  }
+]

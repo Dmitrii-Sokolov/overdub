@@ -1,0 +1,284 @@
+[
+  {
+    "id": 0,
+    "text": "In this video, we'll dig deeper into the AI fluency competency of description.",
+    "start": 10.8,
+    "end": 16.26
+  },
+  {
+    "id": 1,
+    "text": "AI fluency means working with an AI effectively, efficiently, ethically, and safely.",
+    "start": 17.48,
+    "end": 22.04
+  },
+  {
+    "id": 2,
+    "text": "Description is about communicating with AI, which is the core of most human AI interaction.",
+    "start": 22.83,
+    "end": 28.17
+  },
+  {
+    "id": 3,
+    "text": "Description goes far beyond just writing clever prompts.",
+    "start": 29.1,
+    "end": 31.92
+  },
+  {
+    "id": 4,
+    "text": "It's about communicating with the AI to explain tasks, ask questions, provide context, and otherwise guide the interaction.",
+    "start": 32.1,
+    "end": 38.48
+  },
+  {
+    "id": 5,
+    "text": "It's about being able to steer a conversation that is going wrong.",
+    "start": 38.48,
+    "end": 42.54
+  },
+  {
+    "id": 6,
+    "text": "It's about guiding an AI's thought process or logical reasoning.",
+    "start": 42.68,
+    "end": 45.88
+  },
+  {
+    "id": 7,
+    "text": "And it's about building a kind of thinking environment where both you and the AI can each do your best work.",
+    "start": 46.26,
+    "end": 52.58
+  },
+  {
+    "id": 8,
+    "text": "Think of it as building a bridge between your intentions and the AI's capabilities.",
+    "start": 53.69,
+    "end": 58.23
+  },
+  {
+    "id": 9,
+    "text": "The quality of AI outputs often depend on how clearly you describe what you want.",
+    "start": 59.05,
+    "end": 64.39
+  },
+  {
+    "id": 10,
+    "text": "It's like the difference between asking someone to make dinner versus providing a detailed recipe with ingredients and cooking instructions.",
+    "start": 65.29,
+    "end": 72.33
+  },
+  {
+    "id": 11,
+    "text": "AI can't read your mind.",
+    "start": 72.85,
+    "end": 74.77
+  },
+  {
+    "id": 12,
+    "text": "Instead of assuming the AI knows what you're looking for, you need to explain every relevant detail.",
+    "start": 75.54,
+    "end": 81.06
+  },
+  {
+    "id": 13,
+    "text": "What is the context for this work?",
+    "start": 81.6,
+    "end": 83.48
+  },
+  {
+    "id": 14,
+    "text": "What exactly are you looking for the AI to do?",
+    "start": 83.64,
+    "end": 85.84
+  },
+  {
+    "id": 15,
+    "text": "What format should the output take?",
+    "start": 86.04,
+    "end": 87.64
+  },
+  {
+    "id": 16,
+    "text": "Who is the audience and what style is appropriate?",
+    "start": 87.94,
+    "end": 91.0
+  },
+  {
+    "id": 17,
+    "text": "Don't make AI guess what you're thinking.",
+    "start": 91.9,
+    "end": 94.1
+  },
+  {
+    "id": 18,
+    "text": "Set explicit requirements and give the AI the information it needs to deliver.",
+    "start": 94.42,
+    "end": 99.68
+  },
+  {
+    "id": 19,
+    "text": "What you're actually looking for.",
+    "start": 99.88,
+    "end": 101.24
+  },
+  {
+    "id": 20,
+    "text": "We call this first concept product description.",
+    "start": 101.9,
+    "end": 105.1
+  },
+  {
+    "id": 21,
+    "text": "The ability to clearly define what you want the AI to create or provide.",
+    "start": 105.48,
+    "end": 109.84
+  },
+  {
+    "id": 22,
+    "text": "Sometimes specifying how an AI should tackle a job is as or even more important than specifying the end goal.",
+    "start": 112.2,
+    "end": 118.7
+  },
+  {
+    "id": 23,
+    "text": "Just as you might prefer that a colleague tackle a problem using your specific method, you can guide how an AI works through your request.",
+    "start": 119.24,
+    "end": 127.04
+  },
+  {
+    "id": 24,
+    "text": "You can and should give the AI helpful guidance to help it accomplish.",
+    "start": 127.4,
+    "end": 131.4
+  },
+  {
+    "id": 25,
+    "text": "There are different ways to approach this.",
+    "start": 131.42,
+    "end": 135.57
+  },
+  {
+    "id": 26,
+    "text": "You might provide general guidance like a manual, step -by -step instructions like a cookbook, or even a demonstration through examples.",
+    "start": 135.87,
+    "end": 143.63
+  },
+  {
+    "id": 27,
+    "text": "Here's how I'd do it.",
+    "start": 143.91,
+    "end": 145.03
+  },
+  {
+    "id": 28,
+    "text": "Think about it this way.",
+    "start": 145.37,
+    "end": 146.65
+  },
+  {
+    "id": 29,
+    "text": "The AI already has extensive training, but you're providing additional context specific to your unique situation.",
+    "start": 146.79,
+    "end": 154.03
+  },
+  {
+    "id": 30,
+    "text": "Are there specific data you want the AI to draw on?",
+    "start": 155.25,
+    "end": 158.41
+  },
+  {
+    "id": 31,
+    "text": "Are there specific issues it should be addressing?",
+    "start": 158.67,
+    "end": 161.23
+  },
+  {
+    "id": 32,
+    "text": "Or in a particular way, you can provide additional context specific to your unique situation.",
+    "start": 161.31,
+    "end": 162.19
+  },
+  {
+    "id": 33,
+    "text": "Is there a particular style of analysis you need, or maybe a specific workflow or technique you want it to use?",
+    "start": 162.19,
+    "end": 168.59
+  },
+  {
+    "id": 34,
+    "text": "Taking time to explain these elements makes a tremendous difference.",
+    "start": 169.34,
+    "end": 172.94
+  },
+  {
+    "id": 35,
+    "text": "We call this second concept process description, the ability to guide how the AI assistant approaches your request.",
+    "start": 174.12,
+    "end": 181.98
+  },
+  {
+    "id": 36,
+    "text": "If you take one thing from this course, it should be this.",
+    "start": 183.46,
+    "end": 186.66
+  },
+  {
+    "id": 37,
+    "text": "AI tools are not databases or vending machines, they are interactive systems that can behave differently in different contexts, much like people might.",
+    "start": 187.08,
+    "end": 195.66
+  },
+  {
+    "id": 38,
+    "text": "You need to explain how you want the AI to behave to get the best results.",
+    "start": 196.02,
+    "end": 200.06
+  },
+  {
+    "id": 39,
+    "text": "When you next sit down with AI, think first, what kind of thinking partner do you need right now?",
+    "start": 201.27,
+    "end": 207.19
+  },
+  {
+    "id": 40,
+    "text": "Are you narrowing down towards a specific answer or trying to explore multiple possibilities?",
+    "start": 207.45,
+    "end": 211.85
+  },
+  {
+    "id": 41,
+    "text": "Do you want the AI to challenge your assumptions or simply follow your lead?",
+    "start": 212.47,
+    "end": 215.91
+  },
+  {
+    "id": 42,
+    "text": "To provide expensive detail or keep things concise?",
+    "start": 216.25,
+    "end": 219.31
+  },
+  {
+    "id": 43,
+    "text": "To explain why it's answering in a certain way or just give you the answer?",
+    "start": 219.61,
+    "end": 223.21
+  },
+  {
+    "id": 44,
+    "text": "We call this third concept performance description, the ability to define the behavioral aspects of an AI interaction.",
+    "start": 223.41,
+    "end": 231.07
+  },
+  {
+    "id": 45,
+    "text": "You should now have a better sense of how product description, process description and performance description combine to form the description competency.",
+    "start": 231.75,
+    "end": 239.69
+  },
+  {
+    "id": 46,
+    "text": "When you develop your capacity for description, you transform AI from generic assistants into finely tuned thinking partners that can truly meet your needs.",
+    "start": 240.01,
+    "end": 249.65
+  }
+]

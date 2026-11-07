@@ -1,0 +1,752 @@
+[
+  {
+    "id": 0,
+    "text": "Let's explore one of the most practical skills when working with AI, crafting effective prompts.",
+    "start": 11.86,
+    "end": 17.12
+  },
+  {
+    "id": 1,
+    "text": "This might sound technical or complicated, and some guides certainly make it seem that way.",
+    "start": 17.5,
+    "end": 21.54
+  },
+  {
+    "id": 2,
+    "text": "But at its heart, it's surprisingly straightforward.",
+    "start": 21.82,
+    "end": 24.18
+  },
+  {
+    "id": 3,
+    "text": "Prompting is simply how we apply this course's description competency in practice, clearly communicating what we want, how we want it done, and how we want to interact with our AI assistant throughout the entire process.",
+    "start": 25.11,
+    "end": 35.55
+  },
+  {
+    "id": 4,
+    "text": "Think of prompting like explaining a task to a helpful new colleague who's eager to assist, but needs clear directions and expectation setting to do their best work.",
+    "start": 35.99,
+    "end": 44.51
+  },
+  {
+    "id": 5,
+    "text": "We'll be using Claude throughout this section, but these tips can be carried over to many other AI systems.",
+    "start": 45.1,
+    "end": 50.08
+  },
+  {
+    "id": 6,
+    "text": "You might have heard the term prompt engineering tossed around.",
+    "start": 51.07,
+    "end": 54.23
+  },
+  {
+    "id": 7,
+    "text": "Prompt engineering is simply the practice of designing effective instructions for AI systems like Claude, and it's about crafting your questions and providing context in ways that help AI assistants understand exactly what you want.",
+    "start": 54.53,
+    "end": 67.19
+  },
+  {
+    "id": 8,
+    "text": "What's fascinating is that effective prompting blends familiarities, familiar human communication skills, with a few considerations specific to AI.",
+    "start": 67.7,
+    "end": 74.76
+  },
+  {
+    "id": 9,
+    "text": "Many principles that make for good human conversation, such as being clear, providing relevant context, and giving concrete examples, also apply when working with AI.",
+    "start": 75.32,
+    "end": 83.8
+  },
+  {
+    "id": 10,
+    "text": "Yet there are differences, such as being more explicit about things humans could naturally infer, and accommodating the AI's limited context window,",
+    "start": 84.32,
+    "end": 91.82
+  },
+  {
+    "id": 11,
+    "text": "and sometimes, depending on the AI you're working with, using specific formatting that machines can easily process.",
+    "start": 92.04,
+    "end": 98.36
+  },
+  {
+    "id": 12,
+    "text": "As AI assistants continue to evolve, prompting best practices evolve too.",
+    "start": 98.66,
+    "end": 103.14
+  },
+  {
+    "id": 13,
+    "text": "What works with today's AI systems may be different from what works with tomorrow's.",
+    "start": 103.4,
+    "end": 107.42
+  },
+  {
+    "id": 14,
+    "text": "Experimentation is key to discovering what works best for your specific needs.",
+    "start": 108.32,
+    "end": 111.9
+  },
+  {
+    "id": 15,
+    "text": "In this video, we'll mainly explore six foundational prompting tips that will go a long way toward helping you effectively communicate and collaborate with Claude and other AI systems.",
+    "start": 112.14,
+    "end": 120.84
+  },
+  {
+    "id": 16,
+    "text": "They are give Claude context, show examples of what good looks like, specify output constraints, break complex tasks into steps, ask Claude to think first, and define Claude's role, style, or tone.",
+    "start": 121.12,
+    "end": 135.14
+  },
+  {
+    "id": 17,
+    "text": "The first principle is simple, but powerful.",
+    "start": 135.36,
+    "end": 137.7
+  },
+  {
+    "id": 18,
+    "text": "Be specific and clear about what you want, why you want it, and perhaps, most surprisingly, who you are.",
+    "start": 138.0,
+    "end": 143.52
+  },
+  {
+    "id": 19,
+    "text": "Let's take a simple prompt.",
+    "start": 144.12,
+    "end": 145.46
+  },
+  {
+    "id": 20,
+    "text": "Tell me about climate change.",
+    "start": 145.8,
+    "end": 147.4
+  },
+  {
+    "id": 21,
+    "text": "How can we improve this by giving Claude more context?",
+    "start": 147.86,
+    "end": 150.52
+  },
+  {
+    "id": 22,
+    "text": "A more specific, context -rich version could look like, explain 3 major impacts of climate change on agriculture in tropical regions, with examples from the past decade.",
+    "start": 151.04,
+    "end": 160.46
+  },
+  {
+    "id": 23,
+    "text": "Our baseline prompt was vague and leaves Claude guessing about our interests, level of knowledge, and the depth of detail we're looking for, such as geography and time span.",
+    "start": 161.19,
+    "end": 169.63
+  },
+  {
+    "id": 24,
+    "text": "We can even add more context by providing information not just about what we're looking for, but why we're asking and how we'll be using that information that Claude gives us. Now our prompt looks like this.",
+    "start": 169.85,
+    "end": 180.67
+  },
+  {
+    "id": 25,
+    "text": "Explain three major impacts of climate change on agriculture in tropical regions with examples from the past decade.",
+    "start": 181.19,
+    "end": 187.29
+  },
+  {
+    "id": 26,
+    "text": "I'm preparing for a job interview at an agricultural research lab in Indonesia.",
+    "start": 187.29,
+    "end": 191.51
+  },
+  {
+    "id": 27,
+    "text": "I have a degree in ecology, but no specific knowledge on climate change.",
+    "start": 191.89,
+    "end": 195.49
+  },
+  {
+    "id": 28,
+    "text": "Write a summary of key concepts that would help me speak intelligently in the interview.",
+    "start": 195.93,
+    "end": 199.97
+  },
+  {
+    "id": 29,
+    "text": "All this added context helps tailor Claude's response to your specific situation and knowledge level.",
+    "start": 200.33,
+    "end": 205.51
+  },
+  {
+    "id": 30,
+    "text": "This kind of background information is something we naturally provide in human conversations, but might forget to include when talking with Claude.",
+    "start": 205.67,
+    "end": 212.03
+  },
+  {
+    "id": 31,
+    "text": "Sometimes showing is better than telling.",
+    "start": 212.73,
+    "end": 214.65
+  },
+  {
+    "id": 32,
+    "text": "Providing examples of the kind of outcomes.",
+    "start": 215.4,
+    "end": 217.3
+  },
+  {
+    "id": 33,
+    "text": "The type of output you're looking for can be incredibly effective.",
+    "start": 217.32,
+    "end": 219.14
+  },
+  {
+    "id": 34,
+    "text": "This is sometimes called a few -shot prompting or N -shot prompting in technical circles, where N is the number of examples given.",
+    "start": 219.6,
+    "end": 225.92
+  },
+  {
+    "id": 35,
+    "text": "But it's really just about showing the AI examples for it to emulate.",
+    "start": 226.28,
+    "end": 229.48
+  },
+  {
+    "id": 36,
+    "text": "For instance, take the following prompt.",
+    "start": 230.12,
+    "end": 232.1
+  },
+  {
+    "id": 37,
+    "text": "Please convert this technical statement to plain language.",
+    "start": 232.6,
+    "end": 235.02
+  },
+  {
+    "id": 38,
+    "text": "The platform implements end -to -end encryption protocols to safeguard data integrity.",
+    "start": 235.34,
+    "end": 239.82
+  },
+  {
+    "id": 39,
+    "text": "Claude may already be able to do this to your satisfaction.",
+    "start": 240.5,
+    "end": 243.06
+  },
+  {
+    "id": 40,
+    "text": "So we definitely recommend you just try first without examples.",
+    "start": 243.36,
+    "end": 246.5
+  },
+  {
+    "id": 41,
+    "text": "And see where it leads you.",
+    "start": 246.56,
+    "end": 247.72
+  },
+  {
+    "id": 42,
+    "text": "But let's say you have a very specific style you want Claude to follow, and it's harder to explain than to give examples.",
+    "start": 248.6,
+    "end": 254.1
+  },
+  {
+    "id": 43,
+    "text": "Your refreshed prompt could look something like this.",
+    "start": 254.76,
+    "end": 257.3
+  },
+  {
+    "id": 44,
+    "text": "Here are two examples of how to convert technical jargon into plain language.",
+    "start": 257.92,
+    "end": 261.52
+  },
+  {
+    "id": 45,
+    "text": "the quantum algorithm exhibits quadratic speedup.",
+    "start": 262.54,
+    "end": 265.64
+  },
+  {
+    "id": 46,
+    "text": "the new method solves problems roughly twice as fast as previous methods.",
+    "start": 265.78,
+    "end": 270.1
+  },
+  {
+    "id": 47,
+    "text": "the interface leverages intuitive design paradigms.",
+    "start": 270.64,
+    "end": 274.24
+  },
+  {
+    "id": 48,
+    "text": "the design is easy to understand and use.",
+    "start": 274.54,
+    "end": 277.32
+  },
+  {
+    "id": 49,
+    "text": "Now, please convert this complex technical manual to plain language.",
+    "start": 277.96,
+    "end": 281.62
+  },
+  {
+    "id": 50,
+    "text": "When providing examples, aim to cover the full diversity of possible prompts, such as examples that cover different cases or styles.",
+    "start": 281.92,
+    "end": 288.54
+  },
+  {
+    "id": 51,
+    "text": "This helps Claude better understand the broad range of the pattern you want it to follow.",
+    "start": 289.06,
+    "end": 293.06
+  },
+  {
+    "id": 52,
+    "text": "Being clear about output constraints such as the desired format and length of Claude's response,",
+    "start": 293.36,
+    "end": 297.62
+  },
+  {
+    "id": 53,
+    "text": "or the language you want Claude to code in, or the color of the buttons on the web page you want Claude to design, also helps ensure you get exactly what you need.",
+    "start": 297.88,
+    "end": 306.9
+  },
+  {
+    "id": 54,
+    "text": "Here's a good example of clear and detailed description to ensure Claude delivers exactly what you're looking for.",
+    "start": 307.42,
+    "end": 312.8
+  },
+  {
+    "id": 55,
+    "text": "Create a clean, modern, single -page art portfolio website.",
+    "start": 313.64,
+    "end": 316.6
+  },
+  {
+    "id": 56,
+    "text": "Include these main sections.",
+    "start": 316.94,
+    "end": 318.12
+  },
+  {
+    "id": 57,
+    "text": "Hero, About Me, Skills, Portfolio and Projects, Experience, and Contact.",
+    "start": 318.36,
+    "end": 322.04
+  },
+  {
+    "id": 58,
+    "text": "Make the navigation menu sticky and responsive with Hamburger Menu on mobile.",
+    "start": 322.3,
+    "end": 325.94
+  },
+  {
+    "id": 59,
+    "text": "Use a sunset color palette and add a dark light mode toggle in the navigation.",
+    "start": 326.48,
+    "end": 330.22
+  },
+  {
+    "id": 60,
+    "text": "Guidance like this helps Claude structure its response to match your expectations.",
+    "start": 331.17,
+    "end": 334.65
+  },
+  {
+    "id": 61,
+    "text": "When you have a complicated request, breaking it down into smaller steps helps Claude follow your thinking and deliver better results.",
+    "start": 335.25,
+    "end": 342.41
+  },
+  {
+    "id": 62,
+    "text": "Think about it this way.",
+    "start": 342.95,
+    "end": 343.99
+  },
+  {
+    "id": 63,
+    "text": "If you ask a friend to do something for you without specifying how, there's a chance that they may not do it the way you intended them to.",
+    "start": 344.49,
+    "end": 350.75
+  },
+  {
+    "id": 64,
+    "text": "We've all been there.",
+    "start": 351.23,
+    "end": 351.91
+  },
+  {
+    "id": 65,
+    "text": "Listing out task steps ensures that Claude follows the process you want to in order to accomplish its task.",
+    "start": 352.43,
+    "end": 358.03
+  },
+  {
+    "id": 66,
+    "text": "This is sometimes called chain -of -thought prompting.",
+    "start": 358.37,
+    "end": 360.69
+  },
+  {
+    "id": 67,
+    "text": "For example, instead of asking Claude to analyze this quarterly sales data, you might say, I'd like to analyze this quarterly sales data.",
+    "start": 361.31,
+    "end": 367.23
+  },
+  {
+    "id": 68,
+    "text": "Please approach this by looking through our sales records to identify the top -performing products,",
+    "start": 367.23,
+    "end": 372.45
+  },
+  {
+    "id": 69,
+    "text": "comparing current quarter results to the previous quarter, highlighting any unusual trends or patterns, and then suggesting possible reasons for these trends.",
+    "start": 372.65,
+    "end": 380.39
+  },
+  {
+    "id": 70,
+    "text": "By default, you may not need to do this, especially for tasks that are relatively straightforward.",
+    "start": 380.67,
+    "end": 385.15
+  },
+  {
+    "id": 71,
+    "text": "Furthermore, modern reasoning models or extended thinking models are increasingly capable of performing step -by -step reasoning on their own.",
+    "start": 386.48,
+    "end": 393.96
+  },
+  {
+    "id": 72,
+    "text": "But you can still guide this process to ensure it aligns with your needs.",
+    "start": 394.38,
+    "end": 397.42
+  },
+  {
+    "id": 73,
+    "text": "The more variance there is in ways to execute the task well, or the more that proper task execution relies on experience and knowledge you've gained as a domain expert,",
+    "start": 397.42,
+    "end": 406.75
+  },
+  {
+    "id": 74,
+    "text": "the more you should consider taking the time to translate that knowledge into Claude.",
+    "start": 407.09,
+    "end": 410.91
+  },
+  {
+    "id": 75,
+    "text": "Relatedly, sometimes it can be helpful to explicitly give AI assistants like Claude space to work through its process first before executing its task.",
+    "start": 411.39,
+    "end": 419.11
+  },
+  {
+    "id": 76,
+    "text": "This approach helps Claude produce more thorough and well -considered responses.",
+    "start": 419.57,
+    "end": 423.53
+  },
+  {
+    "id": 77,
+    "text": "For example, you can add this to your prompt.",
+    "start": 424.25,
+    "end": 426.59
+  },
+  {
+    "id": 78,
+    "text": "Before answering, please think through this problem carefully.",
+    "start": 426.59,
+    "end": 429.87
+  },
+  {
+    "id": 79,
+    "text": "Consider the different factors involved, potential constraints, and various approaches before recommending the best solution.",
+    "start": 430.31,
+    "end": 436.61
+  },
+  {
+    "id": 80,
+    "text": "As I mentioned, modern reasoning or extended thinking models by default think before acting.",
+    "start": 436.97,
+    "end": 441.65
+  },
+  {
+    "id": 81,
+    "text": "But if you're working with an AI assistant that does not think first by default, you can still prompt the AI to do so.",
+    "start": 442.13,
+    "end": 448.05
+  },
+  {
+    "id": 82,
+    "text": "I want to note the importance of giving the AI assistant space to think before doing its task, not after, if you want that thinking to increase the quality of the AI's work,",
+    "start": 448.19,
+    "end": 457.51
+  },
+  {
+    "id": 83,
+    "text": "just like how having space to think before you act is different than acting first, then being asked to explain your thinking afterwards.",
+    "start": 457.67,
+    "end": 464.43
+  },
+  {
+    "id": 84,
+    "text": "As a side benefit, this also allows you to better see where the AI assistant might be going astray, and thus where you could hone your description competency further by providing more guidance.",
+    "start": 464.75,
+    "end": 475.11
+  },
+  {
+    "id": 85,
+    "text": "Specifying how you want Claude to communicate and behave can significantly change how it approaches a task.",
+    "start": 475.95,
+    "end": 480.85
+  },
+  {
+    "id": 86,
+    "text": "By specifying the level of expected expertise, the perspective you want it to take, or its communication style, you can guide both Claude's interaction with you and the final result of what it produces.",
+    "start": 481.23,
+    "end": 491.43
+  },
+  {
+    "id": 87,
+    "text": "Simply put, who do you want the AI to act as?",
+    "start": 491.95,
+    "end": 494.73
+  },
+  {
+    "id": 88,
+    "text": "For example, take this prompt.",
+    "start": 495.09,
+    "end": 496.67
+  },
+  {
+    "id": 89,
+    "text": "Please explain how rainbows form from the perspective of an experienced science teacher speaking to a bright 10 -year -old who's interested in science.",
+    "start": 497.13,
+    "end": 504.13
+  },
+  {
+    "id": 90,
+    "text": "This is also a good way to brainstorm or get feedback.",
+    "start": 504.75,
+    "end": 507.35
+  },
+  {
+    "id": 91,
+    "text": "You can specify a general role or even ask Claude to take on the persona of a specific figure, such as Richard Feynman, who's looking for physics explanations.",
+    "start": 507.59,
+    "end": 514.67
+  },
+  {
+    "id": 92,
+    "text": "Here's another example.",
+    "start": 515.62,
+    "end": 516.68
+  },
+  {
+    "id": 93,
+    "text": "As a UX design expert, review this website wireframe and suggest three improvements focusing on user navigation and accessibility.",
+    "start": 517.2,
+    "end": 524.12
+  },
+  {
+    "id": 94,
+    "text": "Perhaps the most powerful technique is asking Claude to help improve your prompt.",
+    "start": 524.6,
+    "end": 527.98
+  },
+  {
+    "id": 95,
+    "text": "When you're not sure how to ask for something or how to improve your prompt, describe to Claude your issue or situation and ask it to make your prompt better or write your prompt for you.",
+    "start": 528.4,
+    "end": 537.54
+  },
+  {
+    "id": 96,
+    "text": "I'm trying to get you, Claude, to help me with goal.",
+    "start": 538.02,
+    "end": 540.66
+  },
+  {
+    "id": 97,
+    "text": "I'm not sure how to phrase my request, to get the best results.",
+    "start": 541.06,
+    "end": 544.46
+  },
+  {
+    "id": 98,
+    "text": "Can you help me craft an effective prompt for this?",
+    "start": 544.66,
+    "end": 546.94
+  },
+  {
+    "id": 99,
+    "text": "Here's where Claude and other AI assistants may vary most in terms of performance, so we suggest you experiment with different models as part of practicing delegation.",
+    "start": 547.7,
+    "end": 555.8
+  },
+  {
+    "id": 100,
+    "text": "Effective prompting is iterative and experimental.",
+    "start": 556.94,
+    "end": 559.26
+  },
+  {
+    "id": 101,
+    "text": "AI systems and best practices are constantly evolving, so what works today may change tomorrow.",
+    "start": 559.62,
+    "end": 564.92
+  },
+  {
+    "id": 102,
+    "text": "Your first attempt won't always yield the perfect result, and that's expected.",
+    "start": 565.3,
+    "end": 568.9
+  },
+  {
+    "id": 103,
+    "text": "When a response isn't quite what you need, try refining your approach by playing around with any of the techniques we mentioned, such as add more specificity or context,",
+    "start": 569.44,
+    "end": 578.6
+  },
+  {
+    "id": 104,
+    "text": "provide examples of your desired output, break the task into smaller steps, and try a different technique or combination of techniques.",
+    "start": 578.94,
+    "end": 587.15
+  },
+  {
+    "id": 105,
+    "text": "You can also ask for variations, such as, can you give me three different versions of this?",
+    "start": 587.45,
+    "end": 591.91
+  },
+  {
+    "id": 106,
+    "text": "You can request different formats, such as instead of a paragraph, could you present this in an interactive artifact?",
+    "start": 592.35,
+    "end": 598.19
+  },
+  {
+    "id": 107,
+    "text": "Note that artifacts are a unique way that Claude can create outputs that may be easier to understand or more interesting to digest.",
+    "start": 598.79,
+    "end": 604.75
+  },
+  {
+    "id": 108,
+    "text": "You can also check confidence, such as, for factual questions, you can ask, how confident are you about this answer?",
+    "start": 605.05,
+    "end": 611.07
+  },
+  {
+    "id": 109,
+    "text": "You can also reset the conversation entirely.",
+    "start": 611.76,
+    "end": 613.88
+  },
+  {
+    "id": 110,
+    "text": "Sometimes starting a fresh conversation gives better results than trying to correct the conversation that's gone off track.",
+    "start": 614.44,
+    "end": 619.74
+  },
+  {
+    "id": 111,
+    "text": "Use each interaction as feedback to improve your next prompt.",
+    "start": 620.1,
+    "end": 623.64
+  },
+  {
+    "id": 112,
+    "text": "Over time, you'll develop an intuition for how to communicate effectively with all AI systems.",
+    "start": 624.0,
+    "end": 628.68
+  },
+  {
+    "id": 113,
+    "text": "As you apply these techniques in practice, here's some guidance to recap.",
+    "start": 629.42,
+    "end": 632.94
+  },
+  {
+    "id": 114,
+    "text": "Some patterns consistently work well, starting with a clear task overview statement, including format specifications and examples, setting explicit constraints or requirements, providing rich and relevant background information,",
+    "start": 633.47,
+    "end": 646.15
+  },
+  {
+    "id": 115,
+    "text": "and common mistakes to avoid are assuming that Claude can read your mind, or overloading a single prompt or conversation with multiple unrelated tasks,",
+    "start": 646.39,
+    "end": 654.53
+  },
+  {
+    "id": 116,
+    "text": "being too vague about what success looks like, and not providing feedback on previous responses.",
+    "start": 654.93,
+    "end": 659.57
+  },
+  {
+    "id": 117,
+    "text": "To recap, effective communication with AI systems like Claude combines timeless human communication principles with AI -specific techniques.",
+    "start": 659.95,
+    "end": 666.99
+  },
+  {
+    "id": 118,
+    "text": "The approaches we've covered will serve you well across different AI systems.",
+    "start": 667.54,
+    "end": 671.1
+  },
+  {
+    "id": 119,
+    "text": "These six principles, together with the secret weapon of asking Claude for help, form a solid toolkit for applying the description competence to your AI interactions.",
+    "start": 671.64,
+    "end": 680.04
+  },
+  {
+    "id": 120,
+    "text": "Iteration and practice here is the key to swift improvement and mastery.",
+    "start": 680.56,
+    "end": 684.3
+  },
+  {
+    "id": 121,
+    "text": "Remember that prompt engineering is an evolving practice.",
+    "start": 684.7,
+    "end": 687.54
+  },
+  {
+    "id": 122,
+    "text": "As models improve, some specific techniques become less necessary.",
+    "start": 688.0,
+    "end": 691.78
+  },
+  {
+    "id": 123,
+    "text": "However, these principles of good communication are still relevant even if the way we apply them changes.",
+    "start": 692.26,
+    "end": 697.68
+  },
+  {
+    "id": 124,
+    "text": "Maintain a spirit of experimentation and adapt your approach based on your results.",
+    "start": 698.66,
+    "end": 702.68
+  }
+]
