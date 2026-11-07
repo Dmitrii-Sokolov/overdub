@@ -243,8 +243,21 @@ def test_a_failed_background_mux_is_a_failed_video() -> None:
     assert "encoder died" in out and "0 drained, 1 failed, 1 pending" in out
 
 
+def _admits(free):
+    """host.ram_admission's rule over a host reporting `free` bytes beyond the headroom (None:
+    unreadable)."""
+    from overdub import host
+    real = host.available_ram
+    host.available_ram = lambda: None if free is None else host._RAM_HEADROOM + free
+    try:
+        with contextlib.redirect_stderr(io.StringIO()):
+            return host.ram_admission()
+    finally:
+        host.available_ram = real
+
+
 def test_the_mux_pool_admits_by_ram_and_always_one() -> None:
-    pool = drain.MuxPool(width=4, budget=10)
+    pool = drain.MuxPool(width=4, admits=_admits(10))
     assert pool.fits(50)                                   # nothing running: always admitted
     pool.running["a"] = (None, None, 6)
     assert pool.fits(4) and not pool.fits(5)               # 6 + 5 > 10
@@ -252,9 +265,18 @@ def test_the_mux_pool_admits_by_ram_and_always_one() -> None:
     pool.running["b"] = (None, None, 0)
     pool.width = 2
     assert pool.fits_beside(4) and not pool.fits_beside(5) and not pool.fits(0)
-    pool = drain.MuxPool(width=1, budget=None)
+    pool = drain.MuxPool(width=1, admits=_admits(10))
     pool.running["a"] = (None, None, 0)
-    assert not pool.fits(0)                                # the width cap holds without a budget
+    assert not pool.fits(0)                                # the width cap holds under a budget
+
+
+def test_unreadable_ram_runs_the_drain_serially() -> None:
+    # The host contract is "a host we cannot read runs as before", and before the background pool
+    # the drain muxed inline: no second mux, and no tail beside a running one.
+    pool = drain.MuxPool(width=4, admits=_admits(None))
+    assert pool.fits(10**12)                               # nothing running: still admitted
+    pool.running["a"] = (None, None, 0)
+    assert not pool.fits(0) and not pool.fits_beside(0)
 
 
 if __name__ == "__main__":

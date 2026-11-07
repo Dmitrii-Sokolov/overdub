@@ -59,8 +59,6 @@ from overdub.stages import mux as mux_stage             # noqa: E402
 from overdub.stages import separate as separate_stage   # noqa: E402
 from overdub.workdir import WorkDir, video_id            # noqa: E402
 
-_RAM_HEADROOM = 4 * 2**30          # left free for everything that is neither a mux nor separate
-
 _POLL_S = 5.0
 _ROOT = Path(__file__).resolve().parent.parent
 
@@ -145,12 +143,11 @@ def drain_one(url: str, work: WorkDir, tail_stages: list[str]) -> tuple[bool, st
 
 
 class MuxPool:
-    """Background `-m overdub <url> --only mux` children, at most `width` at once, admitted while
-    their RAM needs fit the budget (the same rule as cli._sweep_concurrent: a fixed budget taken
-    when the pool starts, and one video always admitted when nothing is running)."""
+    """Background `-m overdub <url> --only mux` children, at most `width` at once, admitted by
+    `admits` — host.ram_admission's rule, the one the stage-major mux sweep uses too."""
 
-    def __init__(self, width: int, budget: "int | None"):
-        self.width, self.budget = max(1, width), budget
+    def __init__(self, width: int, admits):
+        self.width, self.admits = max(1, width), admits
         self.running: dict[str, tuple[subprocess.Popen, object, int]] = {}
 
     def fits(self, need: int) -> bool:
@@ -163,8 +160,7 @@ class MuxPool:
 
     def fits_beside(self, need: int) -> bool:
         """Do `need` bytes of other work fit beside the running muxes? Always true with none."""
-        held = sum(n for _p, _f, n in self.running.values())
-        return not self.running or self.budget is None or held + need <= self.budget
+        return self.admits([n for _p, _f, n in self.running.values()], need)
 
     def start(self, url: str, need: int) -> None:
         log = tempfile.TemporaryFile(mode="w+", encoding="utf-8", errors="replace")
@@ -219,9 +215,7 @@ def main(argv: list[str] | None = None) -> int:
     done: dict[str, str] = {}
     failed: dict[str, str] = {}
     tail_stages = [st.name for st in all_stages(cfg) if st.name != "mux"]
-    free = host.available_ram()
-    muxes = MuxPool(int(getattr(cfg, "mux_concurrency", 1) or 1),
-                    None if free is None else max(0, free - _RAM_HEADROOM))
+    muxes = MuxPool(int(getattr(cfg, "mux_concurrency", 1) or 1), host.ram_admission())
 
     def settle_muxes(block: bool = False) -> None:
         for u, ok, detail in muxes.reap(block):

@@ -16,6 +16,7 @@ from __future__ import annotations
 import ctypes
 import os
 import sys
+from typing import Callable
 
 
 def performance_mask() -> "int | None":
@@ -90,3 +91,35 @@ def available_ram() -> "int | None":
         return os.sysconf("SC_AVPHYS_PAGES") * os.sysconf("SC_PAGE_SIZE")
     except Exception:                                 # noqa: BLE001
         return None
+
+
+_RAM_HEADROOM = 4 * 2**30          # left free for everything the admitted jobs do not account for
+
+
+def ram_admission() -> "Callable[[list[int], int], bool]":
+    """Read free RAM once and return the rule that admits concurrent jobs under it.
+
+    The rule, `admits(held, need)`, answers "may a job needing `need` bytes start beside the
+    running jobs, whose needs are `held` (one entry per running job)?":
+
+    - nothing running: yes, always, so a job too large for the budget still runs, alone;
+    - free RAM unreadable: no, so the caller runs one job at a time — how it ran before it had a
+      concurrent path at all;
+    - otherwise: while the running needs plus this one fit the RAM free at the reading, minus a
+      headroom.
+
+    The budget is fixed at the reading rather than re-read per admission, because a job that has
+    started but not yet allocated would make a live reading look free.
+    """
+    free = available_ram()
+    budget = None if free is None else max(0, free - _RAM_HEADROOM)
+    if budget is None:
+        print("[warn] free RAM cannot be read — concurrent jobs run one at a time",
+              file=sys.stderr)
+
+    def admits(held: "list[int]", need: int) -> bool:
+        if not held:
+            return True
+        return budget is not None and sum(held) + need <= budget
+
+    return admits

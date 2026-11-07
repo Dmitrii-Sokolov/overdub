@@ -384,7 +384,7 @@ def test_the_concurrent_sweep_admits_by_ram_in_queue_order() -> None:
     from overdub import host
     from overdub.stages import mux
     real_ram, real_need = host.available_ram, mux.ram_need
-    host.available_ram = lambda: cli._RAM_HEADROOM + 10
+    host.available_ram = lambda: host._RAM_HEADROOM + 10
     mux.ram_need = lambda work: 8
     trace: list = []
     try:
@@ -394,6 +394,36 @@ def test_the_concurrent_sweep_admits_by_ram_in_queue_order() -> None:
         host.available_ram, mux.ram_need = real_ram, real_need
     assert code == 0 and peak[0] == 1
     assert [v for _s, v in _runs(trace)] == VIDS
+
+
+def test_unreadable_ram_runs_the_mux_sweep_one_at_a_time() -> None:
+    # a host whose free RAM cannot be read runs as it did before the sweep was concurrent: serially
+    import threading
+    import time
+    live, peak, lock = [0], [0], threading.Lock()
+
+    class Probe(FakeStage):
+        def run(self, ctx) -> None:
+            with lock:
+                live[0] += 1
+                peak[0] = max(peak[0], live[0])
+            time.sleep(0.05)
+            with lock:
+                live[0] -= 1
+            super().run(ctx)
+
+    from overdub import host
+    real_ram = host.available_ram
+    host.available_ram = lambda: None
+    trace: list = []
+    try:
+        with tempfile.TemporaryDirectory() as d:
+            code, out = _drive(Path(d), [Probe("mux", trace)])
+    finally:
+        host.available_ram = real_ram
+    assert code == 0 and peak[0] == 1
+    assert [v for _s, v in _runs(trace)] == VIDS
+    assert "one at a time" in out
 
 
 def test_a_stop_in_the_mux_sweep_starts_nothing_new_and_keeps_what_finished() -> None:

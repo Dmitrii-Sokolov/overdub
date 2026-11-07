@@ -668,9 +668,6 @@ def _run_stage(j: _Job, st, *, force: bool, only: set[str] | None) -> tuple[str 
     return None, None
 
 
-_RAM_HEADROOM = 4 * 2**30          # left free for everything that is not a mux
-
-
 def _sweep_concurrent(st, jobs: list[_Job], width: int, *, force: bool,
                       only: set[str] | None) -> list[tuple[_Job, str | None, str | None]]:
     """Run one stage over the batch `width` videos at a time; (job, failed, stopped) per video run.
@@ -678,10 +675,8 @@ def _sweep_concurrent(st, jobs: list[_Job], width: int, *, force: bool,
     Only mux takes this path. It holds no model and no GPU, its time is one single-threaded encode
     per video, and each video writes only its own workdir, so videos do not contend for anything
     but cores and RAM. RAM is the bound that bites: a mux holds stages.mux.ram_need bytes at its
-    peak, and a video is admitted only while the running ones' needs plus its own fit the RAM that
-    was free when the sweep started. The budget is fixed rather than re-read, because a mux that
-    has started but not yet allocated would make a live reading look free. A video is always
-    admitted when nothing is running, so one too large for the budget still runs, alone.
+    peak, and host.ram_admission decides whether the next video fits beside the running ones — the
+    same rule the drain's background muxes are admitted by.
 
     Queue order is kept: a video that does not fit waits for a slot instead of being overtaken.
     After a STOP no new video starts; the ones already running finish and are reported, because a
@@ -692,8 +687,7 @@ def _sweep_concurrent(st, jobs: list[_Job], width: int, *, force: bool,
     from . import host
     from .stages.mux import ram_need
 
-    free = host.available_ram()
-    budget = None if free is None else max(0, free - _RAM_HEADROOM)
+    admits = host.ram_admission()
     pending = [(i, j) for i, j in enumerate(jobs, 1) if j.status == "run"]
     need = {j.vid: ram_need(j.ctx.work) for _i, j in pending}
     running: dict = {}
@@ -704,8 +698,7 @@ def _sweep_concurrent(st, jobs: list[_Job], width: int, *, force: bool,
         while pending or running:
             while pending and not stop_seen and len(running) < width:
                 i, j = pending[0]
-                held = sum(need[k.vid] for k in running.values())
-                if running and budget is not None and held + need[j.vid] > budget:
+                if not admits([need[k.vid] for k in running.values()], need[j.vid]):
                     break
                 pending.pop(0)
                 print(f"\n--- {st.name}  [{i}/{len(jobs)}] {j.vid}")
