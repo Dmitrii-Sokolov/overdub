@@ -682,6 +682,7 @@ def _sweep_concurrent(st, jobs: list[_Job], width: int, *, force: bool,
     After a STOP no new video starts; the ones already running finish and are reported, because a
     mux that completed beside the stop is a finished video.
     """
+    import threading
     from concurrent.futures import FIRST_COMPLETED, wait
 
     from . import host
@@ -692,17 +693,36 @@ def _sweep_concurrent(st, jobs: list[_Job], width: int, *, force: bool,
     need = {j.vid: ram_need(j.ctx.work) for _i, j in pending}
     running: dict = {}
     out: list[tuple[_Job, str | None, str | None]] = []
-    stop_seen = False
+    # Set by whichever thread honors the STOP, the moment it does. Learning it from a collected
+    # future instead let a sibling that completed first open a slot, and one more video started
+    # after the stop.
+    stop_seen = threading.Event()
+
+    def run(j: _Job) -> tuple[str | None, str | None]:
+        failed, stopped = _run_stage(j, st, force=force, only=only)
+        if stopped is not None:
+            stop_seen.set()
+        return failed, stopped
+
     print(f"\n--- {st.name}: {len(pending)} video(s), up to {width} at a time")
     with ThreadPoolExecutor(max_workers=width) as pool:
         while pending or running:
-            while pending and not stop_seen and len(running) < width:
+            while pending and not stop_seen.is_set() and len(running) < width:
                 i, j = pending[0]
                 if not admits([need[k.vid] for k in running.values()], need[j.vid]):
                     break
                 pending.pop(0)
                 print(f"\n--- {st.name}  [{i}/{len(jobs)}] {j.vid}")
-                running[pool.submit(_run_stage, j, st, force=force, only=only)] = j
+                # The admitting thread honors a STOP itself, with run_pipeline's own checkpoint
+                # text, before a worker gets the video: left to the workers, the first video of an
+                # admission round would consume it while the rest of the round started anyway.
+                try:
+                    check_stop(j.ctx.cfg.work_root, f"before stage '{st.name}'")
+                except StopRequested as e:
+                    out.append((j, None, str(e)))
+                    stop_seen.set()
+                    break
+                running[pool.submit(run, j)] = j
             if not running:
                 break                                # a stop with nothing left in flight
             finished, _ = wait(running, return_when=FIRST_COMPLETED)
@@ -710,7 +730,6 @@ def _sweep_concurrent(st, jobs: list[_Job], width: int, *, force: bool,
                 j = running.pop(fut)
                 failed, stopped = fut.result()
                 out.append((j, failed, stopped))
-                stop_seen = stop_seen or stopped is not None
     return out
 
 

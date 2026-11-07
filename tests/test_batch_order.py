@@ -426,10 +426,9 @@ def test_unreadable_ram_runs_the_mux_sweep_one_at_a_time() -> None:
     assert "one at a time" in out
 
 
-def test_a_stop_in_the_mux_sweep_starts_nothing_new_and_keeps_what_finished() -> None:
-    trace: list = []
+def _mux_sweep_of_two(stages) -> tuple[int, list[str]]:
+    """Stage-major over VIDS with two mux slots. Returns (exit code, exported video ids)."""
     exported: list[str] = []
-    stages = [FakeStage("s1", trace, stop_after={VIDS[2]}), FakeStage("mux", trace)]
     with tempfile.TemporaryDirectory() as d:
         cfg = _cfg(Path(d))
         cfg.mux_concurrency = 2
@@ -438,12 +437,69 @@ def test_a_stop_in_the_mux_sweep_starts_nothing_new_and_keeps_what_finished() ->
             code = cli._run_batch_stage_major(
                 URLS, cfg, force=False, only=None, stages=stages,
                 finalize=lambda ctx: exported.append(ctx.work.root.name) or "out.mkv")
-    # the STOP written after s1 is honored by ONE of the two first muxes; the other finishes and
-    # ships, the third video is never started
+    return code, exported
+
+
+def test_a_stop_before_the_mux_sweep_starts_no_mux() -> None:
+    # The STOP written after s1 is honored before the first mux starts, as in the serial sweep.
+    # Left to the workers, the first of the two admitted together consumed it and the second ran.
+    trace: list = []
+    code, exported = _mux_sweep_of_two(
+        [FakeStage("s1", trace, stop_after={VIDS[2]}), FakeStage("mux", trace)])
     assert code == 3
-    muxed = [v for s, v in _runs(trace) if s == "mux"]
-    assert len(muxed) == 1 and VIDS[2] not in muxed
-    assert exported == muxed
+    assert [v for s, v in _runs(trace) if s == "mux"] == []
+    assert exported == []
+
+
+def test_a_stop_a_worker_honored_admits_nothing_even_when_a_sibling_finishes_first() -> None:
+    # VIDS[0]'s mux writes STOP mid-run and finishes once someone consumed it. The admission
+    # thread is shown VIDS[0]'s completion BEFORE the stopped one's, the order that opened a slot
+    # for VIDS[2] when the stop was learned only from a collected future. Events, not polling the
+    # file: on Windows a stat racing the unlink makes the unlink fail.
+    import concurrent.futures as cf
+    import threading
+
+    from overdub import pipeline
+    written, consumed = threading.Event(), threading.Event()
+
+    class Mux(FakeStage):
+        def run(self, ctx) -> None:
+            super().run(ctx)
+            if ctx.work.root.name == VIDS[0]:
+                (ctx.cfg.work_root / STOP_NAME).write_text("", encoding="utf-8")
+                written.set()
+                assert consumed.wait(5)
+
+    def finished_before_stopped(fs, return_when=None):
+        fs = list(fs)
+        real_wait(fs)
+        first = {f for f in fs if f.result()[1] is None} or set(fs)
+        return first, set(fs) - first
+
+    def run_stage(j, st, **kw):
+        if j.vid == VIDS[1]:                             # its checkpoint lands after the STOP
+            assert written.wait(5)
+        return real_run_stage(j, st, **kw)
+
+    def observed_check_stop(root, where):
+        try:
+            real_check(root, where)
+        except StopRequested:
+            consumed.set()
+            raise
+
+    trace: list = []
+    real_wait, real_run_stage, real_check = cf.wait, cli._run_stage, pipeline.check_stop
+    cf.wait, cli._run_stage = finished_before_stopped, run_stage
+    cli.check_stop = pipeline.check_stop = observed_check_stop
+    try:
+        code, exported = _mux_sweep_of_two([Mux("mux", trace)])
+    finally:
+        cf.wait, cli._run_stage = real_wait, real_run_stage
+        cli.check_stop = pipeline.check_stop = real_check
+    assert code == 3
+    assert [v for s, v in _runs(trace) if s == "mux"] == [VIDS[0]]
+    assert exported == [VIDS[0]]                         # finished beside the stop: it ships
 
 
 # --- finish sweep -------------------------------------------------------------------
