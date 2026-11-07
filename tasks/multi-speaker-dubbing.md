@@ -79,7 +79,7 @@ the grammatical gender of every first-person past verb.
   every video, single-speaker included. Absorbs the retired narrator-gender task's measurement; feeding
   `gender` to the translator is the contract item below.
 - [x] **Fixture:** auto labels of `z7cNbsr3b5s` and `i-o5YbNfmh0` judged fully correct by ear
-  (user, 2026-10-27) — `work-exp/diar-probe/<id>/labels.txt` stand as the reference, uncorrected.
+  (user, 2026-10-27) — `fixtures/diar-probe/<id>/labels.txt` stand as the reference, uncorrected.
 - [x] **False-split run** over the corpus (2026-10-27, read-only) — see Findings; it replaced the
   Q8 threshold with identity linking.
 - [x] **Windowed diarization + identity linking:** diarize fixed windows (bounded VRAM), link
@@ -243,7 +243,7 @@ outputs in `work-exp/diar-probe/`):
   allocated VRAM 0.90-2.07 GiB, growing with length. The 2 GiB matters: `transcribe` and
   `separate` already co-reside at 9930 of 12282 MiB (DECISIONS 2026-08-06), so diarization in the
   Parakeet worker must be measured in that co-residence, not alone.
-- Audacity label tracks (`<id>/labels.txt`) are the fixture's starting point; the densest
+- Audacity label tracks (`fixtures/diar-probe/<id>/labels.txt`) are the fixture's starting point; the densest
   5-minute window of `z7cNbsr3b5s` (20 speaker changes) starts at 2:18.
 
 **Pipeline run on the five test videos, 2026-10-27** (`--transcribe-only`, then `--only diarize
@@ -304,7 +304,7 @@ timbre_*.py`, `work-exp/diar-probe/timbre_videos.py`):
   with 3-4 speakers — 4 on 14 of the 27 Lex Fridman videos — i.e. streaming Sortformer loses a
   voice's identity over hours and opens a new label for it. Identity linking (TitaNet across
   windows) is the fix, not a size threshold.
-- **Calibration set** (`work-exp/diar-probe/calibration.tsv`, built by `calibration_template.py`):
+- **Calibration set** (`fixtures/diar-probe/calibration.tsv`, built by `calibration_template.py`):
   the interview and single-voice channels with an expected count — host + guests named in the
   title, solo essays 1 — every prefilled value confirmed by the user, the unreadable ones settled
   by ear; 3 videos have no single right count (a crowd, distorted voices, inserted clips) and are
@@ -370,7 +370,7 @@ assign → smooth → renumber and `MAIN_SHARE` 3%; `work-exp/diar-probe/calibra
   124/944 → aidar+formant=1.12.
 
 **Boundary accuracy, 2026-10-28** (pipeline `sentences.json` speakers vs the ear-approved
-`work-exp/diar-probe/<id>/labels.txt`, a sentence scored by the reference speaker covering most
+`fixtures/diar-probe/<id>/labels.txt`, a sentence scored by the reference speaker covering most
 of it, labels mapped one-to-one; the two wavs differ by 0.04 s in length):
 
 - `z7cNbsr3b5s` (394 sentences, 3 speakers): **98.5% of words** (384 sentences) carry the right

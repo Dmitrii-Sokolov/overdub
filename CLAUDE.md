@@ -22,8 +22,8 @@ consumables. Everything under the gitignored `work/` and `work-exp/` may be
 deleted at any moment, and a cleanup there is the design working, not a loss
 (owner decision 2026-11-05). So a generalizable finding (the golden fixture,
 `_pre-repair-*.json` pairs, a baseline worth comparing against) never lives
-only there: whatever has to survive is tracked, or kept outside the ignored
-paths.
+only there: whatever has to survive is tracked (`fixtures/` holds the repair
+pairs and the diarization ear labels), or kept outside the ignored paths.
 
 ## Host environment
 
@@ -193,13 +193,15 @@ rules — it exists because each of them used to live in four skills at once, an
 times drifts three ways.
 
 `docs/repair-fixture.md` — the `--repair-asr` golden fixture: a reproducible real-media regression
-test built from the 6 preserved `_pre-repair-sentences.json` / `sentences.json` pairs in `work/`.
+test built from the 6 `_pre-repair-sentences.json` / `sentences.json` pairs tracked in
+`fixtures/repair-asr/<id>/`.
 Read it before changing anything in `overdub/repair.py`, before quoting a recall number for
 `--repair-asr auto`, or before scoring the automation against the human transcripts — the human side
 contains a known error and a deliberate override, so a perfect match is a red flag, not a win.
-Two things it says that this line must not let you miss: the SIX `source.wav` are no longer in
-`work/` (a disk cleanup took them; re-fetched into `work-exp/parakeet/fixture/`), and the mode it
-tests is whisper-only since 2026-08-06, so the fixture runs only with `asr_engine = "whisper"`.
+Two things it says that this line must not let you miss: the SIX `source.wav` are not tracked
+(a disk cleanup already took them from `work/` once), so a run re-fetches them into its scratch
+root, and the mode it tests is whisper-only since 2026-08-06, so the fixture runs only with
+`asr_engine = "whisper"`.
 
 `scripts/asr_probe.py` — the ASR decode-config probe (`--help` is the runbook; there is no
 separate doc, deliberately). Two modes: `--variant` measures one decode variant against the

@@ -9,7 +9,7 @@ Written 2026-07-20, after the first run. Findings from that run: DECISIONS 2026-
 ## Why it is "golden"
 
 In July 2026 a human manually repaired defect windows across 6 videos using exactly the method
-`--repair-asr` now automates. Both sides survive in `work/<id>/`:
+`--repair-asr` now automates. Both sides are tracked in `fixtures/repair-asr/<id>/`:
 
 | file | what it is |
 |---|---|
@@ -21,13 +21,14 @@ source-anomaly worklist, overwritten per repair. It is NOT part of the fixture p
 
 The 6 ids: `2YCaBqP8muw`, `DmgujoZ1mmk`, `RyvXxApfHkk`, `W4Ua6XFfX9w`, `W5cga7xipRI`, `ytEN_iAk09c`.
 
-**The audio is NOT in `work/` any more.** All six `source.wav` were gone when the fixture was next
-needed (2026-08-06) — the disk cleanup this document warns about below took them, while this
-paragraph went on claiming "all six are present, ~75 MB total" for weeks. They were re-fetched from
-YouTube into `work-exp/parakeet/fixture/<id>/source.wav` with the same `bestaudio` → 16 kHz mono
-pcm_s16le path the download stage uses, so timings still line up with the preserved transcripts.
-Re-fetching is only possible while the videos stay up: the transcripts are irreplaceable, the audio
-is one `yt-dlp` away *until it is not*.
+**The audio is NOT tracked.** All six `source.wav` were gone from `work/` when the fixture was
+next needed (2026-08-06) — a disk cleanup took them, while this paragraph went on claiming "all six
+are present, ~75 MB total" for weeks. They were re-fetched from YouTube into
+`work-exp/parakeet/fixture/<id>/source.wav` — gitignored and disposable like the rest of
+`work-exp/` — with the same `bestaudio` → 16 kHz mono pcm_s16le path the download stage uses, so
+timings still line up with the preserved transcripts; a run that finds them gone re-fetches them
+the same way. Re-fetching is only possible while the videos stay up: the transcripts are
+irreplaceable, the audio is one `yt-dlp` away *until it is not*.
 
 **--repair-asr itself is whisper-only since 2026-08-06** (DECISIONS): its accept gate is "two
 independent readings of the clip agree", which is vacuously true on Parakeet's deterministic greedy
@@ -56,16 +57,17 @@ compute an absolute correctness score.
 
 ## Running it
 
-**Never write into `work/`.** It holds irreplaceable baselines, several already lost to a disk
-cleanup. Copy out, run against the copy.
+**Never write into `fixtures/repair-asr/`.** The tracked pairs are the baseline every run is
+compared against. Copy out, run against the copy.
 
-1. Build a scratch work root: one dir per id, containing that video's `source.wav` plus its
-   `_pre-repair-sentences.json` **renamed to** `sentences.json`.
+1. Build a scratch work root: one dir per id, containing that video's `source.wav` (re-fetched as
+   above — the audio is not tracked) plus its `fixtures/repair-asr/<id>/_pre-repair-sentences.json`
+   **renamed to** `sentences.json`.
 2. Point the pipeline at it with a scratch TOML overriding `work_root`.
 3. Dry run first — confirms the right dirs and that nothing triggers a download:
    `--repair-asr auto --repair-dry-run`
 4. Real pass: `--repair-asr auto`
-5. Diff each resulting `sentences.json` against `work/<id>/sentences.json` (read-only).
+5. Diff each resulting `sentences.json` against `fixtures/repair-asr/<id>/sentences.json`.
 
 Cost, measured 2026-07-20: 5 windows × 2 readings = 10 large-v3 passes in ~26 s wall, model loaded
 once for the sweep. The "~1 minute per window" figure in DECISIONS 2026-07-19 describes the old
@@ -82,8 +84,8 @@ adopting any transcribe lever — record the decode config next to the result.
 That conditionality is now enforced rather than trusted: `--repair-asr` reads the `asr_key`
 stamped in each workdir's `timings.json` and REFUSES a video whose model, compute type or beam
 differs from the current config (`repair.check_decode_config`), because a window decoded at
-another width splices in a sentence of a different kind from its neighbours. The 6 preserved
-fixture workdirs predate the stamp and are accepted unchanged. After a real pass the stamp reads
+another width splices in a sentence of a different kind from its neighbours. A scratch root built
+from the fixture has no `timings.json`, hence no stamp, and is accepted unchanged. After a real pass the stamp reads
 `cond=mixed` with an `asr_repair_windows` count — the spliced windows are the clipped `cond=False`
 reading, so the transcript is no longer one uniform decode and the file says so.
 
