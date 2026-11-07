@@ -133,6 +133,28 @@ def test_title_comes_from_the_single_format_sidecar_without_a_network_call() -> 
             cli.subprocess.run = real
 
 
+def test_the_networked_title_lookup_asks_for_one_video_not_a_playlist() -> None:
+    # No sidecar: _title_of asks yt-dlp. A `watch?v=X&list=…` queue line without --no-playlist
+    # prints the title of every video in the playlist.
+    with tempfile.TemporaryDirectory() as d:
+        work = _work(Path(d))
+        ctx = Context(url=f"https://www.youtube.com/watch?v={VID}&list=PLx", cfg=Config(),
+                      work=work)
+        seen = []
+
+        def fake_run(argv, **kw):
+            seen.append(argv)
+            return cli.subprocess.CompletedProcess(argv, 0, stdout="Fetched\n", stderr="")
+
+        real = cli.subprocess.run
+        cli.subprocess.run = fake_run
+        try:
+            assert cli._title_of(ctx) == "Fetched"
+        finally:
+            cli.subprocess.run = real
+        assert "--no-playlist" in seen[0], seen
+
+
 def test_run_report_takes_title_and_length_from_the_single_format_sidecar() -> None:
     with tempfile.TemporaryDirectory() as d:
         work = _b_workdir(Path(d))

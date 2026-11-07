@@ -18,7 +18,7 @@ from . import queueview, repair, runreport, timings
 from .config import Config
 from .pipeline import Context, STOP_NAME, Session, StopRequested, check_stop, run_pipeline
 from .stages import all_stages, transcribe_only_stages
-from .stages.download import _tool_exe
+from .stages.download import _SINGLE_VIDEO_ARGV, _tool_exe
 from .transcript_md import write_transcript
 from .workdir import WorkDir, replace_retry, safe_filename, video_id
 
@@ -410,8 +410,8 @@ def _title_of(ctx: Context) -> str | None:
     try:                                            # --print implies --simulate: no download.
         # PYTHONUTF8=1: yt-dlp encodes piped stdout in the locale codepage — Cyrillic titles
         # get dropped/mangled on stock (non-UTF-8-ACP) Windows without it
-        r = subprocess.run([_tool_exe("yt-dlp"), "--print", "title", ctx.url],
-                           capture_output=True,
+        argv = [_tool_exe("yt-dlp"), *_SINGLE_VIDEO_ARGV, "--print", "title", ctx.url]
+        r = subprocess.run(argv, capture_output=True,
                            text=True, encoding="utf-8", errors="replace", timeout=30,
                            env={**os.environ, "PYTHONUTF8": "1"})
         title = r.stdout.strip() if r.returncode == 0 else ""
