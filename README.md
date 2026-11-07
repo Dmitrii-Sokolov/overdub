@@ -245,7 +245,10 @@ anything — see `holes` and `hole_words_recovered` in the run report. Everythin
 
 When whisper collapses — a repetition loop, or a sentence stamped onto an impossible span — the fix
 is not a full re-transcription but an isolated re-read of the defect window. Run it after
-`--only download transcribe` and before translating; dry-run first:
+`--only download transcribe diarize` (route B's step 1) and before translating. Repair follows
+diarization because diarize refuses a multi-speaker transcript that a repair has rewritten — a
+re-cut from `words.json` would undo the repair — while a repair keeps the speakers of an already
+diarized one. Dry-run first:
 
 ```powershell
 .venv-asr\Scripts\python.exe -X utf8 -m overdub --batch queue.txt --repair-asr auto --repair-dry-run
