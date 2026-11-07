@@ -52,7 +52,8 @@ def main(argv: list[str] | None = None) -> None:
                    help="download (AUDIO ONLY) → transcribe, then stop. No source.mkv, no "
                         "translate, no TTS — the transcript pass route E starts from. Not "
                         "composable with --only. With --force this also re-runs the "
-                        "transcribe, not just the fetch.")
+                        "transcribe, not just the fetch — except on a video that already has a "
+                        "translation.json, which fails instead: a re-decode would cost its dub.")
     args = p.parse_args(argv)
     if sum(x is not None for x in (args.url, args.batch, args.transcribe_file)) != 1:
         p.error("give exactly one of: URL, --batch FILE or --transcribe-file PATH")
@@ -201,6 +202,9 @@ def _run_one(url: str, cfg: Config, *, force: bool, only: set[str] | None,
     ctx = Context(url=url, cfg=cfg, work=work)
     print(f"overdub: {url}")
     print(f"work dir: {work.root}")
+    refusal = _forced_transcript_refusal(work) if transcribe_only and force else None
+    if refusal:
+        raise RuntimeError(refusal)
     run_pipeline(ctx, transcribe_only_stages(cfg) if transcribe_only else all_stages(cfg),
                  force=force, only=only)
     _rollup_and_print(work, cfg)
@@ -502,6 +506,25 @@ def _transcript_duration(sents: list, info) -> float | None:
     return dur
 
 
+def _forced_transcript_refusal(work: WorkDir) -> str | None:
+    """Why `--transcribe-only --force` must not run on this video; None when it may.
+
+    A forced pass re-decodes sentences.json from scratch, with no speaker cut, and deletes
+    diar.json. Under a translation that breaks the one promise a transcript pass makes, that it
+    never costs a finished dub: the next full run finds no diar.json, re-cuts the new sentences
+    and discards the translation with everything built on it. Both drivers check it per video
+    before any of that video's stages, so the forced audio re-fetch never starts either and the
+    rest of a batch goes through.
+    """
+    if not work.translation.exists():
+        return None
+    return (f"{work.root.name} already has a translation (translation.json), and "
+            f"--transcribe-only --force would re-decode the transcript under it: the next full "
+            f"run would then discard the translation and the dub. Drop --force to re-render "
+            f"transcript.md from the transcript on disk; if a fresh decode is worth the dub, "
+            f"delete translation.json for this video first.")
+
+
 def _finalize_transcript(ctx: Context) -> str:
     """`--transcribe-only` finalize: render work/<id>/transcript.md, then report the status.
 
@@ -722,6 +745,10 @@ def _run_batch_stage_major(urls: list[str], cfg: Config, *, force: bool,
     for j in jobs:
         print(f"overdub: {j.url}")
         print(f"work dir: {j.ctx.work.root}")
+        refusal = _forced_transcript_refusal(j.ctx.work) if transcribe_only and force else None
+        if refusal:                                  # leaves the batch before its first stage
+            print(f"[FAIL] {refusal}", file=sys.stderr)
+            j.status, j.detail = "FAIL", refusal
     halted: str | None = None
 
     # Concurrent fetch BEFORE the sweep, so the sweep's own download pass finds the artifacts and

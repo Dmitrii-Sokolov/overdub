@@ -188,6 +188,10 @@ no `/best` fallback on purpose — a source with no audio-only format FAILS out 
 than quietly pulling a full video stream, and a 100-video queue costs a few GB instead of ~100 GB
 in hour 0. A transcript pass never costs a finished dub: a translated multi-speaker video gets its
 diarized cut in `transcript_view.json`, while route B's `--only ... diarize` is what re-cuts one.
+That is also why `--transcribe-only --force` is refused, per video, on anything with a
+`translation.json`: a forced re-decode drops the speaker cut, and the next full run would re-cut the
+transcript and discard the translation and the dub. The video fails with that reason and the rest
+of the batch goes on.
 
 One sub-agent per CHUNK, not per video: this is the one route whose output is as long as its input,
 and a per-video agent cleans the opening faithfully and compresses harder the further it goes with

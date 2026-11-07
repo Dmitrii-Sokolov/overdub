@@ -13,7 +13,10 @@ Argument: a YouTube URL (several URLs: run once per URL, or put them in a queue 
 ```
 
 Run it from the repo root. The tool is resumable: finished stages print `[skip]`, so re-running
-only re-renders the file. `--force` redoes the transcribe as well.
+only re-renders the file. `--force` redoes the transcribe as well, except on a video that already
+has a `translation.json`: there the run refuses that video and says why, because a re-decode would
+make the next dubbing run discard the translation and the dub. Run without `--force` to
+re-render; only if a fresh decode is worth the dub, delete `translation.json` first.
 
 ## What comes out
 

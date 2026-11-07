@@ -744,6 +744,65 @@ def test_transcribe_only_failure_exits_1_and_stop_exits_3() -> None:
     assert code == 3 and "STOP file honored" in out
 
 
+def _translated(tmp: Path, vid: str) -> Path:
+    """A dubbed video's workdir as far as the forced-pass refusal looks: its translation.json."""
+    root = tmp / "work" / vid
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "translation.json").write_text("[]", encoding="utf-8")
+    return root / "translation.json"
+
+
+def test_forced_transcript_pass_refuses_a_translated_video_and_runs_the_rest() -> None:
+    """--force re-decodes sentences.json without the speaker cut and deletes diar.json, so on a
+    dubbed video the next full run re-cuts it and discards the translation and the dub — the one
+    thing a transcript pass promises never to cost. That video FAILS before any of its stages run
+    (the forced audio re-fetch included) and says why; the rest of the batch goes through. Both
+    orders, because each reaches the check by its own path."""
+    for order in ([], ["--video-major"]):
+        trace: list = []
+        short = [FakeStage(n, trace) for n in ("download", "transcribe")]
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            tr = _translated(tmp, VIDS[1])
+            code, out = _drive_main(tmp, ["--force"] + order, short, short)
+            assert tr.read_text(encoding="utf-8") == "[]"
+        assert code == 1 and "2 ok, 1 failed" in out, (order, out)
+        assert f"[FAIL] {VIDS[1]}" in out and "translation.json" in out, (order, out)
+        assert {v for _s, v in _runs(trace)} == {VIDS[0], VIDS[2]}, (order, trace)
+
+
+def test_unforced_transcript_pass_still_reads_a_translated_video() -> None:
+    # The refusal is about --force alone: a plain pass over a dubbed video only re-renders.
+    trace: list = []
+    short = [FakeStage(n, trace) for n in ("download", "transcribe")]
+    with tempfile.TemporaryDirectory() as d:
+        tmp = Path(d)
+        _translated(tmp, VIDS[1])
+        code, out = _drive_main(tmp, [], short, short)
+    assert code == 0 and "3 ok, 0 failed" in out, out
+    assert VIDS[1] in {v for _s, v in _runs(trace)}
+
+
+def test_forced_transcript_pass_refuses_a_single_translated_video() -> None:
+    trace: list = []
+    short = [FakeStage(n, trace) for n in ("download", "transcribe")]
+    real = cli.transcribe_only_stages
+    cli.transcribe_only_stages = lambda cfg: short
+    try:
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            _translated(tmp, VIDS[0])
+            try:
+                _quiet(cli._run_one, URL, _cfg(tmp), force=True, only=None, transcribe_only=True)
+            except RuntimeError as e:
+                assert "translation.json" in str(e) and "--force" in str(e), e
+            else:
+                raise AssertionError("a forced transcript pass ran over a translation")
+    finally:
+        cli.transcribe_only_stages = real
+    assert _runs(trace) == [], trace
+
+
 def test_status_line_reports_sentences_and_duration() -> None:
     with tempfile.TemporaryDirectory() as d:
         ctx = _ctx(Path(d))

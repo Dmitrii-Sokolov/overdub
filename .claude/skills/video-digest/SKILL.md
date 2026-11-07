@@ -27,7 +27,8 @@ Arguments: one or more inputs, each a YouTube URL or a path to a local media fil
    ```
 
    Each video gets `work/<id>/transcript.md`. A finished dub stays intact: the run adds
-   `transcript_view.json` beside it and leaves the translation and the MKV alone. Collect every
+   `transcript_view.json` beside it and leaves the translation and the MKV alone. Do not add
+   `--force`: a dubbed video refuses it and fails. Collect every
    `[warn]`. If a local file's video is gone from YouTube, treat that file as having no id. Any
    other failure goes into the final report and the rest carry on.
 3. **Transcripts for files with no id**, one command per file. First, any video whose download
