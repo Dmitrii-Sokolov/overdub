@@ -1,6 +1,6 @@
 ---
 name: video-digest
-description: "One or more videos, YouTube URLs or local files → one Russian digest judged as of today: facts and ideas, what to do about them, and a check of errors, outdated claims and forecasts against the current date. Several videos make one aggregated report, not a digest each. Runs the transcript pass, applies the digest prompt, saves work/<id>/digest.md or work/digests/<date>-<slug>.md. Trigger on '/video-digest <URL or file> ...', 'сделай выжимку видео', 'выжимка по ссылке', 'общий отчёт по этим видео', 'что нового в этом видео', 'digest this video'. For the bare transcript use transcript; for a dub use overdub-sonnet-batch."
+description: "One or more videos, YouTube URLs or local files → one Russian digest judged as of today: facts and ideas, what to do about them, and a check of errors, outdated claims and forecasts against the current date. Several videos make one aggregated report, not a digest each. Runs the transcript pass, applies the digest prompt, saves digests/<date>-<id>.md or digests/<date>-<slug>.md. Trigger on '/video-digest <URL or file> ...', 'сделай выжимку видео', 'выжимка по ссылке', 'общий отчёт по этим видео', 'что нового в этом видео', 'digest this video'. For the bare transcript use transcript; for a dub use overdub-sonnet-batch."
 ---
 
 # video-digest — videos → one digest
@@ -10,10 +10,14 @@ Arguments: one or more inputs, each a YouTube URL or a path to a local media fil
 ## Steps
 
 1. **Resolve each input.** The same id given twice counts once.
-   - A URL stays as it is.
+   - A URL becomes `https://www.youtube.com/watch?v=<id>`, the id taken with the regex of
+     `docs/queue-contract.md` §1, so no `&list=`, timestamp or tracking tail reaches the queue file.
+     A URL the regex does not match is dropped and named in the final report.
    - A local file with a YouTube id in its name (`Title [<11 chars>].mkv`, the name yt-dlp and overdub
-     give) becomes `https://www.youtube.com/watch?v=<id>`. An existing `work/<id>/` is reused, so
-     such a video needs neither network nor decoding. Without one, the audio comes from YouTube.
+     give) becomes `https://www.youtube.com/watch?v=<id>`. An existing `work/<id>/` is reused: its
+     `sentences.json` spares the ASR pass, but only its `source.wav` spares the network — a workdir
+     whose `source.wav` a `work/` cleanup took fetches the audio from YouTube again. Without a
+     workdir, the audio comes from YouTube.
    - A local file with no id goes to step 3.
 2. **Transcripts for everything with an id**, in one pass, so the models load once. From the repo
    root, with the URLs in a queue file in the scratchpad:
@@ -26,14 +30,22 @@ Arguments: one or more inputs, each a YouTube URL or a path to a local media fil
    `transcript_view.json` beside it and leaves the translation and the MKV alone. Collect every
    `[warn]`. If a local file's video is gone from YouTube, treat that file as having no id. Any
    other failure goes into the final report and the rest carry on.
-3. **Transcripts for files with no id**, one command per file:
+3. **Transcripts for files with no id**, one command per file. First, any video whose download
+   failed in step 2 but whose `work/<id>/transcript.md` is on disk from an earlier run keeps that
+   transcript, URL or file alike: use it as it is and name the failed download in the final report.
+   Only a file without one comes here.
 
    ```powershell
-   .venv-asr\Scripts\python.exe -X utf8 -m overdub --transcribe-file "<path>" --out "<scratchpad>\<stem>.transcript.md"
+   .venv-asr\Scripts\python.exe -X utf8 -m overdub --transcribe-file "<path>" --out "<scratchpad>\<n>-<stem>.transcript.md"
    ```
 
-   This route reads the first audio track and gives no metadata and no speaker labels. A date the
-   user stated counts; the date the file has on disk does not, it says nothing about publication.
+   `<n>` is the input's position in the arguments, so two files with one name from different
+   folders do not overwrite each other.
+
+   This route reads the first audio track and gives no metadata and no speaker labels. For a file
+   whose id has a workdir, take the title, channel and date from `work/<id>/source.info.json` or
+   `work/<id>/source.mkv.info.json`, whichever exists. A date the user stated counts; the date the
+   file has on disk does not, it says nothing about publication.
 4. **Read** every transcript in full, paging with `offset`/`limit` where needed. The header gives
    the title, duration, speakers, channel, publication date, popularity and link; the description
    and chapters follow it. A transcript that says `_No speech detected._` drops out and is named in
@@ -49,9 +61,12 @@ Arguments: one or more inputs, each a YouTube URL or a path to a local media fil
    which come from memory, as the prompt requires. Do not mark an item as searched unless a search
    was actually run for it.
 7. **Save** with Write, then print the same text in the chat:
-   - one video with an id: `work/<id>/digest.md`;
-   - anything else: `work/digests/<YYYY-MM-DD>-<slug>.md`, with today's date and a short Latin slug
+   - one video with an id: `digests/<YYYY-MM-DD>-<id>.md`;
+   - anything else: `digests/<YYYY-MM-DD>-<slug>.md`, with today's date and a short Latin slug
      of the topic.
+
+   `digests/` is at the repo root, never under `work/`: a cleanup may empty `work/` at any moment,
+   and a digest judged as of its date cannot be regenerated later.
 
 ## After the run
 
