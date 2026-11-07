@@ -392,6 +392,23 @@ def test_a_failed_background_mux_is_a_failed_video() -> None:
     assert "encoder died" in out and "0 drained, 1 failed, 1 pending" in out
 
 
+def test_the_tail_needs_no_RAM_for_a_separate_that_will_skip() -> None:
+    # separate is the largest single allocation in the pipeline: counted for a video whose separate
+    # is a no-op, it held the tail back until the background muxes finished, for RAM nobody uses.
+    from overdub.config import Config
+    with tempfile.TemporaryDirectory() as d:
+        w = _work(Path(d), VIDS[0])
+        _sentences(w, 3)
+        w.info_json.write_text(json.dumps({"duration": 1800}), encoding="utf-8")
+        cfg = Config()
+        assert drain.tail_ram_need(URLS[0], w, cfg) > 0   # bed mode, speech, no bed yet
+        cfg.dub_mix = "duck"
+        assert drain.tail_ram_need(URLS[0], w, cfg) == 0  # no bed wanted
+        cfg.dub_mix = "bed"
+        w.source_bed.write_bytes(b"")
+        assert drain.tail_ram_need(URLS[0], w, cfg) == 0  # bed already separated
+
+
 def _admits(free):
     """host.ram_admission's rule over a host reporting `free` bytes beyond the headroom (None:
     unreadable)."""

@@ -54,7 +54,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from overdub import host                                 # noqa: E402
 from overdub.cli import _read_queue                      # noqa: E402
 from overdub.config import Config                        # noqa: E402
-from overdub.pipeline import STOP_NAME                   # noqa: E402
+from overdub.pipeline import STOP_NAME, Context          # noqa: E402
 from overdub.stages import all_stages                    # noqa: E402
 from overdub.stages import mux as mux_stage             # noqa: E402
 from overdub.stages import separate as separate_stage   # noqa: E402
@@ -101,6 +101,15 @@ def already_built(work: WorkDir) -> bool:
     if not work.sentences.exists():
         return True
     return t.stat().st_mtime >= work.sentences.stat().st_mtime
+
+
+def tail_ram_need(url: str, work: WorkDir, cfg: Config) -> int:
+    """RAM this video's tail must find free beside the running muxes: its separate's peak, or 0
+    when the separate stage will skip the video (no bed wanted, or the bed already on disk). The
+    stage's own done() decides, so the drain never waits for RAM a skipped separate won't use."""
+    if separate_stage.SeparateStage().done(Context(url=url, cfg=cfg, work=work)):
+        return 0
+    return separate_stage.ram_need(work, cfg)
 
 
 def _run(argv: list[str]) -> tuple[int, str]:
@@ -257,7 +266,7 @@ def main(argv: list[str] | None = None) -> int:
             # the tail runs BESIDE the background muxes, and its separate is the biggest single
             # allocation in the pipeline: a long previous mux plus this separate can exceed RAM,
             # which on Windows pages instead of failing — a slow night with no error in it
-            tail_need = separate_stage.ram_need(w, cfg)
+            tail_need = tail_ram_need(u, w, cfg)
             while not muxes.fits_beside(tail_need):
                 settle_muxes(block=True)
             if stopping():
