@@ -45,6 +45,10 @@ never re-encoded).
   (multiple clients pool and re-rank their formats, and yt-dlp does not retry a second client after
   a 403 — the poisoned URL just wins the ranking again); and the `tv` client's "this video is drm
   protected" is a session-wide yt-dlp experiment (issue #12563), not a fact about your video.
+- **`--download-sections` on an HLS format writes empty files and exits 0.** Seen 2026-11-09 (venv
+  yt-dlp 2026.08.19): `-f 'bv*[height<=1440]'` picked HLS format 616, and each `*6:00-7:00` section
+  came out as a 257-byte `.mp4` with no stream. Force a DASH format when cutting sections:
+  `-f 'bv*[protocol=https][height<=1440]'`.
 
 ---
 

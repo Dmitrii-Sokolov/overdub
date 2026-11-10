@@ -62,7 +62,7 @@ The reports name it at the top and link the title.
 id inside each URL:
 
 ```powershell
-$lines = @(Get-Content queue.txt | ForEach-Object { $_.Trim() } |
+$lines = @([IO.File]::ReadAllLines((Join-Path $PWD 'queue.txt')) | ForEach-Object { $_.Trim() } |
   Where-Object { $_ -and -not $_.StartsWith('#') })
 $ids = @($lines | ForEach-Object {
   if ($_ -match '(?:v=|youtu\.be/|/shorts/|/embed/)([A-Za-z0-9_-]{11})') { $Matches[1] } })
