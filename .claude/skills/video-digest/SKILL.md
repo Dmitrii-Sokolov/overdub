@@ -1,6 +1,6 @@
 ---
 name: video-digest
-description: "One or more videos, YouTube URLs or local files → one Russian digest judged as of today: facts and ideas, what to do about them, and a check of errors, outdated claims and forecasts against the current date. Several videos make one aggregated report, not a digest each. Runs the transcript pass, applies the digest prompt, saves digests/<date>-<id>.md or digests/<date>-<slug>.md. Trigger on '/video-digest <URL or file> ...', 'сделай выжимку видео', 'выжимка по ссылке', 'общий отчёт по этим видео', 'что нового в этом видео', 'digest this video'. For the bare transcript use transcript; for a dub use overdub-sonnet-batch."
+description: "One or more videos, YouTube URLs or local files → one Russian digest judged as of today: facts and ideas, what to do about them, and a check of errors, outdated claims and forecasts against the current date, plus a full one-line-per-idea topic list with time ranges. Several videos make one aggregated report, not a digest each. Runs the transcript pass, applies the digest prompt, saves digests/<date>-<id>.md or digests/<date>-<slug>.md. Trigger on '/video-digest <URL or file> ...', 'сделай выжимку видео', 'выжимка по ссылке', 'общий отчёт по этим видео', 'что нового в этом видео', 'digest this video'. For the bare transcript use transcript; for a dub use overdub-sonnet-batch."
 ---
 
 # video-digest — videos → one digest
@@ -51,12 +51,13 @@ Arguments: one or more inputs, each a YouTube URL or a path to a local media fil
    the title, duration, speakers, channel, publication date, popularity and link; the description
    and chapters follow it. A transcript that says `_No speech detected._` drops out and is named in
    the final report; if none remain, write no digest. When the transcripts together will not fit
-   in the session, give each to its own `Agent` to return the material for Parts 1-2 and the claims
-   and forecasts to check, then write the report and run the searches of step 6 here, once.
+   in the session, give each to its own `Agent` to return the material for Parts 1-2, the Part 4
+   topic list with its time ranges, and the claims and forecasts to check, then write the report and run the searches of step 6 here, once.
 5. **Apply the prompt** in `prompt.md` beside this file, treating the transcripts as the attached
    text. Read `prompt.md` fresh each run: it is the one place the wording lives. Today's date comes
    from the session environment. Speaker labels and timecodes are navigation, not content; do not
-   carry them into the digest.
+   carry them into the digest. The one exception is Part 4, the full topic list: its group
+   headings carry approximate time ranges, because that list exists to find a place in the video.
 6. **Part 3 uses WebSearch** for the errors worth verifying, for what may have changed since
    publication, and for every forecast whose date has passed. The digest marks which items were searched and
    which come from memory, as the prompt requires. Do not mark an item as searched unless a search
